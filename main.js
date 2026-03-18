@@ -5,7 +5,7 @@ const http = require('http');
 const PORT = 3420;
 
 const DB_PATH = app.isPackaged
-  ? path.join(path.dirname(app.getPath('exe')), 'cartera.db')
+  ? path.join(app.getPath('userData'), 'cartera.db')
   : path.join(__dirname, 'cartera.db');
 
 function waitForServer(url, retries = 30, delay = 300) {
