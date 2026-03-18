@@ -6,9 +6,9 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "build:win": "electron-builder --win portable",
+    "build:win": "electron-builder --win nsis",
     "build:mac": "electron-builder --mac dmg",
-    "build:all": "electron-builder --win portable --mac dmg"
+    "build:all": "electron-builder --win nsis --mac dmg"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
@@ -26,8 +26,19 @@
     "productName": "Cartera de Prestamos",
     "icon": "build/icon.png",
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cartera de Prestamos",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeader": "build/icon.png",
+      "deleteAppDataOnUninstall": false
     },
     "mac": {
       "target": "dmg",
