@@ -1,0 +1,50 @@
+{
+  "name": "cartera-prestamos",
+  "version": "1.0.0",
+  "description": "Gestión de cartera de préstamos personales",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "build:win": "electron-builder --win portable",
+    "build:mac": "electron-builder --mac dmg",
+    "build:all": "electron-builder --win portable --mac dmg"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "express": "^4.18.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "electron": "^29.1.0",
+    "electron-rebuild": "^3.2.9",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.juanp.cartera",
+    "productName": "Cartera de Prestamos",
+    "win": {
+      "target": "portable"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.finance"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "public/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": ".",
+        "to": ".",
+        "filter": ["!cartera.db", "!node_modules", "!dist", "!.git", "!.claude", "!.github"]
+      }
+    ]
+  }
+}
