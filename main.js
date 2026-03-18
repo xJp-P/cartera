@@ -67,14 +67,15 @@ ipcMain.handle('pick-db-folder', async () => {
 
 ipcMain.handle('set-db-path', (_e, newFolder) => {
   const newPath = path.join(newFolder, 'cartera.db');
-  // Si la BD actual existe y la nueva ruta es diferente, mover (copiar + borrar original)
-  if (fs.existsSync(DB_PATH) && newPath !== DB_PATH) {
+  const destExists = fs.existsSync(newPath);
+  if (newPath !== DB_PATH && !destExists && fs.existsSync(DB_PATH)) {
+    // Solo copiar si el destino NO tiene BD aún
     fs.copyFileSync(DB_PATH, newPath);
   }
-  // Guardar prefs ANTES de intentar borrar (SQLite puede tener el archivo bloqueado)
   const p = loadPrefs();
   p.dbPath = newPath;
-  p.pendingDelete = DB_PATH !== newPath ? DB_PATH : null;
+  // Solo borrar la BD original si la copiamos nosotros (no si el destino ya existía)
+  p.pendingDelete = (newPath !== DB_PATH && !destExists) ? DB_PATH : null;
   savePrefs(p);
   return newPath;
 });
