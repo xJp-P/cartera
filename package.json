@@ -18,18 +18,21 @@
   },
   "devDependencies": {
     "electron": "^29.1.0",
-    "electron-rebuild": "^3.2.9",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "electron-rebuild": "^3.2.9"
   },
   "build": {
     "appId": "com.juanp.cartera",
     "productName": "Cartera de Prestamos",
+    "icon": "build/icon.png",
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "build/icon.ico"
     },
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.finance"
+      "category": "public.app-category.finance",
+      "icon": "build/icon.png"
     },
     "directories": {
       "output": "dist"
@@ -43,7 +46,14 @@
       {
         "from": ".",
         "to": ".",
-        "filter": ["!cartera.db", "!node_modules", "!dist", "!.git", "!.claude", "!.github"]
+        "filter": [
+          "!cartera.db",
+          "!node_modules",
+          "!dist",
+          "!.git",
+          "!.claude",
+          "!.github"
+        ]
       }
     ]
   }
