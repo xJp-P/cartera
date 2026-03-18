@@ -1445,10 +1445,16 @@ function DevView(props){
   var onNeedsRestart=props.onNeedsRestart;
   var s1=useState(''); var dbPath=s1[0]; var setDbPath=s1[1];
   var s2=useState(false); var loading=s2[0]; var setLoading=s2[1];
+  var s3=useState(''); var appVersion=s3[0]; var setAppVersion=s3[1];
+  var s4=useState(null); var updateInfo=s4[0]; var setUpdateInfo=s4[1];
   var hasAPI=typeof window.electronAPI!=='undefined';
 
   useEffect(function(){
-    if(hasAPI) window.electronAPI.getDbPath().then(setDbPath);
+    if(!hasAPI) return;
+    window.electronAPI.getDbPath().then(setDbPath);
+    window.electronAPI.getAppVersion().then(setAppVersion);
+    var unsub=window.electronAPI.onUpdateStatus(function(data){setUpdateInfo(data);});
+    return unsub;
   },[]);
 
   function pickFolder(){
@@ -1502,17 +1508,59 @@ function DevView(props){
         h('li',null,'Si usas una carpeta en la nube (iCloud, OneDrive), tu BD se sincroniza automaticamente.'),
         h('li',null,'No abras la app en dos dispositivos al mismo tiempo.'))),
 
-    h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)'}},
+    h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)',marginBottom:12}},
       h('div',{style:{fontWeight:600,fontSize:13,color:'var(--text)',marginBottom:8}},'Info del sistema'),
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}},
         h('div',{style:{fontSize:10,color:'var(--text3)'}},'Version'),
-        h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},'1.1.0'),
+        h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},appVersion||'...'),
         h('div',{style:{fontSize:10,color:'var(--text3)'}},'Motor'),
-        h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},'Electron 35 + Express'),
+        h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},'Electron + Express'),
         h('div',{style:{fontSize:10,color:'var(--text3)'}},'Base de datos'),
         h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},'SQLite (better-sqlite3)'),
         h('div',{style:{fontSize:10,color:'var(--text3)'}},'Frontend'),
-        h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},'React 18 UMD'))));
+        h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},'React 18 UMD'))),
+
+    h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+        h(Ico,{name:'download',size:18,color:'var(--green)'}),
+        h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Actualizaciones')),
+
+      !updateInfo||updateInfo.status==='not-available'?
+        h('div',null,
+          h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:10}},'Tu app esta al dia.'),
+          h('button',{onClick:function(){if(hasAPI)window.electronAPI.checkForUpdates();setUpdateInfo({status:'checking'});},disabled:!hasAPI,style:{background:'var(--bg3)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
+            h(Ico,{name:'refresh',size:13,color:'var(--text2)'}),'Buscar actualizaciones')):
+
+      updateInfo.status==='checking'?
+        h('div',{style:{fontSize:12,color:'var(--text2)',display:'flex',alignItems:'center',gap:8}},
+          h('div',{className:'spinner'}),
+          'Buscando actualizaciones...'):
+
+      updateInfo.status==='dev-mode'?
+        h('div',{style:{fontSize:12,color:'var(--yellow)'}},'Modo desarrollo — las actualizaciones solo funcionan en la app instalada.'):
+
+      updateInfo.status==='available'?
+        h('div',null,
+          h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'Nueva version disponible: v'+updateInfo.version),
+          h('button',{onClick:function(){window.electronAPI.downloadUpdate();},style:{background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green-bd)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
+            h(Ico,{name:'download',size:13,color:'var(--green)'}),'Descargar actualizacion')):
+
+      updateInfo.status==='downloading'?
+        h('div',null,
+          h('div',{style:{fontSize:12,color:'var(--blue)',marginBottom:8}},'Descargando... '+(updateInfo.percent||0)+'%'),
+          h('div',{style:{background:'var(--bg3)',borderRadius:6,height:6,overflow:'hidden'}},
+            h('div',{style:{width:(updateInfo.percent||0)+'%',height:'100%',background:'var(--blue)',borderRadius:6,transition:'width .3s'}}))):
+
+      updateInfo.status==='downloaded'?
+        h('div',null,
+          h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'v'+updateInfo.version+' lista para instalar'),
+          h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
+            h(Ico,{name:'refresh',size:13,color:'#fff'}),'Reiniciar e instalar')):
+
+      updateInfo.status==='error'?
+        h('div',null,
+          h('div',{style:{fontSize:12,color:'var(--red)',marginBottom:10}},'Error: '+(updateInfo.message||'No se pudo verificar')),
+          h('button',{onClick:function(){if(hasAPI)window.electronAPI.checkForUpdates();setUpdateInfo({status:'checking'});},style:{background:'var(--bg3)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reintentar')):null));
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────────

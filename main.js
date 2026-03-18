@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
 const http  = require('http');
@@ -121,7 +122,63 @@ async function createWindow() {
   win.show();
 
   win.on('closed', () => { server.close(); app.quit(); });
+  return win;
 }
 
-app.whenReady().then(createWindow);
+// ── Auto-updater ────────────────────────────────────────────────────────
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+let mainWin = null;
+
+function sendUpdateStatus(status, info) {
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.send('update-status', { status, ...info });
+  }
+}
+
+autoUpdater.on('update-available', (info) => {
+  sendUpdateStatus('available', { version: info.version });
+});
+
+autoUpdater.on('update-not-available', () => {
+  sendUpdateStatus('not-available', {});
+});
+
+autoUpdater.on('download-progress', (prog) => {
+  sendUpdateStatus('downloading', { percent: Math.round(prog.percent) });
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateStatus('downloaded', { version: info.version });
+});
+
+autoUpdater.on('error', (err) => {
+  sendUpdateStatus('error', { message: err.message });
+});
+
+ipcMain.handle('check-for-updates', () => {
+  if (!app.isPackaged) return { status: 'dev-mode' };
+  autoUpdater.checkForUpdates();
+  return { status: 'checking' };
+});
+
+ipcMain.handle('download-update', () => {
+  autoUpdater.downloadUpdate();
+  return { status: 'downloading' };
+});
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall(false, true);
+});
+
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+app.whenReady().then(async () => {
+  mainWin = await createWindow();
+  // Chequear updates 3s después de arrancar
+  if (app.isPackaged) {
+    setTimeout(() => autoUpdater.checkForUpdates(), 3000);
+  }
+});
 app.on('window-all-closed', () => { server.close(); app.quit(); });

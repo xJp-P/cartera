@@ -19,12 +19,12 @@ jobs:
       - name: Instalar dependencias
         run: npm install
 
-      - name: Compilar instalador .exe
-        run: npx electron-builder --win nsis
+      - name: Compilar y publicar instalador .exe
+        run: npx electron-builder --win nsis --publish always
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      - name: Subir .exe
+      - name: Subir .exe como artifact
         uses: actions/upload-artifact@v4
         with:
           name: Windows-Instalador
@@ -44,12 +44,12 @@ jobs:
       - name: Instalar dependencias
         run: npm install
 
-      - name: Compilar .dmg
-        run: npx electron-builder --mac dmg
+      - name: Compilar y publicar .dmg
+        run: npx electron-builder --mac dmg --publish always
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      - name: Subir .dmg
+      - name: Subir .dmg como artifact
         uses: actions/upload-artifact@v4
         with:
           name: Mac-dmg
