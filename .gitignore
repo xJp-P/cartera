@@ -1,5 +1,6 @@
 node_modules/
 dist/
 cartera.db
+prefs.json
 *.zip
 .claude/

@@ -44,7 +44,7 @@ module.exports = function createApp(dbPath) {
       montoCOP    REAL NOT NULL,
       tasaMensual REAL DEFAULT 0,
       plazoMeses  INTEGER NOT NULL,
-      modalidad   TEXT DEFAULT 'Solo Intereses',
+      modalidad   TEXT DEFAULT 'Intereses',
       fechaInicio TEXT NOT NULL,
       diaPago     INTEGER DEFAULT 15,
       estado      TEXT DEFAULT 'Activo',
@@ -79,6 +79,20 @@ module.exports = function createApp(dbPath) {
 
   // Migraciones seguras
   try { db.exec('ALTER TABLE payments ADD COLUMN montoCOPRecibido REAL DEFAULT 0'); } catch(_){}
+  try { db.exec('ALTER TABLE payments ADD COLUMN montoUSDRecibido REAL DEFAULT 0'); } catch(_){}
+  // Renombrar modalidad legacy
+  try { db.exec("UPDATE loans SET modalidad = 'Intereses' WHERE modalidad = 'Solo Intereses'"); } catch(_){}
+
+  // ── Tabla de historial de acciones ──────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      fecha     TEXT DEFAULT (datetime('now','localtime')),
+      tipo      TEXT NOT NULL,
+      mensaje   TEXT NOT NULL
+    )
+  `);
+  const logAction = db.prepare('INSERT INTO activity_log(tipo, mensaje) VALUES (?, ?)');
 
 
   // ── Motor financiero ──────────────────────────────────────────────────────
@@ -104,12 +118,22 @@ module.exports = function createApp(dbPath) {
    *
    * startN tambien determina el offset de fecha: cuotaN=5 => mes 5 desde fechaInicio
    */
+  // Para Intereses: calcular cuántas cuotas generar hasta N meses adelante de hoy
+  function cuotasHastaHoy(fechaInicio, startN, mesesAdelante) {
+    const hoy = new Date();
+    const inicio = new Date(fechaInicio + 'T12:00:00');
+    // Meses transcurridos desde inicio hasta hoy + margen
+    const diffMs = hoy - inicio;
+    const mesesDesdeInicio = Math.ceil(diffMs / (30.44 * 24 * 60 * 60 * 1000)) + mesesAdelante;
+    return Math.max(3, mesesDesdeInicio - startN + 1);
+  }
+
   function buildSchedule(loan, startN, startSaldo, numCuotas) {
     startN = startN || 1;
     const { id, nombre, tasaMensual, modalidad, fechaInicio, diaPago } = loan;
     const montoCOP = startSaldo !== undefined ? startSaldo : loan.montoCOP;
-    const indefinido = modalidad === 'Solo Intereses';
-    const totalCuotas = numCuotas !== undefined ? numCuotas : (indefinido ? 120 : (loan.plazoMeses || 12));
+    const indefinido = modalidad === 'Intereses';
+    const totalCuotas = numCuotas !== undefined ? numCuotas : (indefinido ? cuotasHastaHoy(fechaInicio, startN, 3) : (loan.plazoMeses || 12));
     const r = tasaMensual / 100;
     let saldo = montoCOP;
     const cuotaFija = pmt(r, totalCuotas, montoCOP);
@@ -124,7 +148,8 @@ module.exports = function createApp(dbPath) {
         fechaPago: getPayDate(fechaInicio, 1, diaPago),
         saldoInicial: Math.round(montoCOP), interesPeriodo: 0,
         abonoCapital: 0, cuotaTotal: Math.round(montoCOP),
-        saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: ''
+        saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
+        montoCOPRecibido: 0, montoUSDRecibido: 0
       });
       return rows;
     }
@@ -135,7 +160,7 @@ module.exports = function createApp(dbPath) {
       const isLast  = indefinido ? false : (i === totalCuotas - 1);
       let capital, cuota;
 
-      if (indefinido || modalidad === 'Solo Intereses') {
+      if (indefinido || modalidad === 'Intereses') {
         capital = isLast ? saldo : 0;
         cuota   = isLast ? Math.round((interes + saldo) * 100) / 100 : Math.round(interes * 100) / 100;
       } else {
@@ -150,7 +175,8 @@ module.exports = function createApp(dbPath) {
         saldoInicial: Math.round(saldo), interesPeriodo: Math.round(interes),
         abonoCapital: Math.round(capital), cuotaTotal: Math.round(cuota),
         saldoFinal: Math.round(saldoFinal),
-        estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: ''
+        estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
+        montoCOPRecibido: 0, montoUSDRecibido: 0
       });
       saldo = saldoFinal;
     }
@@ -159,15 +185,25 @@ module.exports = function createApp(dbPath) {
 
   const insPayment = db.prepare(`
     INSERT OR REPLACE INTO payments(id,prestamoId,nombreCliente,cuotaN,fechaPago,saldoInicial,
-      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones)
+      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido)
     VALUES (@id,@prestamoId,@nombreCliente,@cuotaN,@fechaPago,@saldoInicial,
-      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones)
+      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones,@montoCOPRecibido,@montoUSDRecibido)
   `);
   const insertSchedule = db.transaction(rows => rows.forEach(r => insPayment.run(r)));
 
   // ── Auto-mora al arrancar ─────────────────────────────────────────────────
   db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
     .run(new Date().toISOString().split('T')[0]);
+
+  // ── Corregir cuotas en mora de Prestamo: cuotaTotal debe = saldo actual (montoCOP) ──
+  // Solo para Prestamo (sin intereses, 1 cuota de capital). NO para Intereses (cuota = interés mensual fijo).
+  const fixPrestamos = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Prestamo'").all();
+  fixPrestamos.forEach(fl => {
+    db.prepare(`UPDATE payments SET cuotaTotal = ?, saldoFinal = 0
+      WHERE prestamoId = ? AND estadoPago = 'En Mora'
+      AND NOT (interesPeriodo = 0 AND abonoCapital > 0)`)
+      .run(fl.montoCOP, fl.id);
+  });
 
   // ── API: Recalcular cronogramas ───────────────────────────────────────────
   app.post('/api/recalculate', (_req, res) => {
@@ -182,11 +218,8 @@ module.exports = function createApp(dbPath) {
       prevRegulares.forEach(p => {
         db.prepare('DELETE FROM payments WHERE id = ?').run(p.id);
       });
-      // Recalcular saldo considerando abonos existentes
-      const totalAbonado = prevAbonos.filter(p => p.estadoPago === 'Pagado')
-        .reduce((s, p) => s + p.abonoCapital, 0);
-      const saldoActual = Math.max(0, loan.montoCOP - totalAbonado);
-      const schedule = buildSchedule({ ...loan, montoCOP: saldoActual });
+      // montoCOP ya tiene abonos descontados — NO restar de nuevo
+      const schedule = buildSchedule(loan);
       schedule.forEach(p => {
         const ex = prevRegulares.find(e => e.cuotaN === p.cuotaN);
         if (ex && ex.estadoPago !== 'Pendiente') {
@@ -202,6 +235,14 @@ module.exports = function createApp(dbPath) {
     // Re-aplicar auto-mora
     db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
       .run(new Date().toISOString().split('T')[0]);
+    // Fix cuotas en mora de Prestamo: cuotaTotal debe = saldo actual (montoCOP)
+    const fixP = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Prestamo'").all();
+    fixP.forEach(fl => {
+      db.prepare(`UPDATE payments SET cuotaTotal = ?, saldoFinal = 0
+        WHERE prestamoId = ? AND estadoPago = 'En Mora'
+        AND id NOT LIKE '%-ab-%'`)
+        .run(fl.montoCOP, fl.id);
+    });
     res.json({ ok: true, updated });
   });
 
@@ -230,6 +271,7 @@ module.exports = function createApp(dbPath) {
         @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas)
     `).run(loan);
     insertSchedule(buildSchedule(loan));
+    logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + (loan.moneda === 'USD' ? 'USD $' + loan.montoOrigen : '$' + Math.round(loan.montoCOP).toLocaleString()) + ' (' + loan.modalidad + ')');
     res.status(201).json(loan);
   });
 
@@ -268,26 +310,64 @@ module.exports = function createApp(dbPath) {
       }
     });
     insertSchedule(schedule);
+    logAction.run('edicion', 'Editaste prestamo de ' + loan.nombre);
     res.json(loan);
   });
 
   app.delete('/api/loans/:id', (req, res) => {
+    const loan = db.prepare('SELECT nombre, montoCOP FROM loans WHERE id = ?').get(req.params.id);
     db.prepare('DELETE FROM payments WHERE prestamoId = ?').run(req.params.id);
     db.prepare('DELETE FROM loans WHERE id = ?').run(req.params.id);
+    if (loan) logAction.run('eliminacion', 'Eliminaste prestamo de ' + loan.nombre);
     res.json({ ok: true });
   });
 
   // ── API: Payments ─────────────────────────────────────────────────────────
+  // Auto-extender cuotas de Intereses si faltan pocas pendientes
+  function autoExtendSoloIntereses() {
+    const hoy = new Date().toISOString().split('T')[0];
+    const activeIndefinidos = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Intereses'").all();
+    for (const loan of activeIndefinidos) {
+      const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN DESC').all(loan.id);
+      const regulares = allPays.filter(p => p.id.indexOf('-ab-') === -1);
+      const pendientes = regulares.filter(p => p.estadoPago === 'Pendiente' || p.estadoPago === 'En Mora');
+      // Si quedan menos de 3 cuotas pendientes/mora, generar más
+      const pendFuturas = regulares.filter(p => p.estadoPago === 'Pendiente');
+      if (pendFuturas.length < 3) {
+        const maxN = regulares.length > 0 ? Math.max(...regulares.map(p => p.cuotaN)) : 0;
+        const nextN = maxN + 1;
+        // Calcular saldo actual (considerando abonos)
+        const abonos = allPays.filter(p => p.id.indexOf('-ab-') !== -1 && p.estadoPago === 'Pagado');
+        const totalAbonado = abonos.reduce((s, p) => s + p.abonoCapital, 0);
+        const saldo = Math.max(0, loan.montoCOP - totalAbonado);
+        if (saldo > 0) {
+          const nuevas = buildSchedule({ ...loan, montoCOP: saldo }, nextN, saldo, 3);
+          // Solo insertar si no existen ya
+          nuevas.forEach(p => {
+            const exists = db.prepare('SELECT id FROM payments WHERE id = ?').get(p.id);
+            if (!exists) insPayment.run(p);
+          });
+        }
+      }
+    }
+  }
+
   app.get('/api/payments', (_req, res) => {
+    autoExtendSoloIntereses();
     db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
       .run(new Date().toISOString().split('T')[0]);
     res.json(db.prepare('SELECT * FROM payments ORDER BY fechaPago, nombreCliente').all());
   });
 
   app.put('/api/payments/:id', (req, res) => {
-    const { estadoPago, fechaRecaudo, observaciones, montoCOPRecibido } = req.body;
-    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=? WHERE id=?')
-      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, req.params.id);
+    const { estadoPago, fechaRecaudo, observaciones, montoCOPRecibido, montoUSDRecibido } = req.body;
+    const payBefore = db.prepare('SELECT * FROM payments WHERE id = ?').get(req.params.id);
+    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=? WHERE id=?')
+      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, montoUSDRecibido || 0, req.params.id);
+    if (payBefore) {
+      const label = estadoPago === 'Pagado' ? 'Registraste pago' : estadoPago === 'En Mora' ? 'Marcaste en mora' : 'Revertiste a pendiente';
+      logAction.run('pago', label + ': ' + payBefore.nombreCliente + ' cuota #' + payBefore.cuotaN + ' por $' + Math.round(payBefore.cuotaTotal).toLocaleString());
+    }
 
     // Auto-finalización: si se marcó como Pagado, verificar si todas las cuotas regulares están pagadas
     if (estadoPago === 'Pagado') {
@@ -319,7 +399,7 @@ module.exports = function createApp(dbPath) {
 
   // ── API: Abono a Capital ──────────────────────────────────────────────────
   app.post('/api/loans/:id/abono', (req, res) => {
-    const { monto, fecha, observaciones } = req.body;
+    const { monto, fecha, observaciones, montoUSD } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
 
@@ -342,6 +422,16 @@ module.exports = function createApp(dbPath) {
     // Solo borrar cuotas PENDIENTES; las cuotas En Mora permanecen intactas (deuda independiente)
     db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente'").run(req.params.id);
 
+    // Para Préstamo: actualizar cuotaTotal de cuotas En Mora al nuevo saldo
+    // (Intereses NO: su cuota en mora sigue siendo el interés mensual fijo)
+    if (loan.modalidad === 'Prestamo') {
+      const moraRegulares = allPays.filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+      moraRegulares.forEach(p => {
+        db.prepare('UPDATE payments SET cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
+          .run(Math.max(0, nuevoSaldo), 0, p.id);
+      });
+    }
+
     // Registrar el abono como cuota especial (no cuenta como cuota regular)
     const abonoId = req.params.id + '-ab-' + Date.now();
     const fechaAbono = fecha || new Date().toISOString().split('T')[0];
@@ -359,7 +449,8 @@ module.exports = function createApp(dbPath) {
       estadoPago: 'Pagado',
       fechaRecaudo: fechaAbono,
       observaciones: observaciones || 'Abono a capital',
-      montoCOPRecibido: Math.round(monto)
+      montoCOPRecibido: Math.round(monto),
+      montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0
     });
 
     if (nuevoSaldo <= 0) {
@@ -367,10 +458,9 @@ module.exports = function createApp(dbPath) {
     } else {
       db.prepare('UPDATE loans SET montoCOP = ? WHERE id = ?').run(nuevoSaldo, req.params.id);
 
-      // Calcular cuotas restantes respetando el plazo original
-      const indefinido = loan.modalidad === 'Solo Intereses';
-      const plazoOriginal = indefinido ? 120 : (loan.plazoMeses || 12);
-      const remaining = Math.max(0, plazoOriginal - regularConsumed);
+      // Calcular cuotas restantes
+      const indefinido = loan.modalidad === 'Intereses';
+      const remaining = indefinido ? 3 : Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
 
       if (remaining > 0) {
         // startN = siguiente cuota regular (continua la numeracion original)
@@ -381,7 +471,14 @@ module.exports = function createApp(dbPath) {
       }
     }
 
+    logAction.run('abono', 'Registraste abono de $' + Math.round(monto).toLocaleString() + ' a ' + loan.nombre + (nuevoSaldo <= 0 ? ' (SALDADO)' : ' — saldo: $' + Math.round(nuevoSaldo).toLocaleString()));
     res.json({ ok: true, nuevoSaldo: Math.max(0, nuevoSaldo) });
+  });
+
+  // ── API: Historial de acciones ────────────────────────────────────────────
+  app.get('/api/activity', (_req, res) => {
+    const rows = db.prepare('SELECT * FROM activity_log ORDER BY id DESC LIMIT 100').all();
+    res.json(rows);
   });
 
   return app;
