@@ -1,6 +1,6 @@
 {
   "name": "cartera-prestamos",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Gestión de cartera de préstamos personales",
   "main": "main.js",
   "scripts": {
@@ -52,7 +52,8 @@
     "publish": {
       "provider": "github",
       "owner": "xJp-P",
-      "repo": "cartera-prestamos"
+      "repo": "cartera-prestamos",
+      "releaseType": "release"
     },
     "directories": {
       "output": "dist"
