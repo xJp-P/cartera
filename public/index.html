@@ -168,12 +168,18 @@ function App(){
   var s18=useState(false); var needsRestart=s18[0]; var setNeedsRestart=s18[1];
   var s19=useState(function(){return localStorage.getItem('theme')||'dark';}); var theme=s19[0]; var setTheme=s19[1];
   var s20=useState([]); var actLog=s20[0]; var setActLog=s20[1];
+  var s21=useState(null); var globalUpdate=s21[0]; var setGlobalUpdate=s21[1];
   function toggleTheme(){
     var next=theme==='dark'?'light':'dark';
     setTheme(next);localStorage.setItem('theme',next);
     document.documentElement.setAttribute('data-theme',next);
   }
   useEffect(function(){document.documentElement.setAttribute('data-theme',theme);},[]);
+  useEffect(function(){
+    if(typeof window.electronAPI==='undefined'||!window.electronAPI.onUpdateStatus) return;
+    var unsub=window.electronAPI.onUpdateStatus(function(data){setGlobalUpdate(data);});
+    return unsub;
+  },[]);
   var toastTimer=React.useRef(null);
   function showToast(msg,type){
     type=type||'success';
@@ -409,6 +415,25 @@ function App(){
           return h('button',{key:id,className:'hmenu-item'+(view===id?' active':''),onClick:function(){navTo(id);}},
             h(Ico,{name:icon,size:18,color:view===id?'var(--green)':'var(--text3)'}),label);
         }))),
+    globalUpdate&&globalUpdate.status==='available'&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexShrink:0}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        h(Ico,{name:'download',size:16,color:'var(--green)'}),
+        h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'Nueva version v'+globalUpdate.version+' disponible')),
+      h('div',{style:{display:'flex',gap:8}},
+        h('button',{onClick:function(){window.electronAPI.downloadUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Descargar'),
+        h('button',{onClick:function(){setGlobalUpdate(null);},style:{background:'none',border:'none',cursor:'pointer',padding:4,display:'flex'}},
+          h(Ico,{name:'x',size:14,color:'var(--green)'})))),
+    globalUpdate&&globalUpdate.status==='downloading'&&h('div',{style:{background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexShrink:0}},
+      h(Ico,{name:'download',size:16,color:'var(--blue)'}),
+      h('div',{style:{flex:1}},
+        h('div',{style:{fontSize:12,color:'var(--blue)',fontWeight:600,marginBottom:4}},'Descargando actualizacion... '+(globalUpdate.percent||0)+'%'),
+        h('div',{style:{background:'var(--bg3)',borderRadius:6,height:5,overflow:'hidden'}},
+          h('div',{style:{width:(globalUpdate.percent||0)+'%',height:'100%',background:'var(--blue)',borderRadius:6,transition:'width .3s'}})))),
+    globalUpdate&&globalUpdate.status==='downloaded'&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexShrink:0}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        h(Ico,{name:'check',size:16,color:'var(--green)'}),
+        h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'v'+globalUpdate.version+' lista para instalar')),
+      h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reiniciar e instalar')),
     h('div',{style:{flex:1,overflowY:'auto',overflowX:'hidden'}},
       view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,onSync:recalculate,onNameClick:openDebtorByName}),
       view==='cartera'    && h(CarteraView,{loans:loans,pays:pays,onAdd:function(){setLoanModal('new');},onEdit:setLoanModal,onDelete:delLoan,onAbono:setAbonoModal}),
