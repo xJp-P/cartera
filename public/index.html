@@ -26,7 +26,7 @@
     --shadow:0 1px 6px rgba(0,0,0,.1);
   }
   .tooltip-wrap{position:relative}
-  .tooltip-box{display:none;position:absolute;left:50%;transform:translateX(-50%);top:24px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:11px;font-weight:400;color:var(--text2);width:260px;z-index:50;box-shadow:var(--shadow);line-height:1.5;white-space:normal}
+  .tooltip-box{display:none;position:absolute;left:0;bottom:24px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:11px;font-weight:400;color:var(--text2);width:260px;z-index:50;box-shadow:var(--shadow);line-height:1.5;white-space:normal}
   .tooltip-wrap:hover .tooltip-box{display:block}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
   html,body{height:100%;overflow:hidden;background:var(--bg)}
@@ -1203,8 +1203,9 @@ function CalcView(props){
       h('span',{style:{position:'relative',display:'inline-flex'},className:'tooltip-wrap'},
         h('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:'50%',border:'1.5px solid var(--text3)',fontSize:10,fontWeight:700,color:'var(--text3)',cursor:'help',lineHeight:1}},'i'),
         h('span',{className:'tooltip-box'},
-          h('b',null,'Intereses:'),' Solo pagas intereses mensuales. El capital se devuelve al final. Plazo indefinido.',h('br',null),h('br',null),
-          h('b',null,'Capital + Intereses:'),' Cuota fija mensual (amortizacion francesa). Cada cuota incluye intereses + parte del capital. Plazo fijo.')))},
+          h('b',null,'Intereses:'),' Solo paga intereses mensuales. El capital se devuelve al final. Plazo indefinido.',h('br',null),h('br',null),
+          h('b',null,'Capital + Intereses:'),' Cuota fija mensual (amortizacion francesa). Cada cuota incluye intereses + parte del capital. Plazo fijo.',h('br',null),h('br',null),
+          h('span',{style:{color:'var(--text3)',fontStyle:'italic'}},'En todas las modalidades se pueden hacer abonos a capital para reducir el saldo.'))))},
       h('select',{value:modalidad,onChange:function(e){setModalidad(e.target.value);},className:'inp'},
       h('option',null,'Intereses'),h('option',null,'Capital + Intereses'))),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
@@ -1402,9 +1403,10 @@ function LoanModal(props){
       h('span',{style:{position:'relative',display:'inline-flex'},className:'tooltip-wrap'},
         h('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:'50%',border:'1.5px solid var(--text3)',fontSize:10,fontWeight:700,color:'var(--text3)',cursor:'help',lineHeight:1}},'i'),
         h('span',{className:'tooltip-box'},
-          h('b',null,'Intereses:'),' Solo pagas intereses mensuales. El capital se devuelve al final. Plazo indefinido.',h('br',null),h('br',null),
+          h('b',null,'Intereses:'),' Solo paga intereses mensuales. El capital se devuelve al final. Plazo indefinido.',h('br',null),h('br',null),
           h('b',null,'Capital + Intereses:'),' Cuota fija mensual (amortizacion francesa). Cada cuota incluye intereses + parte del capital. Plazo fijo.',h('br',null),h('br',null),
-          h('b',null,'Prestamo:'),' Sin intereses. Se presta un monto y se paga en una sola cuota.')))},
+          h('b',null,'Prestamo:'),' Sin intereses. Se presta un monto y se paga en una sola cuota.',h('br',null),h('br',null),
+          h('span',{style:{color:'var(--text3)',fontStyle:'italic'}},'En todas las modalidades se pueden hacer abonos a capital para reducir el saldo.'))))},
       h('select',{value:f.modalidad,onChange:function(e){var m=e.target.value;set('modalidad',m);if(m==='Prestamo'){set('tasaMensual','0');set('plazoMeses','1');}},className:'inp'},
       h('option',null,'Intereses'),
       h('option',null,'Capital + Intereses'),
