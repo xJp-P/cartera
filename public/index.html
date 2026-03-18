@@ -25,6 +25,9 @@
     --yellow:#9a6700;--yellow-bg:#fff8c5;
     --shadow:0 1px 6px rgba(0,0,0,.1);
   }
+  .tooltip-wrap{position:relative}
+  .tooltip-box{display:none;position:absolute;left:50%;transform:translateX(-50%);top:24px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:11px;font-weight:400;color:var(--text2);width:260px;z-index:50;box-shadow:var(--shadow);line-height:1.5;white-space:normal}
+  .tooltip-wrap:hover .tooltip-box{display:block}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
   html,body{height:100%;overflow:hidden;background:var(--bg)}
   body{font-family:'Segoe UI',system-ui,sans-serif;display:flex;justify-content:center;align-items:stretch}
@@ -71,7 +74,7 @@
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)"><div class="spinner"></div></div></div>
 <script src="/vendor/react.js"></script>
 <script src="/vendor/react-dom.js"></script>
 <script>
@@ -195,7 +198,9 @@ function App(){
       .then(function(res){setLoans(res[0]);setPays(res[1]);setCfg(res[2]);setLoading(false);});
   },[]);
 
-  useEffect(function(){reload();},[reload]);
+  useEffect(function(){
+    API.post('/api/recalculate',{}).then(function(){return reload();});
+  },[reload]);
 
   var openPayModal=useCallback(function(p){
     var loan=null;
@@ -435,14 +440,14 @@ function App(){
         h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'v'+globalUpdate.version+' lista para instalar')),
       h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reiniciar e instalar')),
     h('div',{style:{flex:1,overflowY:'auto',overflowX:'hidden'}},
-      view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,onSync:recalculate,onNameClick:openDebtorByName}),
+      view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,onNameClick:openDebtorByName}),
       view==='cartera'    && h(CarteraView,{loans:loans,pays:pays,onAdd:function(){setLoanModal('new');},onEdit:setLoanModal,onDelete:delLoan,onAbono:setAbonoModal}),
       view==='deudores'   && h(DeudoresView,{deudores:deudores,pays:pays,onSelect:setDebtorModal,onAdd:function(){setLoanModal('new');}}),
       view==='pagos'      && h(PagosView,  {pays:filtPays,allPays:pays,loans:loans,searchQ:searchQ,setSearchQ:setSearchQ,fMonth:fMonth,setFMonth:setFMonth,onSelect:openPayModal,onQuickPay:quickPay,onNameClick:openDebtorByName}),
       view==='rendimiento'&& h(PortfolioView,{loans:loans,pays:pays}),
       view==='calculadora'&& h(CalcView,   {onConfirm:confirmarCalc}),
       view==='historial'   && h(HistorialView,{actLog:actLog,onRefresh:function(){fetch(API+'/activity').then(function(r){return r.json();}).then(setActLog);}}),
-      view==='desarrollador'&& h(DevView,  {showToast:showToast,onNeedsRestart:function(){setNeedsRestart(true);}})),
+      view==='desarrollador'&& h(DevView,  {showToast:showToast,onNeedsRestart:function(){setNeedsRestart(true);},onSync:recalculate})),
     loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
     payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,onMark:markPay,onClose:function(){setPayModal(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal,onSave:registrarAbono,onClose:function(){setAbonoModal(null);}}),
@@ -479,14 +484,8 @@ function App(){
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function DashView(props){
-  var metrics=props.metrics,isEmpty=props.isEmpty,onNav=props.onNav,loans=props.loans||[],onSync=props.onSync,onNameClick=props.onNameClick;
+  var metrics=props.metrics,isEmpty=props.isEmpty,onNav=props.onNav,loans=props.loans||[],onNameClick=props.onNameClick;
   var loanMap={};loans.forEach(function(l){loanMap[l.id]=l;});
-  var sy=useState(false); var syncing=sy[0]; var setSyncing=sy[1];
-  function doSync(){
-    setSyncing(true);
-    onSync();
-    setTimeout(function(){setSyncing(false);},1200);
-  }
   var pct=metrics.esperado>0?Math.round(metrics.recibido/metrics.esperado*100):0;
   var kpis=[
     {emoji:'\uD83D\uDCB0',label:'Cartera Activa',   val:fmt(metrics.totalCartera),          sub:metrics.activeCount+' prestamos',     color:'var(--green)'},
@@ -495,10 +494,6 @@ function DashView(props){
     {emoji:'\uD83D\uDEA8',label:'En Mora',           val:fmt(metrics.totalMora),             sub:metrics.mora.length+' cuotas',        color:'var(--red)',danger:metrics.mora.length>0}
   ];
   return h('div',{className:'fade-in',style:{padding:16,display:'flex',flexDirection:'column',gap:14}},
-    h('button',{onClick:doSync,disabled:syncing,style:{display:'flex',alignItems:'center',justifyContent:'center',gap:8,width:'100%',padding:'10px 0',background:syncing?'var(--green-bg)':'var(--bg2)',border:'1px solid '+(syncing?'var(--green-bd)':'var(--border)'),borderRadius:12,cursor:syncing?'default':'pointer',transition:'all .3s'}},
-      h('div',{style:{display:'flex',alignItems:'center',transition:'transform .6s',transform:syncing?'rotate(360deg)':'none'}},
-        h(Ico,{name:'refresh',size:16,color:syncing?'var(--green)':'var(--text2)',sw:2})),
-      h('span',{style:{fontSize:13,fontWeight:600,color:syncing?'var(--green)':'var(--text2)'}},syncing?'Sincronizando...':'Sincronizar datos')),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       kpis.map(function(k){
         return h('div',{key:k.label,style:{background:'var(--bg2)',borderRadius:14,padding:'13px 13px 11px',border:'1px solid '+(k.danger?'var(--red-bd)':'var(--border)'),boxShadow:'var(--shadow)'}},
@@ -1204,7 +1199,13 @@ function CalcView(props){
     h(Fld,{label:'Valor del prestamo ('+(moneda)+') *'},
       h('input',{type:'number',value:monto,onChange:function(e){setMonto(e.target.value);},placeholder:moneda==='USD'?'Ej: 1000':'Ej: 5000000',className:'inp'})),
     moneda==='USD'&&monto&&trmCalc&&h('div',{style:{fontSize:12,color:'var(--blue)',marginTop:2,marginBottom:14,paddingLeft:4}},'Equivalente COP: '+fmt(montoCOP)),
-    h(Fld,{label:'Modalidad'},h('select',{value:modalidad,onChange:function(e){setModalidad(e.target.value);},className:'inp'},
+    h(Fld,{label:h('span',{style:{display:'flex',alignItems:'center',gap:6}},'Modalidad',
+      h('span',{style:{position:'relative',display:'inline-flex'},className:'tooltip-wrap'},
+        h('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:'50%',border:'1.5px solid var(--text3)',fontSize:10,fontWeight:700,color:'var(--text3)',cursor:'help',lineHeight:1}},'i'),
+        h('span',{className:'tooltip-box'},
+          h('b',null,'Intereses:'),' Solo pagas intereses mensuales. El capital se devuelve al final. Plazo indefinido.',h('br',null),h('br',null),
+          h('b',null,'Capital + Intereses:'),' Cuota fija mensual (amortizacion francesa). Cada cuota incluye intereses + parte del capital. Plazo fijo.')))},
+      h('select',{value:modalidad,onChange:function(e){setModalidad(e.target.value);},className:'inp'},
       h('option',null,'Intereses'),h('option',null,'Capital + Intereses'))),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Tasa mensual (%) *'},h('input',{type:'number',step:'0.01',value:tasa,onChange:function(e){setTasa(e.target.value);},placeholder:'Ej: 2',className:'inp'})),
@@ -1397,7 +1398,14 @@ function LoanModal(props){
     f.moneda==='USD'&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD)'},
       h('input',{type:'number',value:f.trmAcordada,onChange:function(e){set('trmAcordada',e.target.value);},className:'inp'}),
       h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP))),
-    h(Fld,{label:'Modalidad'},h('select',{value:f.modalidad,onChange:function(e){var m=e.target.value;set('modalidad',m);if(m==='Prestamo'){set('tasaMensual','0');set('plazoMeses','1');}},className:'inp'},
+    h(Fld,{label:h('span',{style:{display:'flex',alignItems:'center',gap:6}},'Modalidad',
+      h('span',{style:{position:'relative',display:'inline-flex'},className:'tooltip-wrap'},
+        h('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:'50%',border:'1.5px solid var(--text3)',fontSize:10,fontWeight:700,color:'var(--text3)',cursor:'help',lineHeight:1}},'i'),
+        h('span',{className:'tooltip-box'},
+          h('b',null,'Intereses:'),' Solo pagas intereses mensuales. El capital se devuelve al final. Plazo indefinido.',h('br',null),h('br',null),
+          h('b',null,'Capital + Intereses:'),' Cuota fija mensual (amortizacion francesa). Cada cuota incluye intereses + parte del capital. Plazo fijo.',h('br',null),h('br',null),
+          h('b',null,'Prestamo:'),' Sin intereses. Se presta un monto y se paga en una sola cuota.')))},
+      h('select',{value:f.modalidad,onChange:function(e){var m=e.target.value;set('modalidad',m);if(m==='Prestamo'){set('tasaMensual','0');set('plazoMeses','1');}},className:'inp'},
       h('option',null,'Intereses'),
       h('option',null,'Capital + Intereses'),
       h('option',null,'Prestamo'))),
@@ -1468,6 +1476,7 @@ function HistorialView(props){
 function DevView(props){
   var showToast=props.showToast;
   var onNeedsRestart=props.onNeedsRestart;
+  var onSync=props.onSync;
   var s1=useState(''); var dbPath=s1[0]; var setDbPath=s1[1];
   var s2=useState(false); var loading=s2[0]; var setLoading=s2[1];
   var s3=useState(''); var appVersion=s3[0]; var setAppVersion=s3[1];
@@ -1585,7 +1594,15 @@ function DevView(props){
       updateInfo.status==='error'?
         h('div',null,
           h('div',{style:{fontSize:12,color:'var(--red)',marginBottom:10}},'Error: '+(updateInfo.message||'No se pudo verificar')),
-          h('button',{onClick:function(){if(hasAPI)window.electronAPI.checkForUpdates();setUpdateInfo({status:'checking'});},style:{background:'var(--bg3)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reintentar')):null));
+          h('button',{onClick:function(){if(hasAPI)window.electronAPI.checkForUpdates();setUpdateInfo({status:'checking'});},style:{background:'var(--bg3)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reintentar')):null),
+
+    h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
+        h(Ico,{name:'refresh',size:18,color:'var(--yellow)'}),
+        h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Sincronizar datos')),
+      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:12}},'Recalcula todos los cronogramas activos. Se ejecuta automaticamente al abrir la app. Usa este boton solo si notas inconsistencias.'),
+      h('button',{onClick:function(){onSync();showToast('Cronogramas recalculados');},style:{background:'var(--bg3)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
+        h(Ico,{name:'refresh',size:13,color:'var(--text2)'}),'Sincronizar manualmente')));
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────────
