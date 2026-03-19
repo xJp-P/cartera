@@ -82,6 +82,8 @@ module.exports = function createApp(dbPath) {
   try { db.exec('ALTER TABLE payments ADD COLUMN montoUSDRecibido REAL DEFAULT 0'); } catch(_){}
   // Renombrar modalidad legacy
   try { db.exec("UPDATE loans SET modalidad = 'Intereses' WHERE modalidad = 'Solo Intereses'"); } catch(_){}
+  // Migración: frecuencia de pago
+  try { db.exec("ALTER TABLE loans ADD COLUMN frecuencia TEXT DEFAULT 'Mensual'"); } catch(_){}
 
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
@@ -101,12 +103,28 @@ module.exports = function createApp(dbPath) {
     return pv * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1);
   }
 
-  function getPayDate(startISO, mo, diaPago) {
+  function getPayDate(startISO, cuotaN, diaPago, frecuencia) {
     const d = new Date(startISO + 'T12:00:00');
-    d.setDate(1); // evitar desbordamiento de mes en JS (ej: Jan 30 + Feb = Mar 2)
-    d.setMonth(d.getMonth() + mo);
+    if (frecuencia === 'Semanal') {
+      d.setDate(d.getDate() + cuotaN * 7);
+      return d.toISOString().split('T')[0];
+    }
+    if (frecuencia === 'Quincenal') {
+      d.setDate(d.getDate() + cuotaN * 14);
+      return d.toISOString().split('T')[0];
+    }
+    // Mensual (default)
+    d.setDate(1);
+    d.setMonth(d.getMonth() + cuotaN);
     d.setDate(Math.min(diaPago, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
     return d.toISOString().split('T')[0];
+  }
+
+  // Convertir tasa mensual a tasa del período según frecuencia
+  function tasaPeriodo(tasaMensual, frecuencia) {
+    if (frecuencia === 'Semanal') return tasaMensual / 4.33;
+    if (frecuencia === 'Quincenal') return tasaMensual / 2;
+    return tasaMensual; // Mensual
   }
 
   /**
@@ -118,23 +136,28 @@ module.exports = function createApp(dbPath) {
    *
    * startN tambien determina el offset de fecha: cuotaN=5 => mes 5 desde fechaInicio
    */
-  // Para Intereses: calcular cuántas cuotas generar hasta N meses adelante de hoy
-  function cuotasHastaHoy(fechaInicio, startN, mesesAdelante) {
+  // Para Intereses: calcular cuántas cuotas generar hasta N períodos adelante de hoy
+  function cuotasHastaHoy(fechaInicio, startN, periodosAdelante, frecuencia) {
     const hoy = new Date();
     const inicio = new Date(fechaInicio + 'T12:00:00');
-    // Meses transcurridos desde inicio hasta hoy + margen
     const diffMs = hoy - inicio;
-    const mesesDesdeInicio = Math.ceil(diffMs / (30.44 * 24 * 60 * 60 * 1000)) + mesesAdelante;
-    return Math.max(3, mesesDesdeInicio - startN + 1);
+    const diasDiff = diffMs / (24 * 60 * 60 * 1000);
+    var periodosDesdeInicio;
+    if (frecuencia === 'Semanal') periodosDesdeInicio = Math.ceil(diasDiff / 7);
+    else if (frecuencia === 'Quincenal') periodosDesdeInicio = Math.ceil(diasDiff / 14);
+    else periodosDesdeInicio = Math.ceil(diasDiff / 30.44);
+    periodosDesdeInicio += periodosAdelante;
+    return Math.max(3, periodosDesdeInicio - startN + 1);
   }
 
   function buildSchedule(loan, startN, startSaldo, numCuotas) {
     startN = startN || 1;
     const { id, nombre, tasaMensual, modalidad, fechaInicio, diaPago } = loan;
+    const freq = loan.frecuencia || 'Mensual';
     const montoCOP = startSaldo !== undefined ? startSaldo : loan.montoCOP;
     const indefinido = modalidad === 'Intereses';
-    const totalCuotas = numCuotas !== undefined ? numCuotas : (indefinido ? cuotasHastaHoy(fechaInicio, startN, 3) : (loan.plazoMeses || 12));
-    const r = tasaMensual / 100;
+    const totalCuotas = numCuotas !== undefined ? numCuotas : (indefinido ? cuotasHastaHoy(fechaInicio, startN, 3, freq) : (loan.plazoMeses || 12));
+    const r = tasaPeriodo(tasaMensual / 100, freq);
     let saldo = montoCOP;
     const cuotaFija = pmt(r, totalCuotas, montoCOP);
     const rows = [];
@@ -145,7 +168,7 @@ module.exports = function createApp(dbPath) {
     if (modalidad === 'Prestamo') {
       rows.push({
         id: `${id}-1`, prestamoId: id, nombreCliente: nombre, cuotaN: 1,
-        fechaPago: getPayDate(fechaInicio, 1, diaPago),
+        fechaPago: getPayDate(fechaInicio, 1, diaPago, freq),
         saldoInicial: Math.round(montoCOP), interesPeriodo: 0,
         abonoCapital: 0, cuotaTotal: Math.round(montoCOP),
         saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
@@ -171,7 +194,7 @@ module.exports = function createApp(dbPath) {
       const saldoFinal = Math.max(0, Math.round((saldo - capital) * 100) / 100);
       rows.push({
         id: `${id}-${cuotaN}`, prestamoId: id, nombreCliente: nombre, cuotaN: cuotaN,
-        fechaPago: getPayDate(fechaInicio, cuotaN, diaPago),
+        fechaPago: getPayDate(fechaInicio, cuotaN, diaPago, freq),
         saldoInicial: Math.round(saldo), interesPeriodo: Math.round(interes),
         abonoCapital: Math.round(capital), cuotaTotal: Math.round(cuota),
         saldoFinal: Math.round(saldoFinal),
@@ -266,9 +289,9 @@ module.exports = function createApp(dbPath) {
     const loan = { ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
     db.prepare(`
       INSERT INTO loans(id,nombre,cedula,telefono,moneda,montoOrigen,trmAcordada,montoCOP,
-        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas)
+        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia)
       VALUES (@id,@nombre,@cedula,@telefono,@moneda,@montoOrigen,@trmAcordada,@montoCOP,
-        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas)
+        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia)
     `).run(loan);
     insertSchedule(buildSchedule(loan));
     logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + (loan.moneda === 'USD' ? 'USD $' + loan.montoOrigen : '$' + Math.round(loan.montoCOP).toLocaleString()) + ' (' + loan.modalidad + ')');
@@ -281,7 +304,7 @@ module.exports = function createApp(dbPath) {
       UPDATE loans SET nombre=@nombre, cedula=@cedula, telefono=@telefono, moneda=@moneda,
         montoOrigen=@montoOrigen, trmAcordada=@trmAcordada, montoCOP=@montoCOP,
         tasaMensual=@tasaMensual, plazoMeses=@plazoMeses, modalidad=@modalidad,
-        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas
+        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia
       WHERE id=@id
     `).run(loan);
 
