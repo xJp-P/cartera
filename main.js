@@ -24,9 +24,22 @@ const defaultDB = app.isPackaged
   ? path.join(app.getPath('userData'), 'cartera.db')
   : path.join(__dirname, 'cartera.db');
 
-const DB_PATH = prefs.dbPath && fs.existsSync(path.dirname(prefs.dbPath))
-  ? prefs.dbPath
-  : defaultDB;
+let DB_PATH = defaultDB;
+let dbError = null;
+
+if (prefs.dbPath) {
+  if (fs.existsSync(prefs.dbPath)) {
+    DB_PATH = prefs.dbPath;
+  } else if (fs.existsSync(path.dirname(prefs.dbPath))) {
+    // La carpeta existe pero el archivo no
+    DB_PATH = prefs.dbPath;
+    dbError = 'No se encontro la base de datos en:\n' + prefs.dbPath + '\n\nSe creara una nueva base de datos en esa ubicacion.';
+  } else {
+    // La carpeta no existe (USB desconectado, iCloud inaccesible, etc.)
+    dbError = 'No se puede acceder a la carpeta:\n' + path.dirname(prefs.dbPath) + '\n\nSe usara la base de datos local por defecto.';
+    DB_PATH = defaultDB;
+  }
+}
 
 // ── Limpiar BD anterior si quedó pendiente de borrar ──────────────────────
 if (prefs.pendingDelete && prefs.pendingDelete !== DB_PATH && fs.existsSync(prefs.pendingDelete)) {
@@ -50,9 +63,15 @@ function waitForServer(url, retries = 30, delay = 300) {
   });
 }
 
-const expressApp = require('./server')(DB_PATH);
-const server     = http.createServer(expressApp);
-server.listen(PORT, '127.0.0.1');
+let expressApp, server;
+let serverError = null;
+try {
+  expressApp = require('./server')(DB_PATH);
+  server = http.createServer(expressApp);
+  server.listen(PORT, '127.0.0.1');
+} catch(err) {
+  serverError = 'Error al iniciar el servidor:\n' + err.message;
+}
 
 // ── IPC: Desarrollador ───────────────────────────────────────────────────
 ipcMain.handle('get-db-path', () => DB_PATH);
@@ -67,37 +86,49 @@ ipcMain.handle('pick-db-folder', async () => {
 });
 
 ipcMain.handle('set-db-path', (_e, newFolder) => {
-  const newPath = path.join(newFolder, 'cartera.db');
-  const destExists = fs.existsSync(newPath);
-  if (newPath !== DB_PATH && !destExists && fs.existsSync(DB_PATH)) {
-    // Solo copiar si el destino NO tiene BD aún
-    fs.copyFileSync(DB_PATH, newPath);
+  try {
+    const newPath = path.join(newFolder, 'cartera.db');
+    const destExists = fs.existsSync(newPath);
+    if (newPath !== DB_PATH && !destExists && fs.existsSync(DB_PATH)) {
+      fs.copyFileSync(DB_PATH, newPath);
+    }
+    const p = loadPrefs();
+    p.dbPath = newPath;
+    p.pendingDelete = (newPath !== DB_PATH && !destExists) ? DB_PATH : null;
+    savePrefs(p);
+    return { ok: true, path: newPath };
+  } catch(err) {
+    return { ok: false, error: 'Error al mover la base de datos:\n' + err.message };
   }
-  const p = loadPrefs();
-  p.dbPath = newPath;
-  // Solo borrar la BD original si la copiamos nosotros (no si el destino ya existía)
-  p.pendingDelete = (newPath !== DB_PATH && !destExists) ? DB_PATH : null;
-  savePrefs(p);
-  return newPath;
 });
 
 ipcMain.handle('reset-db-path', () => {
-  const cur = loadPrefs();
-  const oldPath = cur.dbPath;
-  // Copiar BD de vuelta a la ruta por defecto
-  if (oldPath && fs.existsSync(oldPath) && oldPath !== defaultDB) {
-    fs.copyFileSync(oldPath, defaultDB);
+  try {
+    const cur = loadPrefs();
+    const oldPath = cur.dbPath;
+    if (oldPath && fs.existsSync(oldPath) && oldPath !== defaultDB) {
+      fs.copyFileSync(oldPath, defaultDB);
+    }
+    delete cur.dbPath;
+    cur.pendingDelete = oldPath && oldPath !== defaultDB ? oldPath : null;
+    savePrefs(cur);
+    return { ok: true, path: defaultDB };
+  } catch(err) {
+    return { ok: false, error: 'Error al restaurar la base de datos:\n' + err.message };
   }
-  // Guardar prefs: borrar dbPath + marcar pendingDelete
-  delete cur.dbPath;
-  cur.pendingDelete = oldPath && oldPath !== defaultDB ? oldPath : null;
-  savePrefs(cur);
-  return defaultDB;
 });
 
 ipcMain.handle('relaunch-app', () => {
   app.relaunch();
   app.quit();
+});
+
+// ── IPC: Errores de arranque ─────────────────────────────────────────────
+ipcMain.handle('get-startup-errors', () => {
+  const errors = [];
+  if (dbError) errors.push({ type: 'db', message: dbError });
+  if (serverError) errors.push({ type: 'server', message: serverError });
+  return errors;
 });
 
 // ── Ventana principal ─────────────────────────────────────────────────────
@@ -117,11 +148,18 @@ async function createWindow() {
 
   win.setMenu(null);
 
-  await waitForServer(`http://127.0.0.1:${PORT}/`);
-  await win.loadURL(`http://127.0.0.1:${PORT}`);
-  win.show();
+  try {
+    await waitForServer(`http://127.0.0.1:${PORT}/`);
+    await win.loadURL(`http://127.0.0.1:${PORT}`);
+  } catch(err) {
+    // Si el servidor no arrancó, mostrar error nativo
+    dialog.showErrorBox('Error de arranque', 'El servidor interno no pudo iniciar.\n\n' + err.message + '\n\nLa aplicacion se cerrara.');
+    app.quit();
+    return null;
+  }
 
-  win.on('closed', () => { server.close(); app.quit(); });
+  win.show();
+  win.on('closed', () => { if (server) server.close(); app.quit(); });
   return win;
 }
 
@@ -176,9 +214,10 @@ ipcMain.handle('get-app-version', () => app.getVersion());
 
 app.whenReady().then(async () => {
   mainWin = await createWindow();
+  if (!mainWin) return;
   // Chequear updates 3s después de arrancar
   if (app.isPackaged) {
     setTimeout(() => autoUpdater.checkForUpdates(), 3000);
   }
 });
-app.on('window-all-closed', () => { server.close(); app.quit(); });
+app.on('window-all-closed', () => { if (server) server.close(); app.quit(); });

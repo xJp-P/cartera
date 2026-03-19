@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDbPath:   (folder) => ipcRenderer.invoke('set-db-path', folder),
   resetDbPath: () => ipcRenderer.invoke('reset-db-path'),
   relaunch:    () => ipcRenderer.invoke('relaunch-app'),
+  getStartupErrors: () => ipcRenderer.invoke('get-startup-errors'),
   // Auto-updater
   getAppVersion:   () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),

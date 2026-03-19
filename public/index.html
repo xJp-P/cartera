@@ -86,11 +86,22 @@ var useMemo = React.useMemo;
 var useCallback = React.useCallback;
 var createRoot = ReactDOM.createRoot;
 
+// Variable global para mostrar errores en la UI (se setea desde App)
+var _showError = null;
+function handleApiError(err) {
+  var msg = err && err.message ? err.message : 'Error de conexion con el servidor';
+  if (_showError) _showError(msg);
+  else console.error(msg);
+}
+function handleRes(r) {
+  if (!r.ok) return r.text().then(function(t) { try { var j=JSON.parse(t); throw new Error(j.error||'Error del servidor'); } catch(e) { if(e.message) throw e; throw new Error('Error del servidor ('+r.status+')'); }});
+  return r.json();
+}
 var API = {
-  get:  function(url)   { return fetch(url).then(function(r){return r.json();}); },
-  post: function(url,b) { return fetch(url,{method:'POST',  headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json();}); },
-  put:  function(url,b) { return fetch(url,{method:'PUT',   headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json();}); },
-  del:  function(url)   { return fetch(url,{method:'DELETE'}).then(function(r){return r.json();}); }
+  get:  function(url)   { return fetch(url).then(handleRes).catch(function(e){handleApiError(e);return null;}); },
+  post: function(url,b) { return fetch(url,{method:'POST',  headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(handleRes).catch(function(e){handleApiError(e);return null;}); },
+  put:  function(url,b) { return fetch(url,{method:'PUT',   headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(handleRes).catch(function(e){handleApiError(e);return null;}); },
+  del:  function(url)   { return fetch(url,{method:'DELETE'}).then(handleRes).catch(function(e){handleApiError(e);return null;}); }
 };
 
 function pmt(r,n,pv){ return r===0?pv/n:pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1); }
@@ -255,6 +266,18 @@ function App(){
   var s20=useState([]); var actLog=s20[0]; var setActLog=s20[1];
   var s21=useState(null); var globalUpdate=s21[0]; var setGlobalUpdate=s21[1];
   var s22=useState(null); var confirmDlg=s22[0]; var setConfirmDlg=s22[1];
+  var s24=useState(null); var errorDlg=s24[0]; var setErrorDlg=s24[1];
+  // Conectar _showError global para errores de API
+  _showError = function(msg){ showToast(msg, 'error'); };
+  // Chequear errores de arranque
+  useEffect(function(){
+    if(typeof window.electronAPI==='undefined'||!window.electronAPI.getStartupErrors) return;
+    window.electronAPI.getStartupErrors().then(function(errs){
+      if(errs && errs.length > 0) {
+        setErrorDlg({title:'Aviso al iniciar', messages: errs.map(function(e){return e.message;})});
+      }
+    });
+  },[]);
   function toggleTheme(){
     var next=theme==='dark'?'light':'dark';
     setTheme(next);localStorage.setItem('theme',next);
@@ -277,6 +300,12 @@ function App(){
       'Changelog: resumen de novedades al actualizar',
       'Sincronizar datos re-lee la BD completa',
       'Boton de sincronizar movido a Desarrollador'
+    ],
+    '1.2.9': [
+      'Manejo de errores: alertas integradas en la app',
+      'Errores de arranque: aviso si la BD no se encuentra',
+      'Historial de acciones corregido',
+      'Todos los alert() nativos reemplazados por toasts'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -303,7 +332,12 @@ function App(){
 
   var reload=useCallback(function(){
     return Promise.all([API.get('/api/loans'),API.get('/api/payments'),API.get('/api/config')])
-      .then(function(res){setLoans(res[0]);setPays(res[1]);setCfg(res[2]);setLoading(false);});
+      .then(function(res){
+        if(res[0]) setLoans(res[0]);
+        if(res[1]) setPays(res[1]);
+        if(res[2]) setCfg(res[2]);
+        setLoading(false);
+      });
   },[]);
 
   useEffect(function(){
@@ -339,11 +373,11 @@ function App(){
   },[reload,loans]);
   function doSaveLoan(data){
     var p=data.id?API.put('/api/loans/'+data.id,data):API.post('/api/loans',data);
-    return p.then(function(){return reload();}).then(function(){setLoanModal(null);showToast(data.id?'Prestamo actualizado':'Prestamo creado');});
+    return p.then(function(r){if(!r)return;return reload();}).then(function(){setLoanModal(null);showToast(data.id?'Prestamo actualizado':'Prestamo creado');});
   }
 
   var delLoan=useCallback(function(id){
-    setConfirmDlg({title:'Eliminar prestamo',message:'Se eliminara el prestamo y todo su cronograma de pagos. Esta accion no se puede deshacer.',okLabel:'Eliminar',okColor:'#b91c1c',onConfirm:function(){setConfirmDlg(null);API.del('/api/loans/'+id).then(function(){reload();showToast('Prestamo eliminado','error');});}});
+    setConfirmDlg({title:'Eliminar prestamo',message:'Se eliminara el prestamo y todo su cronograma de pagos. Esta accion no se puede deshacer.',okLabel:'Eliminar',okColor:'#b91c1c',onConfirm:function(){setConfirmDlg(null);API.del('/api/loans/'+id).then(function(r){if(!r)return;reload();showToast('Prestamo eliminado','error');});}});
   },[reload]);
 
   var recalculate=useCallback(function(){
@@ -355,7 +389,7 @@ function App(){
   var markPay=useCallback(function(id,status,fecha,obs,copRecibido,usdRecibido){
     fecha=fecha||null; obs=obs||''; copRecibido=copRecibido||0; usdRecibido=usdRecibido||0;
     API.put('/api/payments/'+id,{estadoPago:status,fechaRecaudo:status==='Pagado'?(fecha||nowStr()):null,observaciones:obs,montoCOPRecibido:copRecibido,montoUSDRecibido:usdRecibido})
-      .then(function(){return reload();}).then(function(){setPayModal(null);showToast(status==='Pagado'?'Pago registrado':status==='En Mora'?'Marcado en mora':'Estado actualizado');});
+      .then(function(r){if(!r)return;return reload();}).then(function(){setPayModal(null);showToast(status==='Pagado'?'Pago registrado':status==='En Mora'?'Marcado en mora':'Estado actualizado');});
   },[reload]);
 
   var confirmarCalc=useCallback(function(data){
@@ -367,7 +401,8 @@ function App(){
   var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD){
     API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0})
       .then(function(r){
-        if(r.error){alert(r.error);return;}
+        if(!r)return;
+        if(r.error){showToast(r.error,'error');return;}
         reload(); setAbonoModal(null); showToast('Abono registrado');
       });
   },[reload]);
@@ -507,7 +542,7 @@ function App(){
 
   function navTo(id){
     setView(id);setMenuOpen(false);
-    if(id==='historial') fetch(API+'/activity').then(function(r){return r.json();}).then(setActLog);
+    if(id==='historial') fetch('/api/activity').then(function(r){return r.json();}).then(setActLog);
   }
 
   return h('div',{style:{display:'flex',flexDirection:'column',height:'100vh',background:'var(--bg)',overflow:'hidden'}},
@@ -563,7 +598,7 @@ function App(){
       view==='pagos'      && h(PagosView,  {pays:filtPays,allPays:pays,loans:loans,searchQ:searchQ,setSearchQ:setSearchQ,fMonth:fMonth,setFMonth:setFMonth,onSelect:openPayModal,onQuickPay:quickPay,onNameClick:openDebtorByName}),
       view==='rendimiento'&& h(PortfolioView,{loans:loans,pays:pays}),
       view==='calculadora'&& h(CalcView,   {onConfirm:confirmarCalc}),
-      view==='historial'   && h(HistorialView,{actLog:actLog,onRefresh:function(){fetch(API+'/activity').then(function(r){return r.json();}).then(setActLog);}}),
+      view==='historial'   && h(HistorialView,{actLog:actLog,onRefresh:function(){fetch('/api/activity').then(function(r){return r.json();}).then(function(data){setActLog(data);showToast('Historial actualizado');});}}),
       view==='desarrollador'&& h(DevView,  {showToast:showToast,onNeedsRestart:function(){setNeedsRestart(true);},onSync:recalculate,onConfirm:function(cfg){setConfirmDlg(cfg);}})),
     loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
     payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onClose:function(){setPayModal(null);}}),
@@ -583,6 +618,17 @@ function App(){
               h('span',null,item));
           })),
         h('button',{onClick:function(){setChangelogDlg(null);},style:{width:'100%',padding:'10px 0',background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer'}},'Entendido'))),
+    errorDlg&&h('div',{className:'modal-overlay',onClick:function(){setErrorDlg(null);}},
+      h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:400}},
+        h('div',{className:'modal-handle'}),
+        h('div',{style:{textAlign:'center',marginBottom:14}},
+          h('div',{style:{fontSize:28,marginBottom:6}},'\u26A0\uFE0F'),
+          h('div',{style:{fontWeight:700,fontSize:17,color:'var(--yellow)'}},errorDlg.title||'Error')),
+        h('div',{style:{marginBottom:16}},
+          errorDlg.messages.map(function(msg,i){
+            return h('div',{key:i,style:{padding:'8px 12px',marginBottom:6,background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:8,fontSize:13,color:'var(--text)',whiteSpace:'pre-wrap'}},msg);
+          })),
+        h('button',{onClick:function(){setErrorDlg(null);},style:{width:'100%',padding:'10px 0',background:'var(--bg4)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer'}},'Entendido'))),
     gSearch&&h('div',{className:'gsearch-overlay',onClick:closeGSearch},
       h('div',{className:'gsearch-box',onClick:function(e){e.stopPropagation();}},
         h('div',{style:{position:'relative'}},
@@ -1347,7 +1393,7 @@ function CalcView(props){
   function limpiar(){setMonto('');setModalidad('Intereses');setTasa('');setPlazo('');setShowCrono(false);setMoneda('COP');setTrmCalc('');}
 
   function confirmar(){
-    if(!sim){alert('Ingresa datos validos para simular');return;}
+    if(!sim){_showError('Ingresa datos validos para simular');return;}
     var data={montoOrigen:+monto,modalidad:modalidad,tasaMensual:+tasa,plazoMeses:+plazo||12};
     if(moneda==='USD'){data.moneda='USD';data.trmAcordada=+trmCalc||1;}
     onConfirm(data);
@@ -1469,7 +1515,7 @@ function PayModal(props){
       h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--green)',cursor:'pointer'}}),
       'Generar recibo de pago'),
     h('div',{style:{display:'flex',gap:8,marginTop:14}},
-      pay.estadoPago!=='Pagado'    &&h(ABtn,{color:'var(--green2)',onClick:function(){if(esUSD&&(!copRec||+copRec<=0)){alert('Ingresa el monto COP recibido para prestamos en USD');return;}if(genRecibo){generateRecibo(pay,loan,+copRec||pay.cuotaTotal,+usdRec||0,allPays);}onMark(pay.id,'Pagado',fecha,obs,+copRec||0,+usdRec||0);},icon:'check', label:'Pagado'}),
+      pay.estadoPago!=='Pagado'    &&h(ABtn,{color:'var(--green2)',onClick:function(){if(esUSD&&(!copRec||+copRec<=0)){_showError('Ingresa el monto COP recibido para prestamos en USD');return;}if(genRecibo){generateRecibo(pay,loan,+copRec||pay.cuotaTotal,+usdRec||0,allPays);}onMark(pay.id,'Pagado',fecha,obs,+copRec||0,+usdRec||0);},icon:'check', label:'Pagado'}),
       pay.estadoPago!=='En Mora'   &&h(ABtn,{color:'#b91c1c',     onClick:function(){onMark(pay.id,'En Mora',  null, obs,0,0);},         icon:'alert', label:'En Mora'}),
       pay.estadoPago!=='Pendiente' &&h(ABtn,{color:'var(--bg4)',   onClick:function(){onMark(pay.id,'Pendiente',null, obs,0,0);},         icon:'clock', label:'Pendiente'})));
 }
@@ -1485,8 +1531,8 @@ function AbonoModal(props){
   var saldoTras=loan.montoCOP-(+monto||0);
   var saldoUSDTras=esUSD?(loan.montoCOP-(+monto||0))/loan.trmAcordada:0;
   function submit(){
-    if(!monto||+monto<=0){alert('Ingresa un monto valido');return;}
-    if(+monto>loan.montoCOP){alert('El abono supera el saldo: '+fmt(loan.montoCOP));return;}
+    if(!monto||+monto<=0){_showError('Ingresa un monto valido');return;}
+    if(+monto>loan.montoCOP){_showError('El abono supera el saldo: '+fmt(loan.montoCOP));return;}
     onSave(loan.id,+monto,fecha,obs,+montoUSD||0);
   }
   // Auto-calcular COP cuando llenan USD
@@ -1550,7 +1596,7 @@ function LoanModal(props){
     if(!f.nombre.trim()) errores.push('Nombre');
     if(!f.montoOrigen||+f.montoOrigen<=0) errores.push('Monto');
     if(needsPlazo&&(!f.plazoMeses||+f.plazoMeses<=0)) errores.push('Plazo');
-    if(errores.length>0){alert('Falta completar: '+errores.join(', '));return;}
+    if(errores.length>0){_showError('Falta completar: '+errores.join(', '));return;}
     var esPrestamo=f.modalidad==='Prestamo';
     var base=isNew?{}:(loan||{});
     onSave(Object.assign({},base,f,{montoOrigen:+f.montoOrigen,trmAcordada:+f.trmAcordada,montoCOP:montoCOP,tasaMensual:esPrestamo?0:(+f.tasaMensual||0),plazoMeses:esPrestamo?1:(+f.plazoMeses||0),diaPago:+f.diaPago}));
@@ -1666,20 +1712,29 @@ function DevView(props){
     setLoading(true);
     window.electronAPI.pickDbFolder().then(function(folder){
       if(!folder){setLoading(false);return;}
-      return window.electronAPI.setDbPath(folder).then(function(newPath){
-        setDbPath(newPath);
-        setLoading(false);
-        onNeedsRestart();
+      return window.electronAPI.setDbPath(folder).then(function(res){
+        if(res && res.ok){
+          setDbPath(res.path);
+          setLoading(false);
+          onNeedsRestart();
+        } else {
+          setLoading(false);
+          if(_showError) _showError(res && res.error ? res.error : 'Error al mover la base de datos');
+        }
       });
-    }).catch(function(){setLoading(false);});
+    }).catch(function(){setLoading(false);if(_showError) _showError('Error al mover la base de datos');});
   }
 
   function resetPath(){
     if(!hasAPI) return;
     props.onConfirm({title:'Restaurar ubicacion',message:'Volver a la ruta por defecto? La app usara la carpeta nativa del sistema.',okLabel:'Restaurar',okColor:'var(--yellow)',onConfirm:function(){
-      window.electronAPI.resetDbPath().then(function(def){
-        setDbPath(def);
-        onNeedsRestart();
+      window.electronAPI.resetDbPath().then(function(res){
+        if(res && res.ok){
+          setDbPath(res.path);
+          onNeedsRestart();
+        } else {
+          if(_showError) _showError(res && res.error ? res.error : 'Error al restaurar la base de datos');
+        }
       });
     }});
   }
