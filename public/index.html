@@ -46,6 +46,9 @@
   .tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}
   @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
   .modal-sheet{animation:slideUp .25s cubic-bezier(.32,.72,0,1)}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:200;backdrop-filter:blur(4px);animation:fadeIn .2s ease}
+  .modal-panel{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:20px 22px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+  .modal-handle{width:36px;height:4px;background:var(--bg4);border-radius:4px;margin:0 auto 16px}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   .fade-in{animation:fadeIn .2s ease}
   .pay-row:hover{background:var(--bg3)!important}
@@ -302,10 +305,14 @@ function App(){
       'Boton de sincronizar movido a Desarrollador'
     ],
     '1.2.9': [
-      'Manejo de errores: alertas integradas en la app',
-      'Errores de arranque: aviso si la BD no se encuentra',
-      'Historial de acciones corregido',
-      'Todos los alert() nativos reemplazados por toasts'
+      'Mejor manejo de errores dentro de la app',
+      'Aviso al iniciar si no se encuentra la base de datos',
+      'Seccion de historial de acciones corregida',
+      'Notificaciones mas integradas al diseño de la app'
+    ],
+    '1.3.0': [
+      'Ventanas de cambios y errores mejoradas visualmente',
+      'Textos de novedades mas claros y naturales'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
