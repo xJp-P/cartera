@@ -266,6 +266,31 @@ function App(){
     var unsub=window.electronAPI.onUpdateStatus(function(data){setGlobalUpdate(data);});
     return unsub;
   },[]);
+  // ── Changelog post-actualización ──────────────────────────────────────────
+  var CHANGELOGS = {
+    '1.2.7': [
+      'Recibo PDF en USD muestra solo dolares',
+      'Fix spacing del tooltip de modalidad',
+      'Tooltip de modalidad abre hacia abajo'
+    ],
+    '1.2.8': [
+      'Changelog: resumen de novedades al actualizar',
+      'Sincronizar datos re-lee la BD completa',
+      'Boton de sincronizar movido a Desarrollador'
+    ]
+  };
+  var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
+  useEffect(function(){
+    if(typeof window.electronAPI==='undefined'||!window.electronAPI.getAppVersion) return;
+    window.electronAPI.getAppVersion().then(function(ver){
+      var lastSeen = localStorage.getItem('lastSeenVersion');
+      if(lastSeen && lastSeen !== ver && CHANGELOGS[ver]){
+        setChangelogDlg({version:ver, items:CHANGELOGS[ver]});
+      }
+      localStorage.setItem('lastSeenVersion', ver);
+    });
+  },[]);
+
   var toastTimer=React.useRef(null);
   function showToast(msg,type){
     type=type||'success';
@@ -545,6 +570,19 @@ function App(){
     abonoModal&&h(AbonoModal,{loan:abonoModal,onSave:registrarAbono,onClose:function(){setAbonoModal(null);}}),
     debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){setDebtorModal(null);setAbonoModal(l);}}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
+    changelogDlg&&h('div',{className:'modal-overlay',onClick:function(){setChangelogDlg(null);}},
+      h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:380}},
+        h('div',{className:'modal-handle'}),
+        h('div',{style:{textAlign:'center',marginBottom:14}},
+          h('div',{style:{fontSize:28,marginBottom:6}},'\uD83C\uDF89'),
+          h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)'}},'Actualizado a v'+changelogDlg.version)),
+        h('div',{style:{marginBottom:16}},
+          changelogDlg.items.map(function(item,i){
+            return h('div',{key:i,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',fontSize:13,color:'var(--text2)'}},
+              h(Ico,{name:'check',size:14,color:'var(--green)'}),
+              h('span',null,item));
+          })),
+        h('button',{onClick:function(){setChangelogDlg(null);},style:{width:'100%',padding:'10px 0',background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer'}},'Entendido'))),
     gSearch&&h('div',{className:'gsearch-overlay',onClick:closeGSearch},
       h('div',{className:'gsearch-box',onClick:function(e){e.stopPropagation();}},
         h('div',{style:{position:'relative'}},
