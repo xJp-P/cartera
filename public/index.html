@@ -335,6 +335,9 @@ function App(){
     ],
     '1.4.2': [
       'Ventana de novedades ahora aparece correctamente al actualizar'
+    ],
+    '1.4.3': [
+      'Inicio mas limpio: se elimino la seccion "Proximos 7 dias" (redundante con "Vencen en 3 dias")'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -746,20 +749,6 @@ function DashView(props){
             h('div',{style:{fontSize:11,color:'var(--yellow)',marginTop:1}},'Cuota '+p.cuotaN+' - en '+dias+' dia'+(dias>1?'s':''))),
           h('div',{style:{textAlign:'right'}},
             h('div',{className:'mono',style:{fontWeight:600,fontSize:12,color:'var(--yellow)'}},fmt(p.cuotaTotal)),
-            isU&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
-      })),
-    metrics.proximos.length>0&&h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--border)'}},
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:11}},
-        h('span',{style:{fontWeight:700,fontSize:13,color:'var(--text)'}},'Proximos 7 dias'),
-        h('span',{style:{fontSize:11,color:'var(--text3)'}},metrics.proximos.length+' pagos')),
-      metrics.proximos.slice(0,5).map(function(p,i){
-        var pl=loanMap[p.prestamoId];var isU=pl&&pl.moneda==='USD';
-        return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderTop:i>0?'1px solid var(--bg3)':'none'}},
-          h('div',null,
-            h('div',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:13,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
-            h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:1}},'Cuota '+p.cuotaN+' - '+fmtD(p.fechaPago))),
-          h('div',{style:{textAlign:'right'}},
-            h('div',{className:'mono',style:{fontWeight:600,fontSize:13,color:'var(--text)'}},fmt(p.cuotaTotal)),
             isU&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
       })),
     metrics.mora.length>0&&h('div',{style:{background:'var(--red-bg)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--red-bd)'}},
