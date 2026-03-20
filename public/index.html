@@ -1691,7 +1691,7 @@ function LoanModal(props){
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:f.modalidad==='Prestamo'?'var(--blue)':'var(--green)'}},fmt(preview.cuota))),
       f.moneda==='USD'&&+f.trmAcordada>0&&h('div',{style:{display:'flex',justifyContent:'space-between'}},
         h('span',{style:{fontSize:12,color:'var(--text2)'}},'Cuota '+freqCuotaLabel(f.frecuencia)+' en USD'),
-        h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},'$'+fmtN(Math.round(preview.cuota/(+f.trmAcordada)*100)/100)+' USD')),
+        h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},fmtUSD(preview.cuota/(+f.trmAcordada)))),
       f.modalidad==='Intereses'&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:6}},'\u221E Plazo indefinido - paga intereses hasta abonar todo el capital'),
       f.modalidad==='Prestamo'&&h('div',{style:{fontSize:11,color:'var(--yellow)',marginTop:6}},'Sin intereses - devuelve el capital en 1 mes')),
     h('button',{onClick:submit,className:'btn-primary',style:{marginTop:8}},!isNew?'Guardar cambios':'Crear prestamo'));
