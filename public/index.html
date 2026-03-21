@@ -343,6 +343,12 @@ function App(){
       'Modalidad "Prestamo" simplificada: solo pide fecha del prestamo y fecha de devolucion',
       'Se ocultan campos innecesarios (frecuencia, tasa, plazo) para prestamos sin interes',
       'El estado ya no se pide al crear un prestamo (siempre inicia como Activo)'
+    ],
+    '1.5.1': [
+      'Orden mejorado: prestamos y deudores se organizan del mas reciente al mas antiguo',
+      'Deudores separados en Activos e Inactivos con linea divisora',
+      'Saldo en USD visible en la lista de deudores',
+      '"Ganancia realizada" renombrada a "Ganancia obtenida" en Rendimiento'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -493,16 +499,19 @@ function App(){
     var map={};
     loans.forEach(function(l){
       var key=l.nombre;
-      if(!map[key]) map[key]={nombre:l.nombre,cedula:l.cedula,telefono:l.telefono,loans:[],totalSaldo:0,mora:0};
+      if(!map[key]) map[key]={nombre:l.nombre,cedula:l.cedula,telefono:l.telefono,loans:[],totalSaldo:0,totalSaldoUSD:0,mora:0};
       map[key].loans.push(l);
       if(l.estado==='Activo'){
+        var saldoLoan;
         if(l.modalidad==='Capital + Intereses'){
           var capAmort=pays.filter(function(p){return p.prestamoId===l.id&&p.estadoPago==='Pagado'&&p.id.indexOf('-ab-')===-1;})
             .reduce(function(s,p){return s+p.abonoCapital;},0);
-          map[key].totalSaldo+=Math.max(0,l.montoCOP-capAmort);
+          saldoLoan=Math.max(0,l.montoCOP-capAmort);
         } else {
-          map[key].totalSaldo+=l.montoCOP;
+          saldoLoan=l.montoCOP;
         }
+        map[key].totalSaldo+=saldoLoan;
+        if(l.moneda==='USD'&&l.trmAcordada>0) map[key].totalSaldoUSD+=Math.round(saldoLoan/l.trmAcordada*100)/100;
       }
     });
     // Add mora count per deudor
@@ -514,8 +523,15 @@ function App(){
       }
     });
     return Object.values(map).sort(function(a,b){
-      var aFecha=a.loans.reduce(function(max,l){return l.fechaInicio>max?l.fechaInicio:max;},'');
-      var bFecha=b.loans.reduce(function(max,l){return l.fechaInicio>max?l.fechaInicio:max;},'');
+      var aActivos=a.loans.filter(function(l){return l.estado==='Activo';});
+      var bActivos=b.loans.filter(function(l){return l.estado==='Activo';});
+      // Activos primero, inactivos al final
+      if(aActivos.length>0&&bActivos.length===0) return -1;
+      if(aActivos.length===0&&bActivos.length>0) return 1;
+      if(aActivos.length===0&&bActivos.length===0) return a.nombre.localeCompare(b.nombre);
+      // Entre activos: más nuevo arriba, más viejo abajo
+      var aFecha=aActivos.reduce(function(min,l){return l.fechaInicio<min?l.fechaInicio:min;},aActivos[0].fechaInicio);
+      var bFecha=bActivos.reduce(function(min,l){return l.fechaInicio<min?l.fechaInicio:min;},bActivos[0].fechaInicio);
       return bFecha.localeCompare(aFecha);
     });
   },[loans,pays]);
@@ -902,9 +918,23 @@ function DeudoresView(props){
       h('div',{style:{fontSize:48,marginBottom:12}},'\uD83D\uDC65'),
       h('p',{style:{fontWeight:600,color:'var(--text2)'}},'Sin deudores registrados')),
     h('div',{style:{display:'flex',flexDirection:'column',gap:10}},
-      filtered.map(function(d){
-        var activosCount=d.loans.filter(function(l){return l.estado==='Activo';}).length;
-        return h('button',{key:d.nombre,className:'debtor-card',onClick:function(){onSelect(d);},
+      (function(){
+        var activos=filtered.filter(function(d){return d.loans.some(function(l){return l.estado==='Activo';});});
+        var inactivos=filtered.filter(function(d){return !d.loans.some(function(l){return l.estado==='Activo';});});
+        var items=[];
+        activos.forEach(function(d){items.push({type:'card',d:d});});
+        if(inactivos.length>0){
+          items.push({type:'separator'});
+          inactivos.forEach(function(d){items.push({type:'card',d:d});});
+        }
+        return items.map(function(item,i){
+          if(item.type==='separator') return h('div',{key:'sep',style:{display:'flex',alignItems:'center',gap:10,margin:'10px 0'}},
+            h('div',{style:{flex:1,height:1,background:'var(--border)'}}),
+            h('span',{style:{fontSize:11,fontWeight:600,color:'var(--text3)',letterSpacing:1,textTransform:'uppercase'}},'Inactivos'),
+            h('div',{style:{flex:1,height:1,background:'var(--border)'}}));
+          var d=item.d;
+          var activosCount=d.loans.filter(function(l){return l.estado==='Activo';}).length;
+          return h('button',{key:d.nombre,className:'debtor-card',onClick:function(){onSelect(d);},
           style:{background:'var(--bg2)',border:'1px solid '+(d.mora>0?'var(--red-bd)':'var(--border)'),borderRadius:14,padding:'14px',textAlign:'left',cursor:'pointer',width:'100%',boxShadow:'var(--shadow)',transition:'border-color .15s'}},
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
             h('div',null,
@@ -921,8 +951,10 @@ function DeudoresView(props){
                 d.mora>0&&h('span',{className:'tag',style:{background:'var(--red-bg)',color:'var(--red)'}},d.mora+' mora'))),
             h('div',{style:{textAlign:'right'}},
               h('div',{className:'mono',style:{fontWeight:700,fontSize:14,color:'var(--green)'}},fmt(d.totalSaldo)),
+              d.totalSaldoUSD>0&&h('div',{className:'mono',style:{fontSize:12,color:'var(--blue)',marginTop:1}},fmtUSD(d.totalSaldoUSD)),
               h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:3}},'saldo total'))));
-      })));
+        });
+      }())));
 }
 
 // ── DebtorModal ───────────────────────────────────────────────────────────────
@@ -983,7 +1015,7 @@ function DebtorModal(props){
       h('div',{style:{fontSize:11,fontWeight:600,color:'var(--text3)',marginBottom:8}},'PRESTAMOS ACTIVOS'),
       h('button',{onClick:function(){onNewLoan(d);},style:{width:'100%',background:'var(--green2)',color:'white',border:'none',borderRadius:10,padding:'10px',fontSize:12,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:5,fontFamily:'inherit',marginBottom:10}},h(Ico,{name:'plus',size:13,color:'white'}),' Nuevo prestamo a '+d.nombre),
       d.loans.filter(function(l){return l.estado==='Activo';}).length===0&&h('div',{style:{fontSize:12,color:'var(--text3)',padding:'8px 0',fontStyle:'italic'}},'Sin prestamos activos'),
-      d.loans.filter(function(l){return l.estado==='Activo';}).map(function(l){
+      d.loans.filter(function(l){return l.estado==='Activo';}).slice().sort(function(a,b){return b.fechaInicio.localeCompare(a.fechaInicio);}).map(function(l){
         var lp=pays.filter(function(p){return p.prestamoId===l.id;});
         var esAbono=function(p){return p.id.indexOf('-ab-')!==-1;};
         var regulares=lp.filter(function(p){return !esAbono(p);});
@@ -1060,7 +1092,7 @@ function DebtorModal(props){
         h('div',{style:{flex:1,height:1,background:'var(--border)'}}),
         h('span',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',letterSpacing:1}},'HISTORIAL DE CREDITOS'),
         h('div',{style:{flex:1,height:1,background:'var(--border)'}})),
-      d.loans.filter(function(l){return l.estado==='Cancelado';}).map(function(l){
+      d.loans.filter(function(l){return l.estado==='Cancelado';}).slice().sort(function(a,b){return b.fechaInicio.localeCompare(a.fechaInicio);}).map(function(l){
         var lPays=pays.filter(function(p){return p.prestamoId===l.id;});
         var regulares=lPays.filter(function(p){return p.id.indexOf('-ab-')===-1;});
         var abonos=lPays.filter(function(p){return p.id.indexOf('-ab-')!==-1&&p.estadoPago==='Pagado';});
@@ -1322,9 +1354,9 @@ function PortfolioView(props){
 
   return h('div',{className:'fade-in',style:{padding:16}},
     h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2}},'\uD83D\uDCC8 Rendimiento del Portafolio'),
-    h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:14}},'Ganancias realizadas y estado del capital'),
+    h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:14}},'Ganancias obtenidas y estado del capital'),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}},
-      kpi('GANANCIA REALIZADA',fmt(totalGanancia),'Intereses cobrados','var(--green)','var(--green-bd)'),
+      kpi('GANANCIA OBTENIDA',fmt(totalGanancia),'Intereses cobrados','var(--green)','var(--green-bd)'),
       kpi('CAPITAL COLOCADO',fmt(totalColocado),'Total invertido','var(--blue)','var(--blue-bd)'),
       kpi('CAPITAL RECUPERADO',fmt(totalCapRec),'Capital + abonos','var(--blue)','var(--blue-bd)'),
       kpi('SALDO PENDIENTE',fmt(totalSaldo),'Capital expuesto','var(--yellow)','var(--border)')),
@@ -1365,7 +1397,7 @@ function PortfolioView(props){
             'Capital: '+(esUSD?'USD $'+fmtN(l.montoOrigen)+' ('+fmt(l.montoCOP)+')':fmt(l.montoOrigen))),
           h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}},
             h('div',null,
-              h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600}},'Ganancia realizada'),
+              h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600}},'Ganancia obtenida'),
               h('div',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--green)'}},fmt(m.ganancia)),
               esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(m.ganancia,l.trmAcordada))),
             h('div',null,
