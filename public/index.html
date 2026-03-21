@@ -338,6 +338,11 @@ function App(){
     ],
     '1.4.3': [
       'Inicio mas limpio: se elimino la seccion "Proximos 7 dias" (redundante con "Vencen en 3 dias")'
+    ],
+    '1.5.0': [
+      'Modalidad "Prestamo" simplificada: solo pide fecha del prestamo y fecha de devolucion',
+      'Se ocultan campos innecesarios (frecuencia, tasa, plazo) para prestamos sin interes',
+      'El estado ya no se pide al crear un prestamo (siempre inicia como Activo)'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1614,6 +1619,7 @@ function LoanModal(props){
     plazoMeses:calcPre.plazoMeses||loan&&loan.plazoMeses||'',modalidad:calcPre.modalidad||(loan&&loan.modalidad==='Intereses Indefinido'?'Intereses':(loan&&loan.modalidad||'Intereses')),
     frecuencia:calcPre.frecuencia||loan&&loan.frecuencia||'Mensual',
     fechaInicio:loan&&loan.fechaInicio||nowStr(),
+    fechaDevolucion:loan&&loan.fechaDevolucion||'',
     estado:loan&&loan.estado||'Activo',notas:loan&&loan.notas||''
   });
   var f=fs[0]; var setF=fs[1];
@@ -1641,9 +1647,12 @@ function LoanModal(props){
     if(needsPlazo&&(!f.plazoMeses||+f.plazoMeses<=0)) errores.push('Plazo');
     if(errores.length>0){_showError('Falta completar: '+errores.join(', '));return;}
     var esPrestamo=f.modalidad==='Prestamo';
+    if(esPrestamo&&!f.fechaDevolucion){_showError('Falta la fecha de devolucion');return;}
     var base=isNew?{}:(loan||{});
     var diaPagoAuto=new Date(f.fechaInicio+'T12:00:00').getDate();
-    onSave(Object.assign({},base,f,{montoOrigen:+f.montoOrigen,trmAcordada:+f.trmAcordada,montoCOP:montoCOP,tasaMensual:esPrestamo?0:(+f.tasaMensual||0),plazoMeses:esPrestamo?1:(+f.plazoMeses||0),diaPago:diaPagoAuto,frecuencia:f.frecuencia||'Mensual'}));
+    var extra={montoOrigen:+f.montoOrigen,trmAcordada:+f.trmAcordada,montoCOP:montoCOP,tasaMensual:esPrestamo?0:(+f.tasaMensual||0),plazoMeses:esPrestamo?1:(+f.plazoMeses||0),diaPago:diaPagoAuto,frecuencia:esPrestamo?'Mensual':(f.frecuencia||'Mensual')};
+    if(esPrestamo&&f.fechaDevolucion) extra.fechaDevolucion=f.fechaDevolucion;
+    onSave(Object.assign({},base,f,extra));
   }
   return h(Modal,{onClose:onClose,tall:true},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},!isNew?'Editar Prestamo':'Nuevo Prestamo'),
@@ -1669,14 +1678,17 @@ function LoanModal(props){
       h('option',null,'Intereses'),
       h('option',null,'Capital + Intereses'),
       h('option',null,'Prestamo'))),
-    h(Fld,{label:'Frecuencia de cobro'},h('select',{value:f.frecuencia,onChange:function(e){set('frecuencia',e.target.value);},className:'inp'},
+    f.modalidad!=='Prestamo'&&h(Fld,{label:'Frecuencia de cobro'},h('select',{value:f.frecuencia,onChange:function(e){set('frecuencia',e.target.value);},className:'inp'},
       h('option',null,'Semanal'),h('option',null,'Quincenal'),h('option',null,'Mensual'))),
-    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-      h(Fld,{label:f.modalidad==='Prestamo'?'Sin intereses':'Tasa mensual (%)'},h('input',{type:'number',step:'0.01',value:f.modalidad==='Prestamo'?'':f.tasaMensual,onChange:function(e){set('tasaMensual',e.target.value);},placeholder:f.modalidad==='Prestamo'?'N/A':'0.00',className:'inp',disabled:f.modalidad==='Prestamo'})),
-      h(Fld,{label:f.modalidad==='Capital + Intereses'?(f.frecuencia==='Semanal'?'Plazo (semanas) *':f.frecuencia==='Quincenal'?'Plazo (quincenas) *':'Plazo (meses) *'):f.modalidad==='Prestamo'?'Plazo fijo':'\u221E Plazo indefinido'},
-        h('input',{type:'number',value:f.modalidad==='Prestamo'?1:f.plazoMeses,onChange:function(e){set('plazoMeses',e.target.value);},placeholder:f.modalidad==='Capital + Intereses'?'12':f.modalidad==='Prestamo'?'1':'\u221E',className:'inp',disabled:f.modalidad==='Intereses'||f.modalidad==='Prestamo'}))),
-    h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',  value:f.fechaInicio,onChange:function(e){set('fechaInicio',e.target.value);},className:'inp'})),
-    h(Fld,{label:'Estado'},h('select',{value:f.estado,onChange:function(e){set('estado',e.target.value);},className:'inp'},
+    f.modalidad!=='Prestamo'&&h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+      h(Fld,{label:'Tasa mensual (%)'},h('input',{type:'number',step:'0.01',value:f.tasaMensual,onChange:function(e){set('tasaMensual',e.target.value);},placeholder:'0.00',className:'inp'})),
+      h(Fld,{label:f.modalidad==='Capital + Intereses'?(f.frecuencia==='Semanal'?'Plazo (semanas) *':f.frecuencia==='Quincenal'?'Plazo (quincenas) *':'Plazo (meses) *'):'\u221E Plazo indefinido'},
+        h('input',{type:'number',value:f.plazoMeses,onChange:function(e){set('plazoMeses',e.target.value);},placeholder:f.modalidad==='Capital + Intereses'?'12':'\u221E',className:'inp',disabled:f.modalidad==='Intereses'}))),
+    f.modalidad==='Prestamo'?h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+      h(Fld,{label:'Fecha del prestamo'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){set('fechaInicio',e.target.value);},className:'inp'})),
+      h(Fld,{label:'Fecha de devolucion'},h('input',{type:'date',value:f.fechaDevolucion||'',onChange:function(e){set('fechaDevolucion',e.target.value);},className:'inp',min:f.fechaInicio})))
+    :h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){set('fechaInicio',e.target.value);},className:'inp'})),
+    !isNew&&h(Fld,{label:'Estado'},h('select',{value:f.estado,onChange:function(e){set('estado',e.target.value);},className:'inp'},
       h('option',{value:'Activo'},'Activo'),h('option',{value:'Cancelado'},'Finalizado'))),
     h(Fld,{label:'Notas'},h('textarea',{value:f.notas,onChange:function(e){set('notas',e.target.value);},placeholder:'Observaciones opcionales...',rows:2,className:'inp',style:{resize:'none'}})),
     preview.cuota>0&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px'}},
@@ -1688,7 +1700,7 @@ function LoanModal(props){
         h('span',{style:{fontSize:12,color:'var(--text2)'}},'Cuota '+freqCuotaLabel(f.frecuencia)+' en USD'),
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},fmtUSD(preview.cuota/(+f.trmAcordada)))),
       f.modalidad==='Intereses'&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:6}},'\u221E Plazo indefinido - paga intereses hasta abonar todo el capital'),
-      f.modalidad==='Prestamo'&&h('div',{style:{fontSize:11,color:'var(--yellow)',marginTop:6}},'Sin intereses - devuelve el capital en 1 mes')),
+      f.modalidad==='Prestamo'&&f.fechaDevolucion&&h('div',{style:{fontSize:11,color:'var(--yellow)',marginTop:6}},'Sin intereses - devolucion: '+fmtD(f.fechaDevolucion))),
     h('button',{onClick:submit,className:'btn-primary',style:{marginTop:8}},!isNew?'Guardar cambios':'Crear prestamo'));
 }
 

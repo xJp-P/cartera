@@ -95,6 +95,7 @@ module.exports = function createApp(dbPath) {
     )
   `);
   const logAction = db.prepare('INSERT INTO activity_log(tipo, mensaje) VALUES (?, ?)');
+  try { db.exec("ALTER TABLE loans ADD COLUMN fechaDevolucion TEXT DEFAULT ''"); } catch(_){}
 
 
   // ── Motor financiero ──────────────────────────────────────────────────────
@@ -166,9 +167,10 @@ module.exports = function createApp(dbPath) {
     // interesPeriodo=1 (token) para que NO sea clasificado como abono a capital
     // (el filtro de abonos es: interesPeriodo===0 && abonoCapital>0)
     if (modalidad === 'Prestamo') {
+      var fechaCuota = loan.fechaDevolucion || getPayDate(fechaInicio, 1, diaPago, freq);
       rows.push({
         id: `${id}-1`, prestamoId: id, nombreCliente: nombre, cuotaN: 1,
-        fechaPago: getPayDate(fechaInicio, 1, diaPago, freq),
+        fechaPago: fechaCuota,
         saldoInicial: Math.round(montoCOP), interesPeriodo: 0,
         abonoCapital: 0, cuotaTotal: Math.round(montoCOP),
         saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
@@ -286,12 +288,12 @@ module.exports = function createApp(dbPath) {
   });
 
   app.post('/api/loans', (req, res) => {
-    const loan = { ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
+    const loan = { fechaDevolucion: '', ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
     db.prepare(`
       INSERT INTO loans(id,nombre,cedula,telefono,moneda,montoOrigen,trmAcordada,montoCOP,
-        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia)
+        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia,fechaDevolucion)
       VALUES (@id,@nombre,@cedula,@telefono,@moneda,@montoOrigen,@trmAcordada,@montoCOP,
-        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia)
+        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia,@fechaDevolucion)
     `).run(loan);
     insertSchedule(buildSchedule(loan));
     logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + (loan.moneda === 'USD' ? 'USD $' + loan.montoOrigen : '$' + Math.round(loan.montoCOP).toLocaleString()) + ' (' + loan.modalidad + ')');
@@ -299,12 +301,12 @@ module.exports = function createApp(dbPath) {
   });
 
   app.put('/api/loans/:id', (req, res) => {
-    const loan = { ...req.body, id: req.params.id };
+    const loan = { fechaDevolucion: '', ...req.body, id: req.params.id };
     db.prepare(`
       UPDATE loans SET nombre=@nombre, cedula=@cedula, telefono=@telefono, moneda=@moneda,
         montoOrigen=@montoOrigen, trmAcordada=@trmAcordada, montoCOP=@montoCOP,
         tasaMensual=@tasaMensual, plazoMeses=@plazoMeses, modalidad=@modalidad,
-        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia
+        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion
       WHERE id=@id
     `).run(loan);
 
