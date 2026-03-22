@@ -479,10 +479,13 @@ function App(){
       '"Ganancia realizada" renombrada a "Ganancia obtenida" en Rendimiento'
     ],
     '1.5.2': [
-      'Correccion general de saldos: ahora se calculan desde el monto original menos capital pagado',
-      'Valor de liquidacion corregido para prestamos con abonos a capital',
-      'Abono a capital muestra el saldo real (no el valor desactualizado)',
-      'Saldo en perfil de deudores corregido con abonos incluidos'
+      'Recibo PDF al registrar un pago (con opcion de activar/desactivar)',
+      'Cronograma PDF desde el perfil de cada deudor',
+      'Valor de liquidacion visible en el perfil y en el cronograma PDF',
+      'PDFs se generan con el tema activo (claro u oscuro)',
+      'Abonos a capital reflejados en el cronograma PDF',
+      'Correccion general de saldos: formula unificada desde monto original menos capital pagado',
+      'Saldo en perfil de deudores, cartera y abonos corregido con abonos incluidos'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
