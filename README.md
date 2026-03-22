@@ -31,6 +31,25 @@ Descarga el instalador desde [Releases](https://github.com/xJp-P/cartera-prestam
 
 La app se actualiza automaticamente cuando hay una nueva version disponible.
 
+### Nota para usuarios de Mac
+
+Al abrir la app por primera vez, macOS puede mostrar un mensaje diciendo que la app **"esta danada y no puede abrirse"**. Esto ocurre porque la app no tiene un certificado de Apple Developer (que cuesta $99/ano), pero la app es completamente segura.
+
+**Para solucionarlo, sigue estos pasos:**
+
+1. **No** hagas click en "Mover al basurero" — dale a **Cancelar**
+2. Abre la app **Terminal** (puedes buscarla en Spotlight con `Cmd + Espacio` y escribir "Terminal")
+3. Copia y pega el siguiente comando en la Terminal y presiona **Enter**:
+
+```bash
+xattr -cr /Applications/Cartera\ de\ Prestamos.app
+```
+
+4. Cierra la Terminal
+5. Abre la app normalmente — ahora deberia funcionar sin problemas
+
+> Este paso solo es necesario **la primera vez** que instalas la app. Las actualizaciones posteriores no requieren repetirlo.
+
 ## Stack
 
 | Componente | Tecnologia |
