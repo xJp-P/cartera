@@ -9,13 +9,14 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 - **Frecuencia de cobro:** semanal, quincenal o mensual
 - **Abonos a capital** con recalculo automatico del cronograma
 - **Recibos PDF** generados al registrar un pago
+- **Cronograma PDF** con valor de liquidacion desde el perfil de cada deudor
 - **Dashboard** con KPIs: cartera activa, mora, recaudo del mes, proximos vencimientos
 - **Perfiles de deudores** con historial completo de creditos
 - **Seccion de rendimiento** con ganancias por prestamo
 - **Calculadora** para simular prestamos antes de crearlos
 - **Historial de acciones** (log de todo lo que hiciste)
-- **Tema claro/oscuro**
-- **Actualizaciones automaticas** desde GitHub Releases
+- **Tema claro/oscuro** (PDFs se generan con el tema activo)
+- **Actualizaciones automaticas** desde GitHub Releases (Windows y Mac)
 - **Sincronizacion** via iCloud Drive, OneDrive, etc.
 
 ## Capturas
@@ -26,8 +27,8 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 
 Descarga el instalador desde [Releases](https://github.com/xJp-P/cartera-prestamos/releases):
 
-- **Windows:** `Instalador.Windows.exe`
-- **Mac:** `Instalador.Mac.dmg`
+- **Windows:** `Instalador-Windows-X.X.X.exe`
+- **Mac:** `Instalador-Mac-X.X.X.dmg`
 
 La app se actualiza automaticamente cuando hay una nueva version disponible.
 
@@ -59,7 +60,7 @@ xattr -cr /Applications/Cartera\ de\ Prestamos.app
 | Base de datos | SQLite (better-sqlite3) |
 | Frontend | React 18 (UMD, sin build step) |
 | Instalador | NSIS (Windows) / DMG (Mac) |
-| Auto-update | electron-updater + GitHub Releases |
+| Auto-update | electron-updater (Win) / custom updater (Mac) + GitHub Releases |
 
 ## Desarrollo
 
