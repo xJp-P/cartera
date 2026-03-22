@@ -7,8 +7,8 @@
     "start": "electron .",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "build:win": "electron-builder --win nsis",
-    "build:mac": "electron-builder --mac dmg",
-    "build:all": "electron-builder --win nsis --mac dmg"
+    "build:mac": "electron-builder --mac dmg zip",
+    "build:all": "electron-builder --win nsis --mac dmg zip"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
@@ -46,7 +46,7 @@
       "include": "build/uninstaller.nsh"
     },
     "mac": {
-      "target": "dmg",
+      "target": ["dmg", "zip"],
       "category": "public.app-category.finance",
       "icon": "build/icon.png",
       "artifactName": "Instalador-Mac-${version}.${ext}"
