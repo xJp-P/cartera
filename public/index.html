@@ -407,6 +407,8 @@ function App(){
   var s21=useState(null); var globalUpdate=s21[0]; var setGlobalUpdate=s21[1];
   var s22=useState(null); var confirmDlg=s22[0]; var setConfirmDlg=s22[1];
   var s24=useState(null); var errorDlg=s24[0]; var setErrorDlg=s24[1];
+  var s25=useState('win32'); var platform=s25[0]; var setPlatform=s25[1];
+  var isMac=platform==='darwin';
   // Conectar _showError global para errores de API
   _showError = function(msg){ showToast(msg, 'error'); };
   // Chequear errores de arranque
@@ -424,6 +426,11 @@ function App(){
     document.documentElement.setAttribute('data-theme',next);
   }
   useEffect(function(){document.documentElement.setAttribute('data-theme',theme);},[]);
+  useEffect(function(){
+    if(typeof window.electronAPI!=='undefined'&&window.electronAPI.getPlatform){
+      window.electronAPI.getPlatform().then(function(p){setPlatform(p);});
+    }
+  },[]);
   useEffect(function(){
     if(typeof window.electronAPI==='undefined'||!window.electronAPI.onUpdateStatus) return;
     var unsub=window.electronAPI.onUpdateStatus(function(data){setGlobalUpdate(data);});
@@ -489,6 +496,10 @@ function App(){
     ],
     '1.5.3': [
       'Fix actualizacion automatica en Mac (firma de codigo desactivada)'
+    ],
+    '1.5.4': [
+      'Mac: actualizaciones redirigen a GitHub Releases para descargar el .dmg manualmente',
+      'Windows: actualizaciones automaticas sin cambios'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -778,16 +789,16 @@ function App(){
         h(Ico,{name:'download',size:16,color:'var(--green)'}),
         h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'Nueva version v'+globalUpdate.version+' disponible')),
       h('div',{style:{display:'flex',gap:8}},
-        h('button',{onClick:function(){window.electronAPI.downloadUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Descargar'),
+        h('button',{onClick:function(){window.electronAPI.downloadUpdate();if(isMac)setGlobalUpdate(null);},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},isMac?'Descargar .dmg':'Descargar'),
         h('button',{onClick:function(){setGlobalUpdate(null);},style:{background:'none',border:'none',cursor:'pointer',padding:4,display:'flex'}},
           h(Ico,{name:'x',size:14,color:'var(--green)'})))),
-    globalUpdate&&globalUpdate.status==='downloading'&&h('div',{style:{background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexShrink:0}},
+    !isMac&&globalUpdate&&globalUpdate.status==='downloading'&&h('div',{style:{background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexShrink:0}},
       h(Ico,{name:'download',size:16,color:'var(--blue)'}),
       h('div',{style:{flex:1}},
         h('div',{style:{fontSize:12,color:'var(--blue)',fontWeight:600,marginBottom:4}},'Descargando actualizacion... '+(globalUpdate.percent||0)+'%'),
         h('div',{style:{background:'var(--bg3)',borderRadius:6,height:5,overflow:'hidden'}},
           h('div',{style:{width:(globalUpdate.percent||0)+'%',height:'100%',background:'var(--blue)',borderRadius:6,transition:'width .3s'}})))),
-    globalUpdate&&globalUpdate.status==='downloaded'&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexShrink:0}},
+    !isMac&&globalUpdate&&globalUpdate.status==='downloaded'&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexShrink:0}},
       h('div',{style:{display:'flex',alignItems:'center',gap:8}},
         h(Ico,{name:'check',size:16,color:'var(--green)'}),
         h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'v'+globalUpdate.version+' lista para instalar')),
@@ -800,7 +811,7 @@ function App(){
       view==='rendimiento'&& h(PortfolioView,{loans:loans,pays:pays}),
       view==='calculadora'&& h(CalcView,   {onConfirm:confirmarCalc}),
       view==='historial'   && h(HistorialView,{actLog:actLog,onRefresh:function(){fetch('/api/activity').then(function(r){return r.json();}).then(function(data){setActLog(data);showToast('Historial actualizado');});}}),
-      view==='desarrollador'&& h(DevView,  {showToast:showToast,onNeedsRestart:function(){setNeedsRestart(true);},onSync:recalculate,onConfirm:function(cfg){setConfirmDlg(cfg);}})),
+      view==='desarrollador'&& h(DevView,  {showToast:showToast,isMac:isMac,onNeedsRestart:function(){setNeedsRestart(true);},onSync:recalculate,onConfirm:function(cfg){setConfirmDlg(cfg);}})),
     loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
     payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onClose:function(){setPayModal(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){setAbonoModal(null);}}),
@@ -1933,6 +1944,7 @@ function HistorialView(props){
 // ── Desarrollador ─────────────────────────────────────────────────────────────
 function DevView(props){
   var showToast=props.showToast;
+  var isMac=props.isMac;
   var onNeedsRestart=props.onNeedsRestart;
   var onSync=props.onSync;
   var s1=useState(''); var dbPath=s1[0]; var setDbPath=s1[1];
@@ -2044,15 +2056,15 @@ function DevView(props){
         h('div',null,
           h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'Nueva version disponible: v'+updateInfo.version),
           h('button',{onClick:function(){window.electronAPI.downloadUpdate();},style:{background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green-bd)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
-            h(Ico,{name:'download',size:13,color:'var(--green)'}),'Descargar actualizacion')):
+            h(Ico,{name:'download',size:13,color:'var(--green)'}),isMac?'Descargar .dmg desde GitHub':'Descargar actualizacion')):
 
-      updateInfo.status==='downloading'?
+      !isMac&&updateInfo.status==='downloading'?
         h('div',null,
           h('div',{style:{fontSize:12,color:'var(--blue)',marginBottom:8}},'Descargando... '+(updateInfo.percent||0)+'%'),
           h('div',{style:{background:'var(--bg3)',borderRadius:6,height:6,overflow:'hidden'}},
             h('div',{style:{width:(updateInfo.percent||0)+'%',height:'100%',background:'var(--blue)',borderRadius:6,transition:'width .3s'}}))):
 
-      updateInfo.status==='downloaded'?
+      !isMac&&updateInfo.status==='downloaded'?
         h('div',null,
           h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'v'+updateInfo.version+' lista para instalar'),
           h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},

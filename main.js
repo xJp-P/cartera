@@ -202,13 +202,24 @@ ipcMain.handle('check-for-updates', () => {
 });
 
 ipcMain.handle('download-update', () => {
+  if (process.platform === 'darwin') {
+    // En Mac no se puede auto-instalar sin certificado, abrir releases
+    require('electron').shell.openExternal('https://github.com/xJp-P/cartera-prestamos/releases/latest');
+    return { status: 'mac-manual' };
+  }
   autoUpdater.downloadUpdate();
   return { status: 'downloading' };
 });
 
 ipcMain.handle('install-update', () => {
+  if (process.platform === 'darwin') {
+    require('electron').shell.openExternal('https://github.com/xJp-P/cartera-prestamos/releases/latest');
+    return;
+  }
   autoUpdater.quitAndInstall(false, true);
 });
+
+ipcMain.handle('get-platform', () => process.platform);
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 
