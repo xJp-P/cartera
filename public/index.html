@@ -503,6 +503,9 @@ function App(){
     ],
     '1.5.5': [
       'Test de actualizacion en Mac'
+    ],
+    '1.5.6': [
+      'Mac: actualizacion automatica completa (descarga, instala y reinicia sin salir de la app)'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -792,16 +795,16 @@ function App(){
         h(Ico,{name:'download',size:16,color:'var(--green)'}),
         h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'Nueva version v'+globalUpdate.version+' disponible')),
       h('div',{style:{display:'flex',gap:8}},
-        h('button',{onClick:function(){window.electronAPI.downloadUpdate();if(isMac)setGlobalUpdate(null);},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},isMac?'Descargar .dmg':'Descargar'),
+        h('button',{onClick:function(){window.electronAPI.downloadUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Descargar'),
         h('button',{onClick:function(){setGlobalUpdate(null);},style:{background:'none',border:'none',cursor:'pointer',padding:4,display:'flex'}},
           h(Ico,{name:'x',size:14,color:'var(--green)'})))),
-    !isMac&&globalUpdate&&globalUpdate.status==='downloading'&&h('div',{style:{background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexShrink:0}},
+    globalUpdate&&globalUpdate.status==='downloading'&&h('div',{style:{background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexShrink:0}},
       h(Ico,{name:'download',size:16,color:'var(--blue)'}),
       h('div',{style:{flex:1}},
         h('div',{style:{fontSize:12,color:'var(--blue)',fontWeight:600,marginBottom:4}},'Descargando actualizacion... '+(globalUpdate.percent||0)+'%'),
         h('div',{style:{background:'var(--bg3)',borderRadius:6,height:5,overflow:'hidden'}},
           h('div',{style:{width:(globalUpdate.percent||0)+'%',height:'100%',background:'var(--blue)',borderRadius:6,transition:'width .3s'}})))),
-    !isMac&&globalUpdate&&globalUpdate.status==='downloaded'&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexShrink:0}},
+    globalUpdate&&globalUpdate.status==='downloaded'&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexShrink:0}},
       h('div',{style:{display:'flex',alignItems:'center',gap:8}},
         h(Ico,{name:'check',size:16,color:'var(--green)'}),
         h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'v'+globalUpdate.version+' lista para instalar')),
@@ -2059,15 +2062,15 @@ function DevView(props){
         h('div',null,
           h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'Nueva version disponible: v'+updateInfo.version),
           h('button',{onClick:function(){window.electronAPI.downloadUpdate();},style:{background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green-bd)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
-            h(Ico,{name:'download',size:13,color:'var(--green)'}),isMac?'Descargar .dmg desde GitHub':'Descargar actualizacion')):
+            h(Ico,{name:'download',size:13,color:'var(--green)'}),'Descargar actualizacion')):
 
-      !isMac&&updateInfo.status==='downloading'?
+      updateInfo.status==='downloading'?
         h('div',null,
           h('div',{style:{fontSize:12,color:'var(--blue)',marginBottom:8}},'Descargando... '+(updateInfo.percent||0)+'%'),
           h('div',{style:{background:'var(--bg3)',borderRadius:6,height:6,overflow:'hidden'}},
             h('div',{style:{width:(updateInfo.percent||0)+'%',height:'100%',background:'var(--blue)',borderRadius:6,transition:'width .3s'}}))):
 
-      !isMac&&updateInfo.status==='downloaded'?
+      updateInfo.status==='downloaded'?
         h('div',null,
           h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'v'+updateInfo.version+' lista para instalar'),
           h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},

@@ -1,8 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
 const http  = require('http');
+const https = require('https');
+const os    = require('os');
+const { execSync } = require('child_process');
 
 const PORT = 3420;
 
@@ -168,6 +171,7 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
 let mainWin = null;
+let macUpdateVersion = null;
 
 function sendUpdateStatus(status, info) {
   if (mainWin && !mainWin.isDestroyed()) {
@@ -176,6 +180,7 @@ function sendUpdateStatus(status, info) {
 }
 
 autoUpdater.on('update-available', (info) => {
+  macUpdateVersion = info.version;
   sendUpdateStatus('available', { version: info.version });
 });
 
@@ -192,6 +197,8 @@ autoUpdater.on('update-downloaded', (info) => {
 });
 
 autoUpdater.on('error', (err) => {
+  // En Mac ignorar errores de electron-updater (usamos flujo propio)
+  if (process.platform === 'darwin') return;
   sendUpdateStatus('error', { message: err.message });
 });
 
@@ -201,19 +208,98 @@ ipcMain.handle('check-for-updates', () => {
   return { status: 'checking' };
 });
 
+// ── Mac: actualizador personalizado (sin firma de código) ────────────
+function httpsGet(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'cartera-prestamos' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return httpsGet(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error('HTTP ' + res.statusCode));
+      }
+      resolve(res);
+    }).on('error', reject);
+  });
+}
+
+function macDownloadAndInstall(version) {
+  const zipUrl = `https://github.com/xJp-P/cartera-prestamos/releases/download/v${version}/Instalador-Mac-${version}.zip`;
+  const tmpDir = path.join(os.tmpdir(), 'cartera-update-' + Date.now());
+  const zipPath = path.join(tmpDir, 'update.zip');
+
+  fs.mkdirSync(tmpDir, { recursive: true });
+  sendUpdateStatus('downloading', { percent: 0 });
+
+  httpsGet(zipUrl).then((res) => {
+    const total = parseInt(res.headers['content-length'] || '0', 10);
+    let downloaded = 0;
+    const file = fs.createWriteStream(zipPath);
+
+    res.on('data', (chunk) => {
+      downloaded += chunk.length;
+      if (total > 0) {
+        sendUpdateStatus('downloading', { percent: Math.round((downloaded / total) * 100) });
+      }
+    });
+
+    res.pipe(file);
+    file.on('finish', () => {
+      file.close();
+      try {
+        sendUpdateStatus('downloading', { percent: 100 });
+        // Extraer zip
+        execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
+        const extractedApp = path.join(tmpDir, 'Cartera de Prestamos.app');
+        if (!fs.existsSync(extractedApp)) {
+          sendUpdateStatus('error', { message: 'No se encontro la app en el zip' });
+          return;
+        }
+        // Quitar restricción de macOS
+        execSync(`xattr -cr "${extractedApp}"`);
+        // Obtener ruta de la app actual (/Applications/Cartera de Prestamos.app)
+        const appPath = path.dirname(path.dirname(path.dirname(app.getAppPath())));
+        // Crear script que reemplaza la app después de cerrar
+        const scriptPath = path.join(tmpDir, 'update.sh');
+        const script = `#!/bin/bash
+sleep 2
+rm -rf "${appPath}"
+cp -R "${extractedApp}" "${appPath}"
+xattr -cr "${appPath}"
+open "${appPath}"
+rm -rf "${tmpDir}"
+`;
+        fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+        sendUpdateStatus('downloaded', { version: version });
+        // Guardar script path para ejecutar al instalar
+        macUpdateScript = scriptPath;
+      } catch (err) {
+        sendUpdateStatus('error', { message: 'Error al preparar: ' + err.message });
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch(_) {}
+      }
+    });
+  }).catch((err) => {
+    sendUpdateStatus('error', { message: 'Error al descargar: ' + err.message });
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch(_) {}
+  });
+}
+
+let macUpdateScript = null;
+
 ipcMain.handle('download-update', () => {
-  if (process.platform === 'darwin') {
-    // En Mac no se puede auto-instalar sin certificado, abrir releases
-    require('electron').shell.openExternal('https://github.com/xJp-P/cartera-prestamos/releases/latest');
-    return { status: 'mac-manual' };
+  if (process.platform === 'darwin' && macUpdateVersion) {
+    macDownloadAndInstall(macUpdateVersion);
+    return { status: 'downloading' };
   }
   autoUpdater.downloadUpdate();
   return { status: 'downloading' };
 });
 
 ipcMain.handle('install-update', () => {
-  if (process.platform === 'darwin') {
-    require('electron').shell.openExternal('https://github.com/xJp-P/cartera-prestamos/releases/latest');
+  if (process.platform === 'darwin' && macUpdateScript) {
+    require('child_process').exec(`bash "${macUpdateScript}"`);
+    setTimeout(() => { app.quit(); }, 500);
     return;
   }
   autoUpdater.quitAndInstall(false, true);
