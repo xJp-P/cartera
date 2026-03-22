@@ -48,6 +48,7 @@ jobs:
         run: npx electron-builder --mac dmg zip --publish always
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Subir .dmg como artifact
         uses: actions/upload-artifact@v4

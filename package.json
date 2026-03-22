@@ -49,6 +49,7 @@
       "target": ["dmg", "zip"],
       "category": "public.app-category.finance",
       "icon": "build/icon.png",
+      "identity": null,
       "artifactName": "Instalador-Mac-${version}.${ext}"
     },
     "publish": {
