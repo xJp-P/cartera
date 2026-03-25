@@ -375,7 +375,10 @@ var ICONS = {
   'refresh-cw': 'M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0114.85-3.36L23 10 M1 14l4.64 4.36A9 9 0 0020.49 15',
   sun:         'M12 17a5 5 0 100-10 5 5 0 000 10z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42',
   moon:        'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z',
-  activity:    'M22 12h-4l-3 9L9 3l-3 9H2'
+  activity:    'M22 12h-4l-3 9L9 3l-3 9H2',
+  clipboard:   'M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2 M15 2H9a1 1 0 00-1 1v1a1 1 0 001 1h6a1 1 0 001-1V3a1 1 0 00-1-1z',
+  sparkle:     'M12 2l2 6.5L20.5 10l-6.5 2L12 18.5 10 12l-6.5-1.5L10 8.5 12 2z',
+  shield:      'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'
 };
 
 function Ico(props){
@@ -534,6 +537,11 @@ function App(){
       'Tasa % del prestamo visible en todos los PDFs',
       'Estado unificado en todos los cronogramas (Pagado, Mora, Pend.)',
       'Boton de cerrar modal reposicionado junto a la barra de arrastre'
+    ],
+    '1.6.0': [
+      'Todos los emojis reemplazados por iconos SVG (consistentes en todos los dispositivos)',
+      'Nuevos iconos: sparkle, clipboard, shield',
+      'Iconos con colores tematicos en KPIs, titulos y estados vacios'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -797,7 +805,7 @@ function App(){
         h('button',{onClick:function(){setMenuOpen(true);},style:{background:'none',border:'none',cursor:'pointer',padding:4,display:'flex'}},
           h(Ico,{name:'menu',size:22,color:'var(--text)'})),
         h('div',null,
-          h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'\uD83D\uDCBC Cartera de Prestamos'),
+          h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)',display:'flex',alignItems:'center',gap:5}},h(Ico,{name:'briefcase',size:14,color:'var(--green)'}),' Cartera de Prestamos'),
           h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:'monospace'}},metrics.activeCount+' activos'))),
       h('div',{style:{display:'flex',alignItems:'center',gap:6}},
         h('button',{onClick:toggleTheme,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:99,padding:'5px 7px',cursor:'pointer',display:'flex',alignItems:'center'},title:theme==='dark'?'Tema claro':'Tema oscuro'},
@@ -811,7 +819,7 @@ function App(){
     menuOpen&&h('div',{className:'hmenu-overlay',onClick:function(){setMenuOpen(false);}},
       h('div',{className:'hmenu-panel',onClick:function(e){e.stopPropagation();}},
         h('div',{style:{padding:'4px 20px 18px',borderBottom:'1px solid var(--border)'}},
-          h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)'}},'\uD83D\uDCBC Cartera'),
+          h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',display:'flex',alignItems:'center',gap:5}},h(Ico,{name:'briefcase',size:15,color:'var(--green)'}),' Cartera'),
           h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},'Menu de navegacion')),
         nav.map(function(item){
           var id=item[0],icon=item[1],label=item[2];
@@ -855,7 +863,7 @@ function App(){
       h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:380}},
         h('div',{className:'modal-handle'}),
         h('div',{style:{textAlign:'center',marginBottom:14}},
-          h('div',{style:{fontSize:28,marginBottom:6}},'\uD83C\uDF89'),
+          h('div',{style:{marginBottom:6}},h(Ico,{name:'sparkle',size:28,color:'var(--green)'})),
           h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)'}},'Actualizado a v'+changelogDlg.version)),
         h('div',{style:{marginBottom:16}},
           changelogDlg.items.map(function(item,i){
@@ -868,7 +876,7 @@ function App(){
       h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:400}},
         h('div',{className:'modal-handle'}),
         h('div',{style:{textAlign:'center',marginBottom:14}},
-          h('div',{style:{fontSize:28,marginBottom:6}},'\u26A0\uFE0F'),
+          h('div',{style:{marginBottom:6}},h(Ico,{name:'alert',size:28,color:'var(--yellow)'})),
           h('div',{style:{fontWeight:700,fontSize:17,color:'var(--yellow)'}},errorDlg.title||'Error')),
         h('div',{style:{marginBottom:16}},
           errorDlg.messages.map(function(msg,i){
@@ -911,16 +919,16 @@ function DashView(props){
   var loanMap={};loans.forEach(function(l){loanMap[l.id]=l;});
   var pct=metrics.esperado>0?Math.round(metrics.recibido/metrics.esperado*100):0;
   var kpis=[
-    {emoji:'\uD83D\uDCB0',label:'Cartera Activa',   val:fmt(metrics.totalCartera),          sub:metrics.activeCount+' prestamos',     color:'var(--green)'},
-    {emoji:'\uD83D\uDCB5',label:'Intereses cobrados',val:fmt(metrics.totalInteresesRecibidos),sub:'Total historico',                    color:'var(--blue)'},
-    {emoji:'\u2705',      label:'Recibido hoy/mes',  val:fmt(metrics.recibido),              sub:'Del mes actual',                     color:'var(--green)'},
-    {emoji:'\uD83D\uDEA8',label:'En Mora',           val:fmt(metrics.totalMora),             sub:metrics.mora.length+' cuotas',        color:'var(--red)',danger:metrics.mora.length>0}
+    {icon:'briefcase',label:'Cartera Activa',   val:fmt(metrics.totalCartera),          sub:metrics.activeCount+' prestamos',     color:'var(--green)'},
+    {icon:'dollar',   label:'Intereses cobrados',val:fmt(metrics.totalInteresesRecibidos),sub:'Total historico',                    color:'var(--blue)'},
+    {icon:'check',    label:'Recibido hoy/mes',  val:fmt(metrics.recibido),              sub:'Del mes actual',                     color:'var(--green)'},
+    {icon:'alert',    label:'En Mora',           val:fmt(metrics.totalMora),             sub:metrics.mora.length+' cuotas',        color:'var(--red)',danger:metrics.mora.length>0}
   ];
   return h('div',{className:'fade-in',style:{padding:16,display:'flex',flexDirection:'column',gap:14}},
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       kpis.map(function(k){
         return h('div',{key:k.label,style:{background:'var(--bg2)',borderRadius:14,padding:'13px 13px 11px',border:'1px solid '+(k.danger?'var(--red-bd)':'var(--border)'),boxShadow:'var(--shadow)'}},
-          h('div',{style:{fontSize:22,marginBottom:6}},k.emoji),
+          h('div',{style:{marginBottom:6}},h(Ico,{name:k.icon,size:22,color:k.color})),
           h('div',{style:{fontSize:11,color:'var(--text2)',fontWeight:500,marginBottom:3}},k.label),
           h('div',{className:'mono',style:{fontWeight:700,fontSize:14,color:k.color,marginBottom:2}},k.val),
           h('div',{style:{fontSize:11,color:'var(--text3)'}},k.sub));
@@ -980,7 +988,7 @@ function DashView(props){
             isU&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
       })),
     isEmpty&&h('div',{style:{textAlign:'center',padding:'44px 0',color:'var(--text3)'}},
-      h('div',{style:{fontSize:52,marginBottom:12}},'\uD83D\uDCBC'),
+      h('div',{style:{marginBottom:12}},h(Ico,{name:'briefcase',size:48,color:'var(--text3)'})),
       h('p',{style:{fontWeight:600,color:'var(--text2)',marginBottom:4}},'Sin prestamos aun'),
       h('p',{style:{fontSize:13}},'Ve a Cartera para registrar el primero')));
 }
@@ -1014,10 +1022,10 @@ function CarteraView(props){
           t[1],h('span',{style:{background:isActive?'rgba(255,255,255,.12)':'var(--bg3)',padding:'1px 6px',borderRadius:99,fontSize:10,fontWeight:700}},t[2]));
       })),
     loans.length===0&&h('div',{style:{textAlign:'center',padding:'48px 0',color:'var(--text3)'}},
-      h('div',{style:{fontSize:48,marginBottom:12}},'\uD83D\uDCCB'),
+      h('div',{style:{marginBottom:12}},h(Ico,{name:'clipboard',size:44,color:'var(--text3)'})),
       h('p',{style:{fontWeight:600,color:'var(--text2)'}},'Sin prestamos registrados')),
     filtered.length===0&&loans.length>0&&h('div',{style:{textAlign:'center',padding:'40px 0',color:'var(--text3)'}},
-      h('div',{style:{fontSize:40,marginBottom:10}},filtro==='Cancelado'?'\u2705':'\uD83D\uDCCB'),
+      h('div',{style:{marginBottom:10}},h(Ico,{name:filtro==='Cancelado'?'check':'clipboard',size:36,color:'var(--text3)'})),
       h('p',{style:{fontWeight:600,color:'var(--text2)'}},'Sin prestamos '+(filtro==='Cancelado'?'finalizados':'activos'))),
     h('div',{style:{display:'flex',flexDirection:'column',gap:10}},
       filtered.slice().sort(function(a,b){return b.fechaInicio.localeCompare(a.fechaInicio);}).map(function(loan){
@@ -1109,7 +1117,7 @@ function DeudoresView(props){
       h('div',{style:{position:'absolute',left:11,top:'50%',transform:'translateY(-50%)',display:'flex'}},h(Ico,{name:'search',size:14,color:'var(--text3)'})),
       h('input',{value:searchQ,onChange:function(e){setSearchQ(e.target.value);},placeholder:'Buscar deudor...',className:'inp',style:{paddingLeft:33}})),
     deudores.length===0&&h('div',{style:{textAlign:'center',padding:'48px 0',color:'var(--text3)'}},
-      h('div',{style:{fontSize:48,marginBottom:12}},'\uD83D\uDC65'),
+      h('div',{style:{marginBottom:12}},h(Ico,{name:'users',size:44,color:'var(--text3)'})),
       h('p',{style:{fontWeight:600,color:'var(--text2)'}},'Sin deudores registrados')),
     h('div',{style:{display:'flex',flexDirection:'column',gap:10}},
       (function(){
@@ -1364,7 +1372,7 @@ function DebtorModal(props){
             h('div',{style:{flex:1,minWidth:0}},
               h('div',{style:{display:'flex',alignItems:'center',gap:6}},
                 h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:600}},l.modalidad),
-                h('span',{className:'tag',style:{background:'var(--green-bg)',color:'var(--green)'}},'\u2705 Finalizado')),
+                h('span',{className:'tag',style:{background:'var(--green-bg)',color:'var(--green)',display:'inline-flex',alignItems:'center',gap:3}},h(Ico,{name:'check',size:10,color:'var(--green)'}),' Finalizado')),
               h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},fmtD(l.fechaInicio)+(fechaFin?' \u2192 '+fmtD(fechaFin):'')+' \u2022 '+(l.modalidad==='Intereses'?'\u221E':totalCuotas+' cuotas'))),
             h('div',{style:{textAlign:'right',marginLeft:8}},
               h('div',{className:'mono',style:{fontSize:12,fontWeight:600,color:'var(--green)'}},fmt(intPagados)),
@@ -1473,7 +1481,7 @@ function PagosView(props){
         h('button',{onClick:function(){setPagosTab('cobrados');},style:{flex:1,padding:'8px 0',background:'none',border:'none',borderBottom:pagosTab==='cobrados'?'2px solid var(--green)':'2px solid transparent',color:pagosTab==='cobrados'?'var(--green)':'var(--text3)',fontWeight:700,fontSize:12,cursor:'pointer',marginBottom:-2}},'Cobrados'))),
     pagosTab==='pendientes'?h('div',{style:{flex:1,overflowY:'auto',padding:'12px 14px',display:'flex',flexDirection:'column',gap:12}},
       moraPays.length===0&&hoyPays.length===0&&prontoPays.length===0&&pendPays.length===0&&h('div',{style:{textAlign:'center',padding:'50px 0',color:'var(--text3)'}},
-        h('div',{style:{fontSize:40,marginBottom:10}},'\u2705'),
+        h('div',{style:{marginBottom:10}},h(Ico,{name:'check',size:36,color:'var(--green)'})),
         h('p',{style:{fontWeight:600,fontSize:14}},'Todo al dia'),
         h('p',{style:{fontSize:12,marginTop:4}},'No hay cuotas pendientes de cobro')),
       hoyPays.length>0&&h('div',null,
@@ -1596,7 +1604,7 @@ function PortfolioView(props){
   }
 
   return h('div',{className:'fade-in',style:{padding:16}},
-    h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2}},'\uD83D\uDCC8 Rendimiento del Portafolio'),
+    h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:6}},h(Ico,{name:'trending',size:16,color:'var(--green)'}),' Rendimiento del Portafolio'),
     h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:14}},'Ganancias obtenidas y estado del capital'),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}},
       kpi('GANANCIA OBTENIDA',fmt(totalGanancia),'Intereses cobrados','var(--green)','var(--green-bd)'),
@@ -1613,7 +1621,7 @@ function PortfolioView(props){
           label+' ('+cnt+')');
       })),
     loanMetrics.filter(function(m){return m.loan.estado===filtro;}).length===0&&h('div',{style:{textAlign:'center',padding:'40px 0',color:'var(--text3)'}},
-      h('div',{style:{fontSize:40,marginBottom:10}},filtro==='Activo'?'\uD83D\uDCB0':'\u2705'),
+      h('div',{style:{marginBottom:10}},h(Ico,{name:filtro==='Activo'?'briefcase':'check',size:36,color:'var(--text3)'})),
       h('p',null,filtro==='Activo'?'Sin prestamos activos':'Sin prestamos finalizados')),
     h('div',{style:{display:'flex',flexDirection:'column',gap:10}},
       loanMetrics.filter(function(m){return m.loan.estado===filtro;}).map(function(m){
@@ -1718,7 +1726,7 @@ function CalcView(props){
   }
 
   return h('div',{className:'fade-in',style:{padding:16}},
-    h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2}},'\uD83E\uDDEE Calculadora de Prestamos'),
+    h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:6}},h(Ico,{name:'calc',size:16,color:'var(--green)'}),' Calculadora de Prestamos'),
     h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:14}},'Simula antes de registrar oficialmente'),
     h(Fld,{label:'Moneda'},h('select',{value:moneda,onChange:function(e){setMoneda(e.target.value);},className:'inp'},
       h('option',{value:'COP'},'COP - Pesos'),h('option',{value:'USD'},'USD - Dolares'))),
@@ -1790,8 +1798,8 @@ function CalcView(props){
                 moneda==='USD'&&h('div',{style:{fontSize:9,color:'var(--blue)'}},copToUsd(r.saldo,t))));
           }))))),
     h('div',{style:{display:'flex',gap:10,marginTop:16}},
-      h('button',{onClick:confirmar,className:'btn-primary',style:{flex:1}},'\u2705 Confirmar y crear'),
-      h('button',{onClick:limpiar,style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border2)',borderRadius:12,padding:13,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'\u274C Limpiar')));
+      h('button',{onClick:confirmar,className:'btn-primary',style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:6}},h(Ico,{name:'check',size:14,color:'#fff'}),' Confirmar y crear'),
+      h('button',{onClick:limpiar,style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border2)',borderRadius:12,padding:13,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},h(Ico,{name:'x',size:14,color:'var(--red)'}),' Limpiar')));
 }
 
 // ── PayModal ──────────────────────────────────────────────────────────────────
@@ -2075,7 +2083,7 @@ function DevView(props){
   }
 
   return h('div',{className:'fade-in',style:{padding:'16px 14px'}},
-    h('div',{style:{fontWeight:700,fontSize:18,color:'var(--text)',marginBottom:4}},'\u2699\uFE0F Desarrollador'),
+    h('div',{style:{fontWeight:700,fontSize:18,color:'var(--text)',marginBottom:4,display:'flex',alignItems:'center',gap:6}},h(Ico,{name:'settings',size:18,color:'var(--text2)'}),' Desarrollador'),
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:16}},'Configuracion avanzada'),
 
     h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)',marginBottom:12}},
