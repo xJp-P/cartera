@@ -424,15 +424,19 @@ module.exports = function createApp(dbPath) {
 
   // ── API: Abono a Capital ──────────────────────────────────────────────────
   app.post('/api/loans/:id/abono', (req, res) => {
-    const { monto, fecha, observaciones, montoUSD } = req.body;
+    const { monto, fecha, observaciones, montoUSD, liquidar } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
 
-    const nuevoSaldo = Math.round(loan.montoCOP - monto);
-    if (nuevoSaldo < 0) return res.status(400).json({ error: 'El abono supera el saldo actual' });
-
     // Analizar cuotas existentes
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
+
+    // Saldo real: montoOrigen - todo capital pagado (formula confiable)
+    const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+    const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const saldoReal = Math.max(0, originalCOP - todoCapPagado);
+    const nuevoSaldo = Math.round(saldoReal - monto);
+    if (nuevoSaldo < 0) return res.status(400).json({ error: 'El abono supera el saldo actual' });
 
     // Cuotas regulares consumidas (Pagado o En Mora, excluyendo registros de abono)
     // Un registro de abono se identifica por interesPeriodo=0 AND abonoCapital>0
@@ -466,7 +470,7 @@ module.exports = function createApp(dbPath) {
       nombreCliente: loan.nombre,
       cuotaN: maxExistingN + 1,
       fechaPago: fechaAbono,
-      saldoInicial: loan.montoCOP,
+      saldoInicial: saldoReal,
       interesPeriodo: 0,
       abonoCapital: Math.round(monto),
       cuotaTotal: Math.round(monto),
@@ -479,7 +483,22 @@ module.exports = function createApp(dbPath) {
     });
 
     if (nuevoSaldo <= 0) {
-      db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Cancelado' WHERE id = ?").run(req.params.id);
+      // Capital saldado: eliminar cuotas pendientes (ya no hay capital que amortizar)
+      db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente'").run(req.params.id);
+      const fechaLiq = fecha || new Date().toISOString().split('T')[0];
+      if (liquidar) {
+        // Liquidacion total: marcar cuotas en mora como pagadas tambien
+        db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ? WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaLiq, req.params.id);
+        db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Cancelado' WHERE id = ?").run(req.params.id);
+      } else {
+        // Solo abono a capital: cuotas en mora permanecen
+        const moraRestante = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora'").get(req.params.id);
+        if (moraRestante.c === 0) {
+          db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Cancelado' WHERE id = ?").run(req.params.id);
+        } else {
+          db.prepare("UPDATE loans SET montoCOP = 0 WHERE id = ?").run(req.params.id);
+        }
+      }
     } else {
       db.prepare('UPDATE loans SET montoCOP = ? WHERE id = ?').run(nuevoSaldo, req.params.id);
 

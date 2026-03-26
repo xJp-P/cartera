@@ -542,6 +542,14 @@ function App(){
       'Todos los emojis reemplazados por iconos SVG (consistentes en todos los dispositivos)',
       'Nuevos iconos: sparkle, clipboard, shield',
       'Iconos con colores tematicos en KPIs, titulos y estados vacios'
+    ],
+    '1.6.1': [
+      'Boton "Liquidar deuda" en el perfil del deudor (paga capital + intereses en mora de un solo golpe)',
+      'Dialogo de confirmacion estilizado con desglose de capital e intereses',
+      'Abono a capital: muestra valor de liquidacion cuando hay cuotas en mora',
+      'Abono del total del capital permitido (antes lo bloqueaba)',
+      'Saldo del backend corregido: usa formula montoOrigen - capitalPagado',
+      'Al liquidar: cuotas pendientes se eliminan, en mora se marcan pagadas, prestamo se cierra'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -650,12 +658,12 @@ function App(){
     setView('cartera');
   },[]);
 
-  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD){
-    API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0})
+  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar){
+    API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar})
       .then(function(r){
         if(!r)return;
         if(r.error){showToast(r.error,'error');return;}
-        reload(); if(abonoModal&&abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null); showToast('Abono registrado');
+        reload(); if(abonoModal&&abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null); showToast(liquidar?'Deuda liquidada':'Abono registrado');
       });
   },[reload]);
 
@@ -857,7 +865,7 @@ function App(){
     loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
     payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onClose:function(){setPayModal(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);}}),
-    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});}}),
+    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto){registrarAbono(loanId,monto,nowStr(),'Liquidacion total',0,true);setDebtorModal(null);}}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
     changelogDlg&&h('div',{className:'modal-overlay',onClick:function(){setChangelogDlg(null);}},
       h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:380}},
@@ -1161,9 +1169,10 @@ function DeudoresView(props){
 
 // ── DebtorModal ───────────────────────────────────────────────────────────────
 function DebtorModal(props){
-  var d=props.deudor,pays=props.pays,loans=props.loans,onClose=props.onClose,onNewLoan=props.onNewLoan,onAbono=props.onAbono;
+  var d=props.deudor,pays=props.pays,loans=props.loans,onClose=props.onClose,onNewLoan=props.onNewLoan,onAbono=props.onAbono,onLiquidar=props.onLiquidar;
   var ex=useState(null); var expLoan=ex[0]; var setExpLoan=ex[1];
   var cr=useState(null); var cronoLoan=cr[0]; var setCronoLoan=cr[1];
+  var cl=useState(null); var confirmLiq=cl[0]; var setConfirmLiq=cl[1];
   // Pagos de este deudor (por nombre, a traves de sus prestamos)
   var deudorPays=pays.filter(function(p){
     var loan=null;
@@ -1178,6 +1187,18 @@ function DebtorModal(props){
   // Cuotas en mora de este deudor (con detalle)
   var cuotasMora=deudorPays.filter(function(p){return p.estadoPago==='En Mora';})
     .sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago);});
+  if(confirmLiq) return h(Modal,{onClose:function(){setConfirmLiq(null);}},
+    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--red)',marginBottom:12}},'Liquidar deuda completa'),
+    h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'14px',border:'1px solid var(--border)',marginBottom:12}},
+      h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)',marginBottom:8}},confirmLiq.loan.nombre),
+      h('div',{className:'mono',style:{fontWeight:700,fontSize:20,color:'var(--red)',marginBottom:10}},fmt(confirmLiq.liquidacion),
+        confirmLiq.loan.moneda==='USD'&&h('span',{style:{fontSize:13,color:'var(--blue)',marginLeft:8}},copToUsd(confirmLiq.liquidacion,confirmLiq.loan.trmAcordada))),
+      h('div',{style:{fontSize:13,color:'var(--text2)',marginBottom:6}},'Esto incluye:'),
+      h('div',{style:{fontSize:13,color:'var(--text)',marginBottom:3}},'Capital: ',h('span',{className:'mono',style:{fontWeight:700}},fmt(confirmLiq.saldo))),
+      confirmLiq.intMora>0&&h('div',{style:{fontSize:13,color:'var(--yellow)',marginBottom:3}},'Intereses en mora: ',h('span',{className:'mono',style:{fontWeight:700}},fmt(confirmLiq.intMora)))),
+    h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:16}},'Todas las cuotas se marcaran como pagadas y el prestamo se cerrara.'),
+    h('button',{onClick:function(){onLiquidar(confirmLiq.loan.id,confirmLiq.saldo);setConfirmLiq(null);},className:'btn-primary',style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',color:'var(--red)',marginBottom:6}},'Confirmar liquidacion'),
+    h('button',{onClick:function(){setConfirmLiq(null);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
   return h(Modal,{onClose:onClose},
     h('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
       h('div',{style:{width:48,height:48,borderRadius:99,background:'var(--bg3)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}},
@@ -1290,6 +1311,8 @@ function DebtorModal(props){
                 h('span',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--yellow)'}},fmt(liquidacion),esUSD&&h('span',{style:{fontSize:10,marginLeft:4,color:'var(--blue)'}},copToUsd(liquidacion,l.trmAcordada)))));}(),
             l.estado==='Activo'&&saldo>0&&onAbono&&h('button',{onClick:function(e){e.stopPropagation();onAbono(l);},style:{marginTop:10,width:'100%',padding:'8px 0',background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',borderRadius:10,color:'var(--blue)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'dollar',size:14,color:'var(--blue)'}),'Registrar abono a capital'),
+            l.estado==='Activo'&&saldo>0&&onAbono&&function(){var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var liq=saldo+imora;return h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l,saldo:saldo,intMora:imora,liquidacion:liq});},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,color:'var(--red)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+              h(Ico,{name:'dollar',size:14,color:'var(--red)'}),'Liquidar deuda: '+fmt(liq));}(),
             h('button',{onClick:function(e){e.stopPropagation();setCronoLoan(cronoLoan===l.id?null:l.id);},style:{marginTop:6,width:'100%',padding:'8px 0',background:cronoLoan===l.id?'var(--blue-bg)':'var(--bg2)',border:'1px solid '+(cronoLoan===l.id?'var(--blue-bd)':'var(--border)'),borderRadius:10,color:cronoLoan===l.id?'var(--blue)':'var(--text2)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'calendar',size:14,color:cronoLoan===l.id?'var(--blue)':'var(--text2)'}),cronoLoan===l.id?'Ocultar cronograma':'Ver cronograma'),
             cronoLoan===l.id&&function(){
@@ -1857,13 +1880,16 @@ function AbonoModal(props){
   var s3=useState(''); var obs=s3[0]; var setObs=s3[1];
   var s4=useState(''); var montoUSD=s4[0]; var setMontoUSD=s4[1];
   var originalCOP=esUSD?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
-  var todoCapPagado=allPays.filter(function(p){return String(p.prestamoId)===String(loan.id)&&p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
+  var loanPays=allPays.filter(function(p){return String(p.prestamoId)===String(loan.id);});
+  var todoCapPagado=loanPays.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
   var saldoActual=Math.max(0,originalCOP-todoCapPagado);
+  var intMora=loanPays.filter(function(p){return p.estadoPago==='En Mora'&&p.id.indexOf('-ab-')===-1;}).reduce(function(s,p){return s+p.interesPeriodo;},0);
+  var liquidacion=saldoActual+intMora;
   var saldoTras=saldoActual-(+monto||0);
   var saldoUSDTras=esUSD?saldoTras/loan.trmAcordada:0;
   function submit(){
     if(!monto||+monto<=0){_showError('Ingresa un monto valido');return;}
-    if(+monto>saldoActual){_showError('El abono supera el saldo: '+fmt(saldoActual));return;}
+    if(+monto>saldoActual){_showError('El abono maximo es '+fmt(saldoActual)+' (solo capital). Los intereses en mora se cobran por separado.');return;}
     onSave(loan.id,+monto,fecha,obs,+montoUSD||0);
   }
   // Auto-calcular COP cuando llenan USD
@@ -1878,7 +1904,9 @@ function AbonoModal(props){
       h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},loan.nombre),
       h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},loan.modalidad),
       h('div',{className:'mono',style:{fontWeight:700,fontSize:18,color:'var(--green)',marginTop:6}},'Saldo actual: '+fmt(saldoActual),
-        esUSD&&h('span',{style:{fontSize:13,fontWeight:600,color:'var(--blue)',marginLeft:8}},copToUsd(saldoActual,loan.trmAcordada)))),
+        esUSD&&h('span',{style:{fontSize:13,fontWeight:600,color:'var(--blue)',marginLeft:8}},copToUsd(saldoActual,loan.trmAcordada))),
+      intMora>0&&h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',marginTop:4}},'Valor de liquidacion: '+fmt(liquidacion)+(esUSD?' '+copToUsd(liquidacion,loan.trmAcordada):''),
+        h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:'var(--font)',marginTop:1}},'(incluye intereses en mora)'))),
     esUSD&&h('div',{style:{borderRadius:12,padding:'10px 12px',marginBottom:4,border:'1px solid var(--border)',background:'var(--bg3)'}},
       h(Fld,{label:'USD del abono (opcional)'},
         h('input',{type:'number',value:montoUSD,onChange:onUSDChange,placeholder:'Monto en dolares',className:'inp'}),
