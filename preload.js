@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate:  () => ipcRenderer.invoke('download-update'),
   installUpdate:   () => ipcRenderer.invoke('install-update'),
   getPlatform:     () => ipcRenderer.invoke('get-platform'),
+  printPDF:        (html, filename) => ipcRenderer.invoke('print-pdf', html, filename),
   onUpdateStatus:  (cb) => {
     ipcRenderer.on('update-status', (_e, data) => cb(data));
     return () => ipcRenderer.removeAllListeners('update-status');

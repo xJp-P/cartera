@@ -176,6 +176,7 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     dark ? 'tr.pagado td{color:#3fb950}' : 'tr.pagado td{color:#166534}',
     dark ? 'tr.mora{background:#2d1117 !important}' : 'tr.mora{background:#fff1f0 !important}',
     dark ? 'tr.mora td{color:#f85149;font-weight:600}' : 'tr.mora td{color:#cf222e;font-weight:600}',
+    dark ? 'tr.pendiente td{color:#e6edf3}' : 'tr.pendiente td{color:#1f2328}',
     '.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700}',
     dark ? '.badge-pagado{background:#0f2b19;color:#3fb950;border:1px solid #1b4332}' : '.badge-pagado{background:#dafbe1;color:#166534}',
     dark ? '.badge-mora{background:#2d1117;color:#f85149;border:1px solid #5c1b18}' : '.badge-mora{background:#ffebe9;color:#cf222e}',
@@ -188,7 +189,8 @@ function generateCronogramaPDF(loan, payments, darkMode) {
            '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
     dark ? '.nota{margin-top:12px;padding:10px 14px;background:#2b2005;border:1px solid #3d2e08;border-radius:8px;font-size:11px;color:#d29922}' :
            '.nota{margin-top:12px;padding:10px 14px;background:#fff8c5;border:1px solid #d4a72c;border-radius:8px;font-size:11px;color:#7a5900}',
-    '@media print{body{padding:15px;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{margin:10mm}}',
+    dark ? '@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}body{padding:15px;font-size:11px;background:#0d1117!important;color:#e6edf3!important}@page{margin:10mm}}' :
+           '@media print{body{padding:15px;font-size:11px}@page{margin:10mm}}',
     '</style></head><body>',
     '<div class="header">',
     '<h1>Cronograma de Pagos</h1>',
@@ -215,7 +217,7 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     '<tr><th>#</th><th>Fecha</th><th>Deuda</th><th>Cuota</th><th>Saldo</th><th>Estado</th></tr>',
     filas.map(function(p) {
       var esAbono = p.id.indexOf('-ab-') !== -1;
-      var cls = esAbono ? ' class="abono"' : p.estadoPago === 'Pagado' ? ' class="pagado"' : p.estadoPago === 'En Mora' ? ' class="mora"' : '';
+      var cls = esAbono ? ' class="abono"' : p.estadoPago === 'Pagado' ? ' class="pagado"' : p.estadoPago === 'En Mora' ? ' class="mora"' : ' class="pendiente"';
       var badge = esAbono ? '<span class="badge badge-abono">Abono</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
       if (esAbono) {
         return '<tr' + cls + '><td>-</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td><td>' + fv(p.saldoInicial) + '</td>' +
@@ -250,13 +252,19 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     '</div>',
     '</body></html>'
   ].join('\n');
-  var w = window.open('', '_blank', 'width=750,height=700');
-  w.document.write(html);
-  w.document.close();
-  w.onload = function() { w.print(); };
+  if (window.electronAPI && window.electronAPI.printPDF) {
+    var fname = 'Cronograma - ' + loan.nombre;
+    window.electronAPI.printPDF(html, fname);
+  } else {
+    var w = window.open('', '_blank', 'width=750,height=700');
+    w.document.write(html);
+    w.document.close();
+    w.onload = function() { w.print(); };
+  }
 }
 
 function generateRecibo(pay, loan, copRec, usdRec, allPays) {
+  var dark = document.documentElement.getAttribute('data-theme') === 'dark';
   var esUSD = loan && loan.moneda === 'USD';
   var saldoRestante = pay.saldoFinal;
   var montoRecibido = copRec || pay.cuotaTotal;
@@ -275,20 +283,29 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays) {
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo de Pago</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
-    'body{font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:0 auto;color:#1f2328}',
-    '.header{text-align:center;border-bottom:2px solid #333;padding-bottom:14px;margin-bottom:18px}',
+    dark ? 'body{font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:0 auto;color:#e6edf3;background:#0d1117}' :
+           'body{font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:0 auto;color:#1f2328}',
+    dark ? '.header{text-align:center;border-bottom:2px solid #30363d;padding-bottom:14px;margin-bottom:18px}' :
+           '.header{text-align:center;border-bottom:2px solid #333;padding-bottom:14px;margin-bottom:18px}',
     '.header h1{font-size:20px;margin-bottom:4px}',
-    '.header p{font-size:11px;color:#656d76}',
+    dark ? '.header p{font-size:11px;color:#8b949e}' : '.header p{font-size:11px;color:#656d76}',
     '.section{margin-bottom:14px}',
-    '.section-title{font-size:10px;font-weight:700;color:#656d76;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}',
-    '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #eee}',
-    '.row .label{color:#656d76}',
+    dark ? '.section-title{font-size:10px;font-weight:700;color:#8b949e;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}' :
+           '.section-title{font-size:10px;font-weight:700;color:#656d76;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}',
+    dark ? '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #21262d}' :
+           '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #eee}',
+    dark ? '.row .label{color:#8b949e}' : '.row .label{color:#656d76}',
     '.row .value{font-weight:600;text-align:right}',
-    '.total-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;text-align:center;margin:16px 0}',
-    '.total-box .amount{font-size:24px;font-weight:700;color:#166534}',
-    '.total-box .sub{font-size:12px;color:#166534;margin-top:2px}',
-    '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
-    '@media print{body{padding:20px}@page{margin:15mm}}',
+    dark ? '.total-box{background:#0f2b19;border:1px solid #1b4332;border-radius:8px;padding:14px;text-align:center;margin:16px 0}' :
+           '.total-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;text-align:center;margin:16px 0}',
+    dark ? '.total-box .amount{font-size:24px;font-weight:700;color:#3fb950}' :
+           '.total-box .amount{font-size:24px;font-weight:700;color:#166534}',
+    dark ? '.total-box .sub{font-size:12px;color:#3fb950;margin-top:2px}' :
+           '.total-box .sub{font-size:12px;color:#166534;margin-top:2px}',
+    dark ? '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #30363d;font-size:10px;color:#6e7681}' :
+           '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
+    dark ? '@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}body{padding:20px;background:#0d1117!important;color:#e6edf3!important}@page{margin:15mm}}' :
+           '@media print{body{padding:20px}@page{margin:15mm}}',
     '</style></head><body>',
     '<div class="header">',
     '<h1>Recibo de Pago</h1>',
@@ -316,7 +333,7 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays) {
     '<div class="row"><span class="label">Monto cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>',
     '</div>',
     '<div class="total-box">',
-    '<div style="font-size:10px;color:#656d76;margin-bottom:4px">MONTO RECIBIDO</div>',
+    '<div style="font-size:10px;color:' + (dark ? '#8b949e' : '#656d76') + ';margin-bottom:4px">MONTO RECIBIDO</div>',
     '<div class="amount">' + (esUSD && usdRec ? fmtUSD(usdRec) : fv(montoRecibido)) + '</div>',
     '</div>',
     '<div class="section">',
@@ -332,10 +349,15 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays) {
     '</div>',
     '</body></html>'
   ].join('\n');
-  var w = window.open('', '_blank', 'width=550,height=700');
-  w.document.write(html);
-  w.document.close();
-  w.onload = function() { w.print(); };
+  if (window.electronAPI && window.electronAPI.printPDF) {
+    var fname = 'Recibo - ' + pay.nombreCliente + ' - Cuota ' + pay.cuotaN;
+    window.electronAPI.printPDF(html, fname);
+  } else {
+    var w = window.open('', '_blank', 'width=550,height=700');
+    w.document.write(html);
+    w.document.close();
+    w.onload = function() { w.print(); };
+  }
 }
 function fmtM(s) { return s?new Date(s+'-01T12:00:00').toLocaleDateString('es-CO',{month:'short',year:'2-digit'}):''; }
 function nowStr()    { return new Date().toISOString().split('T')[0]; }
@@ -550,6 +572,12 @@ function App(){
       'Abono del total del capital permitido (antes lo bloqueaba)',
       'Saldo del backend corregido: usa formula montoOrigen - capitalPagado',
       'Al liquidar: cuotas pendientes se eliminan, en mora se marcan pagadas, prestamo se cierra'
+    ],
+    '1.6.2': [
+      'PDFs ahora respetan el tema activo (claro/oscuro) al 100%',
+      'Recibo de pago con soporte completo de modo oscuro',
+      'PDFs se guardan directamente con dialogo "Guardar como" (sin pasar por print)',
+      'Fondos oscuros garantizados en PDF via Electron printToPDF'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];

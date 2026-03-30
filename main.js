@@ -309,6 +309,27 @@ ipcMain.handle('get-platform', () => process.platform);
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 
+// ── Generar PDF con fondos (printBackground: true) ──────────────────────
+ipcMain.handle('print-pdf', async (_e, html, filename) => {
+  const { BrowserWindow: BW } = require('electron');
+  const win = new BW({ show: false, width: 800, height: 600, webPreferences: { offscreen: true } });
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  const pdfBuf = await win.webContents.printToPDF({
+    printBackground: true,
+    preferCSSPageSize: true,
+    margins: { marginType: 'default' }
+  });
+  win.destroy();
+  const savePath = await dialog.showSaveDialog(mainWin, {
+    title: 'Guardar PDF',
+    defaultPath: path.join(app.getPath('documents'), (filename || 'documento') + '.pdf'),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+  });
+  if (savePath.canceled || !savePath.filePath) return { ok: false };
+  fs.writeFileSync(savePath.filePath, pdfBuf);
+  return { ok: true, path: savePath.filePath };
+});
+
 app.whenReady().then(async () => {
   mainWin = await createWindow();
   if (!mainWin) return;
