@@ -625,6 +625,12 @@ function App(){
       'Recibo PDF: indica "... y N cuotas mas" cuando quedan mas de 3',
       'Espaciado corregido entre secciones del Dashboard',
       'Nombre sugerido al guardar cronograma PDF incluye monto y nombre'
+    ],
+    '1.7.3': [
+      'Recaudo del mes expandible: click para ver desglose de todas las cuotas del mes',
+      'Desglose muestra fecha, nombre, tipo de pago y estado (pagado, mora, pendiente)',
+      'Cuotas pagadas aparecen con check verde y opacidad reducida',
+      'Nombres clickeables en el desglose para abrir perfil del deudor'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -771,7 +777,9 @@ function App(){
       proximos:pays.filter(function(p){return p.estadoPago==='Pendiente'&&p.fechaPago>td&&p.fechaPago<=nxtW;})
                    .sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago);}),
       pronto:pays.filter(function(p){return p.estadoPago==='Pendiente'&&p.fechaPago>td&&p.fechaPago<=addDays(td,3);})
-                 .sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago);})
+                 .sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago);}),
+      recaudoList:mp.concat(moraOtrosMeses).filter(function(p){return noAbono(p);})
+                   .sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago)||a.nombreCliente.localeCompare(b.nombreCliente);})
     };
   },[loans,pays]);
 
@@ -1012,6 +1020,7 @@ function DashView(props){
   var metrics=props.metrics,isEmpty=props.isEmpty,onNav=props.onNav,loans=props.loans||[],onNameClick=props.onNameClick;
   var loanMap={};loans.forEach(function(l){loanMap[l.id]=l;});
   var pct=metrics.esperado>0?Math.round(metrics.recibido/metrics.esperado*100):0;
+  var _recOpen=useState(false);var recaudoOpen=_recOpen[0];var setRecaudoOpen=_recOpen[1];
   var kpis=[
     {icon:'briefcase',label:'Cartera Activa',   val:fmt(metrics.totalCartera),          sub:metrics.activeCount+' prestamos',     color:'var(--green)'},
     {icon:'dollar',   label:'Intereses cobrados',val:fmt(metrics.totalInteresesRecibidos),sub:'Total historico',                    color:'var(--blue)'},
@@ -1027,14 +1036,35 @@ function DashView(props){
           h('div',{className:'kpi-sub'},k.sub));
       })),
     metrics.esperado>0&&h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--border)',marginBottom:16}},
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
-        h('span',{style:{fontWeight:600,fontSize:13,color:'var(--text)'}},'Recaudo del mes'),
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,cursor:'pointer'},onClick:function(){setRecaudoOpen(!recaudoOpen);}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:8}},
+          h('span',{style:{fontWeight:600,fontSize:13,color:'var(--text)'}},'Recaudo del mes'),
+          h(Ico,{name:recaudoOpen?'chevron-up':'chevron-down',size:14,color:'var(--text3)',sw:2})),
         h('span',{className:'mono',style:{fontWeight:700,fontSize:15,color:'var(--green)'}},pct+'%')),
       h('div',{style:{height:8,background:'var(--bg4)',borderRadius:99,overflow:'hidden'}},
         h('div',{style:{height:'100%',width:Math.min(pct,100)+'%',background:'linear-gradient(90deg,#2ea043,#3fb950)',borderRadius:99,transition:'width .6s ease'}})),
       h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:11,color:'var(--text3)'}},
         h('span',null,'Recibido: '+fmt(metrics.recibido)),
-        h('span',null,'Esperado mes: '+fmt(metrics.esperado)))),
+        h('span',null,'Esperado mes: '+fmt(metrics.esperado))),
+      recaudoOpen&&metrics.recaudoList.length>0&&h('div',{style:{marginTop:12,borderTop:'1px solid var(--border)',paddingTop:10}},
+        metrics.recaudoList.map(function(p,i){
+          var pl=loanMap[p.prestamoId];
+          var isU=pl&&pl.moneda==='USD';
+          var pagado=p.estadoPago==='Pagado';
+          var enMora=p.estadoPago==='En Mora';
+          var tipo=pl?(pl.modalidad==='Intereses'?'intereses':pl.modalidad==='Capital + Intereses'?'capital + intereses':pl.modalidad==='Prestamo'?'capital':''):'';
+          return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderTop:i>0?'1px solid var(--border-light, rgba(255,255,255,.06))':'none',opacity:pagado?.55:1}},
+            h('div',{style:{minWidth:0,flex:1}},
+              h('div',{style:{display:'flex',alignItems:'center',gap:6}},
+                pagado&&h(Ico,{name:'check',size:11,color:'var(--green)',sw:2.5}),
+                enMora&&h(Ico,{name:'alert',size:11,color:'var(--red)',sw:2}),
+                h('span',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:12,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente)),
+              h('div',{style:{fontSize:10,color:enMora?'var(--red)':'var(--text3)',marginTop:1}},
+                fmtD(p.fechaPago)+' \u2022 '+tipo+(enMora?' \u2022 en mora':''))),
+            h('div',{style:{textAlign:'right',flexShrink:0}},
+              h('div',{className:'mono',style:{fontWeight:600,fontSize:12,color:pagado?'var(--green)':enMora?'var(--red)':'var(--text)'}},fmt(p.cuotaTotal)),
+              isU&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
+        }))),
     metrics.hoy.length>0&&h('div',{style:{background:'rgba(187,128,9,.08)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--yellow)',marginBottom:16}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:11}},
         h('div',{style:{display:'flex',alignItems:'center',gap:6}},
