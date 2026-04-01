@@ -50,7 +50,7 @@
   .kpi-value{font-size:24px;font-weight:700;font-family:'Cascadia Code','Consolas',monospace}
   .kpi-sub{font-size:12px;color:var(--text2);margin-top:4px}
   .section-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;margin-bottom:24px}
-  .modal-panel{max-width:500px}
+  .modal-panel{max-width:560px}
   input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
   input[type=number]{-moz-appearance:textfield}
   ::-webkit-scrollbar{width:4px;height:4px}
@@ -272,7 +272,7 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     '</body></html>'
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {
-    var fname = 'Cronograma - ' + loan.nombre;
+    var fname = 'Cronograma ' + fmt(loan.montoOrigen) + ' - ' + loan.nombre;
     window.electronAPI.printPDF(html, fname);
   } else {
     var w = window.open('', '_blank', 'width=750,height=700');
@@ -289,11 +289,15 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays) {
   var montoRecibido = copRec || pay.cuotaTotal;
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   // Próximas cuotas (solo para Capital + Intereses y si hay pays disponibles)
+  var allProxCuotas = [];
   var proxCuotas = [];
+  var totalPending = 0;
   if (allPays && loan.modalidad === 'Capital + Intereses' && saldoRestante > 0) {
-    proxCuotas = allPays.filter(function(p) {
+    allProxCuotas = allPays.filter(function(p) {
       return p.prestamoId === loan.id && p.estadoPago === 'Pendiente' && p.id.indexOf('-ab-') === -1 && p.cuotaN > pay.cuotaN;
-    }).sort(function(a, b) { return a.cuotaN - b.cuotaN; }).slice(0, 3);
+    }).sort(function(a, b) { return a.cuotaN - b.cuotaN; });
+    totalPending = allProxCuotas.length;
+    proxCuotas = allProxCuotas.slice(0, 3);
   }
   var trm = loan.trmAcordada || 1;
   // Para USD: mostrar solo dolares; para COP: mostrar pesos
@@ -359,9 +363,9 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays) {
     '<div class="row"><span class="label">Saldo restante</span><span class="value">' + fv(saldoRestante) + '</span></div>',
     pay.observaciones ? '<div class="row"><span class="label">Observaciones</span><span class="value">' + pay.observaciones + '</span></div>' : '',
     '</div>',
-    proxCuotas.length > 0 ? '<div class="section"><div class="section-title">Proximas cuotas</div>' + proxCuotas.map(function(pc) {
+    proxCuotas.length > 0 ? '<div class="section"><div class="section-title">Proximas cuotas (quedan ' + totalPending + ' de ' + loan.plazoMeses + ')</div>' + proxCuotas.map(function(pc) {
       return '<div class="row"><span class="label">Cuota #' + pc.cuotaN + ' - ' + fmtD(pc.fechaPago) + '</span><span class="value">' + fv(pc.cuotaTotal) + '</span></div>';
-    }).join('') + '</div>' : '',
+    }).join('') + (totalPending > 3 ? '<div style="text-align:center;color:var(--text2,#888);font-size:11px;margin-top:6px">... y ' + (totalPending - 3) + ' cuotas mas</div>' : '') + '</div>' : '',
     '<div class="footer">',
     '<p>Este recibo es un comprobante de pago</p>',
     '<p style="margin-top:4px">Cartera de Prestamos</p>',
@@ -1019,7 +1023,7 @@ function DashView(props){
       h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:11,color:'var(--text3)'}},
         h('span',null,'Recibido: '+fmt(metrics.recibido)),
         h('span',null,'Esperado mes: '+fmt(metrics.esperado)))),
-    metrics.hoy.length>0&&h('div',{style:{background:'rgba(187,128,9,.08)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--yellow)'}},
+    metrics.hoy.length>0&&h('div',{style:{background:'rgba(187,128,9,.08)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--yellow)',marginBottom:16}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:11}},
         h('div',{style:{display:'flex',alignItems:'center',gap:6}},
           h(Ico,{name:'calendar',size:14,color:'var(--yellow)'}),
@@ -1035,7 +1039,7 @@ function DashView(props){
             h('div',{className:'mono',style:{fontWeight:600,fontSize:13,color:'var(--yellow)'}},fmt(p.cuotaTotal)),
             isU&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
       })),
-    metrics.pronto.length>0&&h('div',{style:{background:'rgba(187,128,9,.04)',borderRadius:14,padding:'13px 14px',border:'1px solid rgba(187,128,9,.3)'}},
+    metrics.pronto.length>0&&h('div',{style:{background:'rgba(187,128,9,.04)',borderRadius:14,padding:'13px 14px',border:'1px solid rgba(187,128,9,.3)',marginBottom:16}},
       h('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:10}},
         h(Ico,{name:'alert',size:14,color:'var(--yellow)'}),
         h('span',{style:{fontWeight:700,fontSize:12,color:'var(--yellow)'}},'Vencen en los proximos 3 dias')),
@@ -1268,7 +1272,7 @@ function DebtorModal(props){
     h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:16}},'Todas las cuotas se marcaran como pagadas y el prestamo se cerrara.'),
     h('button',{onClick:function(){onLiquidar(confirmLiq.loan.id,confirmLiq.saldo);setConfirmLiq(null);},className:'btn-primary',style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',color:'var(--red)',marginBottom:6}},'Confirmar liquidacion'),
     h('button',{onClick:function(){setConfirmLiq(null);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
-  return h(Modal,{onClose:onClose},
+  return h(Modal,{onClose:onClose,wide:true,tall:true},
     h('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
       h('div',{style:{width:48,height:48,borderRadius:99,background:'var(--bg3)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}},
         d.nombre.charAt(0).toUpperCase()),
@@ -2037,7 +2041,7 @@ function LoanModal(props){
     if(esPrestamo&&f.fechaDevolucion) extra.fechaDevolucion=f.fechaDevolucion;
     onSave(Object.assign({},base,f,extra));
   }
-  return h(Modal,{onClose:onClose,tall:true},
+  return h(Modal,{onClose:onClose,tall:true,wide:true},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},!isNew?'Editar Prestamo':'Nuevo Prestamo'),
     h(Fld,{label:'Nombre del cliente *'},h('input',{value:f.nombre,onChange:function(e){set('nombre',e.target.value);},placeholder:'Nombre completo',className:'inp',autoFocus:isNew})),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
@@ -2272,14 +2276,14 @@ function DevView(props){
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 function Modal(props){
-  var children=props.children,onClose=props.onClose,tall=props.tall;
-  return h('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',display:'flex',alignItems:'flex-end',zIndex:100,backdropFilter:'blur(4px)'},onClick:onClose},
-    h('div',{className:'modal-sheet',style:{background:'var(--bg2)',border:'1px solid var(--border)',width:'100%',maxWidth:520,margin:'0 auto',borderRadius:'20px 20px 0 0',maxHeight:tall?'93vh':'82vh',display:'flex',flexDirection:'column'},onClick:function(e){e.stopPropagation();}},
-      h('div',{style:{display:'flex',justifyContent:'center',alignItems:'center',padding:'10px 16px 0',flexShrink:0,position:'relative'}},
-        h('div',{style:{width:36,height:4,background:'var(--bg4)',borderRadius:99}}),
-        h('button',{onClick:onClose,style:{position:'absolute',right:14,top:8,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:99,width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}},
+  var children=props.children,onClose=props.onClose,tall=props.tall,wide=props.wide;
+  return h('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100,backdropFilter:'blur(4px)'},onClick:onClose},
+    h('div',{className:'modal-sheet',style:{background:'var(--bg2)',border:'1px solid var(--border)',width:'90%',maxWidth:wide?700:560,borderRadius:16,maxHeight:tall?'90vh':'80vh',display:'flex',flexDirection:'column',boxShadow:'0 8px 32px rgba(0,0,0,.4)'},onClick:function(e){e.stopPropagation();}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 20px 0',flexShrink:0}},
+        h('div',null),
+        h('button',{onClick:onClose,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:99,width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}},
           h(Ico,{name:'x',size:14,color:'var(--text2)',sw:2.5}))),
-      h('div',{style:{overflowY:'auto',padding:'12px 16px 24px',display:'flex',flexDirection:'column',gap:12,flex:1}},children)));
+      h('div',{style:{overflowY:'auto',padding:'12px 20px 24px',display:'flex',flexDirection:'column',gap:12,flex:1}},children)));
 }
 function Fld(props){return h('div',{style:{marginTop:6}},h('div',{style:{fontSize:11,fontWeight:600,color:'var(--text2)',marginBottom:5}},props.label),props.children);}
 function ABtn(props){return h('button',{onClick:props.onClick,style:{flex:1,background:props.color,color:'white',border:'none',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},h(Ico,{name:props.icon,size:15,color:'white',sw:2.2}),props.label);}
