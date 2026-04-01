@@ -137,7 +137,7 @@ ipcMain.handle('get-startup-errors', () => {
 // ── Ventana principal ─────────────────────────────────────────────────────
 async function createWindow() {
   const win = new BrowserWindow({
-    width: 460, height: 860, minWidth: 400, minHeight: 640,
+    width: 1400, height: 900, minWidth: 1000, minHeight: 700,
     title: 'Cartera de Prestamos',
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
@@ -161,6 +161,7 @@ async function createWindow() {
     return null;
   }
 
+  win.maximize();
   win.show();
   win.on('closed', () => { if (server) server.close(); app.quit(); });
   return win;

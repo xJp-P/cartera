@@ -8,6 +8,12 @@ const express  = require('express');
 const Database = require('better-sqlite3');
 const path     = require('path');
 
+// Fecha local (no UTC) en formato YYYY-MM-DD
+function hoyStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 module.exports = function createApp(dbPath) {
 
   const app = express();
@@ -218,7 +224,7 @@ module.exports = function createApp(dbPath) {
 
   // ── Auto-mora al arrancar ─────────────────────────────────────────────────
   db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
-    .run(new Date().toISOString().split('T')[0]);
+    .run(hoyStr());
 
   // ── Corregir cuotas en mora de Prestamo: cuotaTotal debe = saldo actual (montoCOP) ──
   // Solo para Prestamo (sin intereses, 1 cuota de capital). NO para Intereses (cuota = interés mensual fijo).
@@ -259,7 +265,7 @@ module.exports = function createApp(dbPath) {
     }
     // Re-aplicar auto-mora
     db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
-      .run(new Date().toISOString().split('T')[0]);
+      .run(hoyStr());
     // Fix cuotas en mora de Prestamo: cuotaTotal debe = saldo actual (montoCOP)
     const fixP = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Prestamo'").all();
     fixP.forEach(fl => {
@@ -350,7 +356,7 @@ module.exports = function createApp(dbPath) {
   // ── API: Payments ─────────────────────────────────────────────────────────
   // Auto-extender cuotas de Intereses si faltan pocas pendientes
   function autoExtendSoloIntereses() {
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = hoyStr();
     const activeIndefinidos = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Intereses'").all();
     for (const loan of activeIndefinidos) {
       const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN DESC').all(loan.id);
@@ -380,7 +386,7 @@ module.exports = function createApp(dbPath) {
   app.get('/api/payments', (_req, res) => {
     autoExtendSoloIntereses();
     db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
-      .run(new Date().toISOString().split('T')[0]);
+      .run(hoyStr());
     res.json(db.prepare('SELECT * FROM payments ORDER BY fechaPago, nombreCliente').all());
   });
 
@@ -463,7 +469,7 @@ module.exports = function createApp(dbPath) {
 
     // Registrar el abono como cuota especial (no cuenta como cuota regular)
     const abonoId = req.params.id + '-ab-' + Date.now();
-    const fechaAbono = fecha || new Date().toISOString().split('T')[0];
+    const fechaAbono = fecha || hoyStr();
     insPayment.run({
       id: abonoId,
       prestamoId: req.params.id,
@@ -485,7 +491,7 @@ module.exports = function createApp(dbPath) {
     if (nuevoSaldo <= 0) {
       // Capital saldado: eliminar cuotas pendientes (ya no hay capital que amortizar)
       db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente'").run(req.params.id);
-      const fechaLiq = fecha || new Date().toISOString().split('T')[0];
+      const fechaLiq = fecha || hoyStr();
       if (liquidar) {
         // Liquidacion total: marcar cuotas en mora como pagadas tambien
         db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ? WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaLiq, req.params.id);
