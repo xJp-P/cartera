@@ -133,6 +133,21 @@ function fmtN(n) { return new Intl.NumberFormat('es-CO').format(Math.round(n||0)
 // Convierte COP a USD usando TRM del préstamo; retorna string "USD $X.XX"
 function copToUsd(cop,trm){ return trm>0?fmtUSD(cop/trm):''; }
 function fmtD(s) { return s?new Date(s+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'-'; }
+// ── Input numérico con formato automático (1.000.000) ──
+function fmtNumInput(v){
+  if(!v&&v!==0)return '';
+  var s=String(v).replace(/[^\d,]/g,'');
+  var parts=s.split(',');
+  var ent=parts[0].replace(/^0+(?=\d)/,'');
+  if(!ent)ent='0';
+  ent=ent.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  return parts.length>1?ent+','+parts[1]:ent;
+}
+function parseNum(v){
+  if(!v)return '';
+  var s=String(v).replace(/\./g,'').replace(',','.');
+  return s;
+}
 function freqLabel(loan){
   if(loan.modalidad==='Intereses') return '\u221E Indefinido';
   var n=loan.plazoMeses;
@@ -635,6 +650,10 @@ function App(){
     '1.7.4': [
       'Tamaño de fuente aumentado en toda la app para mejor lectura en escritorio',
       'Boton "Ver cronograma" en perfil de deudor con color neutro (ya no se confunde con "Abono")'
+    ],
+    '1.7.5': [
+      'Formato automatico de numeros: los montos se formatean con puntos de miles mientras escribes',
+      'Aplica en: calculadora, crear prestamo, abonos, pagos USD y TRM'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1873,9 +1892,9 @@ function CalcView(props){
     h(Fld,{label:'Moneda'},h('select',{value:moneda,onChange:function(e){setMoneda(e.target.value);},className:'inp'},
       h('option',{value:'COP'},'COP - Pesos'),h('option',{value:'USD'},'USD - Dolares'))),
     moneda==='USD'&&h(Fld,{label:'TRM acordada *'},
-      h('input',{type:'number',value:trmCalc,onChange:function(e){setTrmCalc(e.target.value);},placeholder:'Ej: 4200',className:'inp'})),
+      h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(trmCalc),onChange:function(e){setTrmCalc(parseNum(e.target.value));},placeholder:'Ej: 4.200',className:'inp'})),
     h(Fld,{label:'Valor del prestamo ('+(moneda)+') *'},
-      h('input',{type:'number',value:monto,onChange:function(e){setMonto(e.target.value);},placeholder:moneda==='USD'?'Ej: 1000':'Ej: 5000000',className:'inp'})),
+      h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:moneda==='USD'?'Ej: 1.000':'Ej: 5.000.000',className:'inp'})),
     moneda==='USD'&&monto&&trmCalc&&h('div',{style:{fontSize:12,color:'var(--blue)',marginTop:2,marginBottom:14,paddingLeft:4}},'Equivalente COP: '+fmt(montoCOP)),
     h(Fld,{label:h('span',{style:{display:'flex',alignItems:'center',gap:6}},'Modalidad',
       h('span',{style:{position:'relative',display:'inline-flex'},className:'tooltip-wrap'},
@@ -1977,9 +1996,9 @@ function PayModal(props){
     h(Fld,{label:'Fecha de recaudo'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
     esUSD&&h('div',{style:{background:'rgba(187,128,9,.1)',border:'1px solid var(--yellow)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
       h(Fld,{label:'COP realmente recibidos *'},
-        h('input',{type:'number',value:copRec,onChange:function(e){setCopRec(e.target.value);},placeholder:'Monto en pesos recibido',className:'inp',style:{border:'1px solid var(--yellow)'}})),
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRec),onChange:function(e){setCopRec(parseNum(e.target.value));},placeholder:'Monto en pesos recibido',className:'inp',style:{border:'1px solid var(--yellow)'}})),
       h(Fld,{label:'USD recibidos (opcional)'},
-        h('input',{type:'number',value:usdRec,onChange:function(e){setUsdRec(e.target.value);},placeholder:'Si te pagaron en dolares',className:'inp',style:{border:'1px solid var(--blue)'}}))),
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(usdRec),onChange:function(e){setUsdRec(parseNum(e.target.value));},placeholder:'Si te pagaron en dolares',className:'inp',style:{border:'1px solid var(--blue)'}}))),
     h(Fld,{label:'Observaciones'},h('input',{value:obs,onChange:function(e){setObs(e.target.value);},placeholder:'Notas opcionales...',className:'inp'})),
     pay.estadoPago!=='Pagado'&&h('label',{style:{display:'flex',alignItems:'center',gap:8,marginTop:14,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
       h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--green)',cursor:'pointer'}}),
@@ -2028,11 +2047,11 @@ function AbonoModal(props){
         h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:'var(--font)',marginTop:1}},'(incluye intereses en mora)'))),
     esUSD&&h('div',{style:{borderRadius:12,padding:'10px 12px',marginBottom:4,border:'1px solid var(--border)',background:'var(--bg3)'}},
       h(Fld,{label:'USD del abono (opcional)'},
-        h('input',{type:'number',value:montoUSD,onChange:onUSDChange,placeholder:'Monto en dolares',className:'inp'}),
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(montoUSD),onChange:function(e){onUSDChange({target:{value:parseNum(e.target.value)}});},placeholder:'Monto en dolares',className:'inp'}),
         montoUSD>0&&h('div',{style:{fontSize:10,marginTop:3,color:'var(--text3)'}},'Auto-calcula COP con TRM $'+fmtN(loan.trmAcordada)))),
     h('div',{style:{background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
       h(Fld,{label:'Monto del abono (COP) *'},
-        h('input',{type:'number',value:monto,onChange:function(e){setMonto(e.target.value);},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
       monto>0&&h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:saldoTras<=0?'var(--red)':'var(--text2)'}},
         saldoTras<=0?'El prestamo quedaria SALDADO':'Saldo tras abono: '+fmt(saldoTras)+(esUSD?' ('+copToUsd(saldoTras,loan.trmAcordada)+')':'')))),
     h(Fld,{label:'Fecha del abono'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
@@ -2095,9 +2114,9 @@ function LoanModal(props){
       h(Fld,{label:'Telefono'},   h('input',{value:f.telefono,onChange:function(e){set('telefono',e.target.value);},placeholder:'+57...',  className:'inp'}))),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Moneda'},h('select',{value:f.moneda,onChange:function(e){set('moneda',e.target.value);},className:'inp'},h('option',null,'COP'),h('option',null,'USD'))),
-      h(Fld,{label:f.moneda==='USD'?'Monto original (USD) *':'Monto (COP) *'},h('input',{type:'number',value:f.montoOrigen,onChange:function(e){set('montoOrigen',e.target.value);},placeholder:'0',className:'inp'}))),
+      h(Fld,{label:f.moneda==='USD'?'Monto original (USD) *':'Monto (COP) *'},h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.montoOrigen),onChange:function(e){set('montoOrigen',parseNum(e.target.value));},placeholder:'0',className:'inp'}))),
     f.moneda==='USD'&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD)'},
-      h('input',{type:'number',value:f.trmAcordada,onChange:function(e){set('trmAcordada',e.target.value);},className:'inp'}),
+      h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.trmAcordada),onChange:function(e){set('trmAcordada',parseNum(e.target.value));},className:'inp'}),
       h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP))),
     h(Fld,{label:h('span',{style:{display:'flex',alignItems:'center',gap:6}},'Modalidad',
       h('span',{style:{position:'relative',display:'inline-flex'},className:'tooltip-wrap'},
