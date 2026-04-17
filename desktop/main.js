@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
@@ -9,9 +9,12 @@ const { execSync } = require('child_process');
 
 const PORT = 3420;
 
-// ── Ruta de preferencias (siempre en userData, nunca se mueve) ────────────
+// Raíz del proyecto (un nivel arriba de /desktop)
+const PROJECT_ROOT = path.join(__dirname, '..');
+
+// ── Ruta de preferencias (siempre en userData cuando está empaquetado) ───
 const PREFS_FILE = path.join(
-  app.isPackaged ? app.getPath('userData') : __dirname,
+  app.isPackaged ? app.getPath('userData') : PROJECT_ROOT,
   'prefs.json'
 );
 
@@ -25,7 +28,7 @@ function savePrefs(p) { fs.writeFileSync(PREFS_FILE, JSON.stringify(p, null, 2))
 const prefs = loadPrefs();
 const defaultDB = app.isPackaged
   ? path.join(app.getPath('userData'), 'cartera.db')
-  : path.join(__dirname, 'cartera.db');
+  : path.join(PROJECT_ROOT, 'cartera.db');
 
 let DB_PATH = defaultDB;
 let dbError = null;
@@ -69,7 +72,7 @@ function waitForServer(url, retries = 30, delay = 300) {
 let expressApp, server;
 let serverError = null;
 try {
-  expressApp = require('./server')(DB_PATH);
+  expressApp = require('../backend/server')(DB_PATH);
   server = http.createServer(expressApp);
   server.listen(PORT, '127.0.0.1');
 } catch(err) {
@@ -225,6 +228,8 @@ function httpsGet(url) {
   });
 }
 
+let macUpdateScript = null;
+
 function macDownloadAndInstall(version) {
   const zipUrl = `https://github.com/xJp-P/cartera-prestamos/releases/download/v${version}/Instalador-Mac-${version}.zip`;
   const tmpDir = path.join(os.tmpdir(), 'cartera-update-' + Date.now());
@@ -285,8 +290,6 @@ rm -rf "${tmpDir}"
     try { fs.rmSync(tmpDir, { recursive: true }); } catch(_) {}
   });
 }
-
-let macUpdateScript = null;
 
 ipcMain.handle('download-update', () => {
   if (process.platform === 'darwin' && macUpdateVersion) {

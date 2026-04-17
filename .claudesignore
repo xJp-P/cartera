@@ -1,0 +1,49 @@
+# Dependencias (se reinstalan con `npm install`)
+node_modules/
+
+# Builds y artefactos de compilación
+dist/
+build/Output/
+out/
+
+# Base de datos y preferencias (datos del usuario, no código fuente)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+prefs.json
+
+# Control de versiones
+.git/
+.gitignore
+
+# Archivos privados de sesiones de IA
+.claude/
+
+# CI (suele ser chequeado de forma puntual, no en cada exploración)
+.github/
+
+# Instaladores, binarios y empaques
+*.exe
+*.dmg
+*.zip
+*.rar
+*.7z
+*.AppImage
+*.snap
+*.deb
+*.rpm
+
+# Logs y temporales
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Lockfile (opcional — si quieres que Claude lo vea, coméntalo)
+package-lock.json
+
+# Recursos binarios pesados (se exploran solo si se mencionan explícitamente)
+icono.png
+build/icon.ico
+build/icon.png

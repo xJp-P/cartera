@@ -14,18 +14,35 @@ App de escritorio para gestión de préstamos personales.
 C:\Users\juanp\Documents\Proyecto_PTM
 ```
 
-## Archivos Principales
+## Estructura de Carpetas
 
-| Archivo | Descripción |
-|---|---|
-| `main.js` | Ventana Electron + IPC handlers + auto-update (Win: electron-updater, Mac: custom updater) |
-| `server.js` | Express API + SQLite + motor financiero |
-| `preload.js` | Expone `electronAPI` al frontend vía contextBridge |
-| `public/index.html` | UI completa en React (~2500+ líneas) |
-| `package.json` | Dependencias + scripts de build |
-| `.github/workflows/build.yml` | GitHub Actions: compila .exe (Windows) y .dmg+.zip (Mac) |
-| `build/uninstaller.nsh` | Script NSIS para opción de borrar datos al desinstalar |
-| `build/icon.ico` / `build/icon.png` | Ícono de la app |
+```
+Proyecto_PTM/
+├── desktop/              # Capa nativa de Electron
+│   ├── main.js           # Ventana + IPC + auto-update (Win: electron-updater, Mac: custom updater)
+│   └── preload.js        # Expone `electronAPI` al renderer vía contextBridge
+├── backend/              # Capa de datos y lógica de negocio
+│   └── server.js         # Express API + SQLite + motor financiero (factory exportada)
+├── public/               # Capa de presentación
+│   └── index.html        # UI completa en React UMD (~2500+ líneas, sin build step)
+├── build/                # Recursos de instalación
+│   ├── icon.ico / icon.png
+│   └── uninstaller.nsh   # Script NSIS para opción de borrar datos al desinstalar
+├── .github/workflows/
+│   └── build.yml         # GitHub Actions: compila .exe (Windows) y .dmg+.zip (Mac)
+├── package.json          # "main": "desktop/main.js" — "files": desktop, backend, public
+├── CLAUDE.md             # Este archivo (contexto para Claude)
+├── ESTADO_DEL_PROYECTO.md # Estado actual y pendientes
+└── .claudesignore        # Ignorados al escanear el proyecto
+```
+
+### Rutas entre módulos
+
+- `desktop/main.js` → carga `../backend/server` como factory del servidor Express
+- `desktop/main.js` → carga `preload.js` (misma carpeta) en la ventana
+- `backend/server.js` → sirve archivos estáticos desde `../public/`
+- En modo dev: `cartera.db` y `prefs.json` viven en la raíz del proyecto (`PROJECT_ROOT`)
+- En modo empaquetado: ambos viven en `app.getPath('userData')`
 
 ## Base de Datos
 
@@ -152,7 +169,7 @@ Se muestra en: cronograma in-app (DebtorModal) y cronograma PDF.
 - Abonos a capital se muestran como filas separadas con estilo diferenciado
 - **Tema-aware:** se genera con el tema activo (claro u oscuro)
 
-## API Endpoints (server.js)
+## API Endpoints (backend/server.js)
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -189,7 +206,7 @@ Se muestra en: cronograma in-app (DebtorModal) y cronograma PDF.
 ## Actualización Automática
 
 - **Windows:** `electron-updater` estándar — descarga e instala automáticamente
-- **Mac:** Custom updater en `main.js` — descarga .zip, extrae, aplica `xattr -cr`, reemplaza la app y reinicia
+- **Mac:** Custom updater en `desktop/main.js` — descarga .zip, extrae, aplica `xattr -cr`, reemplaza la app y reinicia
 - Motivo del custom updater: Squirrel.Mac requiere firma de código (Apple Developer $99/año)
 - Ambas plataformas verifican contra GitHub Releases del repo `xJp-P/cartera-prestamos`
 

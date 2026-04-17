@@ -1,12 +1,15 @@
 /**
  * server.js — Express API
  * Exporta una función factory que recibe la ruta del DB.
- * main.js crea el servidor http y llama a .listen().
+ * desktop/main.js crea el servidor http y llama a .listen().
  */
 
 const express  = require('express');
 const Database = require('better-sqlite3');
 const path     = require('path');
+
+// Raíz del proyecto (un nivel arriba de /backend)
+const PROJECT_ROOT = path.join(__dirname, '..');
 
 // Fecha local (no UTC) en formato YYYY-MM-DD
 function hoyStr() {
@@ -31,7 +34,7 @@ module.exports = function createApp(dbPath) {
   });
 
   app.use(express.json());
-  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.static(path.join(PROJECT_ROOT, 'public')));
 
   // ── Base de datos ─────────────────────────────────────────────────────────
   const db = new Database(dbPath);
@@ -242,10 +245,8 @@ module.exports = function createApp(dbPath) {
     let updated = 0;
     for (const loan of activeLoans) {
       const prev = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(loan.id);
-      // Separar abonos de cuotas regulares
-      const prevAbonos = prev.filter(p => p.id && p.id.indexOf('-ab-') !== -1);
+      // Preservar abonos (id contiene '-ab-'), solo borrar cuotas regulares
       const prevRegulares = prev.filter(p => !p.id || p.id.indexOf('-ab-') === -1);
-      // Solo borrar cuotas regulares, preservar abonos intactos
       prevRegulares.forEach(p => {
         db.prepare('DELETE FROM payments WHERE id = ?').run(p.id);
       });
@@ -356,13 +357,11 @@ module.exports = function createApp(dbPath) {
   // ── API: Payments ─────────────────────────────────────────────────────────
   // Auto-extender cuotas de Intereses si faltan pocas pendientes
   function autoExtendSoloIntereses() {
-    const hoy = hoyStr();
     const activeIndefinidos = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Intereses'").all();
     for (const loan of activeIndefinidos) {
       const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN DESC').all(loan.id);
       const regulares = allPays.filter(p => p.id.indexOf('-ab-') === -1);
-      const pendientes = regulares.filter(p => p.estadoPago === 'Pendiente' || p.estadoPago === 'En Mora');
-      // Si quedan menos de 3 cuotas pendientes/mora, generar más
+      // Si quedan menos de 3 cuotas pendientes futuras, generar más
       const pendFuturas = regulares.filter(p => p.estadoPago === 'Pendiente');
       if (pendFuturas.length < 3) {
         const maxN = regulares.length > 0 ? Math.max(...regulares.map(p => p.cuotaN)) : 0;

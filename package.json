@@ -1,8 +1,8 @@
 {
   "name": "cartera-prestamos",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "description": "Gestión de cartera de préstamos personales",
-  "main": "main.js",
+  "main": "desktop/main.js",
   "scripts": {
     "start": "electron .",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
@@ -62,9 +62,8 @@
       "output": "dist"
     },
     "files": [
-      "main.js",
-      "preload.js",
-      "server.js",
+      "desktop/**/*",
+      "backend/**/*",
       "public/**/*"
     ],
     "extraResources": [
