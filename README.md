@@ -19,11 +19,7 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 - **Actualizaciones automaticas** desde GitHub Releases (Windows y Mac)
 - **Sincronizacion** via iCloud Drive, OneDrive, etc.
 
-## Capturas
-
-*Proximamente*
-
-## Instalacion
+## Como instalar en Mac
 
 Descarga el instalador desde [Releases](https://github.com/xJp-P/cartera-prestamos/releases):
 
@@ -51,18 +47,37 @@ xattr -cr /Applications/Cartera\ de\ Prestamos.app
 
 > Este paso solo es necesario **la primera vez** que instalas la app. Las actualizaciones posteriores no requieren repetirlo.
 
-## Stack
+## Base de datos
 
-| Componente | Tecnologia |
+La base de datos es un archivo SQLite (`cartera.db`) que se crea automaticamente la primera vez que abres la app.
+
+| Sistema | Ubicacion por defecto |
 |---|---|
-| Escritorio | Electron |
-| Backend | Express (local en 127.0.0.1:3420) |
-| Base de datos | SQLite (better-sqlite3) |
-| Frontend | React 18 (UMD, sin build step) |
-| Instalador | NSIS (Windows) / DMG (Mac) |
-| Auto-update | electron-updater (Win) / custom updater (Mac) + GitHub Releases |
+| Windows | `%APPDATA%\cartera-prestamos\cartera.db` |
+| Mac | `~/Library/Application Support/cartera-prestamos/cartera.db` |
 
-## Desarrollo
+Desde la seccion **Desarrollador** dentro de la app puedes cambiar la ubicacion de la base de datos a cualquier carpeta (por ejemplo, una carpeta de iCloud Drive o OneDrive para sincronizar entre equipos).
+
+## Estructura del proyecto
+
+```
+├── desktop/
+│   ├── main.js           # Ventana Electron + IPC handlers + auto-update
+│   └── preload.js        # Bridge seguro entre Electron y frontend
+├── backend/
+│   └── server.js         # API Express + SQLite + motor financiero
+├── public/
+│   └── index.html        # UI completa en React
+├── build/
+│   ├── icon.ico          # Icono Windows
+│   ├── icon.png          # Icono general
+│   └── uninstaller.nsh   # Script de desinstalacion
+└── .github/
+    └── workflows/
+        └── build.yml     # CI/CD: compila y publica releases
+```
+
+## Desarrollo local
 
 ```bash
 # Instalar dependencias
@@ -77,23 +92,17 @@ npm run build:mac    # Mac
 npm run build:all    # Ambos
 ```
 
-## Estructura del proyecto
+## Stack tecnologico
 
-```
-├── main.js           # Ventana Electron + IPC handlers
-├── server.js         # API Express + SQLite + motor financiero
-├── preload.js        # Bridge seguro entre Electron y frontend
-├── public/
-│   └── index.html    # UI completa en React
-├── build/
-│   ├── icon.ico      # Icono Windows
-│   ├── icon.png      # Icono general
-│   └── uninstaller.nsh  # Script de desinstalacion
-└── .github/
-    └── workflows/
-        └── build.yml # CI/CD: compila y publica releases
-```
+| Componente | Tecnologia |
+|---|---|
+| Escritorio | Electron |
+| Backend | Express (local en 127.0.0.1:3420) |
+| Base de datos | SQLite (better-sqlite3) |
+| Frontend | React 18 (UMD, sin build step) |
+| Instalador | NSIS (Windows) / DMG (Mac) |
+| Auto-update | electron-updater (Win) / custom updater (Mac) + GitHub Releases |
 
-## Licencia
+---
 
 Uso privado.
