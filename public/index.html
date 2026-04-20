@@ -130,6 +130,8 @@ function pmt(r,n,pv){ return r===0?pv/n:pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1)
 function fmt(n)  { return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n||0); }
 function fmtUSD(n){ return 'USD $'+new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0); }
 function fmtN(n) { return new Intl.NumberFormat('es-CO').format(Math.round(n||0)); }
+// Saldo restante de una cuota considerando pagos parciales
+function pendCuota(p){ return Math.max(0,(p.cuotaTotal||0)-(p.partialPaid||0)); }
 // Convierte COP a USD usando TRM del préstamo; retorna string "USD $X.XX"
 function copToUsd(cop,trm){ return trm>0?fmtUSD(cop/trm):''; }
 function fmtD(s) { return s?new Date(s+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'-'; }
@@ -297,11 +299,19 @@ function generateCronogramaPDF(loan, payments, darkMode) {
   }
 }
 
-function generateRecibo(pay, loan, copRec, usdRec, allPays) {
+function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
+  opts = opts || {};
   var dark = document.documentElement.getAttribute('data-theme') === 'dark';
   var esUSD = loan && loan.moneda === 'USD';
   var saldoRestante = pay.saldoFinal;
   var montoRecibido = copRec || pay.cuotaTotal;
+  var yaAbonadoPrev = opts.yaAbonadoPrev || 0;
+  var totalAcum = yaAbonadoPrev + montoRecibido;
+  var esParcial = totalAcum < pay.cuotaTotal;
+  var completaCuota = !esParcial && yaAbonadoPrev > 0;
+  var tipoTitulo = esParcial ? 'Recibo de Abono Parcial' : completaCuota ? 'Recibo Final de Cuota' : 'Recibo de Pago';
+  var tipoEtiqueta = esParcial ? 'Abono parcial a cuota' : completaCuota ? 'Pago final (completa cuota)' : 'Pago completo';
+  var restanteTrasEste = Math.max(0, pay.cuotaTotal - totalAcum);
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   // Próximas cuotas (solo para Capital + Intereses y si hay pays disponibles)
   var allProxCuotas = [];
@@ -346,7 +356,7 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays) {
            '@media print{body{padding:20px}@page{margin:15mm}}',
     '</style></head><body>',
     '<div class="header">',
-    '<h1>Recibo de Pago</h1>',
+    '<h1>' + tipoTitulo + '</h1>',
     '<p>Fecha de emision: ' + fechaEmision + '</p>',
     '</div>',
     '<div class="section">',
@@ -363,19 +373,27 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays) {
     '</div>',
     '<div class="section">',
     '<div class="section-title">Detalle del pago</div>',
+    '<div class="row"><span class="label">Tipo</span><span class="value">' + tipoEtiqueta + '</span></div>',
     '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + '</span></div>',
     '<div class="row"><span class="label">Fecha vencimiento</span><span class="value">' + fmtD(pay.fechaPago) + '</span></div>',
     '<div class="row"><span class="label">Fecha recaudo</span><span class="value">' + fmtD(pay.fechaRecaudo || nowStr()) + '</span></div>',
-    pay.interesPeriodo > 0 ? '<div class="row"><span class="label">Intereses</span><span class="value">' + fv(pay.interesPeriodo) + '</span></div>' : '',
-    pay.abonoCapital > 0 ? '<div class="row"><span class="label">Abono a capital</span><span class="value">' + fv(pay.abonoCapital) + '</span></div>' : '',
+    !esParcial && pay.interesPeriodo > 0 ? '<div class="row"><span class="label">Intereses</span><span class="value">' + fv(pay.interesPeriodo) + '</span></div>' : '',
+    !esParcial && pay.abonoCapital > 0 ? '<div class="row"><span class="label">Abono a capital</span><span class="value">' + fv(pay.abonoCapital) + '</span></div>' : '',
     '<div class="row"><span class="label">Monto cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>',
+    yaAbonadoPrev > 0 ? '<div class="row"><span class="label">Abonado previamente</span><span class="value">' + fv(yaAbonadoPrev) + '</span></div>' : '',
     '</div>',
     '<div class="total-box">',
-    '<div style="font-size:10px;color:' + (dark ? '#8b949e' : '#656d76') + ';margin-bottom:4px">MONTO RECIBIDO</div>',
+    '<div style="font-size:10px;color:' + (dark ? '#8b949e' : '#656d76') + ';margin-bottom:4px">' + (esParcial ? 'ABONO RECIBIDO' : 'MONTO RECIBIDO') + '</div>',
     '<div class="amount">' + (esUSD && usdRec ? fmtUSD(usdRec) : fv(montoRecibido)) + '</div>',
+    esUSD && usdRec ? '<div class="sub">' + fv(montoRecibido) + ' COP</div>' : '',
     '</div>',
+    esParcial ? '<div class="section"><div class="section-title">Estado de la cuota</div>' +
+      '<div class="row"><span class="label">Total cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>' +
+      '<div class="row"><span class="label">Total abonado (con este pago)</span><span class="value">' + fv(totalAcum) + '</span></div>' +
+      '<div class="row"><span class="label">Restante por pagar</span><span class="value" style="color:' + (dark?'#d29922':'#9a6700') + '">' + fv(restanteTrasEste) + '</span></div>' +
+      '</div>' : '',
     '<div class="section">',
-    '<div class="row"><span class="label">Saldo restante</span><span class="value">' + fv(saldoRestante) + '</span></div>',
+    !esParcial ? '<div class="row"><span class="label">Saldo restante del prestamo</span><span class="value">' + fv(saldoRestante) + '</span></div>' : '',
     pay.observaciones ? '<div class="row"><span class="label">Observaciones</span><span class="value">' + pay.observaciones + '</span></div>' : '',
     '</div>',
     proxCuotas.length > 0 ? '<div class="section"><div class="section-title">Proximas cuotas (quedan ' + totalPending + ' de ' + loan.plazoMeses + ')</div>' + proxCuotas.map(function(pc) {
@@ -799,12 +817,20 @@ function App(){
       var todoCap=lp.reduce(function(a,p){return a+p.abonoCapital;},0);
       return s+Math.max(0,orig-todoCap);
     },0);
+    // Recaudo del mes: esperado = cuotaTotal de todas las cuotas del mes + mora arrastrada
+    // Recibido = cuotaTotal de las pagadas + partialPaid de las no pagadas (ambos contribuyen al progreso)
+    var scope=mp.concat(moraOtrosMeses);
+    var esperadoTot=scope.reduce(function(s,p){return s+p.cuotaTotal;},0);
+    var recibidoTot=scope.reduce(function(s,p){
+      if(p.estadoPago==='Pagado') return s+(p.montoCOPRecibido||p.cuotaTotal);
+      return s+(p.partialPaid||0);
+    },0);
     return {
       totalCartera:totalDeuda,
       activeCount:active.length,
-      esperado:mp.concat(moraOtrosMeses).reduce(function(s,p){return s+p.cuotaTotal;},0),
-      recibido:mp.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.cuotaTotal;},0),
-      mora:mora,totalMora:mora.reduce(function(s,p){return s+p.cuotaTotal;},0),
+      esperado:esperadoTot,
+      recibido:recibidoTot,
+      mora:mora,totalMora:mora.reduce(function(s,p){return s+pendCuota(p);},0),
       totalInteresesRecibidos:totalInteresesRecibidos,
       hoy:pays.filter(function(p){return p.estadoPago==='Pendiente'&&p.fechaPago===td;})
               .sort(function(a,b){return a.nombreCliente.localeCompare(b.nombreCliente);}),
@@ -897,13 +923,8 @@ function App(){
     if(d) setDebtorModal(d);
   }
 
-  // Quick pay (pago rápido sin modal, solo para préstamos COP)
-  var quickPay=useCallback(function(p){
-    var loan=null;
-    for(var i=0;i<loans.length;i++){if(loans[i].id===p.prestamoId){loan=loans[i];break;}}
-    if(loan&&loan.moneda==='USD'){openPayModal(p);return;}
-    setConfirmDlg({title:'Marcar como Pagada',message:'Cuota '+p.cuotaN+' de '+p.nombreCliente,detail:fmt(p.cuotaTotal),okLabel:'Pagado',okColor:'var(--green2)',checkLabel:'Generar recibo de pago',onConfirm:function(wantRecibo){setConfirmDlg(null);if(wantRecibo&&loan){generateRecibo(p,loan,p.cuotaTotal,0,pays);}markPay(p.id,'Pagado',nowStr(),'',0);}});
-  },[loans,markPay,openPayModal]);
+  // Botón rápido ✓: abre PayModal (permite elegir Completo o Parcial)
+  var quickPay=openPayModal;
 
   if(loading) return h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--bg)',gap:16}},
     h('div',{className:'spinner'}),
@@ -1086,34 +1107,42 @@ function DashView(props){
           var isU=pl&&pl.moneda==='USD';
           var pagado=p.estadoPago==='Pagado';
           var enMora=p.estadoPago==='En Mora';
+          var hasPartial=(p.partialPaid||0)>0&&!pagado;
+          var valor=pagado?p.cuotaTotal:pendCuota(p);
           var tipo=pl?(pl.modalidad==='Intereses'?'intereses':pl.modalidad==='Capital + Intereses'?'capital + intereses':pl.modalidad==='Prestamo'?'capital':''):'';
           return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderTop:i>0?'1px solid var(--border-light, rgba(255,255,255,.06))':'none',opacity:pagado?.55:1}},
             h('div',{style:{minWidth:0,flex:1}},
               h('div',{style:{display:'flex',alignItems:'center',gap:6}},
                 pagado&&h(Ico,{name:'check',size:11,color:'var(--green)',sw:2.5}),
                 enMora&&h(Ico,{name:'alert',size:11,color:'var(--red)',sw:2}),
-                h('span',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:13,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente)),
+                h('span',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:13,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
+                hasPartial&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)',fontSize:9,padding:'1px 5px'}},'PARCIAL')),
               h('div',{style:{fontSize:11,color:enMora?'var(--red)':'var(--text3)',marginTop:1}},
-                fmtD(p.fechaPago)+' \u2022 '+tipo+(enMora?' \u2022 en mora':''))),
+                fmtD(p.fechaPago)+' \u2022 '+tipo+(enMora?' \u2022 en mora':'')),
+              hasPartial&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},'Abonado '+fmt(p.partialPaid)+' de '+fmt(p.cuotaTotal))),
             h('div',{style:{textAlign:'right',flexShrink:0}},
-              h('div',{className:'mono',style:{fontWeight:600,fontSize:13,color:pagado?'var(--green)':enMora?'var(--red)':'var(--text)'}},fmt(p.cuotaTotal)),
-              isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
+              h('div',{className:'mono',style:{fontWeight:600,fontSize:13,color:pagado?'var(--green)':enMora?'var(--red)':hasPartial?'var(--blue)':'var(--text)'}},fmt(valor)),
+              isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(valor,pl.trmAcordada))));
         }))),
     metrics.hoy.length>0&&h('div',{style:{background:'rgba(187,128,9,.08)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--yellow)',marginBottom:16}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:11}},
         h('div',{style:{display:'flex',alignItems:'center',gap:6}},
           h(Ico,{name:'calendar',size:14,color:'var(--yellow)'}),
           h('span',{style:{fontWeight:700,fontSize:14,color:'var(--yellow)'}},'Vence Hoy')),
-        h('span',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--yellow)'}},fmt(metrics.hoy.reduce(function(s,p){return s+p.cuotaTotal;},0)))),
+        h('span',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--yellow)'}},fmt(metrics.hoy.reduce(function(s,p){return s+pendCuota(p);},0)))),
       metrics.hoy.map(function(p,i){
         var pl=loanMap[p.prestamoId];var isU=pl&&pl.moneda==='USD';
+        var hasPartial=(p.partialPaid||0)>0;var val=pendCuota(p);
         return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderTop:i>0?'1px solid rgba(187,128,9,.15)':'none'}},
           h('div',null,
-            h('div',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
-            h('div',{style:{fontSize:12,color:'var(--yellow)',marginTop:1}},'Cuota '+p.cuotaN+' - Cobrar hoy')),
+            h('div',{style:{display:'flex',alignItems:'center',gap:6}},
+              h('span',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
+              hasPartial&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)',fontSize:9,padding:'1px 5px'}},'PARCIAL')),
+            h('div',{style:{fontSize:12,color:'var(--yellow)',marginTop:1}},'Cuota '+p.cuotaN+' - Cobrar hoy'),
+            hasPartial&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},'Abonado '+fmt(p.partialPaid)+' de '+fmt(p.cuotaTotal))),
           h('div',{style:{textAlign:'right'}},
-            h('div',{className:'mono',style:{fontWeight:600,fontSize:14,color:'var(--yellow)'}},fmt(p.cuotaTotal)),
-            isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
+            h('div',{className:'mono',style:{fontWeight:600,fontSize:14,color:'var(--yellow)'}},fmt(val)),
+            isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(val,pl.trmAcordada))));
       })),
     metrics.pronto.length>0&&h('div',{style:{background:'rgba(187,128,9,.04)',borderRadius:14,padding:'13px 14px',border:'1px solid rgba(187,128,9,.3)',marginBottom:16}},
       h('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:10}},
@@ -1122,13 +1151,17 @@ function DashView(props){
       metrics.pronto.map(function(p,i){
         var pl=loanMap[p.prestamoId];var isU=pl&&pl.moneda==='USD';
         var dias=Math.ceil((new Date(p.fechaPago+'T12:00:00')-new Date(nowStr()+'T12:00:00'))/86400000);
+        var hasPartial=(p.partialPaid||0)>0;var val=pendCuota(p);
         return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid rgba(187,128,9,.12)':'none'}},
           h('div',null,
-            h('div',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
-            h('div',{style:{fontSize:12,color:'var(--yellow)',marginTop:1}},'Cuota '+p.cuotaN+' - en '+dias+' dia'+(dias>1?'s':''))),
+            h('div',{style:{display:'flex',alignItems:'center',gap:6}},
+              h('span',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
+              hasPartial&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)',fontSize:9,padding:'1px 5px'}},'PARCIAL')),
+            h('div',{style:{fontSize:12,color:'var(--yellow)',marginTop:1}},'Cuota '+p.cuotaN+' - en '+dias+' dia'+(dias>1?'s':'')),
+            hasPartial&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},'Abonado '+fmt(p.partialPaid)+' de '+fmt(p.cuotaTotal))),
           h('div',{style:{textAlign:'right'}},
-            h('div',{className:'mono',style:{fontWeight:600,fontSize:14,color:'var(--yellow)'}},fmt(p.cuotaTotal)),
-            isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
+            h('div',{className:'mono',style:{fontWeight:600,fontSize:14,color:'var(--yellow)'}},fmt(val)),
+            isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(val,pl.trmAcordada))));
       })),
     metrics.mora.length>0&&h('div',{style:{background:'var(--red-bg)',borderRadius:14,padding:'13px 14px',border:'1px solid var(--red-bd)'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:11}},
@@ -1136,13 +1169,17 @@ function DashView(props){
         h('button',{onClick:function(){onNav('pagos');},style:{fontSize:13,color:'var(--red)',fontWeight:600,background:'none',border:'none',cursor:'pointer'}},'Ver todos')),
       metrics.mora.slice(0,8).map(function(p,i){
         var pl=loanMap[p.prestamoId];var isU=pl&&pl.moneda==='USD';
+        var hasPartial=(p.partialPaid||0)>0;var val=pendCuota(p);
         return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid rgba(248,81,73,.15)':'none'}},
           h('div',null,
-            h('div',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
-            h('div',{style:{fontSize:12,color:'var(--red)',marginTop:1}},'Cuota '+p.cuotaN+' - Vencio '+fmtD(p.fechaPago))),
+            h('div',{style:{display:'flex',alignItems:'center',gap:6}},
+              h('span',{onClick:function(){onNameClick(p.nombreCliente);},style:{fontWeight:600,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
+              hasPartial&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)',fontSize:9,padding:'1px 5px'}},'PARCIAL')),
+            h('div',{style:{fontSize:12,color:'var(--red)',marginTop:1}},'Cuota '+p.cuotaN+' - Vencio '+fmtD(p.fechaPago)),
+            hasPartial&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},'Abonado '+fmt(p.partialPaid)+' de '+fmt(p.cuotaTotal))),
           h('div',{style:{textAlign:'right'}},
-            h('div',{className:'mono',style:{fontWeight:600,fontSize:14,color:'var(--red)'}},fmt(p.cuotaTotal)),
-            isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada))));
+            h('div',{className:'mono',style:{fontWeight:600,fontSize:14,color:'var(--red)'}},fmt(val)),
+            isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(val,pl.trmAcordada))));
       })),
     isEmpty&&h('div',{style:{textAlign:'center',padding:'44px 0',color:'var(--text3)'}},
       h('div',{style:{marginBottom:12}},h(Ico,{name:'briefcase',size:48,color:'var(--text3)'})),
@@ -1187,10 +1224,17 @@ function CarteraView(props){
     h('div',{style:{display:'flex',flexDirection:'column',gap:10}},
       filtered.slice().sort(function(a,b){return b.fechaInicio.localeCompare(a.fechaInicio);}).map(function(loan){
         var lp=pays.filter(function(p){return p.prestamoId===loan.id;});
-        var paid=lp.filter(function(p){return p.estadoPago==='Pagado';}).length;
-        var mora=lp.filter(function(p){return p.estadoPago==='En Mora';}).length;
+        var regs=lp.filter(function(p){return p.id.indexOf('-ab-')===-1;});
+        var paid=regs.filter(function(p){return p.estadoPago==='Pagado';}).length;
+        var mora=regs.filter(function(p){return p.estadoPago==='En Mora';}).length;
         var isExp=exp===loan.id;
-        var pct=lp.length>0?Math.round(paid/lp.length*100):0;
+        // Barra de progreso por MONTO (considera abonos parciales):
+        var totEsp=regs.reduce(function(s,p){return s+p.cuotaTotal;},0);
+        var totRec=regs.reduce(function(s,p){
+          if(p.estadoPago==='Pagado') return s+p.cuotaTotal;
+          return s+(p.partialPaid||0);
+        },0);
+        var pct=totEsp>0?Math.round(totRec/totEsp*100):0;
         return h('div',{key:loan.id,className:'loan-card',style:{background:'var(--bg2)',borderRadius:14,border:'1px solid '+(mora>0?'var(--red-bd)':'var(--border)'),boxShadow:'var(--shadow)',overflow:'hidden',transition:'border-color .15s'}},
           h('div',{style:{padding:'13px 14px 11px'}},
             h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}},
@@ -1228,15 +1272,17 @@ function CarteraView(props){
                     }))),
                   h('tbody',null,cuotasReg.map(function(p){
                     var so=ST[p.estadoPago]||{bg:'var(--bg3)',color:'var(--text2)',icon:'?'};
-                    return h('tr',{key:p.id,style:{borderTop:'1px solid var(--bg3)',background:p.estadoPago==='En Mora'?'rgba(248,81,73,.06)':p.estadoPago==='Pagado'?'rgba(63,185,80,.06)':'transparent'}},
+                    var hasPartial=(p.partialPaid||0)>0&&p.estadoPago!=='Pagado';
+                    return h('tr',{key:p.id,style:{borderTop:'1px solid var(--bg3)',background:p.estadoPago==='En Mora'?'rgba(248,81,73,.06)':p.estadoPago==='Pagado'?'rgba(63,185,80,.06)':hasPartial?'rgba(33,129,219,.06)':'transparent'}},
                       h('td',{style:{padding:'6px 10px',textAlign:'center',color:'var(--text3)'}},p.cuotaN),
                       h('td',{style:{padding:'6px 10px',color:'var(--text2)',whiteSpace:'nowrap'}},fmtD(p.fechaPago)),
                       h('td',{className:'mono',style:{padding:'6px 10px',textAlign:'right',fontWeight:500,color:'var(--text)'}},fmt(p.cuotaTotal),
+                        hasPartial&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:600}},'-'+fmt(p.partialPaid)),
                         loan.moneda==='USD'&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,loan.trmAcordada))),
                       h('td',{className:'mono',style:{padding:'6px 10px',textAlign:'right',color:'var(--text3)',fontSize:10}},fmt(p.saldoFinal),
                         loan.moneda==='USD'&&h('div',{style:{fontSize:9,color:'var(--blue)'}},copToUsd(p.saldoFinal,loan.trmAcordada))),
                       h('td',{style:{padding:'6px 10px',textAlign:'center'}},
-                        h('span',{style:{background:so.bg,color:so.color,padding:'2px 6px',borderRadius:99,fontSize:10,fontWeight:700,whiteSpace:'nowrap'}},p.estadoPago==='Pagado'?'Pagado':p.estadoPago==='En Mora'?'Mora':'Pend.')));
+                        h('span',{style:{background:so.bg,color:so.color,padding:'2px 6px',borderRadius:99,fontSize:10,fontWeight:700,whiteSpace:'nowrap'}},p.estadoPago==='Pagado'?'Pagado':p.estadoPago==='En Mora'?'Mora':hasPartial?'Parc.':'Pend.')));
                   })))),
               abonos.length>0&&h('div',{style:{borderTop:'2px solid var(--blue-bd)',padding:'10px 12px',background:'rgba(88,166,255,.04)'}},
                 h('div',{style:{fontSize:11,fontWeight:700,color:'var(--blue)',marginBottom:8,display:'flex',alignItems:'center',gap:6}},
@@ -1373,14 +1419,16 @@ function DebtorModal(props){
         h('div',{style:{fontSize:14,fontWeight:700,color:d.mora>0?'var(--red)':'var(--text)'}},d.mora))),
     cuotasMora.length>0&&h('div',{style:{marginTop:8,background:'var(--red-bg)',borderRadius:10,padding:'10px 12px',border:'1px solid var(--red-bd)'}},
       cuotasMora.map(function(p,i){
+        var pend=pendCuota(p);var hasPartial=(p.partialPaid||0)>0;
         return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderTop:i>0?'1px solid rgba(248,81,73,.15)':'none'}},
           h('div',null,
             h('div',{style:{fontSize:12,fontWeight:600,color:'var(--text)'}},p.nombreCliente),
-            h('div',{style:{fontSize:11,color:'var(--red)',marginTop:1}},'Cuota '+p.cuotaN+' - Vencida el '+fmtD(p.fechaPago))),
+            h('div',{style:{fontSize:11,color:'var(--red)',marginTop:1}},'Cuota '+p.cuotaN+' - Vencida el '+fmtD(p.fechaPago)),
+            hasPartial&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},'Abonado '+fmt(p.partialPaid)+' de '+fmt(p.cuotaTotal))),
           h('div',{style:{textAlign:'right'}},
-            h('div',{className:'mono',style:{fontSize:12,fontWeight:600,color:'var(--red)'}},fmt(p.cuotaTotal)),
+            h('div',{className:'mono',style:{fontSize:12,fontWeight:600,color:'var(--red)'}},fmt(pend)),
             function(){var pl=null;for(var j=0;j<loans.length;j++){if(loans[j].id===p.prestamoId){pl=loans[j];break;}}
-              return pl&&pl.moneda==='USD'?h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(p.cuotaTotal,pl.trmAcordada)):null;}()));
+              return pl&&pl.moneda==='USD'?h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(pend,pl.trmAcordada)):null;}()));
       })),
     h('div',{style:{marginTop:8,padding:'10px 12px',background:'var(--bg3)',borderRadius:10,fontSize:12,color:'var(--text2)'}},
       ultimoPago.length>0?'Ultimo pago: '+fmtD(ultimoPago[0].fechaRecaudo):'Sin pagos realizados'),
@@ -1444,23 +1492,27 @@ function DebtorModal(props){
             enMora.length>0&&h('div',{style:{marginBottom:10,padding:'8px 10px',background:'var(--red-bg)',borderRadius:8,border:'1px solid var(--red-bd)'}},
               h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,marginBottom:4}},enMora.length+' CUOTA'+(enMora.length>1?'S':'')+' EN MORA'),
               enMora.map(function(p,i){
-                return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',fontSize:11,padding:'3px 0',borderTop:i>0?'1px solid rgba(248,81,73,.15)':'none'}},
-                  h('span',{style:{color:'var(--red)'}},'Cuota '+p.cuotaN+' - '+fmtD(p.fechaPago)),
-                  h('span',{className:'mono',style:{color:'var(--red)',fontWeight:600}},fmt(p.cuotaTotal),esUSD&&h('span',{style:{fontSize:9,marginLeft:4}},copToUsd(p.cuotaTotal,l.trmAcordada))));
+                var pend=pendCuota(p);var hasPartial=(p.partialPaid||0)>0;
+                return h('div',{key:p.id,style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',fontSize:11,padding:'3px 0',borderTop:i>0?'1px solid rgba(248,81,73,.15)':'none'}},
+                  h('div',null,
+                    h('div',{style:{color:'var(--red)'}},'Cuota '+p.cuotaN+' - '+fmtD(p.fechaPago)),
+                    hasPartial&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},'Abonado '+fmt(p.partialPaid)+' de '+fmt(p.cuotaTotal))),
+                  h('span',{className:'mono',style:{color:'var(--red)',fontWeight:600}},fmt(pend),esUSD&&h('span',{style:{fontSize:9,marginLeft:4}},copToUsd(pend,l.trmAcordada))));
               })),
             proxCuota&&h('div',{style:{padding:'8px 10px',background:'rgba(63,185,80,.06)',borderRadius:8,border:'1px solid var(--green-bd)'}},
               h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600}},'PROXIMA CUOTA'),
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:3}},
                 h('span',{style:{fontSize:11,color:'var(--text2)'}},'Cuota '+proxCuota.cuotaN+' - '+fmtD(proxCuota.fechaPago)),
                 h('span',{className:'mono',style:{fontSize:12,fontWeight:600,color:'var(--green)'}},fmt(proxCuota.cuotaTotal),esUSD&&h('span',{style:{fontSize:9,fontWeight:500,color:'var(--blue)',marginLeft:4}},copToUsd(proxCuota.cuotaTotal,l.trmAcordada))))),
-            l.estado==='Activo'&&saldo>0&&function(){var intMora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var liquidacion=saldo+intMora;return h('div',{style:{marginTop:10,padding:'8px 10px',background:'var(--yellow-bg)',borderRadius:8,border:'1px solid var(--yellow)'}},
+            l.estado==='Activo'&&saldo>0&&function(){var intMora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var partialPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);var liquidacion=Math.max(0,saldo+intMora-partialPend);return h('div',{style:{marginTop:10,padding:'8px 10px',background:'var(--yellow-bg)',borderRadius:8,border:'1px solid var(--yellow)'}},
               h('div',{style:{fontSize:10,color:'var(--yellow)',fontWeight:600}},'VALOR DE LIQUIDACION'),
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:3}},
-                h('span',{style:{fontSize:10,color:'var(--text2)'}},'Capital'+(intMora>0?' + intereses en mora':'')),
-                h('span',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--yellow)'}},fmt(liquidacion),esUSD&&h('span',{style:{fontSize:10,marginLeft:4,color:'var(--blue)'}},copToUsd(liquidacion,l.trmAcordada)))));}(),
+                h('span',{style:{fontSize:10,color:'var(--text2)'}},'Capital'+(intMora>0?' + intereses en mora':'')+(partialPend>0?' - abonos parciales':'')),
+                h('span',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--yellow)'}},fmt(liquidacion),esUSD&&h('span',{style:{fontSize:10,marginLeft:4,color:'var(--blue)'}},copToUsd(liquidacion,l.trmAcordada)))),
+              partialPend>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:2}},'Ya abonado parcial: '+fmt(partialPend)));}(),
             l.estado==='Activo'&&saldo>0&&onAbono&&h('button',{onClick:function(e){e.stopPropagation();onAbono(l);},style:{marginTop:10,width:'100%',padding:'8px 0',background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',borderRadius:10,color:'var(--blue)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'dollar',size:14,color:'var(--blue)'}),'Registrar abono a capital'),
-            l.estado==='Activo'&&saldo>0&&onAbono&&function(){var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var liq=saldo+imora;return h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l,saldo:saldo,intMora:imora,liquidacion:liq});},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,color:'var(--red)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+            l.estado==='Activo'&&saldo>0&&onAbono&&function(){var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var partialPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);var liq=Math.max(0,saldo+imora-partialPend);return h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l,saldo:saldo,intMora:imora,liquidacion:liq});},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,color:'var(--red)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'dollar',size:14,color:'var(--red)'}),'Liquidar deuda: '+fmt(liq));}(),
             h('button',{onClick:function(e){e.stopPropagation();setCronoLoan(cronoLoan===l.id?null:l.id);},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,color:'var(--text2)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'calendar',size:14,color:'var(--text2)'}),cronoLoan===l.id?'Ocultar cronograma':'Ver cronograma'),
@@ -1493,12 +1545,13 @@ function DebtorModal(props){
                 rows.map(function(row,idx){
                   var p=row.p;var stColor=p.estadoPago==='Pagado'?'var(--green)':p.estadoPago==='En Mora'?'var(--red)':'var(--yellow)';
                   var stBg=p.estadoPago==='Pagado'?'var(--green-bg)':p.estadoPago==='En Mora'?'var(--red-bg)':'var(--yellow-bg)';
+                  var hasPartial=(p.partialPaid||0)>0&&p.estadoPago!=='Pagado';
                   return h('div',{key:p.id,style:{display:'grid',gridTemplateColumns:'40px 1fr 1fr 1fr 70px',padding:'5px 8px',fontSize:11,gap:4,borderTop:'1px solid var(--border)',background:idx%2===0?'transparent':'var(--bg3)'}},
                     h('span',{style:{color:'var(--text3)',fontWeight:600}},p.cuotaN),
                     h('span',{style:{color:'var(--text2)'}},fmtD(p.fechaPago)),
                     h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(row.deuda),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(row.deuda,l.trmAcordada))),
-                    h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.cuotaTotal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,l.trmAcordada))),
-                    h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:stBg,color:stColor,fontWeight:600}},p.estadoPago==='Pagado'?'Pagado':p.estadoPago==='En Mora'?'Mora':'Pend.')));
+                    h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.cuotaTotal),hasPartial&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:600}},'-'+fmt(p.partialPaid)),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,l.trmAcordada))),
+                    h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:stBg,color:stColor,fontWeight:600}},p.estadoPago==='Pagado'?'Pagado':p.estadoPago==='En Mora'?'Mora':hasPartial?'Parc.':'Pend.')));
                 }),
                 abonosList.length>0&&h('div',{style:{borderTop:'2px solid var(--blue-bd)',padding:'6px 8px',background:'rgba(88,166,255,.06)'}},
                   h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',marginBottom:4}},'ABONOS A CAPITAL'),
@@ -1596,9 +1649,9 @@ function PagosView(props){
   var tresStr=tres.toISOString().split('T')[0];
   var prontoPays=pays.filter(function(p){return p.estadoPago==='Pendiente'&&p.fechaPago>todayStr&&p.fechaPago<=tresStr;});
   var pendPays=pays.filter(function(p){return p.estadoPago==='Pendiente'&&p.fechaPago>tresStr;});
-  var totalPronto=prontoPays.reduce(function(s,p){return s+p.cuotaTotal;},0);
-  var totalMora=moraPays.reduce(function(s,p){return s+p.cuotaTotal;},0);
-  var totalHoy=hoyPays.reduce(function(s,p){return s+p.cuotaTotal;},0);
+  var totalPronto=prontoPays.reduce(function(s,p){return s+pendCuota(p);},0);
+  var totalMora=moraPays.reduce(function(s,p){return s+pendCuota(p);},0);
+  var totalHoy=hoyPays.reduce(function(s,p){return s+pendCuota(p);},0);
   // Pagos cobrados del mes actual (o mes seleccionado)
   var mesFilter=fMonth||nowStr().slice(0,7);
   var cobrados=allPays.filter(function(p){
@@ -1758,11 +1811,23 @@ function PortfolioView(props){
       var cuotasPaid=regularesPaid.length;
       var cuotasTotal=regulares.length||1;
 
+      // ── Progreso por MONTO (incluye abonos parciales) ──
+      var totEspRec=regulares.reduce(function(s,p){return s+p.cuotaTotal;},0);
+      var totCobRec=regulares.reduce(function(s,p){
+        if(p.estadoPago==='Pagado') return s+p.cuotaTotal;
+        return s+(p.partialPaid||0);
+      },0);
+      var pctMonto=totEspRec>0?Math.round(totCobRec/totEspRec*100):0;
+
+      // ── Abonos parciales pendientes (recibidos, no reconocidos como ganancia todavia) ──
+      var parcialesPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
+
       // ── MORA: tiene cuotas en mora? ──
       var enMora=lp.some(function(p){return p.estadoPago==='En Mora';});
 
       return {loan:loan,ganancia:Math.round(ganancia),capRec:Math.round(capRec),saldo:saldo,
-        cuotasPaid:cuotasPaid,cuotasTotal:cuotasTotal,enMora:enMora,capitalAbonos:Math.round(capitalAbonos)};
+        cuotasPaid:cuotasPaid,cuotasTotal:cuotasTotal,enMora:enMora,capitalAbonos:Math.round(capitalAbonos),
+        pctMonto:pctMonto,parcialesPend:Math.round(parcialesPend)};
     }).sort(function(a,b){
       if(a.loan.estado!==b.loan.estado) return a.loan.estado==='Activo'?-1:1;
       return b.loan.fechaInicio.localeCompare(a.loan.fechaInicio);
@@ -1835,13 +1900,17 @@ function PortfolioView(props){
             m.capitalAbonos>0&&h('div',{style:{gridColumn:'1/3',marginTop:2}},
               h('div',{style:{fontSize:11,color:'var(--blue)',fontWeight:600}},'Abonos a capital'),
               h('div',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--blue)'}},fmt(m.capitalAbonos),
-                esUSD&&h('span',{style:{fontSize:11,fontWeight:500,marginLeft:6}},copToUsd(m.capitalAbonos,l.trmAcordada))))),
+                esUSD&&h('span',{style:{fontSize:11,fontWeight:500,marginLeft:6}},copToUsd(m.capitalAbonos,l.trmAcordada)))),
+            m.parcialesPend>0&&h('div',{style:{gridColumn:'1/3',marginTop:2}},
+              h('div',{style:{fontSize:11,color:'var(--blue)',fontWeight:600}},'Abonos parciales recibidos'),
+              h('div',{className:'mono',style:{fontSize:13,fontWeight:700,color:'var(--blue)'}},fmt(m.parcialesPend)),
+              h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},'Pendiente de completar cuota para reconocer ganancia'))),
           l.modalidad==='Intereses'?h('div',{style:{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--text3)'}},
             h('span',null,m.cuotasPaid+' cuotas pagadas'),
             h('span',{style:{color:'var(--blue)'}},'\u221E')):h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-            h('div',{style:{flex:1,height:6,background:'var(--bg3)',borderRadius:3,overflow:'hidden'}},
-              h('div',{style:{width:pct+'%',height:'100%',background:m.enMora&&l.estado==='Activo'?'var(--red)':'var(--green)',borderRadius:3,transition:'width .3s'}})),
-            h('span',{style:{fontSize:11,color:'var(--text3)',whiteSpace:'nowrap'}},m.cuotasPaid+'/'+m.cuotasTotal+' ('+pct+'%)')));
+            h('div',{style:{flex:1,height:6,background:'var(--bg3)',borderRadius:3,overflow:'hidden',position:'relative'}},
+              h('div',{style:{width:m.pctMonto+'%',height:'100%',background:m.enMora&&l.estado==='Activo'?'var(--red)':'var(--green)',borderRadius:3,transition:'width .3s'}})),
+            h('span',{style:{fontSize:11,color:'var(--text3)',whiteSpace:'nowrap'}},m.cuotasPaid+'/'+m.cuotasTotal+' ('+m.pctMonto+'%)')));
       })));
 }
 
@@ -2010,19 +2079,17 @@ function PayModal(props){
     var m=+montoParcial||0;
     if(m<=0){_showError('Ingresa el monto del pago parcial');return;}
     if(m>restante){_showError('El monto supera el saldo pendiente ('+fmt(restante)+')');return;}
-    if(m===restante){
-      // Completa exactamente: trátalo como pago completo (el backend lo marca Pagado igual)
-    }
-    if(genRecibo&&loan){generateRecibo(pay,loan,m,+parcialUSD||0,allPays);}
+    if(genRecibo&&loan){generateRecibo(pay,loan,m,+parcialUSD||0,allPays,{yaAbonadoPrev:yaPagado});}
     onPartial(pay.id,m,fecha,obs,+parcialUSD||0);
   }
   function submitCompleto(){
     if(esUSD&&(!copRec||+copRec<=0)){_showError('Ingresa el monto COP recibido para prestamos en USD');return;}
-    if(genRecibo){generateRecibo(pay,loan,+copRec||restante||pay.cuotaTotal,+usdRec||0,allPays);}
     if(yaPagado>0){
-      // Habia pagos parciales: completar con endpoint parcial (el backend marcara Pagado)
+      // Habia pagos parciales: el recibo es "Pago final" que completa la cuota
+      if(genRecibo){generateRecibo(pay,loan,restante,+usdRec||0,allPays,{yaAbonadoPrev:yaPagado});}
       onPartial(pay.id,restante,fecha,obs,+usdRec||0);
     } else {
+      if(genRecibo){generateRecibo(pay,loan,+copRec||pay.cuotaTotal,+usdRec||0,allPays);}
       onMark(pay.id,'Pagado',fecha,obs,+copRec||pay.cuotaTotal,+usdRec||0);
     }
   }
