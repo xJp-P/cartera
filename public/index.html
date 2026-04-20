@@ -218,6 +218,7 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     dark ? '.badge-mora{background:#2d1117;color:#f85149;border:1px solid #5c1b18}' : '.badge-mora{background:#ffebe9;color:#cf222e}',
     dark ? '.badge-pendiente{background:#2b2005;color:#d29922;border:1px solid #3d2e08}' : '.badge-pendiente{background:#fff8c5;color:#9a6700}',
     dark ? '.badge-abono{background:#1d3a6e;color:#79c0ff;border:1px solid #388bfd}' : '.badge-abono{background:#ddf4ff;color:#0969da}',
+    dark ? '.badge-parcial{background:#1d3a6e;color:#79c0ff;border:1px solid #388bfd}' : '.badge-parcial{background:#ddf4ff;color:#0969da}',
     dark ? 'tr.abono{background:#131d2e !important}' : 'tr.abono{background:#f0f8ff !important}',
     dark ? 'tr.abono td{color:#79c0ff;font-style:italic}' : 'tr.abono td{color:#0969da;font-style:italic}',
     dark ? '.total-row{background:#0f2b19 !important;font-weight:700}' : '.total-row{background:#f0fdf4 !important;font-weight:700}',
@@ -253,14 +254,18 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     '<tr><th>#</th><th>Fecha</th><th>Deuda</th><th>Cuota</th><th>Saldo</th><th>Estado</th></tr>',
     filas.map(function(p) {
       var esAbono = p.id.indexOf('-ab-') !== -1;
-      var cls = esAbono ? ' class="abono"' : p.estadoPago === 'Pagado' ? ' class="pagado"' : p.estadoPago === 'En Mora' ? ' class="mora"' : ' class="pendiente"';
-      var badge = esAbono ? '<span class="badge badge-abono">Abono</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
+      var isParcial = !esAbono && (p.partialPaid||0) > 0 && p.estadoPago !== 'Pagado';
+      var cls = esAbono ? ' class="abono"' : isParcial ? ' class="mora"' : p.estadoPago === 'Pagado' ? ' class="pagado"' : p.estadoPago === 'En Mora' ? ' class="mora"' : ' class="pendiente"';
+      var badge = esAbono ? '<span class="badge badge-abono">Abono</span>' : isParcial ? '<span class="badge badge-mora">'+(p.estadoPago==='En Mora'?'En Mora':'Pendiente')+'</span> <span class="badge badge-parcial">Parcial</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
       if (esAbono) {
         return '<tr' + cls + '><td>-</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td><td>' + fv(p.saldoInicial) + '</td>' +
           '<td><strong>' + fv(p.abonoCapital) + '</strong></td><td>' + fv(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
       }
+      var cuotaCell = isParcial
+        ? '<strong>' + fv(Math.max(0,p.cuotaTotal-(p.partialPaid||0))) + '</strong><br><span style="font-size:9px;opacity:0.75">Abonado ' + fv(p.partialPaid||0) + '</span>'
+        : '<strong>' + fv(p.cuotaTotal) + '</strong>';
       return '<tr' + cls + '><td>' + p.cuotaN + '</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td><td>' + fv(p.saldoInicial) + '</td>' +
-        '<td><strong>' + fv(p.cuotaTotal) + '</strong></td><td>' + fv(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
+        '<td>' + cuotaCell + '</td><td>' + fv(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
     }).join(''),
     loan.modalidad === 'Intereses' ? function(){var intPagados=cuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.interesPeriodo;},0);return intPagados>0?'<tr class="total-row"><td></td><td style="text-align:left">INTERESES PAGADOS</td><td></td><td><strong>'+fv(intPagados)+'</strong></td><td></td><td></td></tr>':'';}() : loan.modalidad === 'Capital + Intereses' ? function(){var capPagado=cuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);return capPagado>0?'<tr class="total-row"><td></td><td style="text-align:left">CAPITAL PAGADO</td><td></td><td><strong>'+fv(capPagado)+'</strong></td><td></td><td></td></tr>':'';}() : '',
     totalAbonos > 0 ? '<tr class="total-row" style="background:' + (dark ? '#131d2e' : '#ddf4ff') + ' !important;color:' + (dark ? '#79c0ff' : '#0969da') + '"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fv(totalAbonos) + '</strong></td><td></td><td></td></tr>' : '',
@@ -271,14 +276,15 @@ function generateCronogramaPDF(loan, payments, darkMode) {
       var originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
       var todoCapPagado = allCuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
       var saldoAct = Math.max(0, originalCOP - todoCapPagado);
-      var liquidacion = saldoAct + intMora;
+      var partialPendPDF = allCuotas.filter(function(p){return p.id.indexOf('-ab-')===-1&&p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
+      var liquidacion = Math.max(0, saldoAct + intMora - partialPendPDF);
       if(saldoAct <= 0) return '';
       var bg = dark ? '#2b2005' : '#fff8c5';
       var bd = dark ? '#3d2e08' : '#d4a72c';
       var cl = dark ? '#d29922' : '#7a5900';
       return '<div style="margin-top:14px;padding:12px 16px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;display:flex;justify-content:space-between;align-items:center">' +
         '<div><div style="font-size:10px;font-weight:700;color:'+cl+';text-transform:uppercase;letter-spacing:1px">Valor de liquidacion</div>' +
-        '<div style="font-size:10px;color:'+cl+';margin-top:2px">Capital' + (intMora > 0 ? ' + intereses en mora' : '') + '</div></div>' +
+        '<div style="font-size:10px;color:'+cl+';margin-top:2px">Capital' + (intMora > 0 ? ' + intereses en mora' : '') + (partialPendPDF > 0 ? ' - abonos parciales' : '') + '</div></div>' +
         '<div style="font-size:20px;font-weight:700;color:'+cl+'">' + fv(liquidacion) + '</div></div>';
     }(),
     '</div>',
@@ -677,6 +683,22 @@ function App(){
       'Reorganizacion interna del codigo en carpetas /desktop y /backend',
       'Limpieza de codigo muerto y comentarios obsoletos',
       'Sin cambios visibles en la app — version de mantenimiento'
+    ],
+    '1.7.7': [
+      'Pagos parciales en cuotas: abona una parte hoy y el resto despues',
+      'Toggle "Pago completo / Pago parcial" en el modal de pago',
+      'Cuotas con abono parcial muestran tag PARCIAL y sub-linea "Abonado $X de $Y" en la vista Pagos',
+      'Campo de monto parcial con feedback en vivo: muestra cuanto quedaria pendiente al confirmar'
+    ],
+    '1.7.8': [
+      'Boton rapido ✓ abre directamente el modal de pago (sin dialogo de confirmacion)',
+      'Saldo pendiente en perfil del deudor ya descuenta abonos parciales realizados',
+      'Prestamos con abono parcial muestran tag "Parcial" y sub-linea visible sin necesidad de expandir',
+      'Totales EN MORA, Vence Hoy y Proximas ya descuentan los abonos parciales recibidos',
+      'Dashboard: sub-linea "Abonado $X de $Y" en listas de mora y recaudo del mes',
+      'Barras de progreso en Cartera y Rendimiento basadas en monto recibido (no en conteo de cuotas)',
+      'Cronograma PDF: valor de liquidacion ajustado por abonos parciales; fila muestra saldo pendiente',
+      'Recibo PDF diferenciado: "Abono Parcial", "Pago Final de Cuota" o "Pago Completo" segun corresponda'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1452,6 +1474,8 @@ function DebtorModal(props){
         var todoCapPag=lp.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
         var saldo=Math.max(0,origCOP-todoCapPag);
         var intCobrados=regulares.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.interesPeriodo;},0);
+        var partialPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
+        var saldoDisplay=Math.max(0,saldo-partialPend);
         var esUSD=l.moneda==='USD';
         var isExp=expLoan===l.id;
         // Próxima cuota
@@ -1463,11 +1487,13 @@ function DebtorModal(props){
                 h('span',{style:{fontWeight:700,fontSize:13,color:'var(--text)'}},l.modalidad),
                 esUSD&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)'}},'USD'),
                 enMora.length>0&&h('span',{className:'tag',style:{background:'var(--red-bg)',color:'var(--red)'}},enMora.length+' mora'),
+                partialPend>0&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)'}},'Parcial'),
                 l.modalidad==='Intereses'?h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)'}},'\u221E'):l.modalidad==='Prestamo'?h('span',{className:'tag',style:{background:'var(--yellow-bg)',color:'var(--yellow)'}},'Sin interes'):h('span',{className:'tag',style:{background:'var(--green-bg)',color:'var(--green)'}},pct+'%')),
-              h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:3}},fmtD(l.fechaInicio)+' \u2022 '+l.tasaMensual+'% \u2022 '+(freqLabel(l)))),
+              h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:3}},fmtD(l.fechaInicio)+' \u2022 '+l.tasaMensual+'% \u2022 '+(freqLabel(l))),
+              partialPend>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:2}},'Abonado '+fmt(partialPend)+' de '+fmt(saldo))),
             h('div',{style:{textAlign:'right',marginLeft:8}},
-              h('div',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--green)'}},fmt(saldo)),
-              esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(saldo,l.trmAcordada)))),
+              h('div',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--green)'}},fmt(saldoDisplay)),
+              esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(saldoDisplay,l.trmAcordada)))),
           isExp&&h('div',{style:{borderTop:'1px solid var(--border)',padding:'12px 13px',background:'var(--bg3)'}},
             h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}},
               h('div',null,
@@ -1476,8 +1502,8 @@ function DebtorModal(props){
                 esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--text3)'}},fmt(Math.round(l.montoOrigen*l.trmAcordada))+' (TRM $'+fmtN(l.trmAcordada)+')')),
               h('div',null,
                 h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600}},'SALDO PENDIENTE'),
-                h('div',{className:'mono',style:{fontSize:13,fontWeight:700,color:enMora.length>0?'var(--red)':'var(--yellow)'}},fmt(saldo)),
-                esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(saldo,l.trmAcordada))),
+                h('div',{className:'mono',style:{fontSize:13,fontWeight:700,color:enMora.length>0?'var(--red)':'var(--yellow)'}},fmt(saldoDisplay)),
+                esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(saldoDisplay,l.trmAcordada))),
               h('div',null,
                 h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600}},'INTERESES COBRADOS'),
                 h('div',{className:'mono',style:{fontSize:13,fontWeight:700,color:'var(--blue)'}},fmt(intCobrados)),
@@ -1504,7 +1530,7 @@ function DebtorModal(props){
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:3}},
                 h('span',{style:{fontSize:11,color:'var(--text2)'}},'Cuota '+proxCuota.cuotaN+' - '+fmtD(proxCuota.fechaPago)),
                 h('span',{className:'mono',style:{fontSize:12,fontWeight:600,color:'var(--green)'}},fmt(proxCuota.cuotaTotal),esUSD&&h('span',{style:{fontSize:9,fontWeight:500,color:'var(--blue)',marginLeft:4}},copToUsd(proxCuota.cuotaTotal,l.trmAcordada))))),
-            l.estado==='Activo'&&saldo>0&&function(){var intMora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var partialPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);var liquidacion=Math.max(0,saldo+intMora-partialPend);return h('div',{style:{marginTop:10,padding:'8px 10px',background:'var(--yellow-bg)',borderRadius:8,border:'1px solid var(--yellow)'}},
+            l.estado==='Activo'&&saldo>0&&function(){var intMora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var liquidacion=Math.max(0,saldo+intMora-partialPend);return h('div',{style:{marginTop:10,padding:'8px 10px',background:'var(--yellow-bg)',borderRadius:8,border:'1px solid var(--yellow)'}},
               h('div',{style:{fontSize:10,color:'var(--yellow)',fontWeight:600}},'VALOR DE LIQUIDACION'),
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:3}},
                 h('span',{style:{fontSize:10,color:'var(--text2)'}},'Capital'+(intMora>0?' + intereses en mora':'')+(partialPend>0?' - abonos parciales':'')),
@@ -1512,7 +1538,7 @@ function DebtorModal(props){
               partialPend>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:2}},'Ya abonado parcial: '+fmt(partialPend)));}(),
             l.estado==='Activo'&&saldo>0&&onAbono&&h('button',{onClick:function(e){e.stopPropagation();onAbono(l);},style:{marginTop:10,width:'100%',padding:'8px 0',background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',borderRadius:10,color:'var(--blue)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'dollar',size:14,color:'var(--blue)'}),'Registrar abono a capital'),
-            l.estado==='Activo'&&saldo>0&&onAbono&&function(){var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var partialPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);var liq=Math.max(0,saldo+imora-partialPend);return h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l,saldo:saldo,intMora:imora,liquidacion:liq});},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,color:'var(--red)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+            l.estado==='Activo'&&saldo>0&&onAbono&&function(){var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var liq=Math.max(0,saldo+imora-partialPend);return h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l,saldo:saldo,intMora:imora,liquidacion:liq});},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,color:'var(--red)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'dollar',size:14,color:'var(--red)'}),'Liquidar deuda: '+fmt(liq));}(),
             h('button',{onClick:function(e){e.stopPropagation();setCronoLoan(cronoLoan===l.id?null:l.id);},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,color:'var(--text2)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'calendar',size:14,color:'var(--text2)'}),cronoLoan===l.id?'Ocultar cronograma':'Ver cronograma'),
