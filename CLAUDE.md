@@ -52,7 +52,7 @@ Archivo: `cartera.db` (SQLite) — en desarrollo junto al código; instalado en 
 
 **loans** — Préstamos con: nombre, cédula, teléfono, moneda (COP/USD), montoOrigen, montoCOP, trmAcordada, tasaMensual, plazoMeses, modalidad, frecuencia (Mensual/Quincenal/Semanal), estado, fechaInicio, diaPago, fechaDevolucion
 
-**payments** — Cronograma de cuotas con: prestamoId, nombreCliente, cuotaN, fechaPago, saldoInicial, interesPeriodo, abonoCapital, cuotaTotal, saldoFinal, estadoPago (Pendiente/Pagado/En Mora), fechaRecaudo, observaciones, montoCOPRecibido, montoUSDRecibido
+**payments** — Cronograma de cuotas con: prestamoId, nombreCliente, cuotaN, fechaPago, saldoInicial, interesPeriodo, abonoCapital, cuotaTotal, saldoFinal, estadoPago (Pendiente/Pagado/En Mora), fechaRecaudo, observaciones, montoCOPRecibido, montoUSDRecibido, **partialPaid** (acumula pagos parciales; auto-marca Pagado cuando `partialPaid >= cuotaTotal`)
 
 **config** — Clave-valor (ej: TRM)
 
@@ -178,7 +178,8 @@ Se muestra en: cronograma in-app (DebtorModal) y cronograma PDF.
 | PUT | `/api/loans/:id` | Editar préstamo (preserva abonos, regenera cuotas) |
 | DELETE | `/api/loans/:id` | Eliminar préstamo y sus pagos |
 | GET | `/api/payments` | Todos los pagos + auto-mora + auto-extend |
-| PUT | `/api/payments/:id` | Marcar cuota (guarda montoCOPRecibido, montoUSDRecibido) + auto-finalización |
+| PUT | `/api/payments/:id` | Marcar cuota (guarda montoCOPRecibido, montoUSDRecibido) + auto-finalización. Reinicia `partialPaid` al cambiar estado |
+| POST | `/api/payments/:id/partial` | Pago parcial: acumula en `partialPaid`. Si completa → auto-marca Pagado + auto-finalización del préstamo |
 | POST | `/api/loans/:id/abono` | Abono a capital → actualiza montoCOP + regenera cuotas |
 | POST | `/api/recalculate` | Recalcula todos los cronogramas activos (preserva abonos) |
 | GET | `/api/config` | Leer configuración |
@@ -193,6 +194,7 @@ Se muestra en: cronograma in-app (DebtorModal) y cronograma PDF.
 - **Badge de 3 días (amarillo):** Cuotas que vencen en ≤3 días
 - **Toast:** 2 segundos, verde para éxito, rojo para eliminación
 - **Pago rápido:** Botón ✓ en lista de Pagos (sin modal para COP, con modal para USD)
+- **Pago parcial:** Toggle **Pago completo / Pago parcial** en PayModal. En modo parcial se ingresa el monto y la cuota acumula `partialPaid`. Las filas con parcial muestran tag **PARCIAL**, sub-línea "Abonado $X de $Y" y el monto principal se convierte en el saldo restante.
 - **Abono desde DebtorModal:** Botón "Registrar abono a capital" en perfil del deudor
 - **Cronograma in-app:** Tabla expandible en DebtorModal con deuda, cuota, estado, valor de liquidación
 - **Cronograma PDF:** Botón para generar PDF del cronograma desde el perfil del deudor

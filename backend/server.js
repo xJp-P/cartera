@@ -89,6 +89,8 @@ module.exports = function createApp(dbPath) {
   // Migraciones seguras
   try { db.exec('ALTER TABLE payments ADD COLUMN montoCOPRecibido REAL DEFAULT 0'); } catch(_){}
   try { db.exec('ALTER TABLE payments ADD COLUMN montoUSDRecibido REAL DEFAULT 0'); } catch(_){}
+  // Pagos parciales: acumulado recibido antes de completar la cuota
+  try { db.exec('ALTER TABLE payments ADD COLUMN partialPaid REAL DEFAULT 0'); } catch(_){}
   // Renombrar modalidad legacy
   try { db.exec("UPDATE loans SET modalidad = 'Intereses' WHERE modalidad = 'Solo Intereses'"); } catch(_){}
   // Migración: frecuencia de pago
@@ -183,7 +185,7 @@ module.exports = function createApp(dbPath) {
         saldoInicial: Math.round(montoCOP), interesPeriodo: 0,
         abonoCapital: 0, cuotaTotal: Math.round(montoCOP),
         saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
-        montoCOPRecibido: 0, montoUSDRecibido: 0
+        montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0
       });
       return rows;
     }
@@ -210,7 +212,7 @@ module.exports = function createApp(dbPath) {
         abonoCapital: Math.round(capital), cuotaTotal: Math.round(cuota),
         saldoFinal: Math.round(saldoFinal),
         estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
-        montoCOPRecibido: 0, montoUSDRecibido: 0
+        montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0
       });
       saldo = saldoFinal;
     }
@@ -219,9 +221,9 @@ module.exports = function createApp(dbPath) {
 
   const insPayment = db.prepare(`
     INSERT OR REPLACE INTO payments(id,prestamoId,nombreCliente,cuotaN,fechaPago,saldoInicial,
-      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido)
+      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido,partialPaid)
     VALUES (@id,@prestamoId,@nombreCliente,@cuotaN,@fechaPago,@saldoInicial,
-      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones,@montoCOPRecibido,@montoUSDRecibido)
+      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones,@montoCOPRecibido,@montoUSDRecibido,@partialPaid)
   `);
   const insertSchedule = db.transaction(rows => rows.forEach(r => insPayment.run(r)));
 
@@ -259,6 +261,11 @@ module.exports = function createApp(dbPath) {
           p.fechaRecaudo = ex.fechaRecaudo;
           p.observaciones = ex.observaciones;
           if (ex.montoCOPRecibido) p.montoCOPRecibido = ex.montoCOPRecibido;
+          if (ex.partialPaid) p.partialPaid = ex.partialPaid;
+        } else if (ex && ex.partialPaid) {
+          // Cuota sigue Pendiente pero tenia pago parcial — preservarlo
+          p.partialPaid = ex.partialPaid;
+          p.observaciones = ex.observaciones;
         }
       });
       insertSchedule(schedule);
@@ -392,8 +399,13 @@ module.exports = function createApp(dbPath) {
   app.put('/api/payments/:id', (req, res) => {
     const { estadoPago, fechaRecaudo, observaciones, montoCOPRecibido, montoUSDRecibido } = req.body;
     const payBefore = db.prepare('SELECT * FROM payments WHERE id = ?').get(req.params.id);
-    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=? WHERE id=?')
-      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, montoUSDRecibido || 0, req.params.id);
+    // Al marcar Pagado: partialPaid = cuotaTotal (recibido completo); al revertir: partialPaid = 0 (historial se pierde)
+    let newPartial;
+    if (estadoPago === 'Pagado' && payBefore) newPartial = payBefore.cuotaTotal;
+    else if ((estadoPago === 'Pendiente' || estadoPago === 'En Mora') && payBefore) newPartial = 0;
+    else newPartial = payBefore ? (payBefore.partialPaid || 0) : 0;
+    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=? WHERE id=?')
+      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, montoUSDRecibido || 0, newPartial, req.params.id);
     if (payBefore) {
       const label = estadoPago === 'Pagado' ? 'Registraste pago' : estadoPago === 'En Mora' ? 'Marcaste en mora' : 'Revertiste a pendiente';
       logAction.run('pago', label + ': ' + payBefore.nombreCliente + ' cuota #' + payBefore.cuotaN + ' por $' + Math.round(payBefore.cuotaTotal).toLocaleString());
@@ -425,6 +437,53 @@ module.exports = function createApp(dbPath) {
     }
 
     res.json({ ok: true });
+  });
+
+  // ── API: Pago Parcial ─────────────────────────────────────────────────────
+  // Suma al campo partialPaid. Si con este pago se completa la cuota, auto-marca Pagado.
+  app.post('/api/payments/:id/partial', (req, res) => {
+    const { monto, fecha, observaciones, montoUSD } = req.body;
+    const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(req.params.id);
+    if (!pay) return res.status(404).json({ error: 'Cuota no encontrada' });
+    if (pay.estadoPago === 'Pagado') return res.status(400).json({ error: 'La cuota ya está pagada' });
+    if (pay.interesPeriodo === 0 && pay.abonoCapital > 0) return res.status(400).json({ error: 'No se pueden aplicar pagos parciales sobre un abono a capital' });
+    const montoNum = Math.round(+monto || 0);
+    if (montoNum <= 0) return res.status(400).json({ error: 'El monto debe ser mayor a 0' });
+    const yaPagado = pay.partialPaid || 0;
+    const restante = pay.cuotaTotal - yaPagado;
+    if (montoNum > restante) return res.status(400).json({ error: 'El monto supera el saldo pendiente de la cuota ($' + Math.round(restante).toLocaleString() + ')' });
+
+    const nuevoPartial = yaPagado + montoNum;
+    const completa = nuevoPartial >= pay.cuotaTotal;
+    const fechaPago = fecha || hoyStr();
+    const obsPrev = pay.observaciones || '';
+    const obsNueva = (observaciones || '').trim();
+    const obsCombinada = [obsPrev, obsNueva && ('Parcial ' + fechaPago + ': $' + montoNum.toLocaleString() + (obsNueva ? ' — ' + obsNueva : ''))].filter(Boolean).join(' | ');
+
+    if (completa) {
+      // Completa la cuota: marcar Pagado
+      const usdAcum = (pay.montoUSDRecibido || 0) + (+montoUSD || 0);
+      db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=? WHERE id=?')
+        .run('Pagado', fechaPago, obsCombinada, pay.cuotaTotal, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, req.params.id);
+      logAction.run('pago', 'Pago parcial final: ' + pay.nombreCliente + ' cuota #' + pay.cuotaN + ' $' + montoNum.toLocaleString() + ' (completo $' + Math.round(pay.cuotaTotal).toLocaleString() + ')');
+
+      // Auto-finalización del préstamo
+      const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(pay.prestamoId);
+      const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+      const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
+      if (todasPagadas) {
+        db.prepare("UPDATE loans SET estado = 'Cancelado' WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
+      }
+    } else {
+      // Solo suma al partialPaid, estado permanece
+      const copAcum = (pay.montoCOPRecibido || 0) + montoNum;
+      const usdAcum = (pay.montoUSDRecibido || 0) + (+montoUSD || 0);
+      db.prepare('UPDATE payments SET partialPaid=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=? WHERE id=?')
+        .run(nuevoPartial, obsCombinada, copAcum, Math.round(usdAcum * 100) / 100, req.params.id);
+      const faltan = pay.cuotaTotal - nuevoPartial;
+      logAction.run('pago', 'Pago parcial: ' + pay.nombreCliente + ' cuota #' + pay.cuotaN + ' $' + montoNum.toLocaleString() + ' (faltan $' + Math.round(faltan).toLocaleString() + ')');
+    }
+    res.json({ ok: true, completa, partialPaid: nuevoPartial, restante: Math.max(0, pay.cuotaTotal - nuevoPartial) });
   });
 
   // ── API: Abono a Capital ──────────────────────────────────────────────────
@@ -484,7 +543,8 @@ module.exports = function createApp(dbPath) {
       fechaRecaudo: fechaAbono,
       observaciones: observaciones || 'Abono a capital',
       montoCOPRecibido: Math.round(monto),
-      montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0
+      montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0,
+      partialPaid: 0
     });
 
     if (nuevoSaldo <= 0) {

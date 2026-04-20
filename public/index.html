@@ -762,6 +762,12 @@ function App(){
       .then(function(r){if(!r)return;return reload();}).then(function(){setPayModal(null);showToast(status==='Pagado'?'Pago registrado':status==='En Mora'?'Marcado en mora':'Estado actualizado');});
   },[reload]);
 
+  var markPartial=useCallback(function(id,monto,fecha,obs,usdRecibido){
+    API.post('/api/payments/'+id+'/partial',{monto:monto,fecha:fecha||nowStr(),observaciones:obs||'',montoUSD:usdRecibido||0})
+      .then(function(r){if(!r)return;return reload().then(function(){return r;});})
+      .then(function(r){if(!r)return;setPayModal(null);showToast(r.completa?'Pago completado':'Pago parcial registrado ($'+(r.restante||0).toLocaleString('es-CO')+' restante)');});
+  },[reload]);
+
   var confirmarCalc=useCallback(function(data){
     setCalcData(null);
     setLoanModal({_prefill:{},_calcPrefill:data});
@@ -985,7 +991,7 @@ function App(){
       view==='desarrollador'&& h(DevView,  {showToast:showToast,isMac:isMac,onNeedsRestart:function(){setNeedsRestart(true);},onSync:recalculate,onConfirm:function(cfg){setConfirmDlg(cfg);}}))
     ), /* end main-area */
     loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
-    payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onClose:function(){setPayModal(null);}}),
+    payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onPartial:markPartial,onClose:function(){setPayModal(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);}}),
     debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto){registrarAbono(loanId,monto,nowStr(),'Liquidacion total',0,true);setDebtorModal(null);}}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
@@ -1613,19 +1619,24 @@ function PagosView(props){
     var pl=loanMap[p.prestamoId];
     var esUSD=pl&&pl.moneda==='USD';
     var trm=pl?pl.trmAcordada:0;
-    var borderColor=isMora?'var(--red-bd)':isHoy||isPronto?'var(--yellow)':'var(--border)';
-    var valColor=isMora?'var(--red)':isHoy||isPronto?'var(--yellow)':'var(--text)';
-    return h('div',{key:p.id,style:{background:isHoy?'rgba(187,128,9,.06)':'var(--bg2)',border:'1px solid '+borderColor,borderRadius:12,padding:'11px 13px',transition:'background .1s'}},
+    var yaPag=+p.partialPaid||0;
+    var hasPartial=yaPag>0;
+    var restante=Math.max(0,p.cuotaTotal-yaPag);
+    var borderColor=hasPartial?'var(--blue)':isMora?'var(--red-bd)':isHoy||isPronto?'var(--yellow)':'var(--border)';
+    var valColor=hasPartial?'var(--blue)':isMora?'var(--red)':isHoy||isPronto?'var(--yellow)':'var(--text)';
+    return h('div',{key:p.id,style:{background:hasPartial?'rgba(33,129,219,.06)':isHoy?'rgba(187,128,9,.06)':'var(--bg2)',border:'1px solid '+borderColor,borderRadius:12,padding:'11px 13px',transition:'background .1s'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
         h('div',{style:{flex:1,minWidth:0,cursor:'pointer'},onClick:function(){onSelect(p);}},
           h('div',{style:{display:'flex',alignItems:'center',gap:6}},
-            h('span',{onClick:function(e){e.stopPropagation();onNameClick(p.nombreCliente);},style:{fontWeight:700,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente)),
+            h('span',{onClick:function(e){e.stopPropagation();onNameClick(p.nombreCliente);},style:{fontWeight:700,fontSize:14,color:'var(--text)',cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--bg4)',textUnderlineOffset:2}},p.nombreCliente),
+            hasPartial&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)',fontSize:10,padding:'2px 6px'}},'PARCIAL')),
           h('div',{style:{fontSize:12,color:isPronto?'var(--yellow)':'var(--text3)',marginTop:2}},'Cuota '+p.cuotaN+(isHoy?' - Vence HOY':isPronto?' - en '+Math.ceil((new Date(p.fechaPago+'T12:00:00')-today)/86400000)+' dia'+(Math.ceil((new Date(p.fechaPago+'T12:00:00')-today)/86400000)>1?'s':''):' - Vence '+fmtD(p.fechaPago))),
-          isMora&&dm>0&&h('div',{style:{fontSize:12,color:'var(--red)',fontWeight:600,marginTop:2}},dm+' dia'+(dm>1?'s':'')+' de mora')),
+          isMora&&dm>0&&h('div',{style:{fontSize:12,color:'var(--red)',fontWeight:600,marginTop:2}},dm+' dia'+(dm>1?'s':'')+' de mora'),
+          hasPartial&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:600,marginTop:2}},'Abonado '+fmt(yaPag)+' de '+fmt(p.cuotaTotal))),
         h('div',{style:{display:'flex',alignItems:'center',gap:8}},
           h('div',{style:{textAlign:'right'},onClick:function(){onSelect(p);},cursor:'pointer'},
-            h('span',{className:'mono',style:{fontWeight:700,fontSize:15,color:valColor}},fmt(p.cuotaTotal)),
-            esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:600}},copToUsd(p.cuotaTotal,trm))),
+            h('span',{className:'mono',style:{fontWeight:700,fontSize:15,color:valColor}},fmt(hasPartial?restante:p.cuotaTotal)),
+            esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:600}},copToUsd(hasPartial?restante:p.cuotaTotal,trm))),
           h('button',{className:'quick-pay',onClick:function(e){e.stopPropagation();onQuickPay(p);},style:{background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green-bd)'},title:'Pago rapido'},h(Ico,{name:'check',size:14,color:'var(--green)'})))));
   }
 
@@ -1970,12 +1981,17 @@ function CalcView(props){
 
 // ── PayModal ──────────────────────────────────────────────────────────────────
 function PayModal(props){
-  var pay=props.pay,loan=props.loan,allPays=props.allPays||[],onMark=props.onMark,onClose=props.onClose;
+  var pay=props.pay,loan=props.loan,allPays=props.allPays||[],onMark=props.onMark,onPartial=props.onPartial,onClose=props.onClose;
+  var yaPagado=+pay.partialPaid||0;
+  var restante=Math.max(0,pay.cuotaTotal-yaPagado);
   var s1=useState(nowStr()); var fecha=s1[0]; var setFecha=s1[1];
   var s2=useState(pay.observaciones||''); var obs=s2[0]; var setObs=s2[1];
-  var s3=useState(pay.montoCOPRecibido||''); var copRec=s3[0]; var setCopRec=s3[1];
+  var s3=useState(restante||''); var copRec=s3[0]; var setCopRec=s3[1];
   var s4=useState(pay.montoUSDRecibido||''); var usdRec=s4[0]; var setUsdRec=s4[1];
   var s5=useState(false); var genRecibo=s5[0]; var setGenRecibo=s5[1];
+  var s6=useState('completo'); var tipoPago=s6[0]; var setTipoPago=s6[1];
+  var s7=useState(''); var montoParcial=s7[0]; var setMontoParcial=s7[1];
+  var s8=useState(''); var parcialUSD=s8[0]; var setParcialUSD=s8[1];
   var so=ST[pay.estadoPago]||{bg:'var(--bg3)',color:'var(--text2)',icon:'?'};
   var esUSD=loan&&loan.moneda==='USD';
   var esAbono=pay.abonoCapital>0&&pay.interesPeriodo===0;
@@ -1989,6 +2005,28 @@ function PayModal(props){
       h('div',{className:'mono',style:{fontSize:13,color:'var(--text2)'}},'Saldo tras abono: '+fmt(pay.saldoFinal),
         esUSD&&h('span',{style:{marginLeft:6}},copToUsd(pay.saldoFinal,loan.trmAcordada))),
       pay.observaciones&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:8,fontStyle:'italic'}},pay.observaciones)));
+
+  function submitParcial(){
+    var m=+montoParcial||0;
+    if(m<=0){_showError('Ingresa el monto del pago parcial');return;}
+    if(m>restante){_showError('El monto supera el saldo pendiente ('+fmt(restante)+')');return;}
+    if(m===restante){
+      // Completa exactamente: trátalo como pago completo (el backend lo marca Pagado igual)
+    }
+    if(genRecibo&&loan){generateRecibo(pay,loan,m,+parcialUSD||0,allPays);}
+    onPartial(pay.id,m,fecha,obs,+parcialUSD||0);
+  }
+  function submitCompleto(){
+    if(esUSD&&(!copRec||+copRec<=0)){_showError('Ingresa el monto COP recibido para prestamos en USD');return;}
+    if(genRecibo){generateRecibo(pay,loan,+copRec||restante||pay.cuotaTotal,+usdRec||0,allPays);}
+    if(yaPagado>0){
+      // Habia pagos parciales: completar con endpoint parcial (el backend marcara Pagado)
+      onPartial(pay.id,restante,fecha,obs,+usdRec||0);
+    } else {
+      onMark(pay.id,'Pagado',fecha,obs,+copRec||pay.cuotaTotal,+usdRec||0);
+    }
+  }
+
   return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:14}},'Actualizar Pago'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'13px 14px',marginBottom:16,border:'1px solid var(--border)'}},
@@ -1996,20 +2034,42 @@ function PayModal(props){
       h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},'Cuota '+pay.cuotaN+' - '+fmtD(pay.fechaPago)),
       h('div',{className:'mono',style:{fontWeight:700,fontSize:20,color:'var(--green)',marginTop:6}},fmt(pay.cuotaTotal),
         esUSD&&h('span',{style:{fontSize:13,fontWeight:600,color:'var(--blue)',marginLeft:8}},copToUsd(pay.cuotaTotal,loan.trmAcordada))),
+      yaPagado>0&&pay.estadoPago!=='Pagado'&&h('div',{style:{marginTop:8,padding:'8px 10px',background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:8}},
+        h('div',{className:'mono',style:{fontSize:12,color:'var(--green)',fontWeight:700}},'Ya abonado: '+fmt(yaPagado)+' / '+fmt(pay.cuotaTotal)),
+        h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',fontWeight:700,marginTop:2}},'Pendiente: '+fmt(restante))),
       esUSD&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4}},'Prestamo USD (TRM $'+fmtN(loan.trmAcordada)+') - ingresa COP recibidos'),
       h('div',{style:{marginTop:8}},h('span',{style:{background:so.bg,color:so.color,fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:99}},so.icon+' '+pay.estadoPago))),
+
+    // Toggle Completo / Parcial — solo si la cuota no esta Pagada
+    pay.estadoPago!=='Pagado'&&h('div',{style:{display:'flex',gap:6,marginBottom:12,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:3}},
+      h('button',{type:'button',onClick:function(){setTipoPago('completo');},style:{flex:1,padding:'8px 10px',border:'none',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:12,background:tipoPago==='completo'?'var(--green2)':'transparent',color:tipoPago==='completo'?'#fff':'var(--text2)',transition:'all .15s'}},'Pago completo'),
+      h('button',{type:'button',onClick:function(){setTipoPago('parcial');},style:{flex:1,padding:'8px 10px',border:'none',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:12,background:tipoPago==='parcial'?'var(--yellow)':'transparent',color:tipoPago==='parcial'?'#fff':'var(--text2)',transition:'all .15s'}},'Pago parcial')),
+
     h(Fld,{label:'Fecha de recaudo'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
-    esUSD&&h('div',{style:{background:'rgba(187,128,9,.1)',border:'1px solid var(--yellow)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+
+    // ── Modo Parcial ──
+    tipoPago==='parcial'&&pay.estadoPago!=='Pagado'&&h('div',{style:{background:'rgba(187,128,9,.08)',border:'1px solid var(--yellow)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+      h(Fld,{label:'Monto del pago parcial (COP) *'},
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(montoParcial),onChange:function(e){setMontoParcial(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--yellow)'}}),
+        montoParcial>0&&h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:+montoParcial>=restante?'var(--green)':'var(--text2)'}},
+          +montoParcial>=restante?'Con este pago la cuota quedaria COMPLETA':'Quedarian pendientes: '+fmt(restante-(+montoParcial||0)))),
+      esUSD&&h(Fld,{label:'USD recibidos (opcional)'},
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(parcialUSD),onChange:function(e){setParcialUSD(parseNum(e.target.value));},placeholder:'Si te pagaron en dolares',className:'inp',style:{border:'1px solid var(--blue)'}}))),
+
+    // ── Modo Completo (USD fields) ──
+    tipoPago==='completo'&&esUSD&&pay.estadoPago!=='Pagado'&&h('div',{style:{background:'rgba(187,128,9,.1)',border:'1px solid var(--yellow)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
       h(Fld,{label:'COP realmente recibidos *'},
         h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRec),onChange:function(e){setCopRec(parseNum(e.target.value));},placeholder:'Monto en pesos recibido',className:'inp',style:{border:'1px solid var(--yellow)'}})),
       h(Fld,{label:'USD recibidos (opcional)'},
         h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(usdRec),onChange:function(e){setUsdRec(parseNum(e.target.value));},placeholder:'Si te pagaron en dolares',className:'inp',style:{border:'1px solid var(--blue)'}}))),
+
     h(Fld,{label:'Observaciones'},h('input',{value:obs,onChange:function(e){setObs(e.target.value);},placeholder:'Notas opcionales...',className:'inp'})),
     pay.estadoPago!=='Pagado'&&h('label',{style:{display:'flex',alignItems:'center',gap:8,marginTop:14,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
       h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--green)',cursor:'pointer'}}),
       'Generar recibo de pago'),
     h('div',{style:{display:'flex',gap:8,marginTop:14}},
-      pay.estadoPago!=='Pagado'    &&h(ABtn,{color:'var(--green2)',onClick:function(){if(esUSD&&(!copRec||+copRec<=0)){_showError('Ingresa el monto COP recibido para prestamos en USD');return;}if(genRecibo){generateRecibo(pay,loan,+copRec||pay.cuotaTotal,+usdRec||0,allPays);}onMark(pay.id,'Pagado',fecha,obs,+copRec||0,+usdRec||0);},icon:'check', label:'Pagado'}),
+      pay.estadoPago!=='Pagado'&&tipoPago==='completo'&&h(ABtn,{color:'var(--green2)',onClick:submitCompleto,icon:'check', label:yaPagado>0?'Completar':'Pagado'}),
+      pay.estadoPago!=='Pagado'&&tipoPago==='parcial' &&h(ABtn,{color:'var(--yellow)', onClick:submitParcial, icon:'check', label:'Registrar parcial'}),
       pay.estadoPago!=='En Mora'   &&h(ABtn,{color:'#b91c1c',     onClick:function(){onMark(pay.id,'En Mora',  null, obs,0,0);},         icon:'alert', label:'En Mora'}),
       pay.estadoPago!=='Pendiente' &&h(ABtn,{color:'var(--bg4)',   onClick:function(){onMark(pay.id,'Pendiente',null, obs,0,0);},         icon:'clock', label:'Pendiente'})));
 }

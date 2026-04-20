@@ -1,14 +1,14 @@
 # Estado del Proyecto — Cartera de Préstamos
 
 > Documento vivo. Se actualiza al finalizar cada iteración importante.
-> Última revisión: **2026-04-16** — Refactor arquitectónico a `/desktop` + `/backend`.
+> Última revisión: **2026-04-19** — Pagos parciales en cuotas (v1.7.7).
 
 ---
 
 ## 1. Versión y estado general
 
-- **Versión local (en `package.json`):** `1.7.5`
-- **Última release publicada en GitHub:** `1.7.5` (puede quedar adelantada la local tras nuevos cambios)
+- **Versión local (en `package.json`):** `1.7.7`
+- **Última release publicada en GitHub:** `1.7.6` (puede quedar adelantada la local tras nuevos cambios)
 - **Estado:** App funcional y estable en Windows y Mac.
 - **Repositorio:** `xJp-P/cartera-prestamos`
 
@@ -35,7 +35,46 @@ Archivos de apoyo:
 
 ---
 
-## 3. Limpieza aplicada en este ciclo
+## 3. Feature agregada en este ciclo (v1.7.7)
+
+### Pagos parciales en cuotas
+
+Permite registrar pagos parciales sobre una cuota (ej: el deudor abona una parte hoy y la otra después).
+
+**Modelo de datos:**
+- Columna nueva `payments.partialPaid REAL DEFAULT 0` (migración idempotente con `ALTER TABLE … ADD COLUMN`).
+- Acumula lo abonado sobre la cuota. Cuando `partialPaid >= cuotaTotal`, la cuota pasa a `'Pagado'` automáticamente.
+
+**Backend:**
+- Endpoint nuevo `POST /api/payments/:id/partial` con `{ monto, fecha, observaciones, montoUSD }`.
+- Valida que la cuota no esté Pagada, que `monto > 0` y que `monto <= restante`.
+- Combina observaciones previas con las nuevas (formato: `Parcial YYYY-MM-DD: $X — obs`).
+- Si completa la cuota: marca `Pagado` + corre auto-finalización del préstamo.
+- Retorna `{ ok, completa, partialPaid, restante }`.
+- `PUT /api/payments/:id` reinicia `partialPaid` al cambiar de estado: `Pagado → cuotaTotal`, `Pendiente/En Mora → 0`.
+- Regeneración de cronogramas (edit préstamo, recalculate) **preserva** `partialPaid` existente.
+
+**Frontend (`PayModal`):**
+- Toggle visual **Pago completo** / **Pago parcial** en la parte superior del modal.
+- Si ya hay un `partialPaid > 0`: muestra caja informativa con "Ya abonado $X / $Y" y "Pendiente $Z".
+- En modo parcial: input dedicado para el monto + feedback en vivo ("Quedarían pendientes $X" o "La cuota quedaría COMPLETA").
+- En modo completo: si ya hay parciales previos, el botón dice **"Completar"** y dispara el endpoint parcial con el restante (para que el backend cierre la cuota).
+- Para préstamos USD: ambos modos soportan campo opcional de USD recibidos.
+
+**Frontend (`PagosView`):**
+- Filas con `partialPaid > 0` muestran:
+  - Tag **PARCIAL** en azul junto al nombre.
+  - Sub-línea "Abonado $X de $Y".
+  - Monto principal pasa a mostrar **el saldo restante**, no el total.
+  - Borde y fondo en tonos azules para destacar visualmente.
+
+**Bloqueos:**
+- No se permiten pagos parciales sobre filas de abono a capital (`interesPeriodo === 0 && abonoCapital > 0`).
+- No se permiten sobre cuotas ya `Pagado`.
+
+---
+
+## 4. Limpieza aplicada en el ciclo anterior (v1.7.6)
 
 Código muerto eliminado:
 
@@ -50,7 +89,7 @@ Comprobaciones adicionales:
 
 ---
 
-## 4. Funcionalidades principales en producción
+## 5. Funcionalidades principales en producción
 
 ### Gestión de préstamos
 - Modalidades: `Intereses` (plazo ∞), `Capital + Intereses` (amortización francesa), `Prestamo` (0% interés, una cuota).
@@ -84,7 +123,7 @@ Comprobaciones adicionales:
 
 ---
 
-## 5. Tareas pendientes / ideas en backlog
+## 6. Tareas pendientes / ideas en backlog
 
 ### Infraestructura
 - [ ] **Optimizar `extraResources` en `package.json`:** actualmente duplica archivos. Se puede limpiar para no enviar `desktop/` + `backend/` + `public/` dos veces (una vez en asar, otra suelta).
@@ -106,13 +145,13 @@ Comprobaciones adicionales:
 
 ---
 
-## 6. Bugs conocidos
+## 7. Bugs conocidos
 
 Ninguno abierto en este momento. Historial de bugs cerrados está en `CLAUDE.md` sección "Bugs Corregidos".
 
 ---
 
-## 7. Notas para futuras sesiones
+## 8. Notas para futuras sesiones
 
 - El código está optimizado para bajo consumo de tokens: `/backend` y `/desktop` son pequeños y autocontenidos; la mayor parte del contexto pesado vive en `public/index.html`.
 - `.claudesignore` excluye `node_modules`, `dist`, `.git`, `build`, `.github`, DB, y archivos binarios.
