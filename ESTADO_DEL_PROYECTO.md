@@ -1,13 +1,13 @@
 # Estado del Proyecto — Cartera de Préstamos
 
 > Documento vivo. Se actualiza al finalizar cada iteración importante.
-> Última revisión: **2026-04-20** — Correcciones de parciales en toda la UI (v1.7.9).
+> Última revisión: **2026-04-21** — Saldos parciales en Deudores, Inicio y Rendimiento (v1.7.10).
 
 ---
 
 ## 1. Versión y estado general
 
-- **Versión local (en `package.json`):** `1.7.9`
+- **Versión local (en `package.json`):** `1.7.10`
 - **Última release publicada en GitHub:** `1.7.6` (puede quedar adelantada la local tras nuevos cambios)
 - **Estado:** App funcional y estable en Windows y Mac.
 - **Repositorio:** `xJp-P/cartera-prestamos`

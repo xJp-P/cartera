@@ -712,6 +712,11 @@ function App(){
       'Prestamos con abono parcial: tag "Parcial" y sub-linea visible sin necesidad de expandir',
       'Cronograma PDF: valor de liquidacion ajustado por abonos parciales acumulados',
       'Cronograma PDF: filas con pago parcial muestran monto pendiente y badge "Parcial"'
+    ],
+    '1.7.10': [
+      'Deudores: saldo total en la card de cada deudor descuenta abonos parciales realizados',
+      'Inicio: Cartera Activa descuenta abonos parciales de todos los prestamos activos',
+      'Rendimiento: Saldo pendiente por prestamo y KPI global ya descuentan abonos parciales'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -850,7 +855,8 @@ function App(){
       var lp=pays.filter(function(p){return p.prestamoId===l.id&&p.estadoPago==='Pagado';});
       var orig=l.moneda==='USD'?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen);
       var todoCap=lp.reduce(function(a,p){return a+p.abonoCapital;},0);
-      return s+Math.max(0,orig-todoCap);
+      var partialPend=pays.filter(function(p){return p.prestamoId===l.id&&p.id.indexOf('-ab-')===-1&&p.estadoPago!=='Pagado';}).reduce(function(a,p){return a+(p.partialPaid||0);},0);
+      return s+Math.max(0,orig-todoCap-partialPend);
     },0);
     // Recaudo del mes: esperado = cuotaTotal de todas las cuotas del mes + mora arrastrada
     // Recibido = cuotaTotal de las pagadas + partialPaid de las no pagadas (ambos contribuyen al progreso)
@@ -897,7 +903,8 @@ function App(){
       if(l.estado==='Activo'){
         var origL=l.moneda==='USD'?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen);
         var todoCapL=pays.filter(function(p){return p.prestamoId===l.id&&p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
-        var saldoLoan=Math.max(0,origL-todoCapL);
+        var partialPendL=pays.filter(function(p){return p.prestamoId===l.id&&p.id.indexOf('-ab-')===-1&&p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
+        var saldoLoan=Math.max(0,origL-todoCapL-partialPendL);
         map[key].totalSaldo+=saldoLoan;
         if(l.moneda==='USD'&&l.trmAcordada>0) map[key].totalSaldoUSD+=Math.round(saldoLoan/l.trmAcordada*100)/100;
       }
@@ -1837,13 +1844,16 @@ function PortfolioView(props){
       var capitalAbonos=abonosPaid.reduce(function(s,p){return s+p.abonoCapital;},0);
       var capRec=capitalAmortizado+capitalAbonos;
 
-      // ── SALDO PENDIENTE: monto original - todo capital pagado ──
+      // ── Abonos parciales pendientes (recibidos, no reconocidos como ganancia todavia) ──
+      var parcialesPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
+
+      // ── SALDO PENDIENTE: monto original - todo capital pagado - parciales acumulados ──
       var saldo;
       if(loan.estado!=='Activo'){
         saldo=0;
       } else {
         var origR=loan.moneda==='USD'?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
-        saldo=Math.max(0,origR-capRec);
+        saldo=Math.max(0,origR-capRec-parcialesPend);
       }
 
       // ── CUOTAS: solo regulares ──
@@ -1857,9 +1867,6 @@ function PortfolioView(props){
         return s+(p.partialPaid||0);
       },0);
       var pctMonto=totEspRec>0?Math.round(totCobRec/totEspRec*100):0;
-
-      // ── Abonos parciales pendientes (recibidos, no reconocidos como ganancia todavia) ──
-      var parcialesPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
 
       // ── MORA: tiene cuotas en mora? ──
       var enMora=lp.some(function(p){return p.estadoPago==='En Mora';});
