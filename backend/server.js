@@ -95,6 +95,21 @@ module.exports = function createApp(dbPath) {
   try { db.exec("UPDATE loans SET modalidad = 'Intereses' WHERE modalidad = 'Solo Intereses'"); } catch(_){}
   // Migración: frecuencia de pago
   try { db.exec("ALTER TABLE loans ADD COLUMN frecuencia TEXT DEFAULT 'Mensual'"); } catch(_){}
+  // Cierre forzoso: snapshot de pérdida (capital pendiente + intereses en mora al momento del cierre)
+  try { db.exec('ALTER TABLE loans ADD COLUMN capitalPerdido REAL DEFAULT 0'); } catch(_){}
+  try { db.exec('ALTER TABLE loans ADD COLUMN interesesPerdidos REAL DEFAULT 0'); } catch(_){}
+  // Migración v1.8: renombrar 'Cancelado' legacy a 'Finalizado'. Antes 'Cancelado' significaba éxito;
+  // ahora significa cierre forzoso con pérdidas. CORRE UNA SOLA VEZ — controlada por flag en config.
+  try {
+    var migRow = db.prepare("SELECT value FROM config WHERE key = 'mig_v18_rename_cancelado'").get();
+    if (!migRow) {
+      db.exec("UPDATE loans SET estado = 'Finalizado' WHERE estado = 'Cancelado'");
+      db.prepare("INSERT OR REPLACE INTO config(key, value) VALUES ('mig_v18_rename_cancelado', '1')").run();
+    }
+  } catch(_){}
+  // Migración correctiva (idempotente): si un préstamo quedó como 'Finalizado' pero tiene pérdidas
+  // registradas, en realidad fue un cierre forzoso — corregir a 'Cancelado'.
+  try { db.exec("UPDATE loans SET estado = 'Cancelado' WHERE estado = 'Finalizado' AND (capitalPerdido > 0 OR interesesPerdidos > 0)"); } catch(_){}
 
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
@@ -420,17 +435,17 @@ module.exports = function createApp(dbPath) {
         const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
         const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
         if (todasPagadas) {
-          db.prepare("UPDATE loans SET estado = 'Cancelado' WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
+          db.prepare("UPDATE loans SET estado = 'Finalizado' WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
         }
       }
     }
 
-    // Si se revierte a Pendiente/En Mora, reactivar el préstamo si estaba Cancelado por auto-finalización
+    // Si se revierte a Pendiente/En Mora, reactivar el préstamo si estaba Finalizado por auto-finalización
     if (estadoPago === 'Pendiente' || estadoPago === 'En Mora') {
       const pay = db.prepare('SELECT prestamoId FROM payments WHERE id = ?').get(req.params.id);
       if (pay) {
         const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(pay.prestamoId);
-        if (loan && loan.estado === 'Cancelado' && loan.montoCOP > 0) {
+        if (loan && loan.estado === 'Finalizado' && loan.montoCOP > 0) {
           db.prepare("UPDATE loans SET estado = 'Activo' WHERE id = ?").run(pay.prestamoId);
         }
       }
@@ -472,7 +487,7 @@ module.exports = function createApp(dbPath) {
       const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
       const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
       if (todasPagadas) {
-        db.prepare("UPDATE loans SET estado = 'Cancelado' WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
+        db.prepare("UPDATE loans SET estado = 'Finalizado' WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
       }
     } else {
       // Solo suma al partialPaid, estado permanece
@@ -554,12 +569,12 @@ module.exports = function createApp(dbPath) {
       if (liquidar) {
         // Liquidacion total: marcar cuotas en mora como pagadas tambien
         db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ? WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaLiq, req.params.id);
-        db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Cancelado' WHERE id = ?").run(req.params.id);
+        db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado' WHERE id = ?").run(req.params.id);
       } else {
         // Solo abono a capital: cuotas en mora permanecen
         const moraRestante = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora'").get(req.params.id);
         if (moraRestante.c === 0) {
-          db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Cancelado' WHERE id = ?").run(req.params.id);
+          db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado' WHERE id = ?").run(req.params.id);
         } else {
           db.prepare("UPDATE loans SET montoCOP = 0 WHERE id = ?").run(req.params.id);
         }
@@ -582,6 +597,31 @@ module.exports = function createApp(dbPath) {
 
     logAction.run('abono', 'Registraste abono de $' + Math.round(monto).toLocaleString() + ' a ' + loan.nombre + (nuevoSaldo <= 0 ? ' (SALDADO)' : ' — saldo: $' + Math.round(nuevoSaldo).toLocaleString()));
     res.json({ ok: true, nuevoSaldo: Math.max(0, nuevoSaldo) });
+  });
+
+  // ── API: Cierre Forzoso ───────────────────────────────────────────────────
+  // Marca el préstamo como 'Cancelado' (cierre con pérdidas), guarda snapshot
+  // de capital pendiente + intereses en mora, y borra las cuotas restantes.
+  app.post('/api/loans/:id/force-close', (req, res) => {
+    const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
+    if (!loan) return res.status(404).json({ error: 'No encontrado' });
+    if (loan.estado !== 'Activo') return res.status(400).json({ error: 'Solo se pueden cerrar préstamos activos' });
+
+    const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
+    const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+    const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const capitalPerdido = Math.max(0, Math.round(originalCOP - todoCapPagado));
+    const interesesPerdidos = Math.round(allPays
+      .filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0))
+      .reduce((s, p) => s + p.interesPeriodo, 0));
+
+    db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente', 'En Mora')").run(req.params.id);
+    db.prepare("UPDATE loans SET estado = 'Cancelado', capitalPerdido = ?, interesesPerdidos = ?, montoCOP = 0 WHERE id = ?")
+      .run(capitalPerdido, interesesPerdidos, req.params.id);
+
+    const totalPerdido = capitalPerdido + interesesPerdidos;
+    logAction.run('cierre', 'Cerraste a la fuerza el préstamo de ' + loan.nombre + ' — pérdida: $' + totalPerdido.toLocaleString() + ' (capital $' + capitalPerdido.toLocaleString() + ' + intereses mora $' + interesesPerdidos.toLocaleString() + ')');
+    res.json({ ok: true, capitalPerdido: capitalPerdido, interesesPerdidos: interesesPerdidos, totalPerdido: totalPerdido });
   });
 
   // ── API: Historial de acciones ────────────────────────────────────────────
