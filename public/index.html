@@ -737,6 +737,15 @@ function App(){
       'Ventana de Abono a Capital: caja informativa que explica como se aplica tu abono segun el prestamo',
       'Aclara que el abono va al capital y NO descuenta intereses en mora (para eso usa Liquidar deuda)',
       'Cronograma del deudor: dos columnas nuevas (Capital e Interes) para ver el desglose de cada cuota'
+    ],
+    '1.8.2': [
+      'Nuevo boton "Cambiar fecha de pago" en cada prestamo activo del perfil del deudor',
+      'Permite mover el dia de pago (ej. del 15 al 30) calculando un prorrateo justo de los dias extra',
+      'Si el cliente tiene cuotas en mora, se consolidan en la primera cuota nueva — un solo cobro',
+      'Antes de confirmar veras el desglose: cuotas en mora + interes del mes + prorrateo + total',
+      'Despues de confirmar aparece un comprobante visual con fecha nueva, primera cuota y cuotas siguientes',
+      'Las cuotas en mora ya no apareceran en mora porque el sistema se reagenda automaticamente',
+      'Aplica para modalidades Intereses y Capital + Intereses (no para prestamos sin interes)'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1099,7 +1108,7 @@ function App(){
     loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
     payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onPartial:markPartial,onClose:function(){setPayModal(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);}}),
-    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');registrarAbono(loanId,monto,nowStr(),obs,0,true);setDebtorModal(null);}}),
+    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');registrarAbono(loanId,monto,nowStr(),obs,0,true);setDebtorModal(null);},onReload:reload}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
     changelogDlg&&h('div',{className:'modal-overlay',onClick:function(){setChangelogDlg(null);}},
       h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:380}},
@@ -1499,11 +1508,12 @@ function DeudoresView(props){
 
 // ── DebtorModal ───────────────────────────────────────────────────────────────
 function DebtorModal(props){
-  var d=props.deudor,pays=props.pays,loans=props.loans,onClose=props.onClose,onNewLoan=props.onNewLoan,onAbono=props.onAbono,onLiquidar=props.onLiquidar;
+  var d=props.deudor,pays=props.pays,loans=props.loans,onClose=props.onClose,onNewLoan=props.onNewLoan,onAbono=props.onAbono,onLiquidar=props.onLiquidar,onReload=props.onReload;
   var ex=useState(null); var expLoan=ex[0]; var setExpLoan=ex[1];
   var cr=useState(null); var cronoLoan=cr[0]; var setCronoLoan=cr[1];
   var cl=useState(null); var confirmLiq=cl[0]; var setConfirmLiq=cl[1];
   var ipm=useState(false); var incluyeProxMes=ipm[0]; var setIncluyeProxMes=ipm[1];
+  var cf=useState(null); var cambioFecha=cf[0]; var setCambioFecha=cf[1];
   // Pagos de este deudor (por nombre, a traves de sus prestamos)
   var deudorPays=pays.filter(function(p){
     var loan=null;
@@ -1556,6 +1566,117 @@ function DebtorModal(props){
       h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcaran como pagadas y el prestamo se cerrara.'),
       h('button',{onClick:function(){onLiquidar(confirmLiq.loan.id,confirmLiq.saldo,intExtra);setConfirmLiq(null);setIncluyeProxMes(false);},className:'btn-primary',style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',color:'var(--red)',marginBottom:6}},'Confirmar liquidacion'),
       h('button',{onClick:function(){setConfirmLiq(null);setIncluyeProxMes(false);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
+  }
+  if(cambioFecha){
+    var cfLoan=cambioFecha.loan;
+    var cfEsUSD=cfLoan.moneda==='USD';
+    var diaActual=cfLoan.diaPago;
+    var nuevoDia=parseInt(cambioFecha.nuevoDia,10);
+    var validNuevo=nuevoDia>=1&&nuevoDia<=31&&nuevoDia!==diaActual;
+    // Calcular días extra entre fecha actual del próximo corte y nueva fecha de corte
+    // diasExtra = (nuevoDia - diaActual) si nuevoDia > diaActual, sino +30 días
+    var diasExtra=0;
+    if(validNuevo){
+      diasExtra=nuevoDia>diaActual?nuevoDia-diaActual:30-(diaActual-nuevoDia);
+    }
+    var tasaMensual=+cfLoan.tasaMensual||0;
+    // Interés del mes vencido = saldoCapital × tasa/100 (un mes completo del periodo actual)
+    var intMesVencido=Math.round(cambioFecha.saldo*tasaMensual/100);
+    // Interés prorrateado = saldoCapital × (tasa/30/100) × diasExtra
+    var intProrrateado=validNuevo?Math.round(cambioFecha.saldo*(tasaMensual/30)/100*diasExtra):0;
+    // Mora consolidada = suma de interesPeriodo de cuotas En Mora ya calculada
+    var moraConsolidada=cambioFecha.intMora;
+    var primeraCuotaTotal=intMesVencido+intProrrateado+moraConsolidada;
+    // Cuota recurrente = interés del mes normal
+    var cuotaRecurrente=intMesVencido;
+
+    // Render del estado SUCCESS (comprobante post-éxito)
+    if(cambioFecha.step==='success'){
+      var rs=cambioFecha.resultado||{};
+      return h(Modal,{onClose:function(){setCambioFecha(null);}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+          h('div',{style:{width:32,height:32,borderRadius:99,background:'var(--green-bg)',display:'flex',alignItems:'center',justifyContent:'center'}},h(Ico,{name:'check',size:18,color:'var(--green)',sw:2.5})),
+          h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},'Fecha de pago actualizada')),
+        h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},cfLoan.nombre+' • '+cfLoan.modalidad),
+        h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'14px',marginBottom:12}},
+          h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600,letterSpacing:.5,marginBottom:4}},'PROXIMA CUOTA'),
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:10}},
+            h('div',null,
+              h('div',{style:{fontSize:13,color:'var(--text)',fontWeight:600}},'Dia '+rs.nuevoDia+' de cada mes'),
+              h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},'Primer cobro consolidado')),
+            h('div',{style:{textAlign:'right'}},
+              h('div',{className:'mono',style:{fontSize:22,fontWeight:700,color:'var(--green)'}},fmt(rs.primeraCuota&&rs.primeraCuota.cuotaTotal||primeraCuotaTotal)),
+              cfEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(rs.primeraCuota&&rs.primeraCuota.cuotaTotal||primeraCuotaTotal,cfLoan.trmAcordada))))),
+        h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',marginBottom:12,border:'1px solid var(--border)'}},
+          h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,padding:'10px 0 6px'}},'DESGLOSE DE LA PRIMERA CUOTA'),
+          (rs.moraConsolidada||0)>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+            h('span',{style:{color:'var(--text2)'}},rs.moraCount+' cuota'+(rs.moraCount>1?'s':'')+' en mora (consolidada'+(rs.moraCount>1?'s':'')+')'),
+            h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(rs.moraConsolidada))),
+          h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+            h('span',{style:{color:'var(--text2)'}},'Interes del mes que vence'),
+            h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(intMesVencido))),
+          (rs.prorrateo||0)>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+            h('span',{style:{color:'var(--text2)'}},'Prorrateo '+diasExtra+' dias'),
+            h('span',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(rs.prorrateo)))),
+        h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'10px 12px',marginBottom:14,fontSize:12,color:'var(--text2)',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          h('span',null,'Cuotas siguientes (cada dia '+rs.nuevoDia+')'),
+          h('span',{className:'mono',style:{color:'var(--text)',fontWeight:600}},fmt(rs.cuotasRecurrentes||cuotaRecurrente))),
+        h('button',{onClick:function(){setCambioFecha(null);},className:'btn-primary',style:{background:'var(--green2)',color:'#fff',border:'none'}},'Cerrar'));
+    }
+
+    // Render del estado FORM
+    return h(Modal,{onClose:function(){setCambioFecha(null);}},
+      h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
+        h(Ico,{name:'calendar',size:16,color:'var(--blue)',sw:2}),'Cambiar fecha de pago'),
+      h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},cfLoan.nombre+' • '+cfLoan.modalidad+' • '+tasaMensual+'% mensual'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}},
+        h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'10px 12px',border:'1px solid var(--border)'}},
+          h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},'DIA ACTUAL'),
+          h('div',{style:{fontSize:18,fontWeight:700,color:'var(--text)',marginTop:2}},diaActual)),
+        h('div',{style:{background:'var(--blue-bg)',borderRadius:10,padding:'10px 12px',border:'1px solid var(--blue-bd)'}},
+          h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600,letterSpacing:.5}},'NUEVO DIA'),
+          h('input',{type:'number',min:1,max:31,value:cambioFecha.nuevoDia,onChange:function(e){setCambioFecha(Object.assign({},cambioFecha,{nuevoDia:e.target.value}));},placeholder:'1-31',autoFocus:true,style:{width:'100%',background:'transparent',border:'none',outline:'none',fontSize:18,fontWeight:700,color:'var(--blue)',marginTop:2,padding:0,fontFamily:'inherit'}}))),
+      cambioFecha.moraCount>0&&h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,padding:'10px 12px',marginBottom:12,fontSize:11,color:'var(--text2)',lineHeight:1.5}},
+        h('div',{style:{fontWeight:700,color:'var(--red)',marginBottom:4,display:'flex',alignItems:'center',gap:5}},h(Ico,{name:'alert',size:12,color:'var(--red)',sw:2.4}),' '+cambioFecha.moraCount+' CUOTA'+(cambioFecha.moraCount>1?'S':'')+' EN MORA'),
+        'Se consolidaran en la primera cuota nueva ('+fmt(moraConsolidada)+' en intereses).'),
+      validNuevo?h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',marginBottom:12,border:'1px solid var(--border)'}},
+        h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,padding:'10px 0 6px'}},'DESGLOSE DE LA PRIMERA CUOTA'),
+        moraConsolidada>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+          h('span',{style:{color:'var(--text2)'}},'Mora consolidada'),
+          h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(moraConsolidada))),
+        h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+          h('div',null,
+            h('div',{style:{color:'var(--text2)'}},'Interes del mes que vence'),
+            h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Saldo × '+tasaMensual+'%')),
+          h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(intMesVencido))),
+        diasExtra>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+          h('div',null,
+            h('div',{style:{color:'var(--text2)'}},'Prorrateo '+diasExtra+' dias'),
+            h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Saldo × ('+tasaMensual+'%/30) × '+diasExtra)),
+          h('span',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(intProrrateado)))):
+        h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'14px',marginBottom:12,fontSize:12,color:'var(--text3)',textAlign:'center'}},'Ingresa un nuevo dia (1-31) distinto al actual para ver el desglose'),
+      validNuevo&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('div',null,
+          h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600,letterSpacing:.5}},'PRIMERA CUOTA (dia '+nuevoDia+')'),
+          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'A partir de la 2a cuota: '+fmt(cuotaRecurrente)+' los dia '+nuevoDia)),
+        h('div',{style:{textAlign:'right'}},
+          h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--green)'}},fmt(primeraCuotaTotal)),
+          cfEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(primeraCuotaTotal,cfLoan.trmAcordada)))),
+      h('button',{onClick:function(){
+        if(!validNuevo){_showError('Ingresa un dia valido (1-31, distinto al actual)');return;}
+        API.post('/api/loans/'+cfLoan.id+'/cambiar-dia-pago',{
+          nuevoDia:nuevoDia,
+          interesProrrateado:intProrrateado,
+          montoMoraConsolidada:moraConsolidada,
+          diasExtra:diasExtra
+        }).then(function(r){
+          if(!r)return;
+          if(r.error){_showError(r.error);return;}
+          setCambioFecha(Object.assign({},cambioFecha,{step:'success',resultado:r}));
+          if(onReload)onReload();
+        });
+      },disabled:!validNuevo,className:'btn-primary',style:{background:validNuevo?'var(--blue-bg)':'var(--bg3)',border:'1px solid '+(validNuevo?'var(--blue-bd)':'var(--border)'),color:validNuevo?'var(--blue)':'var(--text3)',marginBottom:6,cursor:validNuevo?'pointer':'not-allowed'}},'Confirmar cambio'),
+      h('button',{onClick:function(){setCambioFecha(null);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
   }
   return h(Modal,{onClose:onClose,wide:true,tall:true},
     h('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
@@ -1681,6 +1802,8 @@ function DebtorModal(props){
               h(Ico,{name:'dollar',size:14,color:'var(--blue)'}),'Registrar abono a capital'),
             l.estado==='Activo'&&saldo>0&&onAbono&&function(){var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);var liq=Math.max(0,saldo+imora-partialPend);return h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l,saldo:saldo,intMora:imora,liquidacion:liq,partialPend:partialPend});},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,color:'var(--red)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'dollar',size:14,color:'var(--red)',sw:2.4}),' Liquidar deuda');}(),
+            l.estado==='Activo'&&saldo>0&&l.modalidad!=='Prestamo'&&function(){var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);return h('button',{onClick:function(e){e.stopPropagation();setCambioFecha({loan:l,saldo:saldo,intMora:imora,moraCount:enMora.length,step:'form',nuevoDia:''});},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,color:'var(--text2)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+              h(Ico,{name:'calendar',size:14,color:'var(--text2)',sw:2}),' Cambiar fecha de pago');}(),
             h('button',{onClick:function(e){e.stopPropagation();setCronoLoan(cronoLoan===l.id?null:l.id);},style:{marginTop:6,width:'100%',padding:'8px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,color:'var(--text2)',fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
               h(Ico,{name:'calendar',size:14,color:'var(--text2)'}),cronoLoan===l.id?'Ocultar cronograma':'Ver cronograma'),
             cronoLoan===l.id&&function(){

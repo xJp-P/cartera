@@ -624,6 +624,81 @@ module.exports = function createApp(dbPath) {
     res.json({ ok: true, capitalPerdido: capitalPerdido, interesesPerdidos: interesesPerdidos, totalPerdido: totalPerdido });
   });
 
+  // ── API: Cambiar día de pago (con prorrateo) ──────────────────────────────
+  // Cambia loan.diaPago, borra cuotas Pendientes/En Mora, regenera cronograma con
+  // la nueva fecha y consolida en la primera cuota: intereses en mora previos +
+  // prorrateo de los días extra hasta la nueva fecha.
+  app.post('/api/loans/:id/cambiar-dia-pago', (req, res) => {
+    const { nuevoDia, interesProrrateado, montoMoraConsolidada, diasExtra } = req.body;
+    const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
+    if (!loan) return res.status(404).json({ error: 'No encontrado' });
+    if (loan.estado !== 'Activo') return res.status(400).json({ error: 'Solo se puede cambiar la fecha de prestamos activos' });
+    if (loan.modalidad === 'Prestamo') return res.status(400).json({ error: 'No aplica para prestamos sin interes' });
+    const nuevoDiaInt = parseInt(nuevoDia, 10);
+    if (!nuevoDiaInt || nuevoDiaInt < 1 || nuevoDiaInt > 31) return res.status(400).json({ error: 'Dia invalido' });
+    if (nuevoDiaInt === loan.diaPago) return res.status(400).json({ error: 'El nuevo dia debe ser distinto al actual' });
+
+    const extra = Math.round((+interesProrrateado || 0) + (+montoMoraConsolidada || 0));
+    const moraCount = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora' AND NOT (interesPeriodo = 0 AND abonoCapital > 0)").get(req.params.id).c;
+
+    // Borrar cuotas Pendientes y En Mora regulares (preserva Pagadas y abonos)
+    db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND NOT (interesPeriodo = 0 AND abonoCapital > 0)").run(req.params.id);
+
+    // Actualizar día de pago
+    db.prepare('UPDATE loans SET diaPago = ? WHERE id = ?').run(nuevoDiaInt, req.params.id);
+    const loanActualizado = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
+
+    // Determinar punto de partida para el nuevo cronograma
+    const todasCuotas = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
+    const regularesExistentes = todasCuotas.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+    const regularConsumed = regularesExistentes.length; // cuotas Pagadas que quedan
+    const nextRegularN = regularConsumed + 1;
+
+    // Saldo actual (capital pendiente)
+    const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+    const todoCapPagado = todasCuotas.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const saldoActual = Math.max(0, originalCOP - todoCapPagado);
+
+    if (saldoActual <= 0) return res.status(400).json({ error: 'El prestamo no tiene saldo pendiente' });
+
+    // Calcular cuántas cuotas generar
+    const indefinido = loanActualizado.modalidad === 'Intereses';
+    const remaining = indefinido ? 3 : Math.max(1, (loanActualizado.plazoMeses || 12) - regularConsumed);
+
+    // Generar cronograma nuevo desde la cuota siguiente
+    const nuevasCuotas = buildSchedule(loanActualizado, nextRegularN, saldoActual, remaining);
+
+    // Sobrescribir la PRIMERA cuota nueva con el monto consolidado
+    if (nuevasCuotas.length > 0 && extra > 0) {
+      const primera = nuevasCuotas[0];
+      primera.interesPeriodo = Math.round(primera.interesPeriodo + extra);
+      primera.cuotaTotal = Math.round(primera.cuotaTotal + extra);
+      const obsExtra = 'Cuota consolidada por cambio de fecha de pago. Incluye: '
+        + (montoMoraConsolidada > 0 ? 'intereses en mora previos $' + Math.round(montoMoraConsolidada).toLocaleString('es-CO') : '')
+        + (montoMoraConsolidada > 0 && interesProrrateado > 0 ? ' + ' : '')
+        + (interesProrrateado > 0 ? 'prorrateo ' + diasExtra + ' dias $' + Math.round(interesProrrateado).toLocaleString('es-CO') : '');
+      primera.observaciones = obsExtra;
+    }
+
+    insertSchedule(nuevasCuotas);
+
+    const logMsg = 'Cambiaste dia de pago de ' + loan.nombre + ' del ' + loan.diaPago + ' al ' + nuevoDiaInt
+      + (moraCount > 0 ? ' — consolidaste ' + moraCount + ' cuota' + (moraCount > 1 ? 's' : '') + ' en mora ($' + Math.round(montoMoraConsolidada || 0).toLocaleString('es-CO') + ')' : '')
+      + (interesProrrateado > 0 ? ' + prorrateo ' + diasExtra + ' dias ($' + Math.round(interesProrrateado).toLocaleString('es-CO') + ')' : '')
+      + (extra > 0 ? ' = primera cuota +$' + extra.toLocaleString('es-CO') : '');
+    logAction.run('cambio-fecha', logMsg);
+
+    res.json({
+      ok: true,
+      nuevoDia: nuevoDiaInt,
+      primeraCuota: nuevasCuotas[0] || null,
+      cuotasRecurrentes: nuevasCuotas.length > 1 ? nuevasCuotas[1].cuotaTotal : (nuevasCuotas[0] ? nuevasCuotas[0].cuotaTotal - extra : 0),
+      moraConsolidada: Math.round(montoMoraConsolidada || 0),
+      prorrateo: Math.round(interesProrrateado || 0),
+      moraCount: moraCount
+    });
+  });
+
   // ── API: Historial de acciones ────────────────────────────────────────────
   app.get('/api/activity', (_req, res) => {
     const rows = db.prepare('SELECT * FROM activity_log ORDER BY id DESC LIMIT 100').all();
