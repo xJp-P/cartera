@@ -758,6 +758,15 @@ function App(){
       'Inicio: totales de cada seccion en semibold, montos individuales mas ligeros',
       'Pagos: totales mas grandes (15px) y montos individuales mas pequeños (14px)',
       'Perfil del deudor, Cartera y Rendimiento: pesos balanceados sin saturar la lectura'
+    ],
+    '1.8.4': [
+      'Prestamos en USD: ahora puedes registrar compras fraccionadas de dolares a distintas tasas',
+      'Switch "¿Compraste el USD en varias partes/tasas?" al crear un prestamo USD',
+      'Agrega cuantas filas necesites con monto USD y tasa COP de cada compra',
+      'El sistema calcula automaticamente la tasa promedio ponderada y el total invertido en COP',
+      'Bloquea la creacion si el total de compras excede el monto del prestamo',
+      'Aviso amarillo si te faltan dolares por registrar (te deja crear igual)',
+      'El desglose de compras queda visible en el perfil del deudor al expandir el prestamo'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1789,6 +1798,26 @@ function DebtorModal(props){
               h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600}},'ABONOS A CAPITAL'),
               h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--blue)'}},fmt(capAbonos)),
               esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(capAbonos,l.trmAcordada))),
+            esUSD&&l.comprasUSD&&function(){
+              var lotes;try{lotes=typeof l.comprasUSD==='string'?JSON.parse(l.comprasUSD):l.comprasUSD;}catch(_){lotes=null;}
+              if(!Array.isArray(lotes)||lotes.length===0)return null;
+              var totUSD=lotes.reduce(function(s,c){return s+(+c.monto||0);},0);
+              var totCOP=lotes.reduce(function(s,c){return s+(+c.monto||0)*(+c.tasa||0);},0);
+              return h('div',{style:{marginBottom:10,padding:'10px 12px',background:'rgba(88,166,255,.04)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
+                h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600,letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
+                  h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' COMPRAS DE USD ('+lotes.length+' lote'+(lotes.length>1?'s':'')+')'),
+                lotes.map(function(c,i){
+                  return h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',fontSize:11,borderTop:i>0?'1px solid rgba(88,166,255,.12)':'none'}},
+                    h('span',{style:{color:'var(--text2)'}},'Compra '+(i+1)+': '+fmtN(+c.monto)+' USD'),
+                    h('span',{className:'mono',style:{color:'var(--text3)',fontWeight:300}},'@ '+fmt(+c.tasa)));
+                }),
+                h('div',{style:{display:'flex',justifyContent:'space-between',padding:'6px 0 2px',fontSize:11,borderTop:'1px solid var(--blue-bd)',marginTop:4}},
+                  h('span',{style:{color:'var(--text3)'}},'Total invertido en COP'),
+                  h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(totCOP))),
+                h('div',{style:{display:'flex',justifyContent:'space-between',padding:'2px 0',fontSize:11}},
+                  h('span',{style:{color:'var(--blue)',fontWeight:600}},'Tasa promedio ponderada'),
+                  h('span',{className:'mono',style:{color:'var(--blue)',fontWeight:600}},fmt(totUSD>0?Math.round(totCOP/totUSD):0))));
+            }(),
             enMora.length>0&&h('div',{style:{marginBottom:10,padding:'8px 10px',background:'var(--red-bg)',borderRadius:8,border:'1px solid var(--red-bd)'}},
               h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,marginBottom:4}},enMora.length+' CUOTA'+(enMora.length>1?'S':'')+' EN MORA'),
               enMora.map(function(p,i){
@@ -2592,8 +2621,28 @@ function LoanModal(props){
   var f=fs[0]; var setF=fs[1];
   var isNew=!loan||!!loan._prefill||!!loan._calcPrefill;
   function set(k,v){setF(function(p){var n=Object.assign({},p);n[k]=v;return n;});}
+  // Compras fraccionadas de USD
+  var comprasIniciales=function(){
+    if(loan&&loan.comprasUSD){try{var p=typeof loan.comprasUSD==='string'?JSON.parse(loan.comprasUSD):loan.comprasUSD;if(Array.isArray(p)&&p.length>0)return p;}catch(_){}}
+    return [{monto:'',tasa:''},{monto:'',tasa:''}];
+  };
+  var cus=useState(comprasIniciales()); var compras=cus[0]; var setCompras=cus[1];
+  var cfs=useState(!!(loan&&loan.comprasUSD&&loan.comprasUSD.length>2)); var compraFrac=cfs[0]; var setCompraFrac=cfs[1];
+  // Cálculo ponderado en vivo (solo filas con valores válidos)
+  var comprasValidas=compras.filter(function(c){return (+c.monto)>0&&(+c.tasa)>0;});
+  var totalUSDComprado=comprasValidas.reduce(function(s,c){return s+(+c.monto);},0);
+  var totalCOPInvertido=comprasValidas.reduce(function(s,c){return s+(+c.monto)*(+c.tasa);},0);
+  var tasaPromedio=totalUSDComprado>0?Math.round(totalCOPInvertido/totalUSDComprado):0;
+  var aplicaFracc=f.moneda==='USD'&&compraFrac;
+  // Cuando hay compras fraccionadas válidas, la trmAcordada efectiva es la promedio
+  var trmEfectiva=aplicaFracc&&tasaPromedio>0?tasaPromedio:(+f.trmAcordada||0);
+  var excedeMonto=aplicaFracc&&(+f.montoOrigen||0)>0&&totalUSDComprado>(+f.montoOrigen||0);
+  var faltaUSD=aplicaFracc&&(+f.montoOrigen||0)>0&&totalUSDComprado>0&&totalUSDComprado<(+f.montoOrigen||0);
+  function setCompra(i,k,v){setCompras(function(prev){var n=prev.slice();n[i]=Object.assign({},n[i]);n[i][k]=v;return n;});}
+  function addCompra(){setCompras(function(prev){return prev.concat([{monto:'',tasa:''}]);});}
+  function delCompra(i){setCompras(function(prev){if(prev.length<=1)return prev;var n=prev.slice();n.splice(i,1);return n;});}
   var esSI=f.modalidad==='Intereses';
-  var montoCOP=f.moneda==='USD'?Math.round((+f.montoOrigen||0)*(+f.trmAcordada||1)):(+f.montoOrigen||0);
+  var montoCOP=f.moneda==='USD'?Math.round((+f.montoOrigen||0)*(trmEfectiva||1)):(+f.montoOrigen||0);
   var preview=useMemo(function(){
     if(!montoCOP) return {cuota:0,totalInt:0};
     var n=+f.plazoMeses||12;
@@ -2613,11 +2662,15 @@ function LoanModal(props){
     if(!f.montoOrigen||+f.montoOrigen<=0) errores.push('Monto');
     if(needsPlazo&&(!f.plazoMeses||+f.plazoMeses<=0)) errores.push('Plazo');
     if(errores.length>0){_showError('Falta completar: '+errores.join(', '));return;}
+    if(aplicaFracc&&comprasValidas.length===0){_showError('Agrega al menos una compra valida o desactiva las compras fraccionadas');return;}
+    if(aplicaFracc&&excedeMonto){_showError('El total de compras ('+Math.round(totalUSDComprado).toLocaleString('es-CO')+' USD) excede el monto del prestamo');return;}
     var esPrestamo=f.modalidad==='Prestamo';
     if(esPrestamo&&!f.fechaDevolucion){_showError('Falta la fecha de devolucion');return;}
     var base=isNew?{}:(loan||{});
     var diaPagoAuto=new Date(f.fechaInicio+'T12:00:00').getDate();
-    var extra={montoOrigen:+f.montoOrigen,trmAcordada:+f.trmAcordada,montoCOP:montoCOP,tasaMensual:esPrestamo?0:(+f.tasaMensual||0),plazoMeses:esPrestamo?1:(+f.plazoMeses||0),diaPago:diaPagoAuto,frecuencia:esPrestamo?'Mensual':(f.frecuencia||'Mensual')};
+    var trmFinal=aplicaFracc&&tasaPromedio>0?tasaPromedio:(+f.trmAcordada||0);
+    var comprasFinal=aplicaFracc&&comprasValidas.length>0?JSON.stringify(comprasValidas.map(function(c){return {monto:+c.monto,tasa:+c.tasa};})):'';
+    var extra={montoOrigen:+f.montoOrigen,trmAcordada:trmFinal,montoCOP:montoCOP,tasaMensual:esPrestamo?0:(+f.tasaMensual||0),plazoMeses:esPrestamo?1:(+f.plazoMeses||0),diaPago:diaPagoAuto,frecuencia:esPrestamo?'Mensual':(f.frecuencia||'Mensual'),comprasUSD:comprasFinal};
     if(esPrestamo&&f.fechaDevolucion) extra.fechaDevolucion=f.fechaDevolucion;
     onSave(Object.assign({},base,f,extra));
   }
@@ -2630,9 +2683,41 @@ function LoanModal(props){
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Moneda'},h('select',{value:f.moneda,onChange:function(e){set('moneda',e.target.value);},className:'inp'},h('option',null,'COP'),h('option',null,'USD'))),
       h(Fld,{label:f.moneda==='USD'?'Monto original (USD) *':'Monto (COP) *'},h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.montoOrigen),onChange:function(e){set('montoOrigen',parseNum(e.target.value));},placeholder:'0',className:'inp'}))),
-    f.moneda==='USD'&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD)'},
-      h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.trmAcordada),onChange:function(e){set('trmAcordada',parseNum(e.target.value));},className:'inp'}),
+    f.moneda==='USD'&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD)'+(aplicaFracc?' — calculada automaticamente':'')},
+      h('input',{type:'text',inputMode:'numeric',value:aplicaFracc?(tasaPromedio>0?fmtNumInput(tasaPromedio):''):fmtNumInput(f.trmAcordada),onChange:function(e){if(!aplicaFracc)set('trmAcordada',parseNum(e.target.value));},className:'inp',disabled:aplicaFracc,placeholder:aplicaFracc?'Llena el desglose abajo':'',style:aplicaFracc?{background:'var(--bg3)',color:'var(--text2)',cursor:'not-allowed'}:{}}),
       h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP))),
+    f.moneda==='USD'&&h('label',{style:{display:'flex',alignItems:'center',gap:10,background:'var(--bg3)',border:'1px solid '+(compraFrac?'var(--blue)':'var(--border)'),borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:'pointer',transition:'border-color .2s'}},
+      h('input',{type:'checkbox',checked:compraFrac,onChange:function(){setCompraFrac(!compraFrac);},style:{width:16,height:16,accentColor:'var(--blue)',cursor:'pointer',margin:0}}),
+      h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Compraste el USD en varias partes/tasas?')),
+    f.moneda==='USD'&&compraFrac&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px',marginBottom:8}},
+      h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:8,display:'flex',alignItems:'center',gap:5}},
+        h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' DESGLOSE DE COMPRAS DE USD'),
+      compras.map(function(c,i){
+        return h('div',{key:i,style:{display:'flex',gap:8,alignItems:'flex-end',marginBottom:8}},
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,marginBottom:3}},'Compra '+(i+1)+' (USD)'),
+            h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(c.monto),onChange:function(e){setCompra(i,'monto',parseNum(e.target.value));},placeholder:'0',className:'inp'})),
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,marginBottom:3}},'Tasa (COP)'),
+            h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(c.tasa),onChange:function(e){setCompra(i,'tasa',parseNum(e.target.value));},placeholder:'0',className:'inp'})),
+          h('button',{onClick:function(){delCompra(i);},disabled:compras.length<=1,title:'Eliminar fila',style:{flexShrink:0,padding:'9px 10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,color:'var(--red)',cursor:compras.length<=1?'not-allowed':'pointer',opacity:compras.length<=1?.4:1,display:'flex',alignItems:'center'}},h(Ico,{name:'x',size:13,color:'var(--red)',sw:2.4})));
+      }),
+      h('button',{onClick:addCompra,style:{width:'100%',padding:'8px 0',background:'transparent',border:'1px dashed var(--blue)',borderRadius:8,color:'var(--blue)',fontSize:12,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:10}},
+        h(Ico,{name:'plus',size:12,color:'var(--blue)',sw:2.4}),' Añadir otra compra'),
+      h('div',{style:{borderTop:'1px solid var(--blue-bd)',paddingTop:10,marginTop:4}},
+        excedeMonto&&h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:8,padding:'8px 10px',marginBottom:8,fontSize:11,color:'var(--red)',display:'flex',alignItems:'center',gap:6}},
+          h(Ico,{name:'alert',size:12,color:'var(--red)',sw:2.4}),' El total de compras excede el monto del prestamo'),
+        faltaUSD&&h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:8,padding:'8px 10px',marginBottom:8,fontSize:11,color:'var(--yellow)'}},
+          'Faltan '+fmtN(Math.max(0,(+f.montoOrigen||0)-totalUSDComprado))+' USD por registrar'),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:12}},
+          h('span',{style:{color:'var(--text3)'}},'Total USD comprado'),
+          h('span',{className:'mono',style:{color:excedeMonto?'var(--red)':'var(--text)',fontWeight:500}},fmtN(totalUSDComprado)+' USD')),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:12,borderTop:'1px solid var(--bg3)'}},
+          h('span',{style:{color:'var(--text3)'}},'Total invertido en COP'),
+          h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(totalCOPInvertido))),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0 4px',borderTop:'1px solid var(--bg3)'}},
+          h('span',{style:{color:'var(--blue)',fontSize:11,fontWeight:600,letterSpacing:.5}},'TASA PROMEDIO PONDERADA'),
+          h('span',{className:'mono',style:{color:'var(--blue)',fontWeight:600,fontSize:15}},tasaPromedio>0?fmt(tasaPromedio):'-')))),
     h(Fld,{label:h('span',{style:{display:'flex',alignItems:'center',gap:6}},'Modalidad',
       h('span',{style:{position:'relative',display:'inline-flex'},className:'tooltip-wrap'},
         h('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:'50%',border:'1.5px solid var(--text3)',fontSize:10,fontWeight:700,color:'var(--text3)',cursor:'help',lineHeight:1}},'i'),

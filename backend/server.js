@@ -110,6 +110,8 @@ module.exports = function createApp(dbPath) {
   // Migración correctiva (idempotente): si un préstamo quedó como 'Finalizado' pero tiene pérdidas
   // registradas, en realidad fue un cierre forzoso — corregir a 'Cancelado'.
   try { db.exec("UPDATE loans SET estado = 'Cancelado' WHERE estado = 'Finalizado' AND (capitalPerdido > 0 OR interesesPerdidos > 0)"); } catch(_){}
+  // Compras fraccionadas de USD: desglose de lotes con su tasa. JSON: [{monto, tasa}, ...]
+  try { db.exec("ALTER TABLE loans ADD COLUMN comprasUSD TEXT DEFAULT ''"); } catch(_){}
 
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
@@ -317,12 +319,14 @@ module.exports = function createApp(dbPath) {
   });
 
   app.post('/api/loans', (req, res) => {
-    const loan = { fechaDevolucion: '', ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
+    const loan = { fechaDevolucion: '', comprasUSD: '', ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
+    // Si comprasUSD viene como array/objeto, serializar a JSON
+    if (loan.comprasUSD && typeof loan.comprasUSD !== 'string') loan.comprasUSD = JSON.stringify(loan.comprasUSD);
     db.prepare(`
       INSERT INTO loans(id,nombre,cedula,telefono,moneda,montoOrigen,trmAcordada,montoCOP,
-        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia,fechaDevolucion)
+        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia,fechaDevolucion,comprasUSD)
       VALUES (@id,@nombre,@cedula,@telefono,@moneda,@montoOrigen,@trmAcordada,@montoCOP,
-        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia,@fechaDevolucion)
+        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia,@fechaDevolucion,@comprasUSD)
     `).run(loan);
     insertSchedule(buildSchedule(loan));
     logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + (loan.moneda === 'USD' ? 'USD $' + loan.montoOrigen : '$' + Math.round(loan.montoCOP).toLocaleString()) + ' (' + loan.modalidad + ')');
@@ -330,12 +334,13 @@ module.exports = function createApp(dbPath) {
   });
 
   app.put('/api/loans/:id', (req, res) => {
-    const loan = { fechaDevolucion: '', ...req.body, id: req.params.id };
+    const loan = { fechaDevolucion: '', comprasUSD: '', ...req.body, id: req.params.id };
+    if (loan.comprasUSD && typeof loan.comprasUSD !== 'string') loan.comprasUSD = JSON.stringify(loan.comprasUSD);
     db.prepare(`
       UPDATE loans SET nombre=@nombre, cedula=@cedula, telefono=@telefono, moneda=@moneda,
         montoOrigen=@montoOrigen, trmAcordada=@trmAcordada, montoCOP=@montoCOP,
         tasaMensual=@tasaMensual, plazoMeses=@plazoMeses, modalidad=@modalidad,
-        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion
+        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion, comprasUSD=@comprasUSD
       WHERE id=@id
     `).run(loan);
 
