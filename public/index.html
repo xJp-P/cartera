@@ -791,6 +791,12 @@ function App(){
       'Acepta indistintamente coma o punto como decimal (ej: 12,152 o 12.152)',
       'Debajo de la tasa aparece "Se aplicara: X% mensual" para verificar el valor exacto antes de guardar',
       'Debajo del plazo aparece la cuota mensual calculada en tiempo real'
+    ],
+    '1.8.6': [
+      'Fix definitivo del prorrateo: ahora el monto extra del cambio de fecha sobrevive a cualquier accion',
+      'Antes el prorrateo desaparecia si presionabas Sincronizar o editabas el prestamo despues',
+      'Ahora el sistema guarda el extra a nivel del prestamo y lo aplica automaticamente cada vez que se regenera el cronograma',
+      'Cuando pagas la cuota con prorrateo, el sistema lo limpia automaticamente para que no vuelva a aparecer'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];

@@ -114,6 +114,12 @@ module.exports = function createApp(dbPath) {
   try { db.exec("ALTER TABLE loans ADD COLUMN comprasUSD TEXT DEFAULT ''"); } catch(_){}
   // Extra consolidado en una cuota (prorrateo + mora del cambio-dia-pago) que debe preservarse al recalcular
   try { db.exec("ALTER TABLE payments ADD COLUMN extraConsolidado REAL DEFAULT 0"); } catch(_){}
+  // Extra pendiente del prorrateo a aplicar a la PROXIMA cuota regular del prestamo.
+  // Persiste en loans para sobrevivir cualquier regeneracion del cronograma (recalculate, edit, etc.).
+  // Se aplica a la primera cuota Pendiente cuyo cuotaN >= proximaCuotaExtraN.
+  // Se limpia automaticamente cuando esa cuota se paga.
+  try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtra REAL DEFAULT 0"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtraN INTEGER DEFAULT 0"); } catch(_){}
 
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
@@ -273,6 +279,10 @@ module.exports = function createApp(dbPath) {
       });
       // montoCOP ya tiene abonos descontados — NO restar de nuevo
       const schedule = buildSchedule(loan);
+      // Aplicar extra del prorrateo desde loans.proximaCuotaExtra (fuente de verdad robusta).
+      // Si la cuota objetivo aun esta pendiente, se le suma el extra al regenerar.
+      const extraLoan = Math.round(+loan.proximaCuotaExtra || 0);
+      const extraN = +loan.proximaCuotaExtraN || 0;
       schedule.forEach(p => {
         const ex = prevRegulares.find(e => e.cuotaN === p.cuotaN);
         if (ex && ex.estadoPago !== 'Pendiente') {
@@ -286,14 +296,12 @@ module.exports = function createApp(dbPath) {
           p.partialPaid = ex.partialPaid;
           p.observaciones = ex.observaciones;
         }
-        // Preservar extraConsolidado (prorrateo del cambio-dia-pago) si la cuota previa lo tenia
-        if (ex && ex.extraConsolidado && +ex.extraConsolidado > 0) {
-          const extra = Math.round(+ex.extraConsolidado);
-          p.interesPeriodo = Math.round(p.interesPeriodo + extra);
-          p.cuotaTotal = Math.round(p.cuotaTotal + extra);
-          p.extraConsolidado = extra;
-          // Si no habia observaciones previas, agregar nota generica
-          if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extra.toLocaleString('es-CO') + ')';
+        // Aplicar extra solo a la cuota objetivo (proximaCuotaExtraN) si aun no esta pagada.
+        if (extraLoan > 0 && p.cuotaN === extraN && (!ex || ex.estadoPago !== 'Pagado')) {
+          p.interesPeriodo = Math.round(p.interesPeriodo + extraLoan);
+          p.cuotaTotal = Math.round(p.cuotaTotal + extraLoan);
+          p.extraConsolidado = extraLoan;
+          if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extraLoan.toLocaleString('es-CO') + ')';
         }
       });
       insertSchedule(schedule);
@@ -369,6 +377,9 @@ module.exports = function createApp(dbPath) {
     const saldoActual = Math.max(0, loan.montoCOP - totalAbonado);
     // Regenerar cronograma sobre el saldo post-abonos
     const schedule = buildSchedule({ ...loan, montoCOP: saldoActual });
+    // Aplicar extra del prorrateo desde loans.proximaCuotaExtra (fuente de verdad robusta).
+    const extraLoanEdit = Math.round(+loan.proximaCuotaExtra || 0);
+    const extraNEdit = +loan.proximaCuotaExtraN || 0;
     // Restaurar estados de cuotas previamente pagadas/en mora
     schedule.forEach(p => {
       const ex = prevRegulares.find(e => e.cuotaN === p.cuotaN);
@@ -378,13 +389,12 @@ module.exports = function createApp(dbPath) {
         p.observaciones = ex.observaciones;
         if (ex.montoCOPRecibido) p.montoCOPRecibido = ex.montoCOPRecibido;
       }
-      // Preservar extraConsolidado del cambio-dia-pago
-      if (ex && ex.extraConsolidado && +ex.extraConsolidado > 0) {
-        const extra = Math.round(+ex.extraConsolidado);
-        p.interesPeriodo = Math.round(p.interesPeriodo + extra);
-        p.cuotaTotal = Math.round(p.cuotaTotal + extra);
-        p.extraConsolidado = extra;
-        if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extra.toLocaleString('es-CO') + ')';
+      // Aplicar extra solo a la cuota objetivo si aun no esta pagada.
+      if (extraLoanEdit > 0 && p.cuotaN === extraNEdit && (!ex || ex.estadoPago !== 'Pagado')) {
+        p.interesPeriodo = Math.round(p.interesPeriodo + extraLoanEdit);
+        p.cuotaTotal = Math.round(p.cuotaTotal + extraLoanEdit);
+        p.extraConsolidado = extraLoanEdit;
+        if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extraLoanEdit.toLocaleString('es-CO') + ')';
       }
     });
     insertSchedule(schedule);
@@ -452,8 +462,13 @@ module.exports = function createApp(dbPath) {
 
     // Auto-finalización: si se marcó como Pagado, verificar si todas las cuotas regulares están pagadas
     if (estadoPago === 'Pagado') {
-      const pay = db.prepare('SELECT prestamoId FROM payments WHERE id = ?').get(req.params.id);
+      const pay = db.prepare('SELECT prestamoId, cuotaN FROM payments WHERE id = ?').get(req.params.id);
       if (pay) {
+        // Si la cuota pagada era la de proximaCuotaExtra → limpiar para que recalculate no la vuelva a aplicar.
+        const loanRow = db.prepare('SELECT proximaCuotaExtraN FROM loans WHERE id = ?').get(pay.prestamoId);
+        if (loanRow && loanRow.proximaCuotaExtraN === pay.cuotaN) {
+          db.prepare('UPDATE loans SET proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?').run(pay.prestamoId);
+        }
         const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(pay.prestamoId);
         // Cuotas regulares = las que NO son abonos a capital (abono = interesPeriodo=0 AND abonoCapital>0)
         const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
@@ -506,6 +521,11 @@ module.exports = function createApp(dbPath) {
         .run('Pagado', fechaPago, obsCombinada, pay.cuotaTotal, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, req.params.id);
       logAction.run('pago', 'Pago parcial final: ' + pay.nombreCliente + ' cuota #' + pay.cuotaN + ' $' + montoNum.toLocaleString() + ' (completo $' + Math.round(pay.cuotaTotal).toLocaleString() + ')');
 
+      // Si era la cuota con proximaCuotaExtra, limpiarla del loan
+      const loanRow = db.prepare('SELECT proximaCuotaExtraN FROM loans WHERE id = ?').get(pay.prestamoId);
+      if (loanRow && loanRow.proximaCuotaExtraN === pay.cuotaN) {
+        db.prepare('UPDATE loans SET proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?').run(pay.prestamoId);
+      }
       // Auto-finalización del préstamo
       const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(pay.prestamoId);
       const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
@@ -697,12 +717,16 @@ module.exports = function createApp(dbPath) {
       const primera = nuevasCuotas[0];
       primera.interesPeriodo = Math.round(primera.interesPeriodo + extra);
       primera.cuotaTotal = Math.round(primera.cuotaTotal + extra);
-      primera.extraConsolidado = extra; // Persistir para que recalculate lo preserve
+      primera.extraConsolidado = extra; // Persistir en la cuota tambien (referencia)
       const obsExtra = 'Cuota consolidada por cambio de fecha de pago. Incluye: '
         + (montoMoraConsolidada > 0 ? 'intereses en mora previos $' + Math.round(montoMoraConsolidada).toLocaleString('es-CO') : '')
         + (montoMoraConsolidada > 0 && interesProrrateado > 0 ? ' + ' : '')
         + (interesProrrateado > 0 ? 'prorrateo ' + diasExtra + ' dias $' + Math.round(interesProrrateado).toLocaleString('es-CO') : '');
       primera.observaciones = obsExtra;
+      // PERSISTIR el extra en el LOAN: sobrevive a cualquier regeneracion del cronograma.
+      // proximaCuotaExtraN = la cuotaN a la que se debe aplicar el extra al regenerar.
+      db.prepare('UPDATE loans SET proximaCuotaExtra = ?, proximaCuotaExtraN = ? WHERE id = ?')
+        .run(extra, primera.cuotaN, req.params.id);
     }
 
     insertSchedule(nuevasCuotas);
