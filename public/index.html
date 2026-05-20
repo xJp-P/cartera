@@ -150,6 +150,15 @@ function parseNum(v){
   var s=String(v).replace(/\./g,'').replace(',','.');
   return s;
 }
+// Acepta coma o punto como decimal; solo deja digitos y un unico punto decimal.
+function parseDecimalInput(v){
+  var s=String(v||'').replace(',','.').replace(/[^\d.]/g,'');
+  var parts=s.split('.');
+  if(parts.length>2) s=parts[0]+'.'+parts.slice(1).join('');
+  return s;
+}
+// Solo deja digitos (para inputs enteros como plazo).
+function parseIntInput(v){return String(v||'').replace(/[^\d]/g,'');}
 function freqLabel(loan){
   if(loan.modalidad==='Intereses') return '\u221E Indefinido';
   var n=loan.plazoMeses;
@@ -767,6 +776,21 @@ function App(){
       'Bloquea la creacion si el total de compras excede el monto del prestamo',
       'Aviso amarillo si te faltan dolares por registrar (te deja crear igual)',
       'El desglose de compras queda visible en el perfil del deudor al expandir el prestamo'
+    ],
+    '1.8.5': [
+      'Cambio de fecha de pago: ahora el prorrateo se conserva aunque presiones "Sincronizar datos"',
+      'Antes el boton de sincronizar borraba el monto extra del prorrateo. Solucionado.',
+      'Ganancia obtenida unificada en toda la app: Inicio y Rendimiento ahora muestran el mismo valor',
+      'Para prestamos USD la ganancia incluye los intereses cobrados + la utilidad por subida de TRM al cobrar',
+      'Nuevo desglose de ganancia para prestamos USD en el perfil del deudor:',
+      '  • Ganancia interes (intereses puros del contrato)',
+      '  • Ganancia/Perdida TRM (verde si subio al cobrar, rojo si bajo)',
+      '  • Ganancia total',
+      'Visible tanto en prestamos activos como finalizados',
+      'Formulario de crear/editar prestamo mas robusto: la tasa y el plazo ya no pueden quedarse desactualizados',
+      'Acepta indistintamente coma o punto como decimal (ej: 12,152 o 12.152)',
+      'Debajo de la tasa aparece "Se aplicara: X% mensual" para verificar el valor exacto antes de guardar',
+      'Debajo del plazo aparece la cuota mensual calculada en tiempo real'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -921,8 +945,17 @@ function App(){
     var mp=pays.filter(function(p){return p.fechaPago.startsWith(thisM)&&noAbono(p);});
     var mora=pays.filter(function(p){return p.estadoPago==='En Mora'&&noAbono(p);});
     var moraOtrosMeses=mora.filter(function(p){return !p.fechaPago.startsWith(thisM);});
-    var totalInteresesRecibidos=pays.filter(function(p){return p.estadoPago==='Pagado'&&p.interesPeriodo>0;})
-      .reduce(function(s,p){return s+p.interesPeriodo;},0);
+    // Ganancia real: para USD usa montoCOPRecibido - abonoCapital (incluye utilidad cambiaria
+    // por subida de TRM). Para COP usa interesPeriodo. Excluye abonos a capital.
+    var loanCurrency={};loans.forEach(function(l){loanCurrency[l.id]=l.moneda;});
+    var totalInteresesRecibidos=pays.filter(function(p){return p.estadoPago==='Pagado'&&p.id.indexOf('-ab-')===-1;})
+      .reduce(function(s,p){
+        var esUSD=loanCurrency[p.prestamoId]==='USD';
+        if(esUSD&&p.montoCOPRecibido&&p.montoCOPRecibido>0){
+          return s+(p.montoCOPRecibido-p.abonoCapital);
+        }
+        return s+p.interesPeriodo;
+      },0);
     // Saldo real pendiente por préstamo activo (capital - capital recuperado)
     var totalDeuda=active.reduce(function(s,l){
       var lp=pays.filter(function(p){return p.prestamoId===l.id&&p.estadoPago==='Pagado';});
@@ -1760,6 +1793,10 @@ function DebtorModal(props){
         var partialPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
         var saldoDisplay=Math.max(0,saldo-partialPend);
         var esUSD=l.moneda==='USD';
+        // Desglose de ganancia USD: separa intereses puros de la utilidad cambiaria (diferencia de TRM al cobro).
+        // gananciaTRM = sum(montoCOPRecibido - cuotaTotal) por cuota pagada que tiene montoCOPRecibido > 0
+        var gananciaTRM=esUSD?regulares.filter(function(p){return p.estadoPago==='Pagado'&&p.montoCOPRecibido&&p.montoCOPRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-p.cuotaTotal);},0):0;
+        var gananciaTotal=intCobrados+gananciaTRM;
         var isExp=expLoan===l.id;
         // Próxima cuota
         var proxCuota=pendientes.sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago);})[0];
@@ -1788,12 +1825,26 @@ function DebtorModal(props){
                 h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:enMora.length>0?'var(--red)':'var(--yellow)'}},fmt(saldoDisplay)),
                 esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(saldoDisplay,l.trmAcordada))),
               h('div',null,
-                h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600}},'INTERESES COBRADOS'),
+                h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600}},esUSD?'GANANCIA INTERES':'INTERESES COBRADOS'),
                 h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--blue)'}},fmt(intCobrados)),
                 esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intCobrados,l.trmAcordada))),
               h('div',null,
                 h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600}},'CUOTAS PAGADAS'),
                 h('div',{style:{fontSize:13,fontWeight:500,color:'var(--text)'}},pagadas+'/'+(l.modalidad==='Intereses'?'\u221E':totalReg)))),
+            esUSD&&intCobrados>0&&h('div',{style:{marginBottom:10,padding:'10px 12px',background:'rgba(88,166,255,.04)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
+              h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600,letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
+                h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' DESGLOSE GANANCIA (USD)'),
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',fontSize:11}},
+                h('span',{style:{color:'var(--text2)'}},'Ganancia interes'),
+                h('span',{className:'mono',style:{color:'var(--text)',fontWeight:300}},'+'+fmt(intCobrados))),
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'5px 0',fontSize:11,borderTop:'1px solid rgba(88,166,255,.12)'}},
+                h('div',null,
+                  h('div',{style:{color:'var(--text2)'}},'Ganancia/Perdida TRM'),
+                  h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1}},gananciaTRM===0?'Sin datos de TRM al cobro':gananciaTRM>0?'TRM subio al cobrar':'TRM bajo al cobrar')),
+                h('span',{className:'mono',style:{color:gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text3)',fontWeight:300}},(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)))),
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0 3px',borderTop:'1px solid var(--blue-bd)',marginTop:3}},
+                h('span',{style:{fontSize:11,color:'var(--blue)',fontWeight:600,letterSpacing:.3}},'GANANCIA TOTAL'),
+                h('span',{className:'mono',style:{fontSize:13,color:gananciaTotal>=0?'var(--green)':'var(--red)',fontWeight:600}},(gananciaTotal<0?'-':'+')+fmt(Math.abs(gananciaTotal))))),
             capAbonos>0&&h('div',{style:{marginBottom:10,padding:'8px 10px',background:'rgba(88,166,255,.06)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
               h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600}},'ABONOS A CAPITAL'),
               h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--blue)'}},fmt(capAbonos)),
@@ -1929,9 +1980,13 @@ function DebtorModal(props){
         var capPerd=Math.round(l.capitalPerdido||0);
         var intPerd=Math.round(l.interesesPerdidos||0);
         var totalPerdido=capPerd+intPerd;
+        // Desglose USD: ganancia/perdida TRM y ganancia total real
+        var gananciaTRMHist=esUSD?regulares.filter(function(p){return p.estadoPago==='Pagado'&&p.montoCOPRecibido&&p.montoCOPRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-p.cuotaTotal);},0):0;
+        var gananciaTotalHist=Math.round(intPagados+gananciaTRMHist);
         var bandaColor=esCancelado?'var(--red)':'var(--green)';
-        var kpiValor=esCancelado?totalPerdido:Math.round(intPagados);
-        var kpiColor=esCancelado?'var(--red)':'var(--green)';
+        // KPI del header: para USD usa ganancia total (incluye TRM); para COP solo intereses
+        var kpiValor=esCancelado?totalPerdido:(esUSD?gananciaTotalHist:Math.round(intPagados));
+        var kpiColor=esCancelado?'var(--red)':(esUSD&&gananciaTotalHist<0?'var(--red)':'var(--green)');
         var kpiLabel=esCancelado?'PERDIDA':'GANANCIA';
         var origCOP=esUSD?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen);
         // Calcular duración
@@ -1954,7 +2009,7 @@ function DebtorModal(props){
                 esUSD&&h('span',{style:{fontSize:10,color:'var(--text3)',fontWeight:400,marginLeft:6}},fmt(origCOP))),
               h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},fmtD(l.fechaInicio)+(fechaFin?' \u2192 '+fmtD(fechaFin):'')+' \u2022 '+(l.modalidad==='Intereses'?'\u221E':totalCuotas+' cuotas'))),
             h('div',{style:{textAlign:'right',flexShrink:0}},
-              h('div',{className:'mono',style:{fontSize:16,fontWeight:700,color:kpiColor,whiteSpace:'nowrap'}},(esCancelado?'-':'+')+fmt(kpiValor)),
+              h('div',{className:'mono',style:{fontSize:16,fontWeight:700,color:kpiColor,whiteSpace:'nowrap'}},(esCancelado||kpiValor<0?'-':'+')+fmt(Math.abs(kpiValor))),
               h('div',{style:{fontSize:9,color:kpiColor,fontWeight:600,letterSpacing:.5}},kpiLabel))),
           isExp&&h('div',{style:{borderTop:'1px solid var(--border)',padding:'12px',background:'var(--bg)'}},
             h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 12px',marginBottom:10}},
@@ -1963,7 +2018,7 @@ function DebtorModal(props){
                 h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--text)'}},esUSD?'USD $'+fmtN(l.montoOrigen):fmt(origCOP)),
                 esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--text3)'}},fmt(origCOP)+' (TRM $'+fmtN(l.trmAcordada)+')')),
               h('div',null,
-                h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},'GANANCIA OBTENIDA'),
+                h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},esUSD?'GANANCIA INTERES':'GANANCIA OBTENIDA'),
                 h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--green)'}},fmt(intPagados)),
                 esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intPagados,l.trmAcordada))),
               esCancelado&&h('div',null,
@@ -1986,6 +2041,20 @@ function DebtorModal(props){
               h('div',null,
                 h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},esCancelado?'FECHA DE CIERRE':'ULTIMO PAGO'),
                 h('div',{style:{fontSize:13,fontWeight:500,color:'var(--text2)'}},fechaFin?fmtD(fechaFin):'N/A'))),
+            esUSD&&intPagados>0&&h('div',{style:{marginBottom:capAbonos>0||esCancelado?10:0,padding:'10px 12px',background:'rgba(88,166,255,.04)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
+              h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600,letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
+                h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' DESGLOSE GANANCIA (USD)'),
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',fontSize:11}},
+                h('span',{style:{color:'var(--text2)'}},'Ganancia interes'),
+                h('span',{className:'mono',style:{color:'var(--text)',fontWeight:300}},'+'+fmt(intPagados))),
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'5px 0',fontSize:11,borderTop:'1px solid rgba(88,166,255,.12)'}},
+                h('div',null,
+                  h('div',{style:{color:'var(--text2)'}},'Ganancia/Perdida TRM'),
+                  h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1}},gananciaTRMHist===0?'Sin datos de TRM al cobro':gananciaTRMHist>0?'TRM subio al cobrar':'TRM bajo al cobrar')),
+                h('span',{className:'mono',style:{color:gananciaTRMHist>0?'var(--green)':gananciaTRMHist<0?'var(--red)':'var(--text3)',fontWeight:300}},(gananciaTRMHist>0?'+':gananciaTRMHist<0?'-':'')+fmt(Math.abs(gananciaTRMHist)))),
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0 3px',borderTop:'1px solid var(--blue-bd)',marginTop:3}},
+                h('span',{style:{fontSize:11,color:'var(--blue)',fontWeight:600,letterSpacing:.3}},'GANANCIA TOTAL'),
+                h('span',{className:'mono',style:{fontSize:13,color:gananciaTotalHist>=0?'var(--green)':'var(--red)',fontWeight:600}},(gananciaTotalHist<0?'-':'+')+fmt(Math.abs(gananciaTotalHist))))),
             esCancelado&&h('div',{style:{padding:'10px 12px',background:'var(--bg3)',borderRadius:8,borderLeft:'3px solid var(--red)',marginBottom:capAbonos>0?8:0,display:'flex',justifyContent:'space-between',alignItems:'center'}},
               h('div',null,
                 h('div',{style:{fontSize:10,color:'var(--text2)',fontWeight:600,letterSpacing:.5}},'MONTO TOTAL PERDIDO'),
@@ -2145,13 +2214,14 @@ function PortfolioView(props){
       var regularesPaid=paid.filter(function(p){return !esAbono(p);});
       var abonosPaid=paid.filter(function(p){return esAbono(p);});
 
-      // ── GANANCIA: suma de intereses cobrados ──
+      // ── GANANCIA REAL: COP recibido menos capital amortizado ──
+      // Para COP: equivale a interesPeriodo (no hay TRM en juego).
+      // Para USD: si el usuario registro montoCOPRecibido al cobrar, se usa eso
+      // (incluye ganancia cambiaria por subida de TRM). Si no, fallback a interesPeriodo.
       var ganancia;
       if(esUSD){
-        // Para USD: si hay montoCOPRecibido, ganancia = copRecibido - porción capital COP
         ganancia=regularesPaid.reduce(function(s,p){
           if(p.montoCOPRecibido&&p.montoCOPRecibido>0){
-            // Ganancia real = COP recibido - capital amortizado en esa cuota
             return s+(p.montoCOPRecibido-p.abonoCapital);
           }
           return s+p.interesPeriodo;
@@ -2733,9 +2803,14 @@ function LoanModal(props){
     f.modalidad!=='Prestamo'&&h(Fld,{label:'Frecuencia de cobro'},h('select',{value:f.frecuencia,onChange:function(e){set('frecuencia',e.target.value);},className:'inp'},
       h('option',null,'Semanal'),h('option',null,'Quincenal'),h('option',null,'Mensual'))),
     f.modalidad!=='Prestamo'&&h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-      h(Fld,{label:'Tasa mensual (%)'},h('input',{type:'number',step:'0.01',value:f.tasaMensual,onChange:function(e){set('tasaMensual',e.target.value);},placeholder:'0.00',className:'inp'})),
+      h(Fld,{label:'Tasa mensual (%)'},
+        h('input',{type:'text',inputMode:'decimal',value:f.tasaMensual,onChange:function(e){set('tasaMensual',parseDecimalInput(e.target.value));},placeholder:'0.00',className:'inp'}),
+        (+f.tasaMensual)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},'Se aplicara: '+(+f.tasaMensual)+'% mensual')),
       h(Fld,{label:f.modalidad==='Capital + Intereses'?(f.frecuencia==='Semanal'?'Plazo (semanas) *':f.frecuencia==='Quincenal'?'Plazo (quincenas) *':'Plazo (meses) *'):'\u221E Plazo indefinido'},
-        h('input',{type:'number',value:f.plazoMeses,onChange:function(e){set('plazoMeses',e.target.value);},placeholder:f.modalidad==='Capital + Intereses'?'12':'\u221E',className:'inp',disabled:f.modalidad==='Intereses'}))),
+        h('input',{type:'text',inputMode:'numeric',value:f.plazoMeses,onChange:function(e){set('plazoMeses',parseIntInput(e.target.value));},placeholder:f.modalidad==='Capital + Intereses'?'12':'\u221E',className:'inp',disabled:f.modalidad==='Intereses'}))),
+    f.modalidad==='Capital + Intereses'&&preview.cuota>0&&h('div',{style:{background:'var(--bg3)',border:'1px solid var(--blue-bd)',borderRadius:10,padding:'8px 12px',fontSize:12,color:'var(--blue)',marginTop:-4,marginBottom:4,display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      h('span',null,'Cuota '+(f.frecuencia==='Semanal'?'semanal':f.frecuencia==='Quincenal'?'quincenal':'mensual')+' calculada'),
+      h('span',{className:'mono',style:{fontWeight:600}},fmt(preview.cuota)+(f.moneda==='USD'&&+f.trmAcordada>0?' ('+fmtUSD(preview.cuota/(+f.trmAcordada))+')':''))),
     f.modalidad==='Prestamo'?h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Fecha del prestamo'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){set('fechaInicio',e.target.value);},className:'inp'})),
       h(Fld,{label:'Fecha de devolucion'},h('input',{type:'date',value:f.fechaDevolucion||'',onChange:function(e){set('fechaDevolucion',e.target.value);},className:'inp',min:f.fechaInicio})))

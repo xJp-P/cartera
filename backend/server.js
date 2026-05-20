@@ -112,6 +112,8 @@ module.exports = function createApp(dbPath) {
   try { db.exec("UPDATE loans SET estado = 'Cancelado' WHERE estado = 'Finalizado' AND (capitalPerdido > 0 OR interesesPerdidos > 0)"); } catch(_){}
   // Compras fraccionadas de USD: desglose de lotes con su tasa. JSON: [{monto, tasa}, ...]
   try { db.exec("ALTER TABLE loans ADD COLUMN comprasUSD TEXT DEFAULT ''"); } catch(_){}
+  // Extra consolidado en una cuota (prorrateo + mora del cambio-dia-pago) que debe preservarse al recalcular
+  try { db.exec("ALTER TABLE payments ADD COLUMN extraConsolidado REAL DEFAULT 0"); } catch(_){}
 
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
@@ -202,7 +204,7 @@ module.exports = function createApp(dbPath) {
         saldoInicial: Math.round(montoCOP), interesPeriodo: 0,
         abonoCapital: 0, cuotaTotal: Math.round(montoCOP),
         saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
-        montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0
+        montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0, extraConsolidado: 0
       });
       return rows;
     }
@@ -229,7 +231,7 @@ module.exports = function createApp(dbPath) {
         abonoCapital: Math.round(capital), cuotaTotal: Math.round(cuota),
         saldoFinal: Math.round(saldoFinal),
         estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
-        montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0
+        montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0, extraConsolidado: 0
       });
       saldo = saldoFinal;
     }
@@ -238,9 +240,9 @@ module.exports = function createApp(dbPath) {
 
   const insPayment = db.prepare(`
     INSERT OR REPLACE INTO payments(id,prestamoId,nombreCliente,cuotaN,fechaPago,saldoInicial,
-      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido,partialPaid)
+      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido,partialPaid,extraConsolidado)
     VALUES (@id,@prestamoId,@nombreCliente,@cuotaN,@fechaPago,@saldoInicial,
-      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones,@montoCOPRecibido,@montoUSDRecibido,@partialPaid)
+      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones,@montoCOPRecibido,@montoUSDRecibido,@partialPaid,@extraConsolidado)
   `);
   const insertSchedule = db.transaction(rows => rows.forEach(r => insPayment.run(r)));
 
@@ -283,6 +285,15 @@ module.exports = function createApp(dbPath) {
           // Cuota sigue Pendiente pero tenia pago parcial — preservarlo
           p.partialPaid = ex.partialPaid;
           p.observaciones = ex.observaciones;
+        }
+        // Preservar extraConsolidado (prorrateo del cambio-dia-pago) si la cuota previa lo tenia
+        if (ex && ex.extraConsolidado && +ex.extraConsolidado > 0) {
+          const extra = Math.round(+ex.extraConsolidado);
+          p.interesPeriodo = Math.round(p.interesPeriodo + extra);
+          p.cuotaTotal = Math.round(p.cuotaTotal + extra);
+          p.extraConsolidado = extra;
+          // Si no habia observaciones previas, agregar nota generica
+          if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extra.toLocaleString('es-CO') + ')';
         }
       });
       insertSchedule(schedule);
@@ -366,6 +377,14 @@ module.exports = function createApp(dbPath) {
         p.fechaRecaudo = ex.fechaRecaudo;
         p.observaciones = ex.observaciones;
         if (ex.montoCOPRecibido) p.montoCOPRecibido = ex.montoCOPRecibido;
+      }
+      // Preservar extraConsolidado del cambio-dia-pago
+      if (ex && ex.extraConsolidado && +ex.extraConsolidado > 0) {
+        const extra = Math.round(+ex.extraConsolidado);
+        p.interesPeriodo = Math.round(p.interesPeriodo + extra);
+        p.cuotaTotal = Math.round(p.cuotaTotal + extra);
+        p.extraConsolidado = extra;
+        if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extra.toLocaleString('es-CO') + ')';
       }
     });
     insertSchedule(schedule);
@@ -678,6 +697,7 @@ module.exports = function createApp(dbPath) {
       const primera = nuevasCuotas[0];
       primera.interesPeriodo = Math.round(primera.interesPeriodo + extra);
       primera.cuotaTotal = Math.round(primera.cuotaTotal + extra);
+      primera.extraConsolidado = extra; // Persistir para que recalculate lo preserve
       const obsExtra = 'Cuota consolidada por cambio de fecha de pago. Incluye: '
         + (montoMoraConsolidada > 0 ? 'intereses en mora previos $' + Math.round(montoMoraConsolidada).toLocaleString('es-CO') : '')
         + (montoMoraConsolidada > 0 && interesProrrateado > 0 ? ' + ' : '')
