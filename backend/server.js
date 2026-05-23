@@ -120,6 +120,10 @@ module.exports = function createApp(dbPath) {
   // Se limpia automaticamente cuando esa cuota se paga.
   try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtra REAL DEFAULT 0"); } catch(_){}
   try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtraN INTEGER DEFAULT 0"); } catch(_){}
+  // Cuota fija pactada (modo "Fijar cuota" de abono opcion 3): cuando > 0, el cronograma debe
+  // regenerarse usando buildScheduleFixedPMT en vez de buildSchedule.
+  // Se limpia al saldar el prestamo o al hacer un abono con otra opcion (Mantener/Modificar plazo).
+  try { db.exec("ALTER TABLE loans ADD COLUMN cuotaFijaPactada REAL DEFAULT 0"); } catch(_){}
 
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
@@ -244,6 +248,75 @@ module.exports = function createApp(dbPath) {
     return rows;
   }
 
+  /**
+   * buildScheduleFixedPMT — genera cronograma con cuota fija y cuota residual final.
+   * Usado por opcion 3 del recalculo (Fijar valor de cuota).
+   * Genera N-1 cuotas iguales de cuotaFija + 1 ultima cuota que ajusta el saldo a 0.
+   *
+   * @param {object} loan        - datos del prestamo (necesita id, nombre, fechaInicio, diaPago, frecuencia, modalidad, tasaMensual)
+   * @param {number} startN      - numero de cuota inicial
+   * @param {number} saldoInicial - saldo de capital sobre el cual aplicar
+   * @param {number} cuotaFija   - cuota deseada por periodo (debe ser > saldoInicial * r)
+   * @returns {Array<object>} - filas de cuotas (la ultima es la residual)
+   * @throws Error si cuotaFija <= saldoInicial * r (cuota insuficiente para cubrir intereses)
+   */
+  function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
+    const { id, nombre, tasaMensual, fechaInicio, diaPago } = loan;
+    const freq = loan.frecuencia || 'Mensual';
+    const r = tasaPeriodo(tasaMensual / 100, freq);
+    const interesInicial = saldoInicial * r;
+    // Validacion: cuota debe cubrir al menos el interes del primer periodo
+    if (cuotaFija <= interesInicial) {
+      throw new Error('Cuota insuficiente: $' + Math.round(cuotaFija).toLocaleString('es-CO') +
+        ' no cubre el interes del primer periodo ($' + Math.round(interesInicial).toLocaleString('es-CO') + ').');
+    }
+    const rows = [];
+    let saldo = saldoInicial;
+    let cuotaN = startN;
+    const MAX_ITER = 1000; // safety net
+    let i = 0;
+    while (saldo > 0.5 && i < MAX_ITER) {
+      const interes = Math.round(saldo * r * 100) / 100;
+      // Si esta cuota completa o exceria el saldo, es la ultima (residual)
+      const saldoMasInteres = saldo + interes;
+      let capital, cuotaTotal, saldoFinal;
+      if (saldoMasInteres <= cuotaFija + 0.5) {
+        // Ultima cuota: residual exacto
+        capital = saldo;
+        cuotaTotal = Math.round(saldoMasInteres * 100) / 100;
+        saldoFinal = 0;
+      } else {
+        capital = Math.round((cuotaFija - interes) * 100) / 100;
+        cuotaTotal = cuotaFija;
+        saldoFinal = Math.max(0, Math.round((saldo - capital) * 100) / 100);
+      }
+      rows.push({
+        id: `${id}-${cuotaN}`,
+        prestamoId: id,
+        nombreCliente: nombre,
+        cuotaN: cuotaN,
+        fechaPago: getPayDate(fechaInicio, cuotaN, diaPago, freq),
+        saldoInicial: Math.round(saldo),
+        interesPeriodo: Math.round(interes),
+        abonoCapital: Math.round(capital),
+        cuotaTotal: Math.round(cuotaTotal),
+        saldoFinal: Math.round(saldoFinal),
+        estadoPago: 'Pendiente',
+        fechaRecaudo: null,
+        observaciones: '',
+        montoCOPRecibido: 0,
+        montoUSDRecibido: 0,
+        partialPaid: 0,
+        extraConsolidado: 0
+      });
+      saldo = saldoFinal;
+      cuotaN++;
+      i++;
+    }
+    if (i >= MAX_ITER) throw new Error('Cuota demasiado baja: requiere mas de ' + MAX_ITER + ' cuotas para saldar.');
+    return rows;
+  }
+
   const insPayment = db.prepare(`
     INSERT OR REPLACE INTO payments(id,prestamoId,nombreCliente,cuotaN,fechaPago,saldoInicial,
       interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido,partialPaid,extraConsolidado)
@@ -267,50 +340,82 @@ module.exports = function createApp(dbPath) {
   });
 
   // ── API: Recalcular cronogramas ───────────────────────────────────────────
+  // v1.9.0 FIX: solo borra Pendientes regulares. Cuotas Pagadas y En Mora se preservan
+  // intactas (son deuda historica / causada y no deben ser recalculadas). nextRegularN
+  // se deriva de las cuotas (Pagadas + Mora) existentes para que las nuevas Pendientes
+  // no colisionen con los cuotaN existentes.
   app.post('/api/recalculate', (_req, res) => {
     const activeLoans = db.prepare("SELECT * FROM loans WHERE estado = 'Activo'").all();
     let updated = 0;
     for (const loan of activeLoans) {
       const prev = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(loan.id);
-      // Preservar abonos (id contiene '-ab-'), solo borrar cuotas regulares
       const prevRegulares = prev.filter(p => !p.id || p.id.indexOf('-ab-') === -1);
-      prevRegulares.forEach(p => {
+      const prevPagadasYMora = prevRegulares.filter(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora');
+      const prevPendientes = prevRegulares.filter(p => p.estadoPago === 'Pendiente');
+
+      // Snapshot de partialPaid + observaciones de Pendientes (para restaurar tras regenerar)
+      const partialMap = {};
+      prevPendientes.forEach(p => {
+        if ((p.partialPaid || 0) > 0 || p.observaciones) {
+          partialMap[p.cuotaN] = { partialPaid: p.partialPaid || 0, observaciones: p.observaciones || '' };
+        }
+      });
+
+      // Borrar SOLO las Pendientes — Pagadas y Mora quedan intactas
+      prevPendientes.forEach(p => {
         db.prepare('DELETE FROM payments WHERE id = ?').run(p.id);
       });
-      // montoCOP ya tiene abonos descontados — NO restar de nuevo
-      const schedule = buildSchedule(loan);
-      // Aplicar extra del prorrateo desde loans.proximaCuotaExtra (fuente de verdad robusta).
-      // Si la cuota objetivo aun esta pendiente, se le suma el extra al regenerar.
+
+      const regularConsumed = prevPagadasYMora.length;
+      const nextRegularN = regularConsumed + 1;
+      const cuotaFija = Math.round(+loan.cuotaFijaPactada || 0);
+      const indefinido = loan.modalidad === 'Intereses';
+      let schedule = [];
+
+      if (loan.montoCOP > 0) {
+        if (cuotaFija > 0 && loan.modalidad === 'Capital + Intereses') {
+          try {
+            schedule = buildScheduleFixedPMT(loan, nextRegularN, loan.montoCOP, cuotaFija);
+          } catch (e) {
+            // Fallback: cuota fija ya no viable, generar con plazo restante
+            const remaining = Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
+            if (remaining > 0) schedule = buildSchedule(loan, nextRegularN, loan.montoCOP, remaining);
+          }
+        } else if (loan.modalidad === 'Prestamo') {
+          // Si ya tiene una cuota regular (sea Pagada o En Mora), no regenerar
+          if (regularConsumed === 0) schedule = buildSchedule(loan);
+        } else {
+          // Intereses o Capital+Intereses sin cuotaFija
+          const remaining = indefinido
+            ? Math.max(0, cuotasHastaHoy(loan.fechaInicio, nextRegularN, 3, loan.frecuencia || 'Mensual'))
+            : Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
+          if (remaining > 0) schedule = buildSchedule(loan, nextRegularN, loan.montoCOP, remaining);
+        }
+      }
+
+      // Aplicar extra del prorrateo (proximaCuotaExtra) a la cuota objetivo si aun esta pendiente
       const extraLoan = Math.round(+loan.proximaCuotaExtra || 0);
       const extraN = +loan.proximaCuotaExtraN || 0;
       schedule.forEach(p => {
-        const ex = prevRegulares.find(e => e.cuotaN === p.cuotaN);
-        if (ex && ex.estadoPago !== 'Pendiente') {
-          p.estadoPago = ex.estadoPago;
-          p.fechaRecaudo = ex.fechaRecaudo;
-          p.observaciones = ex.observaciones;
-          if (ex.montoCOPRecibido) p.montoCOPRecibido = ex.montoCOPRecibido;
-          if (ex.partialPaid) p.partialPaid = ex.partialPaid;
-        } else if (ex && ex.partialPaid) {
-          // Cuota sigue Pendiente pero tenia pago parcial — preservarlo
-          p.partialPaid = ex.partialPaid;
-          p.observaciones = ex.observaciones;
+        const partial = partialMap[p.cuotaN];
+        if (partial) {
+          p.partialPaid = partial.partialPaid;
+          if (partial.observaciones) p.observaciones = partial.observaciones;
         }
-        // Aplicar extra solo a la cuota objetivo (proximaCuotaExtraN) si aun no esta pagada.
-        if (extraLoan > 0 && p.cuotaN === extraN && (!ex || ex.estadoPago !== 'Pagado')) {
+        if (extraLoan > 0 && p.cuotaN === extraN) {
           p.interesPeriodo = Math.round(p.interesPeriodo + extraLoan);
           p.cuotaTotal = Math.round(p.cuotaTotal + extraLoan);
           p.extraConsolidado = extraLoan;
           if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extraLoan.toLocaleString('es-CO') + ')';
         }
       });
-      insertSchedule(schedule);
+      if (schedule.length > 0) insertSchedule(schedule);
       updated++;
     }
-    // Re-aplicar auto-mora
+    // Re-aplicar auto-mora a Pendientes que cruzaron la fecha
     db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
       .run(hoyStr());
-    // Fix cuotas en mora de Prestamo: cuotaTotal debe = saldo actual (montoCOP)
+    // Fix cuotas en mora de Prestamo (sin intereses): cuotaTotal = saldo actual
     const fixP = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Prestamo'").all();
     fixP.forEach(fl => {
       db.prepare(`UPDATE payments SET cuotaTotal = ?, saldoFinal = 0
@@ -363,41 +468,79 @@ module.exports = function createApp(dbPath) {
       WHERE id=@id
     `).run(loan);
 
+    // v1.9.0 FIX: solo borrar Pendientes regulares. Cuotas Pagadas y En Mora se preservan
+    // intactas (deuda historica/causada). Esto garantiza que un edit nunca afecta cuotas
+    // ya pactadas con el deudor.
     const prev = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(loan.id);
-    // Separar abonos (id contiene '-ab-') de cuotas regulares
     const prevAbonos = prev.filter(p => p.id.indexOf('-ab-') !== -1);
     const prevRegulares = prev.filter(p => p.id.indexOf('-ab-') === -1);
-    // Solo borrar cuotas regulares, preservar abonos
-    prevRegulares.forEach(p => {
+    const prevPagadasYMora = prevRegulares.filter(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora');
+    const prevPendientes = prevRegulares.filter(p => p.estadoPago === 'Pendiente');
+
+    // Snapshot de partialPaid + observaciones de Pendientes
+    const partialMapEdit = {};
+    prevPendientes.forEach(p => {
+      if ((p.partialPaid || 0) > 0 || p.observaciones) {
+        partialMapEdit[p.cuotaN] = { partialPaid: p.partialPaid || 0, observaciones: p.observaciones || '' };
+      }
+    });
+
+    // Borrar SOLO Pendientes — Pagadas, Mora y abonos quedan intactos
+    prevPendientes.forEach(p => {
       db.prepare('DELETE FROM payments WHERE id = ?').run(p.id);
     });
-    // Recalcular saldo actual considerando abonos existentes
+
+    // Saldo actual considerando abonos previos (montoCOP es el del request, pero defendemos
+    // contra valores incorrectos restando los abonos confirmados).
     const totalAbonado = prevAbonos.filter(p => p.estadoPago === 'Pagado')
       .reduce((s, p) => s + p.abonoCapital, 0);
-    const saldoActual = Math.max(0, loan.montoCOP - totalAbonado);
-    // Regenerar cronograma sobre el saldo post-abonos
-    const schedule = buildSchedule({ ...loan, montoCOP: saldoActual });
-    // Aplicar extra del prorrateo desde loans.proximaCuotaExtra (fuente de verdad robusta).
+    // capital ya consumido por cuotas Pagadas regulares (no abonos)
+    const capPorCuotasPagadas = prevPagadasYMora
+      .filter(p => p.estadoPago === 'Pagado')
+      .reduce((s, p) => s + p.abonoCapital, 0);
+    const originalCOPEdit = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+    const saldoActual = Math.max(0, originalCOPEdit - totalAbonado - capPorCuotasPagadas);
+    const regularConsumedEdit = prevPagadasYMora.length;
+    const nextRegularNEdit = regularConsumedEdit + 1;
+    const cuotaFijaEdit = Math.round(+loan.cuotaFijaPactada || 0);
+    const indefinidoEdit = loan.modalidad === 'Intereses';
+
+    let schedule = [];
+    if (saldoActual > 0) {
+      if (cuotaFijaEdit > 0 && loan.modalidad === 'Capital + Intereses') {
+        try {
+          schedule = buildScheduleFixedPMT({ ...loan, montoCOP: saldoActual }, nextRegularNEdit, saldoActual, cuotaFijaEdit);
+        } catch (e) {
+          const remaining = Math.max(0, (loan.plazoMeses || 12) - regularConsumedEdit);
+          if (remaining > 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual }, nextRegularNEdit, saldoActual, remaining);
+        }
+      } else if (loan.modalidad === 'Prestamo') {
+        if (regularConsumedEdit === 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual });
+      } else {
+        const remaining = indefinidoEdit
+          ? Math.max(0, cuotasHastaHoy(loan.fechaInicio, nextRegularNEdit, 3, loan.frecuencia || 'Mensual'))
+          : Math.max(0, (loan.plazoMeses || 12) - regularConsumedEdit);
+        if (remaining > 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual }, nextRegularNEdit, saldoActual, remaining);
+      }
+    }
+
+    // Aplicar extra del prorrateo + restaurar partialPaid
     const extraLoanEdit = Math.round(+loan.proximaCuotaExtra || 0);
     const extraNEdit = +loan.proximaCuotaExtraN || 0;
-    // Restaurar estados de cuotas previamente pagadas/en mora
     schedule.forEach(p => {
-      const ex = prevRegulares.find(e => e.cuotaN === p.cuotaN);
-      if (ex && ex.estadoPago !== 'Pendiente') {
-        p.estadoPago = ex.estadoPago;
-        p.fechaRecaudo = ex.fechaRecaudo;
-        p.observaciones = ex.observaciones;
-        if (ex.montoCOPRecibido) p.montoCOPRecibido = ex.montoCOPRecibido;
+      const partial = partialMapEdit[p.cuotaN];
+      if (partial) {
+        p.partialPaid = partial.partialPaid;
+        if (partial.observaciones) p.observaciones = partial.observaciones;
       }
-      // Aplicar extra solo a la cuota objetivo si aun no esta pagada.
-      if (extraLoanEdit > 0 && p.cuotaN === extraNEdit && (!ex || ex.estadoPago !== 'Pagado')) {
+      if (extraLoanEdit > 0 && p.cuotaN === extraNEdit) {
         p.interesPeriodo = Math.round(p.interesPeriodo + extraLoanEdit);
         p.cuotaTotal = Math.round(p.cuotaTotal + extraLoanEdit);
         p.extraConsolidado = extraLoanEdit;
         if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extraLoanEdit.toLocaleString('es-CO') + ')';
       }
     });
-    insertSchedule(schedule);
+    if (schedule.length > 0) insertSchedule(schedule);
     logAction.run('edicion', 'Editaste prestamo de ' + loan.nombre);
     res.json(loan);
   });
@@ -474,7 +617,7 @@ module.exports = function createApp(dbPath) {
         const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
         const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
         if (todasPagadas) {
-          db.prepare("UPDATE loans SET estado = 'Finalizado' WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
+          db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
         }
       }
     }
@@ -531,7 +674,7 @@ module.exports = function createApp(dbPath) {
       const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
       const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
       if (todasPagadas) {
-        db.prepare("UPDATE loans SET estado = 'Finalizado' WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
+        db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
       }
     } else {
       // Solo suma al partialPaid, estado permanece
@@ -546,101 +689,227 @@ module.exports = function createApp(dbPath) {
   });
 
   // ── API: Abono a Capital ──────────────────────────────────────────────────
+  // ATOMICO (v1.9.0): toda validacion + buildSchedule(FixedPMT) ocurre ANTES de cualquier
+  // escritura. Si algo falla, se retorna 400 sin tocar la BD. Las escrituras se aplican
+  // dentro de una transaccion SQLite (all-or-nothing).
   app.post('/api/loans/:id/abono', (req, res) => {
-    const { monto, fecha, observaciones, montoUSD, liquidar } = req.body;
+    const { monto, fecha, observaciones, montoUSD, liquidar, recalcMode, recalcValor } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
 
-    // Analizar cuotas existentes
+    // ── FASE 1: LECTURA + VALIDACION (sin escrituras) ────────────────────────
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
 
-    // Saldo real: montoOrigen - todo capital pagado (formula confiable)
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
     const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
     const saldoReal = Math.max(0, originalCOP - todoCapPagado);
-    const nuevoSaldo = Math.round(saldoReal - monto);
+    const montoNum = +monto || 0;
+    if (montoNum <= 0) return res.status(400).json({ error: 'El monto del abono debe ser mayor a 0' });
+    const nuevoSaldo = Math.round(saldoReal - montoNum);
     if (nuevoSaldo < 0) return res.status(400).json({ error: 'El abono supera el saldo actual' });
 
-    // Cuotas regulares consumidas (Pagado o En Mora, excluyendo registros de abono)
     // Un registro de abono se identifica por interesPeriodo=0 AND abonoCapital>0
     const regularConsumed = allPays.filter(p =>
       (p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') &&
       !(p.interesPeriodo === 0 && p.abonoCapital > 0)
     ).length;
-
-    // Siguiente cuotaN disponible (mayor existente + 1, sin colisionar con En Mora)
     const maxExistingN = allPays.reduce((max, p) => Math.max(max, p.cuotaN), 0);
 
-    // Solo borrar cuotas PENDIENTES; las cuotas En Mora permanecen intactas (deuda independiente)
-    db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente'").run(req.params.id);
+    const indefinido = loan.modalidad === 'Intereses';
+    const esCapInt = loan.modalidad === 'Capital + Intereses';
+    const remainingDefault = indefinido ? 3 : Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
+    const nextRegularN = regularConsumed + 1;
+    const updatedLoan = Object.assign({}, loan, { montoCOP: nuevoSaldo });
 
-    // Para Préstamo: actualizar cuotaTotal de cuotas En Mora al nuevo saldo
-    // (Intereses NO: su cuota en mora sigue siendo el interés mensual fijo)
-    if (loan.modalidad === 'Prestamo') {
-      const moraRegulares = allPays.filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0));
-      moraRegulares.forEach(p => {
-        db.prepare('UPDATE payments SET cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
-          .run(Math.max(0, nuevoSaldo), 0, p.id);
-      });
-    }
+    // Pre-computar TODO el cronograma nuevo (si aplica) ANTES de tocar BD.
+    let nuevasCuotas = [];
+    let nuevoPlazoMeses = null;     // null = no actualizar plazoMeses
+    let nuevaCuotaFija = null;      // null = no actualizar; 0 = limpiar; >0 = persistir
+    let logRecalc = '';
 
-    // Registrar el abono como cuota especial (no cuenta como cuota regular)
-    const abonoId = req.params.id + '-ab-' + Date.now();
-    const fechaAbono = fecha || hoyStr();
-    insPayment.run({
-      id: abonoId,
-      prestamoId: req.params.id,
-      nombreCliente: loan.nombre,
-      cuotaN: maxExistingN + 1,
-      fechaPago: fechaAbono,
-      saldoInicial: saldoReal,
-      interesPeriodo: 0,
-      abonoCapital: Math.round(monto),
-      cuotaTotal: Math.round(monto),
-      saldoFinal: Math.max(0, nuevoSaldo),
-      estadoPago: 'Pagado',
-      fechaRecaudo: fechaAbono,
-      observaciones: observaciones || 'Abono a capital',
-      montoCOPRecibido: Math.round(monto),
-      montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0,
-      partialPaid: 0
-    });
-
-    if (nuevoSaldo <= 0) {
-      // Capital saldado: eliminar cuotas pendientes (ya no hay capital que amortizar)
-      db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente'").run(req.params.id);
-      const fechaLiq = fecha || hoyStr();
-      if (liquidar) {
-        // Liquidacion total: marcar cuotas en mora como pagadas tambien
-        db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ? WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaLiq, req.params.id);
-        db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado' WHERE id = ?").run(req.params.id);
+    if (nuevoSaldo > 0) {
+      if (esCapInt && recalcMode === 'modificarPlazo') {
+        const nuevoN = parseInt(recalcValor, 10);
+        if (!nuevoN || nuevoN < 1) return res.status(400).json({ error: 'Numero de cuotas invalido. Debe ser >= 1.' });
+        nuevasCuotas = buildSchedule(updatedLoan, nextRegularN, nuevoSaldo, nuevoN);
+        nuevoPlazoMeses = regularConsumed + nuevoN;
+        nuevaCuotaFija = 0; // limpiar (el usuario cambio de opinion)
+        logRecalc = ' — plazo ajustado a ' + nuevoN + ' cuota' + (nuevoN > 1 ? 's' : '') + ' restantes (total: ' + nuevoPlazoMeses + ')';
+      } else if (esCapInt && recalcMode === 'fijarCuota') {
+        const cuotaDeseada = +recalcValor || 0;
+        if (cuotaDeseada <= 0) return res.status(400).json({ error: 'Cuota invalida. Debe ser > 0.' });
+        const r = tasaPeriodo((loan.tasaMensual || 0) / 100, loan.frecuencia || 'Mensual');
+        const interesPrimerPeriodo = nuevoSaldo * r;
+        if (cuotaDeseada <= interesPrimerPeriodo) {
+          return res.status(400).json({
+            error: 'La cuota debe ser mayor a $' + Math.round(interesPrimerPeriodo).toLocaleString('es-CO') +
+              ' (intereses del primer periodo). Con $' + Math.round(cuotaDeseada).toLocaleString('es-CO') +
+              ' nunca se saldaria la deuda.'
+          });
+        }
+        try {
+          nuevasCuotas = buildScheduleFixedPMT(updatedLoan, nextRegularN, nuevoSaldo, cuotaDeseada);
+        } catch (e) {
+          return res.status(400).json({ error: e.message });
+        }
+        nuevoPlazoMeses = regularConsumed + nuevasCuotas.length;
+        nuevaCuotaFija = Math.round(cuotaDeseada);
+        logRecalc = ' — cuota fija $' + Math.round(cuotaDeseada).toLocaleString('es-CO') + ' x ' + nuevasCuotas.length + ' cuotas (total: ' + nuevoPlazoMeses + ')';
       } else {
-        // Solo abono a capital: cuotas en mora permanecen
-        const moraRestante = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora'").get(req.params.id);
-        if (moraRestante.c === 0) {
-          db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado' WHERE id = ?").run(req.params.id);
-        } else {
-          db.prepare("UPDATE loans SET montoCOP = 0 WHERE id = ?").run(req.params.id);
+        // Opcion 1 (default): mantener plazo, baja la cuota
+        if (loan.cuotaFijaPactada && +loan.cuotaFijaPactada > 0) nuevaCuotaFija = 0; // limpia (cambio de opinion)
+        if (remainingDefault > 0) {
+          nuevasCuotas = buildSchedule(updatedLoan, nextRegularN, nuevoSaldo, remainingDefault);
         }
       }
-    } else {
-      db.prepare('UPDATE loans SET montoCOP = ? WHERE id = ?').run(nuevoSaldo, req.params.id);
-
-      // Calcular cuotas restantes
-      const indefinido = loan.modalidad === 'Intereses';
-      const remaining = indefinido ? 3 : Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
-
-      if (remaining > 0) {
-        // startN = siguiente cuota regular (continua la numeracion original)
-        const nextRegularN = regularConsumed + 1;
-        const updatedLoan = Object.assign({}, loan, { montoCOP: nuevoSaldo });
-        // numCuotas = remaining (solo las que faltan del plazo original)
-        insertSchedule(buildSchedule(updatedLoan, nextRegularN, nuevoSaldo, remaining));
-      }
     }
 
-    logAction.run('abono', 'Registraste abono de $' + Math.round(monto).toLocaleString() + ' a ' + loan.nombre + (nuevoSaldo <= 0 ? ' (SALDADO)' : ' — saldo: $' + Math.round(nuevoSaldo).toLocaleString()));
+    // ── FASE 2: ESCRITURA (transaccion atomica) ──────────────────────────────
+    const abonoId = req.params.id + '-ab-' + Date.now();
+    const fechaAbono = fecha || hoyStr();
+    const aplicar = db.transaction(() => {
+      // Solo borrar cuotas PENDIENTES; las cuotas En Mora permanecen intactas (deuda independiente)
+      db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente'").run(req.params.id);
+
+      // Para Prestamo: actualizar cuotaTotal de cuotas En Mora al nuevo saldo
+      if (loan.modalidad === 'Prestamo') {
+        const moraRegulares = allPays.filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+        moraRegulares.forEach(p => {
+          db.prepare('UPDATE payments SET cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
+            .run(Math.max(0, nuevoSaldo), 0, p.id);
+        });
+      }
+
+      // Registrar el abono como cuota especial
+      insPayment.run({
+        id: abonoId,
+        prestamoId: req.params.id,
+        nombreCliente: loan.nombre,
+        cuotaN: maxExistingN + 1,
+        fechaPago: fechaAbono,
+        saldoInicial: saldoReal,
+        interesPeriodo: 0,
+        abonoCapital: Math.round(montoNum),
+        cuotaTotal: Math.round(montoNum),
+        saldoFinal: Math.max(0, nuevoSaldo),
+        estadoPago: 'Pagado',
+        fechaRecaudo: fechaAbono,
+        observaciones: observaciones || 'Abono a capital',
+        montoCOPRecibido: Math.round(montoNum),
+        montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0,
+        partialPaid: 0,
+        extraConsolidado: 0
+      });
+
+      if (nuevoSaldo <= 0) {
+        // Capital saldado
+        if (liquidar) {
+          db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ? WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaAbono, req.params.id);
+          db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ?").run(req.params.id);
+        } else {
+          const moraRestante = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora'").get(req.params.id);
+          if (moraRestante.c === 0) {
+            db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ?").run(req.params.id);
+          } else {
+            db.prepare("UPDATE loans SET montoCOP = 0 WHERE id = ?").run(req.params.id);
+          }
+        }
+      } else {
+        db.prepare('UPDATE loans SET montoCOP = ? WHERE id = ?').run(nuevoSaldo, req.params.id);
+        if (nuevasCuotas.length > 0) insertSchedule(nuevasCuotas);
+        if (nuevoPlazoMeses !== null) {
+          db.prepare('UPDATE loans SET plazoMeses = ? WHERE id = ?').run(nuevoPlazoMeses, req.params.id);
+        }
+        if (nuevaCuotaFija !== null) {
+          db.prepare('UPDATE loans SET cuotaFijaPactada = ? WHERE id = ?').run(nuevaCuotaFija, req.params.id);
+        }
+      }
+    });
+    aplicar();
+
+    let logBase = 'Registraste abono de $' + Math.round(montoNum).toLocaleString() + ' a ' + loan.nombre + (nuevoSaldo <= 0 ? ' (SALDADO)' : ' — saldo: $' + Math.round(nuevoSaldo).toLocaleString());
+    if (recalcMode === 'modificarPlazo' || recalcMode === 'fijarCuota') {
+      logBase += ' [recalc: ' + recalcMode + ']';
+    }
+    logAction.run('abono', logBase);
     res.json({ ok: true, nuevoSaldo: Math.max(0, nuevoSaldo) });
+  });
+
+  // ── API: Reestructurar Prestamo (sin abono) ──────────────────────────────
+  // Permite recalcular el cronograma de cuotas FUTURAS sin necesidad de hacer un abono.
+  // SOLO para modalidad Capital + Intereses. Cuotas Pagadas y En Mora NO se tocan.
+  // Atomico: valida + computa todo antes de cualquier escritura.
+  app.post('/api/loans/:id/reestructurar', (req, res) => {
+    const { recalcMode, recalcValor } = req.body;
+    const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
+    if (!loan) return res.status(404).json({ error: 'No encontrado' });
+    if (loan.estado !== 'Activo') return res.status(400).json({ error: 'Solo se pueden reestructurar prestamos activos' });
+    if (loan.modalidad !== 'Capital + Intereses') return res.status(400).json({ error: 'La reestructuracion solo aplica para prestamos de Capital + Intereses' });
+    if (recalcMode !== 'modificarPlazo' && recalcMode !== 'fijarCuota') {
+      return res.status(400).json({ error: 'Modo de recalculo invalido. Debe ser "modificarPlazo" o "fijarCuota".' });
+    }
+
+    // ── FASE 1: LECTURA + VALIDACION (sin escrituras) ────────────────────────
+    const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
+
+    const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+    const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const saldoReal = Math.max(0, originalCOP - todoCapPagado);
+    if (saldoReal <= 0) return res.status(400).json({ error: 'El prestamo no tiene saldo de capital pendiente para reestructurar' });
+
+    const regularConsumed = allPays.filter(p =>
+      (p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') &&
+      !(p.interesPeriodo === 0 && p.abonoCapital > 0)
+    ).length;
+    const nextRegularN = regularConsumed + 1;
+    const updatedLoan = Object.assign({}, loan, { montoCOP: saldoReal });
+
+    let nuevasCuotas = [];
+    let nuevoPlazoMeses;
+    let nuevaCuotaFija; // 0 = limpiar, >0 = persistir
+    let logRecalc;
+
+    if (recalcMode === 'modificarPlazo') {
+      const nuevoN = parseInt(recalcValor, 10);
+      if (!nuevoN || nuevoN < 1) return res.status(400).json({ error: 'Numero de cuotas invalido. Debe ser >= 1.' });
+      nuevasCuotas = buildSchedule(updatedLoan, nextRegularN, saldoReal, nuevoN);
+      nuevoPlazoMeses = regularConsumed + nuevoN;
+      nuevaCuotaFija = 0;
+      logRecalc = ' — plazo ajustado a ' + nuevoN + ' cuota' + (nuevoN > 1 ? 's' : '') + ' restantes (total: ' + nuevoPlazoMeses + ')';
+    } else {
+      // fijarCuota
+      const cuotaDeseada = +recalcValor || 0;
+      if (cuotaDeseada <= 0) return res.status(400).json({ error: 'Cuota invalida. Debe ser > 0.' });
+      const r = tasaPeriodo((loan.tasaMensual || 0) / 100, loan.frecuencia || 'Mensual');
+      const interesPrimerPeriodo = saldoReal * r;
+      if (cuotaDeseada <= interesPrimerPeriodo) {
+        return res.status(400).json({
+          error: 'La cuota debe ser mayor a $' + Math.round(interesPrimerPeriodo).toLocaleString('es-CO') +
+            ' (intereses del primer periodo). Con $' + Math.round(cuotaDeseada).toLocaleString('es-CO') +
+            ' nunca se saldaria la deuda.'
+        });
+      }
+      try {
+        nuevasCuotas = buildScheduleFixedPMT(updatedLoan, nextRegularN, saldoReal, cuotaDeseada);
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+      nuevoPlazoMeses = regularConsumed + nuevasCuotas.length;
+      nuevaCuotaFija = Math.round(cuotaDeseada);
+      logRecalc = ' — cuota fija $' + Math.round(cuotaDeseada).toLocaleString('es-CO') + ' x ' + nuevasCuotas.length + ' cuotas (total: ' + nuevoPlazoMeses + ')';
+    }
+
+    // ── FASE 2: ESCRITURA (transaccion atomica) ──────────────────────────────
+    const aplicar = db.transaction(() => {
+      // Borrar cuotas Pendientes (regulares, no abonos). Mora y Pagadas intactas.
+      db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente' AND id NOT LIKE '%-ab-%'").run(req.params.id);
+      insertSchedule(nuevasCuotas);
+      db.prepare('UPDATE loans SET plazoMeses = ?, cuotaFijaPactada = ? WHERE id = ?').run(nuevoPlazoMeses, nuevaCuotaFija, req.params.id);
+    });
+    aplicar();
+
+    logAction.run('reestructuracion', 'Reestructuraste ' + loan.nombre + logRecalc);
+    res.json({ ok: true, nuevasCuotas: nuevasCuotas.length, nuevoPlazoMeses, cuotaFijaPactada: nuevaCuotaFija });
   });
 
   // ── API: Cierre Forzoso ───────────────────────────────────────────────────
@@ -660,7 +929,7 @@ module.exports = function createApp(dbPath) {
       .reduce((s, p) => s + p.interesPeriodo, 0));
 
     db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente', 'En Mora')").run(req.params.id);
-    db.prepare("UPDATE loans SET estado = 'Cancelado', capitalPerdido = ?, interesesPerdidos = ?, montoCOP = 0 WHERE id = ?")
+    db.prepare("UPDATE loans SET estado = 'Cancelado', capitalPerdido = ?, interesesPerdidos = ?, montoCOP = 0, cuotaFijaPactada = 0 WHERE id = ?")
       .run(capitalPerdido, interesesPerdidos, req.params.id);
 
     const totalPerdido = capitalPerdido + interesesPerdidos;
