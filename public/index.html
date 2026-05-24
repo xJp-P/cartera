@@ -848,7 +848,8 @@ function App(){
       'Tipografia drastica en las cuotas: el valor a cobrar ahora es el protagonista visual (mas grande y bold), con el saldo del prestamo como dato secundario tenue',
       'En monitores grandes (>1180px) el dashboard ya no se estira de borde a borde — se mantiene centrado y compacto',
       'Botones de accion en el perfil del prestamo reorganizados en 3 niveles jerarquicos: Cobrar (verde), Ajustar cronograma (neutro) y Cronograma (ghost)',
-      'Paleta de colores armonica entre los botones de Abono y Liquidacion (familia verde) — ya no compiten visualmente con tonos saturados'
+      'Paleta de colores armonica entre los botones de Abono y Liquidacion (familia verde) — ya no compiten visualmente con tonos saturados',
+      'Esta ventana de Novedades ahora tiene altura maxima y scroll interno: el titulo y el boton "Entendido" quedan fijos mientras la lista se desplaza comodamente'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1276,19 +1277,26 @@ function App(){
     restructureModal&&h(RestructureModal,{loan:restructureModal.loan||restructureModal,pays:pays,onSave:reestructurarPrestamo,onClose:function(){if(restructureModal.fromDeudor){setDebtorModal(restructureModal.fromDeudor);} setRestructureModal(null);}}),
     preflightDlg&&h(PreflightMoraModal,{cuotas:preflightDlg.cuotas,loan:preflightDlg.loan,onMarkMora:preflightDlg.onMarkMora,onContinue:preflightDlg.onContinue,onCancel:preflightDlg.onCancel}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
+    // v1.9.x — Changelog modal con max-height + scroll interno. Header (titulo) y
+    // footer (boton Entendido) quedan fijos; solo la lista de items hace scroll.
     changelogDlg&&h('div',{className:'modal-overlay',onClick:function(){setChangelogDlg(null);}},
-      h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:380}},
-        h('div',{className:'modal-handle'}),
-        h('div',{style:{textAlign:'center',marginBottom:14}},
-          h('div',{style:{marginBottom:6}},h(Ico,{name:'sparkle',size:28,color:'var(--green)'})),
-          h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)'}},'Actualizado a v'+changelogDlg.version)),
-        h('div',{style:{marginBottom:16}},
+      h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:380,maxHeight:'min(620px,80vh)',display:'flex',flexDirection:'column'}},
+        // Header fijo (handle + icono + titulo)
+        h('div',{style:{flexShrink:0}},
+          h('div',{className:'modal-handle'}),
+          h('div',{style:{textAlign:'center',marginBottom:14}},
+            h('div',{style:{marginBottom:6}},h(Ico,{name:'sparkle',size:28,color:'var(--green)'})),
+            h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)'}},'Novedades de la version '+changelogDlg.version),
+            h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4,fontStyle:'italic'}},changelogDlg.items.length+' '+(changelogDlg.items.length===1?'cambio':'cambios')))),
+        // Cuerpo scrolleable (la lista de items)
+        h('div',{style:{flex:'1 1 auto',minHeight:0,overflowY:'auto',marginBottom:14,paddingRight:6,borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)',paddingTop:6,paddingBottom:6}},
           changelogDlg.items.map(function(item,i){
-            return h('div',{key:i,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',fontSize:13,color:'var(--text2)'}},
-              h(Ico,{name:'check',size:14,color:'var(--green)'}),
+            return h('div',{key:i,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'7px 0',fontSize:13,color:'var(--text2)',lineHeight:1.45}},
+              h('div',{style:{flexShrink:0,marginTop:2}},h(Ico,{name:'check',size:14,color:'var(--green)',sw:2.4})),
               h('span',null,item));
           })),
-        h('button',{onClick:function(){setChangelogDlg(null);},style:{width:'100%',padding:'10px 0',background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer'}},'Entendido'))),
+        // Footer fijo (boton)
+        h('button',{onClick:function(){setChangelogDlg(null);},style:{flexShrink:0,width:'100%',padding:'10px 0',background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}},'Entendido'))),
     errorDlg&&h('div',{className:'modal-overlay',onClick:function(){setErrorDlg(null);}},
       h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:400}},
         h('div',{className:'modal-handle'}),
