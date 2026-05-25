@@ -370,26 +370,37 @@ module.exports = function createApp(dbPath) {
       const nextRegularN = regularConsumed + 1;
       const cuotaFija = Math.round(+loan.cuotaFijaPactada || 0);
       const indefinido = loan.modalidad === 'Intereses';
+
+      // v1.9.x FIX (bug general de cuotas infladas): NO usar loan.montoCOP que puede
+      // estar stale (solo se actualiza con /abono, no al marcar pagos sin abono).
+      // Calcular saldo real desde formula confiable: originalCOP - capitalPagado total
+      // (cuotas Pagadas regulares + abonos a capital Pagados). Aplica solo a modalidades
+      // que necesitan amortizacion (Capital + Intereses, Intereses). Prestamo se mantiene
+      // con montoCOP porque su flujo es diferente.
+      const originalCOPRec = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+      const capPorAbonos = prev.filter(p => p.id.indexOf('-ab-') !== -1 && p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+      const capPorCuotasPagadas = prevPagadasYMora.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+      const saldoReal = Math.max(0, originalCOPRec - capPorAbonos - capPorCuotasPagadas);
       let schedule = [];
 
-      if (loan.montoCOP > 0) {
+      if (saldoReal > 0) {
         if (cuotaFija > 0 && loan.modalidad === 'Capital + Intereses') {
           try {
-            schedule = buildScheduleFixedPMT(loan, nextRegularN, loan.montoCOP, cuotaFija);
+            schedule = buildScheduleFixedPMT(loan, nextRegularN, saldoReal, cuotaFija);
           } catch (e) {
-            // Fallback: cuota fija ya no viable, generar con plazo restante
             const remaining = Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
-            if (remaining > 0) schedule = buildSchedule(loan, nextRegularN, loan.montoCOP, remaining);
+            if (remaining > 0) schedule = buildSchedule(loan, nextRegularN, saldoReal, remaining);
           }
         } else if (loan.modalidad === 'Prestamo') {
-          // Si ya tiene una cuota regular (sea Pagada o En Mora), no regenerar
-          if (regularConsumed === 0) schedule = buildSchedule(loan);
+          // Para Prestamo (sin intereses, 1 cuota) seguimos usando montoCOP — su flujo
+          // no es PMT y montoCOP refleja el saldo correctamente tras abonos.
+          if (regularConsumed === 0 && loan.montoCOP > 0) schedule = buildSchedule(loan);
         } else {
-          // Intereses o Capital+Intereses sin cuotaFija
+          // Intereses o Capital+Intereses sin cuotaFija — usar saldoReal computado
           const remaining = indefinido
             ? Math.max(0, cuotasHastaHoy(loan.fechaInicio, nextRegularN, 3, loan.frecuencia || 'Mensual'))
             : Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
-          if (remaining > 0) schedule = buildSchedule(loan, nextRegularN, loan.montoCOP, remaining);
+          if (remaining > 0) schedule = buildSchedule(loan, nextRegularN, saldoReal, remaining);
         }
       }
 
