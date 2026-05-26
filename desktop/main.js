@@ -69,14 +69,24 @@ function waitForServer(url, retries = 30, delay = 300) {
   });
 }
 
-let expressApp, server;
+// v1.9.2 CHANGE: El backend NO se inicia al cargar el modulo. Se arranca explicitamente
+// en startBackend() despues de que checkForUpdatesAtBoot() confirme que no hay update
+// pendiente. Esto evita que codigo viejo (potencialmente con bugs que corrompan la BD)
+// se ejecute sobre la base de datos antes de que el usuario tenga la oportunidad de
+// instalar el parche.
+let expressApp = null;
+let server = null;
 let serverError = null;
-try {
-  expressApp = require('../backend/server')(DB_PATH);
-  server = http.createServer(expressApp);
-  server.listen(PORT, '127.0.0.1');
-} catch(err) {
-  serverError = 'Error al iniciar el servidor:\n' + err.message;
+
+function startBackend() {
+  if (server) return; // ya iniciado, idempotente
+  try {
+    expressApp = require('../backend/server')(DB_PATH);
+    server = http.createServer(expressApp);
+    server.listen(PORT, '127.0.0.1');
+  } catch(err) {
+    serverError = 'Error al iniciar el servidor:\n' + err.message;
+  }
 }
 
 // ── IPC: Desarrollador ───────────────────────────────────────────────────
@@ -175,9 +185,22 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
 let mainWin = null;
+let splashWin = null;
 let macUpdateVersion = null;
 
 function sendUpdateStatus(status, info) {
+  info = info || {};
+  // v1.9.2: si el splash esta activo y la ventana principal aun no — rutear al splash
+  if (splashWin && !splashWin.isDestroyed() && (!mainWin || mainWin.isDestroyed())) {
+    if (status === 'downloading') {
+      updateSplashMessage('Descargando v' + (info.version || macUpdateVersion || '') + '...', info.percent);
+    } else if (status === 'downloaded') {
+      updateSplashMessage('Listo. Reiniciando para instalar...');
+    } else if (status === 'error') {
+      updateSplashMessage('Error: ' + (info.message || 'desconocido'));
+    }
+    return;
+  }
   if (mainWin && !mainWin.isDestroyed()) {
     mainWin.webContents.send('update-status', { status, ...info });
   }
@@ -334,12 +357,248 @@ ipcMain.handle('print-pdf', async (_e, html, filename) => {
   return { ok: true, path: savePath.filePath };
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.9.2 — BOOT SEQUENCE CON SPLASH + UPDATE CHECK PRE-BD
+// ═══════════════════════════════════════════════════════════════════════════
+// Garantiza que ningun codigo viejo (potencialmente bugueado) toque la BD
+// antes de que el usuario tenga la oportunidad de instalar actualizaciones.
+
+// ── Splash window: se muestra inmediatamente al arrancar ──────────────────
+function createSplashWindow() {
+  const w = new BrowserWindow({
+    width: 420, height: 240,
+    frame: false,
+    resizable: false,
+    movable: true,
+    transparent: false,
+    alwaysOnTop: true,
+    backgroundColor: '#0d1117',
+    center: true,
+    skipTaskbar: false,
+    title: 'Cartera de Prestamos',
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  });
+  w.setMenu(null);
+  const version = app.getVersion();
+  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
+    + 'body{margin:0;padding:0;background:#0d1117;color:#e6edf3;'
+    + "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+    + 'display:flex;align-items:center;justify-content:center;'
+    + 'height:100vh;flex-direction:column;'
+    + 'border:1px solid #30363d;border-radius:12px;overflow:hidden;'
+    + '-webkit-app-region:drag;-webkit-user-select:none;}'
+    + '.spinner{width:36px;height:36px;border:3px solid #21262d;'
+    + 'border-top-color:#3fb950;border-radius:50%;'
+    + 'animation:spin 1s linear infinite;margin-bottom:18px;}'
+    + '@keyframes spin{to{transform:rotate(360deg);}}'
+    + 'h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px;}'
+    + 'p#msg{font-size:13px;color:#8b949e;margin:8px 0 0;text-align:center;padding:0 24px;}'
+    + '.bar{width:280px;height:5px;background:#21262d;border-radius:99px;'
+    + 'margin-top:14px;overflow:hidden;display:none;}'
+    + '.bar.show{display:block;}'
+    + '.bar-fill{height:100%;background:linear-gradient(90deg,#2ea043,#3fb950);'
+    + 'width:0%;transition:width .3s ease;border-radius:99px;}'
+    + 'small{font-size:11px;color:#6e7681;margin-top:14px;}'
+    + '</style></head><body>'
+    + '<div class="spinner"></div>'
+    + '<h1>Cartera de Préstamos</h1>'
+    + '<p id="msg">Buscando actualizaciones...</p>'
+    + '<div class="bar" id="bar"><div class="bar-fill" id="fill"></div></div>'
+    + '<small>v' + version + '</small>'
+    + '</body></html>';
+  w.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(html));
+  return w;
+}
+
+function updateSplashMessage(msg, percent) {
+  if (!splashWin || splashWin.isDestroyed()) return;
+  const safe = String(msg || '').replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+  const showBar = typeof percent === 'number';
+  const pctClamped = Math.min(100, Math.max(0, percent || 0));
+  const code = `
+    (function(){
+      var m = document.getElementById('msg'); if (m) m.textContent = '${safe}';
+      var b = document.getElementById('bar'); var f = document.getElementById('fill');
+      if (b && f) {
+        ${showBar ? "b.classList.add('show'); f.style.width = '" + pctClamped + "%';" : "b.classList.remove('show');"}
+      }
+    })();
+  `;
+  splashWin.webContents.executeJavaScript(code).catch(() => {});
+}
+
+// ── Helpers para chequear updates en Mac (sin tocar BD) ───────────────────
+function compareVersions(a, b) {
+  const pa = String(a||'').split('.').map(n => parseInt(n,10) || 0);
+  const pb = String(b||'').split('.').map(n => parseInt(n,10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i]||0) > (pb[i]||0)) return 1;
+    if ((pa[i]||0) < (pb[i]||0)) return -1;
+  }
+  return 0;
+}
+
+function httpsGetJson(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, {
+      headers: {
+        'User-Agent': 'cartera-prestamos',
+        'Accept': 'application/vnd.github+json'
+      }
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return httpsGetJson(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error('HTTP ' + res.statusCode));
+      }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); }
+        catch(e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+async function checkMacUpdateAvailable() {
+  try {
+    const json = await httpsGetJson('https://api.github.com/repos/xJp-P/cartera-prestamos/releases/latest');
+    const latestTag = String(json.tag_name || '').replace(/^v/, '');
+    const currentVer = app.getVersion();
+    if (latestTag && compareVersions(latestTag, currentVer) > 0) {
+      macUpdateVersion = latestTag;
+      return 'install';
+    }
+    return 'skip';
+  } catch(e) {
+    return 'skip';
+  }
+}
+
+// ── Check de updates aislado (con timeout 60s) ───────────────────────────
+async function checkForUpdatesAtBoot() {
+  if (!app.isPackaged) return 'skip';
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finalize = (decision) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(decision);
+    };
+    const timer = setTimeout(() => finalize('skip'), 60000);
+
+    if (process.platform === 'darwin') {
+      checkMacUpdateAvailable().then(d => { clearTimeout(timer); finalize(d); })
+        .catch(() => { clearTimeout(timer); finalize('skip'); });
+    } else {
+      autoUpdater.once('update-available', (info) => {
+        clearTimeout(timer);
+        macUpdateVersion = info.version;
+        finalize('install');
+      });
+      autoUpdater.once('update-not-available', () => { clearTimeout(timer); finalize('skip'); });
+      autoUpdater.once('error', () => { clearTimeout(timer); finalize('skip'); });
+      try { autoUpdater.checkForUpdates(); }
+      catch(_) { clearTimeout(timer); finalize('skip'); }
+    }
+  });
+}
+
+// ── Mac: descarga + instalacion automatica al arrancar ──────────────────
+async function macDownloadAndInstallAtBoot(version) {
+  const zipUrl = `https://github.com/xJp-P/cartera-prestamos/releases/download/v${version}/Instalador-Mac-${version}.zip`;
+  const tmpDir = path.join(os.tmpdir(), 'cartera-update-' + Date.now());
+  const zipPath = path.join(tmpDir, 'update.zip');
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  updateSplashMessage('Descargando v' + version + '...', 0);
+
+  await new Promise((resolve, reject) => {
+    httpsGet(zipUrl).then((res) => {
+      const total = parseInt(res.headers['content-length'] || '0', 10);
+      let downloaded = 0;
+      const file = fs.createWriteStream(zipPath);
+      res.on('data', (chunk) => {
+        downloaded += chunk.length;
+        if (total > 0) updateSplashMessage('Descargando v' + version + '...', Math.round((downloaded/total)*100));
+      });
+      res.pipe(file);
+      file.on('finish', () => { file.close(); resolve(); });
+      file.on('error', reject);
+    }).catch(reject);
+  });
+
+  updateSplashMessage('Instalando v' + version + '...', 100);
+  execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
+  const extractedApp = path.join(tmpDir, 'Cartera de Prestamos.app');
+  if (!fs.existsSync(extractedApp)) throw new Error('No se encontro la app en el zip');
+  execSync(`xattr -cr "${extractedApp}"`);
+  const appPath = path.dirname(path.dirname(path.dirname(app.getAppPath())));
+  const scriptPath = path.join(tmpDir, 'update.sh');
+  const script = `#!/bin/bash
+sleep 2
+rm -rf "${appPath}"
+cp -R "${extractedApp}" "${appPath}"
+xattr -cr "${appPath}"
+open "${appPath}"
+rm -rf "${tmpDir}"
+`;
+  fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+  require('child_process').exec(`bash "${scriptPath}"`);
+  setTimeout(() => app.quit(), 500);
+}
+
+// ── Orquestador de boot: 4 fases ─────────────────────────────────────────
 app.whenReady().then(async () => {
+  // FASE 1: prefs + DB_PATH ya resueltos (top-level), nada conectado todavia.
+
+  // FASE 2: splash inmediato (BD intacta)
+  splashWin = createSplashWindow();
+
+  // FASE 3: check de updates aislado (max 60s)
+  const decision = await checkForUpdatesAtBoot();
+
+  if (decision === 'install') {
+    // FASE 4a: hay update — instalar SIN tocar BD
+    updateSplashMessage('Actualizacion v' + macUpdateVersion + ' encontrada. Descargando...', 0);
+    try {
+      if (process.platform === 'darwin') {
+        await macDownloadAndInstallAtBoot(macUpdateVersion);
+        return; // app se cierra
+      } else {
+        await new Promise((resolve, reject) => {
+          autoUpdater.on('download-progress', (prog) => {
+            updateSplashMessage('Descargando v' + macUpdateVersion + '...', Math.round(prog.percent));
+          });
+          autoUpdater.once('update-downloaded', () => {
+            updateSplashMessage('Instalando v' + macUpdateVersion + '...');
+            setTimeout(() => autoUpdater.quitAndInstall(false, true), 1000);
+            // app sale, no se resuelve
+          });
+          autoUpdater.once('error', reject);
+          autoUpdater.downloadUpdate().catch(reject);
+        });
+        return;
+      }
+    } catch(err) {
+      // Fallback: si falla la actualizacion, arrancar normal despues de 3s
+      updateSplashMessage('Error al actualizar: ' + (err.message || 'desconocido') + '. Continuando con la version actual...');
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
+  // FASE 4b: sin update (o fallback) — arranque normal
+  updateSplashMessage('Iniciando aplicacion...');
+  startBackend();
   mainWin = await createWindow();
-  if (!mainWin) return;
-  // Chequear updates 3s después de arrancar
-  if (app.isPackaged) {
-    setTimeout(() => autoUpdater.checkForUpdates(), 3000);
+  if (splashWin && !splashWin.isDestroyed()) {
+    splashWin.close();
+    splashWin = null;
   }
 });
+
 app.on('window-all-closed', () => { if (server) server.close(); app.quit(); });
