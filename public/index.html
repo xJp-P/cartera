@@ -863,9 +863,13 @@ function App(){
       'Nueva logica de "Recaudo del mes": el ESPERADO ahora cuenta solo las cuotas que vencen este mes (la mora arrastrada ya no contamina la meta). El RECIBIDO suma lo cobrado del mes mas la mora recuperada (cuotas viejas pagadas durante este mes).',
       'La barra de Recaudo cambia a dorado y muestra "META SUPERADA" cuando el % pasa de 100% (por ejemplo cuando se cobra cartera vencida)',
       'Fix critico: el boton "Sincronizar datos" ya no infla las cuotas Pendientes en prestamos Capital+Intereses con cuotas previamente pagadas. Antes usaba un saldo desactualizado y regeneraba cuotas con valores incorrectos (hasta 3x el monto real)',
-      'Reparacion automatica de 16 cuotas que estaban infladas en la base de datos (3 prestamos afectados) — el cliente habria pagado mas de $1.2M de mas en cuotas futuras',
       'Nueva pantalla de carga al abrir la app: ahora aparece una ventana ligera "Buscando actualizaciones..." mientras se verifica si hay version nueva en GitHub. Si la hay, se descarga e instala automaticamente sin tocar la base de datos. Solo si no hay actualizacion (o no hay internet) se procede a abrir la app normalmente.',
       'Esta proteccion garantiza que un bug en una version vieja nunca pueda corromper la base de datos: el codigo nuevo siempre se instala primero. El chequeo tiene un timeout de 60 segundos para no bloquear el inicio sin internet.'
+    ],
+    '1.9.3': [
+      'La pantalla de carga al iniciar la app ahora muestra una cuenta regresiva de 60 segundos arriba del icono — sabes exactamente cuanto tiempo falta para que termine el chequeo de actualizaciones',
+      'Si el chequeo no puede completarse (por ejemplo, sin internet), la pantalla ya no continua sola: ahora te muestra el mensaje "Problemas de conexion" y te da dos opciones claras: "Continuar" (abrir la app de todas formas, con el riesgo asumido) o "Cerrar app" (salir sin tocar nada)',
+      'Esto da control total al usuario en situaciones de red inestable: si sabes que tu conexion esta floja pero quieres trabajar igual, sigues adelante; si prefieres reintentar mas tarde con buena senal, cierras la app limpiamente'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];

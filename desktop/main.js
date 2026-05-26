@@ -364,9 +364,12 @@ ipcMain.handle('print-pdf', async (_e, html, filename) => {
 // antes de que el usuario tenga la oportunidad de instalar actualizaciones.
 
 // ── Splash window: se muestra inmediatamente al arrancar ──────────────────
+// v1.9.3: tiene 2 vistas (loading + offline decision) y countdown visible.
+// nodeIntegration habilitado para que los botones puedan enviar IPC al main.
+// Contenido 100% local (data: URL) controlado por nosotros — sin riesgo.
 function createSplashWindow() {
   const w = new BrowserWindow({
-    width: 420, height: 240,
+    width: 440, height: 290,
     frame: false,
     resizable: false,
     movable: true,
@@ -376,7 +379,7 @@ function createSplashWindow() {
     center: true,
     skipTaskbar: false,
     title: 'Cartera de Prestamos',
-    webPreferences: { nodeIntegration: false, contextIsolation: true }
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
   w.setMenu(null);
   const version = app.getVersion();
@@ -387,24 +390,56 @@ function createSplashWindow() {
     + 'height:100vh;flex-direction:column;'
     + 'border:1px solid #30363d;border-radius:12px;overflow:hidden;'
     + '-webkit-app-region:drag;-webkit-user-select:none;}'
+    + '.view{display:flex;flex-direction:column;align-items:center;'
+    + 'justify-content:center;width:100%;padding:0 24px;box-sizing:border-box;}'
+    + '.view.hidden{display:none;}'
+    + '.countdown{font-size:11px;color:#6e7681;margin-bottom:10px;'
+    + "font-family:'Cascadia Code','Consolas',monospace;letter-spacing:.5px;}"
     + '.spinner{width:36px;height:36px;border:3px solid #21262d;'
     + 'border-top-color:#3fb950;border-radius:50%;'
-    + 'animation:spin 1s linear infinite;margin-bottom:18px;}'
+    + 'animation:spin 1s linear infinite;margin-bottom:16px;}'
     + '@keyframes spin{to{transform:rotate(360deg);}}'
     + 'h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px;}'
-    + 'p#msg{font-size:13px;color:#8b949e;margin:8px 0 0;text-align:center;padding:0 24px;}'
+    + 'p#msg,p#offlineMsg{font-size:13px;color:#8b949e;margin:8px 0 0;'
+    + 'text-align:center;padding:0 8px;line-height:1.5;}'
     + '.bar{width:280px;height:5px;background:#21262d;border-radius:99px;'
     + 'margin-top:14px;overflow:hidden;display:none;}'
     + '.bar.show{display:block;}'
     + '.bar-fill{height:100%;background:linear-gradient(90deg,#2ea043,#3fb950);'
     + 'width:0%;transition:width .3s ease;border-radius:99px;}'
     + 'small{font-size:11px;color:#6e7681;margin-top:14px;}'
+    + '.warn-icon{font-size:36px;line-height:1;margin-bottom:12px;color:#d29922;}'
+    + '.btns{display:flex;gap:8px;margin-top:18px;-webkit-app-region:no-drag;}'
+    + '.btns button{padding:9px 18px;font-size:12px;font-weight:700;'
+    + 'border-radius:8px;border:none;cursor:pointer;font-family:inherit;'
+    + 'transition:background .15s;}'
+    + '.btn-primary{background:#238636;color:white;}'
+    + '.btn-primary:hover{background:#2ea043;}'
+    + '.btn-secondary{background:#21262d;color:#e6edf3;border:1px solid #30363d;}'
+    + '.btn-secondary:hover{background:#30363d;}'
     + '</style></head><body>'
+    + '<div id="vLoading" class="view">'
+    + '<div class="countdown" id="countdown">60s</div>'
     + '<div class="spinner"></div>'
     + '<h1>Cartera de Préstamos</h1>'
     + '<p id="msg">Buscando actualizaciones...</p>'
     + '<div class="bar" id="bar"><div class="bar-fill" id="fill"></div></div>'
     + '<small>v' + version + '</small>'
+    + '</div>'
+    + '<div id="vOffline" class="view hidden">'
+    + '<div class="warn-icon">⚠</div>'
+    + '<h1>Problemas de conexión</h1>'
+    + '<p id="offlineMsg">No pudimos verificar si hay una actualización pendiente. ¿Deseas continuar de todas formas?</p>'
+    + '<div class="btns">'
+    + '<button class="btn-primary" id="btnContinue">Continuar</button>'
+    + '<button class="btn-secondary" id="btnQuit">Cerrar app</button>'
+    + '</div>'
+    + '</div>'
+    + '<script>'
+    + "var ipc = require('electron').ipcRenderer;"
+    + "document.getElementById('btnContinue').addEventListener('click', function(){ ipc.send('splash-decision', 'continue'); });"
+    + "document.getElementById('btnQuit').addEventListener('click', function(){ ipc.send('splash-decision', 'quit'); });"
+    + '</script>'
     + '</body></html>';
   w.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(html));
   return w;
@@ -412,7 +447,7 @@ function createSplashWindow() {
 
 function updateSplashMessage(msg, percent) {
   if (!splashWin || splashWin.isDestroyed()) return;
-  const safe = String(msg || '').replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+  const safe = String(msg || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const showBar = typeof percent === 'number';
   const pctClamped = Math.min(100, Math.max(0, percent || 0));
   const code = `
@@ -425,6 +460,37 @@ function updateSplashMessage(msg, percent) {
     })();
   `;
   splashWin.webContents.executeJavaScript(code).catch(() => {});
+}
+
+// v1.9.3: actualiza la cuenta regresiva visible arriba del spinner
+function updateSplashCountdown(seconds) {
+  if (!splashWin || splashWin.isDestroyed()) return;
+  const s = Math.max(0, Math.round(seconds));
+  const code = `
+    (function(){
+      var c = document.getElementById('countdown');
+      if (c) c.textContent = ${s} + 's';
+    })();
+  `;
+  splashWin.webContents.executeJavaScript(code).catch(() => {});
+}
+
+// v1.9.3: cambia la vista del splash a la decision de offline y espera input del usuario
+function showOfflineDecisionInSplash() {
+  return new Promise((resolve) => {
+    if (!splashWin || splashWin.isDestroyed()) return resolve('continue');
+    // Cambiar a vista de decisión
+    splashWin.webContents.executeJavaScript(`
+      (function(){
+        var l = document.getElementById('vLoading'); if (l) l.classList.add('hidden');
+        var o = document.getElementById('vOffline'); if (o) o.classList.remove('hidden');
+      })();
+    `).catch(() => {});
+    // Escuchar la decision una sola vez
+    ipcMain.once('splash-decision', (_e, choice) => {
+      resolve(choice === 'quit' ? 'quit' : 'continue');
+    });
+  });
 }
 
 // ── Helpers para chequear updates en Mac (sin tocar BD) ───────────────────
@@ -479,31 +545,41 @@ async function checkMacUpdateAvailable() {
   }
 }
 
-// ── Check de updates aislado (con timeout 60s) ───────────────────────────
+// ── Check de updates aislado (max 60s con countdown visible) ────────────
+// Retorna: 'install' (hay update) | 'skip' (no hay update) | 'timeout' (no respuesta)
+// v1.9.3: cuando expira el timer NO se cae automaticamente a 'skip'. Devuelve 'timeout'
+// para que el orquestador muestre el modal de decision offline al usuario.
 async function checkForUpdatesAtBoot() {
   if (!app.isPackaged) return 'skip';
   return new Promise((resolve) => {
     let resolved = false;
+    let secondsLeft = 60;
     const finalize = (decision) => {
       if (resolved) return;
       resolved = true;
+      clearInterval(tick);
       resolve(decision);
     };
-    const timer = setTimeout(() => finalize('skip'), 60000);
+    // Countdown visible en el splash, tick cada segundo
+    updateSplashCountdown(secondsLeft);
+    const tick = setInterval(() => {
+      secondsLeft--;
+      updateSplashCountdown(secondsLeft);
+      if (secondsLeft <= 0) finalize('timeout');
+    }, 1000);
 
     if (process.platform === 'darwin') {
-      checkMacUpdateAvailable().then(d => { clearTimeout(timer); finalize(d); })
-        .catch(() => { clearTimeout(timer); finalize('skip'); });
+      checkMacUpdateAvailable().then(d => finalize(d))
+        .catch(() => finalize('timeout'));
     } else {
       autoUpdater.once('update-available', (info) => {
-        clearTimeout(timer);
         macUpdateVersion = info.version;
         finalize('install');
       });
-      autoUpdater.once('update-not-available', () => { clearTimeout(timer); finalize('skip'); });
-      autoUpdater.once('error', () => { clearTimeout(timer); finalize('skip'); });
+      autoUpdater.once('update-not-available', () => finalize('skip'));
+      autoUpdater.once('error', () => finalize('timeout'));
       try { autoUpdater.checkForUpdates(); }
-      catch(_) { clearTimeout(timer); finalize('skip'); }
+      catch(_) { finalize('timeout'); }
     }
   });
 }
@@ -552,14 +628,14 @@ rm -rf "${tmpDir}"
   setTimeout(() => app.quit(), 500);
 }
 
-// ── Orquestador de boot: 4 fases ─────────────────────────────────────────
+// ── Orquestador de boot: 4 fases + decision offline ─────────────────────
 app.whenReady().then(async () => {
   // FASE 1: prefs + DB_PATH ya resueltos (top-level), nada conectado todavia.
 
-  // FASE 2: splash inmediato (BD intacta)
+  // FASE 2: splash inmediato con countdown (BD intacta)
   splashWin = createSplashWindow();
 
-  // FASE 3: check de updates aislado (max 60s)
+  // FASE 3: check de updates aislado (max 60s con countdown visible)
   const decision = await checkForUpdatesAtBoot();
 
   if (decision === 'install') {
@@ -589,10 +665,31 @@ app.whenReady().then(async () => {
       updateSplashMessage('Error al actualizar: ' + (err.message || 'desconocido') + '. Continuando con la version actual...');
       await new Promise(r => setTimeout(r, 3000));
     }
+  } else if (decision === 'timeout') {
+    // v1.9.3: cuando el chequeo expira por problemas de conexion, no decidimos por
+    // el usuario — le mostramos las opciones y esperamos input.
+    const userChoice = await showOfflineDecisionInSplash();
+    if (userChoice === 'quit') {
+      // Usuario eligio cerrar sin tocar la BD
+      if (splashWin && !splashWin.isDestroyed()) splashWin.close();
+      app.quit();
+      return;
+    }
+    // userChoice === 'continue' → caer a FASE 4b
   }
 
-  // FASE 4b: sin update (o fallback) — arranque normal
+  // FASE 4b: sin update (skip, timeout-continue, o fallback de error) — arranque normal
   updateSplashMessage('Iniciando aplicacion...');
+  // Volver a vista loading si veniamos de la vista offline
+  if (splashWin && !splashWin.isDestroyed()) {
+    splashWin.webContents.executeJavaScript(`
+      (function(){
+        var l = document.getElementById('vLoading'); if (l) l.classList.remove('hidden');
+        var o = document.getElementById('vOffline'); if (o) o.classList.add('hidden');
+        var c = document.getElementById('countdown'); if (c) c.textContent = '';
+      })();
+    `).catch(() => {});
+  }
   startBackend();
   mainWin = await createWindow();
   if (splashWin && !splashWin.isDestroyed()) {
