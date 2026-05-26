@@ -1,143 +1,169 @@
 # Estado del Proyecto — Cartera de Préstamos
 
 > Documento vivo. Se actualiza al finalizar cada iteración importante.
-> Última revisión: **2026-04-21** — Saldos parciales en Deudores, Inicio y Rendimiento (v1.7.10).
+> Última revisión: **2026-05-26** — Sprint v1.9.0 → v1.9.3 (release publicada en GitHub).
 
 ---
 
 ## 1. Versión y estado general
 
-- **Versión local (en `package.json`):** `1.7.10`
-- **Última release publicada en GitHub:** `1.7.6` (puede quedar adelantada la local tras nuevos cambios)
-- **Estado:** App funcional y estable en Windows y Mac.
+- **Versión local (en `package.json`):** `1.9.3`
+- **Última release publicada en GitHub:** `1.9.3` (instaladores Windows + Mac disponibles)
+- **Estado:** App funcional y estable en Windows y Mac. Auto-update operativo y protegido por nuevo boot sequence.
 - **Repositorio:** `xJp-P/cartera-prestamos`
+- **Working tree:** limpio, `main` sincronizada con `origin/main`.
 
 ---
 
 ## 2. Arquitectura actual
 
-Separación en 3 capas después del refactor:
+Separación en 3 capas:
 
 | Capa | Carpeta | Archivo(s) | Responsabilidad |
 |---|---|---|---|
-| Nativa / Escritorio | `/desktop` | `main.js`, `preload.js` | Electron: ventana, IPC, auto-update, generación de PDFs |
+| Nativa / Escritorio | `/desktop` | `main.js`, `preload.js` | Electron: ventana, IPC, boot sequence con splash + update check, generación de PDFs |
 | Datos / API | `/backend` | `server.js` | Express + SQLite + motor financiero + lógica de negocio |
 | Presentación | `/public` | `index.html` | React 18 UMD (un solo archivo, sin build step) |
 
-`desktop/main.js` arranca el servidor Express de `backend/server.js` en `127.0.0.1:3420` y carga la ventana contra `http://127.0.0.1:3420`.
+`desktop/main.js` arranca el servidor Express de `backend/server.js` **solo después del chequeo de actualizaciones** (v1.9.2+). La ventana principal carga contra `http://127.0.0.1:3420`.
 
 Archivos de apoyo:
 - `package.json` — configuración de build (electron-builder) + dependencias.
 - `.github/workflows/build.yml` — CI que compila instaladores y publica release en GitHub.
 - `build/` — iconos y script NSIS del desinstalador.
 - `prefs.json` — preferencias del usuario (ruta alterna de BD, etc.). Se genera en runtime.
-- `cartera.db` — base de datos SQLite. Solo existe en desarrollo en la raíz; en prod vive en `userData`.
+- `cartera.db` — base de datos SQLite. En dev vive en raíz del proyecto; en prod en `userData`.
 
 ---
 
-## 3. Feature agregada en este ciclo (v1.7.7)
+## 3. Sprint v1.9.0 → v1.9.3 (el más denso del proyecto)
 
-### Pagos parciales en cuotas
+### Features nuevas
 
-Permite registrar pagos parciales sobre una cuota (ej: el deudor abona una parte hoy y la otra después).
+**Recálculo flexible en abono a capital (v1.9.0):**
+- `POST /api/loans/:id/abono` acepta `recalcMode` (`mantener` | `modificarPlazo` | `fijarCuota`) + `recalcValor`
+- Frontend (`AbonoModal`) muestra 3 radios con preview en vivo (saldo, nueva cuota, plazo, residual)
+- Para USD se ingresa la cuota en dólares y se convierte automáticamente
+- Nueva columna `loans.cuotaFijaPactada` para que la opción "Fijar cuota" sobreviva a `/recalculate` y `PUT /loans`
 
-**Modelo de datos:**
-- Columna nueva `payments.partialPaid REAL DEFAULT 0` (migración idempotente con `ALTER TABLE … ADD COLUMN`).
-- Acumula lo abonado sobre la cuota. Cuando `partialPaid >= cuotaTotal`, la cuota pasa a `'Pagado'` automáticamente.
+**Reestructurar préstamo (v1.9.0):**
+- Endpoint nuevo `POST /api/loans/:id/reestructurar` (solo Capital + Intereses)
+- Nuevo componente `RestructureModal` accesible desde el perfil del deudor
+- 2 opciones: modificar plazo o fijar valor de cuota
+- Cuotas Pagadas y En Mora se preservan intactas; solo regenera cuotas Pendientes
 
-**Backend:**
-- Endpoint nuevo `POST /api/payments/:id/partial` con `{ monto, fecha, observaciones, montoUSD }`.
-- Valida que la cuota no esté Pagada, que `monto > 0` y que `monto <= restante`.
-- Combina observaciones previas con las nuevas (formato: `Parcial YYYY-MM-DD: $X — obs`).
-- Si completa la cuota: marca `Pagado` + corre auto-finalización del préstamo.
-- Retorna `{ ok, completa, partialPaid, restante }`.
-- `PUT /api/payments/:id` reinicia `partialPaid` al cambiar de estado: `Pagado → cuotaTotal`, `Pendiente/En Mora → 0`.
-- Regeneración de cronogramas (edit préstamo, recalculate) **preserva** `partialPaid` existente.
+**Pre-flight de cuotas próximas a mora (v1.9.0):**
+- Antes de un abono con recálculo o reestructurar, si hay cuotas Pendientes con vencimiento ≤5 días, aparece modal con 3 opciones: Marcar en Mora primero / Continuar / Cancelar
+- Componente reutilizable `PreflightMoraModal`
+- Aplica en ambos flujos (abono y reestructurar)
 
-**Frontend (`PayModal`):**
-- Toggle visual **Pago completo** / **Pago parcial** en la parte superior del modal.
-- Si ya hay un `partialPaid > 0`: muestra caja informativa con "Ya abonado $X / $Y" y "Pendiente $Z".
-- En modo parcial: input dedicado para el monto + feedback en vivo ("Quedarían pendientes $X" o "La cuota quedaría COMPLETA").
-- En modo completo: si ya hay parciales previos, el botón dice **"Completar"** y dispara el endpoint parcial con el restante (para que el backend cierre la cuota).
-- Para préstamos USD: ambos modos soportan campo opcional de USD recibidos.
+**Bloqueo de campos sensibles en LoanModal (v1.9.0):**
+- Si el préstamo tiene actividad (pagos, abonos o mora), se bloquean: moneda, montoOrigen, trmAcordada, modalidad, tasaMensual, plazoMeses, frecuencia, fechaInicio, fechaDevolucion, checkbox de compras fraccionadas
+- Banner amarillo informativo arriba del modal
+- Defense-in-depth: `submit()` sobrescribe los campos bloqueados con valores originales aunque el `disabled` falle
+- Solo Nombre, Cédula, Teléfono, Notas y Estado quedan editables
 
-**Frontend (`PagosView`):**
-- Filas con `partialPaid > 0` muestran:
-  - Tag **PARCIAL** en azul junto al nombre.
-  - Sub-línea "Abonado $X de $Y".
-  - Monto principal pasa a mostrar **el saldo restante**, no el total.
-  - Borde y fondo en tonos azules para destacar visualmente.
+**Dashboard rediseñado (v1.9.1 → v1.9.2):**
+- 4 KPI cards modernos en grid 2x2: Capital Original (histórico), Cobros del Mes, Saldo Pendiente, Ganancias
+- Acciones rápidas: 4 botones (Nuevo, Pagos, Deudores, Calculadora)
+- Stats chips compactos: deudores, COP/USD count, mora count
+- Grid 2x2 estricto para las 4 cards de listas (Vence Hoy / Próximos 7 días / Mora / Transacciones Recientes)
+- `.dash-card { height: 380px }` + `.dash-card-header { min-height: 54px }` → headers alineados al pixel entre cards
+- `.dash-list-body { flex: 1 1 auto; overflow-y: auto }` → scroll interno, scrollbar tenue
+- Empty states persistentes con mensajes amigables centrados
+- max-width 1180px centrado para no estirarse en monitores grandes
 
-**Bloqueos:**
-- No se permiten pagos parciales sobre filas de abono a capital (`interesPeriodo === 0 && abonoCapital > 0`).
-- No se permiten sobre cuotas ya `Pagado`.
+**Recaudo del mes — flujo de caja estricto (v1.9.2):**
+- ESPERADO = SOLO cuotas con `fechaPago` en el mes actual (mora arrastrada ya no contamina la meta)
+- RECIBIDO = (A) cobros del mes (pagados o parciales) + (B) mora recuperada (cuotas viejas pagadas durante este mes via `fechaRecaudo`)
+- Cuando %>100% (por recuperación de cartera vencida): barra cambia a gradiente dorado + badge "META SUPERADA"
+- Lista expandida solo muestra cuotas del mes + mora recuperada (no mora histórica pendiente)
+
+**Botonera del perfil del préstamo rediseñada (v1.9.1):**
+- 3 tiers jerárquicos con etiquetas de sección uppercase muted:
+  - Cobrar: Registrar abono (verde sólido) + Liquidar deuda (verde outline)
+  - Ajustar cronograma: Reestructurar + Cambiar fecha (outline neutral)
+  - Cronograma: Ver detalle + Descargar PDF (ghost dashed, pareados horizontalmente)
+- Paleta unificada en familia verde para acciones de cobro — eliminado el choque visual azul/rojo/gris
+
+**Modal de Novedades con scroll (v1.9.1):**
+- `max-height: min(620px, 80vh)` + flex column
+- Header (título + contador) y footer (botón "Entendido") fijos
+- Lista de items con scroll interno
+
+**Boot sequence protegido (v1.9.2 → v1.9.3):**
+- Splash inmediato al abrir la app, antes de cargar el backend o la BD
+- Update check vía GitHub Releases API (Mac) o autoUpdater (Windows) con timeout 60s
+- Si hay update → descarga + instala + reinicia SIN tocar la BD con código viejo
+- Si no hay update O usuario eligió continuar → arranque normal
+- **v1.9.3:** countdown visible de 60s arriba del spinner; al timeout se cambia a vista offline con botones "Continuar" / "Cerrar app" (no se auto-decide por el usuario)
+
+### Bugfixes críticos
+
+1. **`/api/recalculate` y `PUT /api/loans/:id` sobrescribían cuotas Pagadas + Mora** → ahora solo borran Pendientes; Pagadas + Mora + Abonos quedan intactos
+2. **`/api/abono` no era atómico** — si la validación de `recalcMode` fallaba tras el DELETE de Pendientes, la BD quedaba corrupta → toda validación + cómputo ahora ocurre ANTES de la primera escritura, dentro de `db.transaction()`
+3. **Race condition en `_doReestructurar` / `_doAbono`** — mostraba datos viejos en DebtorModal tras reabrir → ahora se `await reload()` antes de `setDebtorModal(fromDeudor)`
+4. **`/api/recalculate` generaba cuotas Pendientes infladas** (hasta 3x el valor real) porque usaba `loan.montoCOP` que no se actualiza al marcar cuotas Pagadas sin abono → ahora calcula `saldoReal = originalCOP - capPorAbonos - capPorCuotasPagadas` igual que el resto de endpoints. Reparados 16 cuotas en BD productiva durante el sprint.
+5. **Cronograma de Cartera y Deudores inconsistentes** → unificados con las mismas columnas (Capital + Interés + Deuda corrida + Cuota + Estado)
+6. **Modal de Novedades se estiraba demasiado con muchos items** → max-height + scroll interno con header/footer fijos
 
 ---
 
-## 4. Limpieza aplicada en el ciclo anterior (v1.7.6)
-
-Código muerto eliminado:
-
-1. `desktop/main.js` — se removió `shell` del destructuring de `require('electron')` (importado pero nunca usado).
-2. `backend/server.js` — se removió `const prevAbonos` en `/api/recalculate` (declarado pero nunca referenciado).
-3. `backend/server.js` — se removió `const hoy = hoyStr()` al inicio de `autoExtendSoloIntereses` (no usado).
-4. `backend/server.js` — se removió `const pendientes = regulares.filter(...)` en `autoExtendSoloIntereses` (no usado).
-
-Comprobaciones adicionales:
-- **console.log/warn/debug/info:** no había ninguno en `main.js`, `preload.js`, `server.js` ni `public/index.html`.
-- **Imports huérfanos:** solo `shell`. El resto de requires se usa.
-
----
-
-## 5. Funcionalidades principales en producción
+## 4. Funcionalidades principales en producción
 
 ### Gestión de préstamos
-- Modalidades: `Intereses` (plazo ∞), `Capital + Intereses` (amortización francesa), `Prestamo` (0% interés, una cuota).
+- Modalidades: `Intereses` (plazo ∞), `Capital + Intereses` (amortización francesa con opción de cuota fija pactada), `Prestamo` (0% interés, una cuota).
 - Frecuencias: Mensual, Quincenal, Semanal (conversión de tasa automática).
-- Moneda: COP y USD con TRM acordada por préstamo.
+- Moneda: COP y USD con TRM acordada por préstamo. Compras fraccionadas con tasa promedio ponderada para USD.
+- **Reestructuración:** modificar plazo o fijar cuota sin tener que hacer abono.
+- **Abono inteligente:** 3 modos de recálculo + persistencia de cuota fija.
 
 ### Vistas (8)
-1. Inicio (Dashboard con KPIs + secciones por vencimiento)
-2. Cartera (Activos/Finalizados + cronograma expandible)
-3. Deudores (Perfiles con historial de créditos)
-4. Pagos (Pendientes/Mora + toggle pagados)
-5. Rendimiento (KPIs globales + tabs Activo/Cancelado)
-6. Calculadora (simulador que confirma → crea préstamo)
-7. Historial (log de acciones)
-8. Desarrollador (ruta de BD, info del sistema, updates, sincronizar)
+1. **Inicio (Dashboard)** — rediseñado en v1.9.1, modern SaaS layout
+2. **Cartera** — Activos/Finalizados + cronograma expandible unificado
+3. **Deudores** — Perfiles con historial + botonera de 3 tiers
+4. **Pagos** — Pendientes/Mora + toggle pagados
+5. **Rendimiento** — KPIs globales + tabs Activo/Cancelado
+6. **Calculadora** — Simulador → crea préstamo
+7. **Historial** — Log de acciones (incluye 'reestructuracion')
+8. **Desarrollador** — Ruta de BD, info del sistema, updates, sincronizar
 
 ### Lógicas automáticas clave
 - **Auto-mora:** cuotas vencidas con `estadoPago='Pendiente'` → `'En Mora'` al arrancar y en cada `GET /api/payments`.
-- **Auto-finalización:** todas las cuotas regulares `'Pagado'` → `loan.estado='Cancelado'`.
+- **Auto-finalización:** todas las cuotas regulares `'Pagado'` → `loan.estado='Finalizado'`. Si tiene `cuotaFijaPactada > 0`, se limpia al finalizar.
 - **Auto-extend (Intereses):** si quedan < 3 cuotas pendientes futuras, se generan 3 más automáticamente.
 - **Auto-link deudores:** al crear préstamo, consolida por nombre (case-insensitive).
 - **Fix cuotas mora Préstamo:** `cuotaTotal` de mora se ajusta al `montoCOP` actual tras abonos.
+- **Persistencia cuota fija pactada:** sobrevive a `/recalculate` y `PUT /loans`.
+- **Persistencia prorrateo:** `proximaCuotaExtra` + `proximaCuotaExtraN` sobreviven a `/recalculate`.
 
 ### PDFs
 - **Recibo de pago:** al marcar cuota como pagada.
-- **Cronograma:** desde DebtorModal. Tema-aware (usa tema claro/oscuro activo).
+- **Cronograma:** desde DebtorModal. Tema-aware (claro/oscuro).
 
-### Auto-update
-- **Windows:** `electron-updater` estándar.
-- **Mac:** Custom updater (descarga ZIP de GitHub Releases, `xattr -cr`, reemplaza app). No requiere firma de Apple.
+### Auto-update y arranque protegido
+- **Windows:** `electron-updater` estándar (boot-check + auto-install si hay update).
+- **Mac:** Custom updater + GitHub Releases API.
+- **Boot sequence (v1.9.2+):** 4 fases que blindan la BD durante el update check.
+- **Splash con countdown (v1.9.3):** countdown 60s visible + vista offline con decisión del usuario si no hay internet.
 
 ---
 
-## 6. Tareas pendientes / ideas en backlog
+## 5. Tareas pendientes / ideas en backlog
 
 ### Infraestructura
 - [ ] **Optimizar `extraResources` en `package.json`:** actualmente duplica archivos. Se puede limpiar para no enviar `desktop/` + `backend/` + `public/` dos veces (una vez en asar, otra suelta).
-- [ ] **Dividir `public/index.html`:** con ~2500+ líneas, empieza a ser costoso en tokens. Posibles paths:
+- [ ] **Dividir `public/index.html`:** con ~3500+ líneas, empieza a ser costoso en tokens. Posibles paths:
   - Extraer `styles.css` a archivo aparte.
-  - Extraer componentes grandes (DebtorModal, LoanModal, PayModal, AbonoModal, Dashboard) a JS separados y cargarlos con `<script>` (sin build step).
+  - Extraer componentes grandes (DebtorModal, LoanModal, PayModal, AbonoModal, RestructureModal, Dashboard) a JS separados y cargarlos con `<script>` (sin build step).
   - Alternativa más ambiciosa: introducir esbuild/Vite y migrar a JSX.
-- [ ] **Separar rutas del backend en archivos temáticos:** hoy todo está dentro del factory `createApp()`. Podría separarse en `backend/routes/loans.js`, `backend/routes/payments.js`, `backend/routes/config.js`, etc., y mantener `backend/db.js` con la inicialización del schema.
+- [ ] **Separar rutas del backend en archivos temáticos:** hoy todo está dentro del factory `createApp()`. Podría separarse en `backend/routes/loans.js`, `backend/routes/payments.js`, etc., y mantener `backend/db.js` con la inicialización del schema.
 
 ### UX / Funcional
-- [ ] **Versión móvil iOS vía 3uTools:** pendiente de investigación. La base Electron no corre en iOS, requeriría migración a Capacitor o acceso al backend local vía Safari en LAN.
 - [ ] **Notificaciones de vencimientos:** hoy solo se ven al abrir la app. Podría agregarse notification system nativo (Electron `Notification` API).
-- [ ] **Backup automático de la BD:** actualmente el usuario debe respaldar manualmente `cartera.db`. Se podría programar un snapshot diario a una carpeta configurable.
+- [ ] **Backup automático de la BD:** actualmente el usuario debe respaldar manualmente. Se podría programar un snapshot diario a una carpeta configurable.
 - [ ] **Exportar reporte financiero:** un PDF mensual con recaudo, mora y proyección.
+- [ ] **Versión móvil:** la base Electron no corre en iOS, requeriría migración a Capacitor o acceso al backend local vía Safari en LAN.
 
 ### Técnico
 - [ ] **Migrar auto-extend a un cron en el proceso Electron:** hoy se dispara en cada `GET /api/payments`. Funciona bien pero ensucia la lectura.
@@ -145,14 +171,47 @@ Comprobaciones adicionales:
 
 ---
 
-## 7. Bugs conocidos
+## 6. Bugs conocidos
 
-Ninguno abierto en este momento. Historial de bugs cerrados está en `CLAUDE.md` sección "Bugs Corregidos".
+Ninguno abierto en este momento. El sprint v1.9.0 → v1.9.3 cerró todos los bugs críticos detectados. Historial completo está en `CLAUDE.md` sección "Bugs Corregidos".
 
 ---
 
-## 8. Notas para futuras sesiones
+## 7. Notas para futuras sesiones
 
-- El código está optimizado para bajo consumo de tokens: `/backend` y `/desktop` son pequeños y autocontenidos; la mayor parte del contexto pesado vive en `public/index.html`.
+### Convenciones de trabajo (importante)
+
+1. **Modo Auditor antes de ejecutar:** para tareas no triviales, generar plan estructurado con `AskUserQuestion` y esperar aprobación del usuario antes de tocar código.
+2. **Atomicidad de endpoints:** cualquier endpoint que modifique BD debe validar + computar TODO antes de la primera escritura. Si algo falla, devolver 4xx sin tocar BD. Usar `db.transaction()` de better-sqlite3 para mutaciones múltiples.
+3. **Defense-in-depth:** validaciones críticas en frontend Y backend.
+4. **Verificación con Python sqlite3:** `better-sqlite3` está compilado para Electron, NO funciona en Node standalone. Para inspeccionar BD del usuario usar Python con `sqlite3` builtin.
+5. **Backups antes de tocar BD productiva:** cualquier script Python que escriba en `cartera.db` real debe hacer `shutil.copy()` con timestamp ANTES de cualquier cambio.
+6. **Sintaxis siempre validada:** `node --check backend/server.js` para backend, extraer scripts del HTML y validar con `new Function(code)` para frontend.
+7. **Sin build step:** UI vive en `public/index.html` con React UMD + `React.createElement` directo. Estilos inline con variables CSS. NO usar Tailwind ni clases utilitarias.
+8. **Commits:** HEREDOC + firma Co-Authored-By + título `vX.Y.Z: descripción` o `Fix: descripción`. Bumpeo de versión va en `package.json` + entrada nueva en el objeto `CHANGELOGS` de `public/index.html`.
+9. **Changelog del usuario final:** NO incluir operaciones administrativas internas (reparaciones manuales de BD productiva, scripts de migración únicos). Solo cambios que aplican al usuario general.
+10. **Push solo cuando el usuario lo pida explícitamente.** El workflow de Build Instaladores en GitHub Actions lo dispara el usuario manualmente.
+
+### Cosas que NO se renegocian (decisiones de arquitectura ya tomadas)
+
+- **Boot sequence de 4 fases** (FASE 1 prefs → FASE 2 splash → FASE 3 update check con countdown → FASE 4a install / 4b normal / 4-OFFLINE decision modal).
+- **Recaudo del mes** = cuotas del mes + mora recuperada (no mora histórica pendiente).
+- **`/recalculate`** computa `saldoReal = originalCOP − capitalPagado` (no usa `loan.montoCOP`).
+- **`hasActivity`** para bloqueo de campos = cuotas pagadas > 0 OR abonos > 0 OR cuotas mora > 0.
+- **Dashboard** grid 2x2 estricto con `.dash-card { height: 380px }` y `.dash-card-header { min-height: 54px }`.
+- **Fórmula de saldo:** `montoOrigen - todoCapPagado` (NO `montoCOP`, es poco confiable).
+- **Separación abonos vs. cuotas regulares:** filtro `id.indexOf('-ab-')` SIEMPRE.
+
+### Optimización de contexto
+
+- El código está estructurado para bajo consumo de tokens: `/backend` y `/desktop` son pequeños y autocontenidos; la mayor parte del contexto pesado vive en `public/index.html`.
 - `.claudesignore` excluye `node_modules`, `dist`, `.git`, `build`, `.github`, DB, y archivos binarios.
-- En refactors futuros **no tocar**: fórmula de saldo (`montoOrigen - todoCapPagado`), separación abonos vs. cuotas regulares (filtro `id.indexOf('-ab-')`), `pendingDelete` mechanism al mover BD.
+- Memoria persistente en `~/.claude/projects/C--Users-juanp-Documents-Proyecto-PTM/memory/`.
+
+### Recordatorios operativos
+
+- **BD productiva del usuario:** `C:\Users\juanp\Desktop\bd_App_PTM_Backup\cartera.db` (NO la del repo).
+- **Distribución:** el usuario corre manualmente "Build Instaladores" en GitHub Actions tras cada push.
+- **Build Mac requiere Python 3.12** (3.14 rompe `distutils` que necesita `node-gyp`).
+</content>
+</invoke>
