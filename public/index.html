@@ -870,6 +870,11 @@ function App(){
       'La pantalla de carga al iniciar la app ahora muestra una cuenta regresiva de 60 segundos arriba del icono — sabes exactamente cuanto tiempo falta para que termine el chequeo de actualizaciones',
       'Si el chequeo no puede completarse (por ejemplo, sin internet), la pantalla ya no continua sola: ahora te muestra el mensaje "Problemas de conexion" y te da dos opciones claras: "Continuar" (abrir la app de todas formas, con el riesgo asumido) o "Cerrar app" (salir sin tocar nada)',
       'Esto da control total al usuario en situaciones de red inestable: si sabes que tu conexion esta floja pero quieres trabajar igual, sigues adelante; si prefieres reintentar mas tarde con buena senal, cierras la app limpiamente'
+    ],
+    '1.9.4': [
+      'Mejora de seguridad: cuando la descarga de una actualizacion falla a mitad de camino (por ejemplo, se corta la conexion), la app ya no continua silenciosamente con la version anterior',
+      'Ahora se muestra una pantalla de error con el mensaje "No se pudo descargar la nueva version" y un boton "Cerrar app" que es la unica accion disponible — esto te obliga a cerrar y abrir de nuevo para reintentar la actualizacion',
+      'El objetivo: si una actualizacion existe es porque corrige algo importante (a veces un bug que puede afectar la base de datos). No queremos que sigas trabajando con la version vieja por error si la descarga fallo'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];

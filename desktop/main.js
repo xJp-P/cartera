@@ -435,10 +435,19 @@ function createSplashWindow() {
     + '<button class="btn-secondary" id="btnQuit">Cerrar app</button>'
     + '</div>'
     + '</div>'
+    + '<div id="vDownloadError" class="view hidden">'
+    + '<div class="warn-icon" style="color:#f85149">⚠</div>'
+    + '<h1 style="color:#f85149">Error al actualizar</h1>'
+    + '<p id="dlErrorMsg">No se pudo descargar la nueva versión. Por favor cierra la app e intenta abrirla nuevamente más tarde.</p>'
+    + '<div class="btns">'
+    + '<button class="btn-primary" id="btnQuitError">Cerrar app</button>'
+    + '</div>'
+    + '</div>'
     + '<script>'
     + "var ipc = require('electron').ipcRenderer;"
     + "document.getElementById('btnContinue').addEventListener('click', function(){ ipc.send('splash-decision', 'continue'); });"
     + "document.getElementById('btnQuit').addEventListener('click', function(){ ipc.send('splash-decision', 'quit'); });"
+    + "document.getElementById('btnQuitError').addEventListener('click', function(){ ipc.send('splash-decision', 'quit'); });"
     + '</script>'
     + '</body></html>';
   w.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(html));
@@ -490,6 +499,27 @@ function showOfflineDecisionInSplash() {
     ipcMain.once('splash-decision', (_e, choice) => {
       resolve(choice === 'quit' ? 'quit' : 'continue');
     });
+  });
+}
+
+// v1.9.4: cuando la descarga de actualizacion falla, mostrar vista de error con boton
+// "Cerrar app" como UNICA opcion. Esto fuerza al usuario a cerrar y reabrir para
+// reintentar — no se permite continuar con la version vieja (que podria tener un bug
+// conocido que motivo la actualizacion).
+function showDownloadErrorInSplash(errMessage) {
+  return new Promise((resolve) => {
+    if (!splashWin || splashWin.isDestroyed()) return resolve('quit');
+    const safe = String(errMessage || 'desconocido').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    splashWin.webContents.executeJavaScript(`
+      (function(){
+        var l = document.getElementById('vLoading'); if (l) l.classList.add('hidden');
+        var o = document.getElementById('vOffline'); if (o) o.classList.add('hidden');
+        var e = document.getElementById('vDownloadError'); if (e) e.classList.remove('hidden');
+        var em = document.getElementById('dlErrorMsg');
+        if (em) em.textContent = 'No se pudo descargar la nueva versión (' + '${safe}' + '). Por favor cierra la app e intenta abrirla nuevamente más tarde.';
+      })();
+    `).catch(() => {});
+    ipcMain.once('splash-decision', () => resolve('quit'));
   });
 }
 
@@ -661,9 +691,13 @@ app.whenReady().then(async () => {
         return;
       }
     } catch(err) {
-      // Fallback: si falla la actualizacion, arrancar normal despues de 3s
-      updateSplashMessage('Error al actualizar: ' + (err.message || 'desconocido') + '. Continuando con la version actual...');
-      await new Promise(r => setTimeout(r, 3000));
+      // v1.9.4: si la descarga de la actualizacion falla, NO caer a la version actual.
+      // Mostrar vista de error con boton "Cerrar app" — el usuario debe cerrar y reabrir
+      // para que /api/recalculate-style bugs en la version vieja no toquen la BD.
+      await showDownloadErrorInSplash(err.message);
+      if (splashWin && !splashWin.isDestroyed()) splashWin.close();
+      app.quit();
+      return;
     }
   } else if (decision === 'timeout') {
     // v1.9.3: cuando el chequeo expira por problemas de conexion, no decidimos por
