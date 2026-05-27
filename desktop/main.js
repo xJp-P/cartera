@@ -438,8 +438,9 @@ function createSplashWindow() {
     + '<div id="vDownloadError" class="view hidden">'
     + '<div class="warn-icon" style="color:#f85149">⚠</div>'
     + '<h1 style="color:#f85149">Error al actualizar</h1>'
-    + '<p id="dlErrorMsg">No se pudo descargar la nueva versión. Por favor cierra la app e intenta abrirla nuevamente más tarde.</p>'
+    + '<p id="dlErrorMsg">No se pudo descargar la nueva versión. Puedes cerrar la app e intentar nuevamente, o continuar usando la versión actual bajo tu propio riesgo.</p>'
     + '<div class="btns">'
+    + '<button class="btn-secondary" id="btnContinueError">Continuar de todos modos</button>'
     + '<button class="btn-primary" id="btnQuitError">Cerrar app</button>'
     + '</div>'
     + '</div>'
@@ -448,6 +449,7 @@ function createSplashWindow() {
     + "document.getElementById('btnContinue').addEventListener('click', function(){ ipc.send('splash-decision', 'continue'); });"
     + "document.getElementById('btnQuit').addEventListener('click', function(){ ipc.send('splash-decision', 'quit'); });"
     + "document.getElementById('btnQuitError').addEventListener('click', function(){ ipc.send('splash-decision', 'quit'); });"
+    + "document.getElementById('btnContinueError').addEventListener('click', function(){ ipc.send('splash-decision', 'continue'); });"
     + '</script>'
     + '</body></html>';
   w.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(html));
@@ -456,9 +458,12 @@ function createSplashWindow() {
 
 function updateSplashMessage(msg, percent) {
   if (!splashWin || splashWin.isDestroyed()) return;
-  const safe = String(msg || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const showBar = typeof percent === 'number';
   const pctClamped = Math.min(100, Math.max(0, percent || 0));
+  // v1.9.5: cuando hay percent numerico, concatenar ' XX%' al msg para que se vea
+  // visualmente ademas de la barra (ej: "Descargando v1.9.5... 45%").
+  const msgWithPct = showBar ? (String(msg || '') + ' ' + pctClamped + '%') : String(msg || '');
+  const safe = msgWithPct.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const code = `
     (function(){
       var m = document.getElementById('msg'); if (m) m.textContent = '${safe}';
@@ -503,9 +508,10 @@ function showOfflineDecisionInSplash() {
 }
 
 // v1.9.4: cuando la descarga de actualizacion falla, mostrar vista de error con boton
-// "Cerrar app" como UNICA opcion. Esto fuerza al usuario a cerrar y reabrir para
-// reintentar — no se permite continuar con la version vieja (que podria tener un bug
-// conocido que motivo la actualizacion).
+// "Cerrar app" para forzar reintento al reabrir.
+// v1.9.5: se agrega "Continuar de todos modos" como escape hatch — si el usuario necesita
+// trabajar y el update fallo por algo transitorio (servidor caido, WiFi inestable), puede
+// abrir la app con la version actual asumiendo el riesgo. Devuelve 'continue' | 'quit'.
 function showDownloadErrorInSplash(errMessage) {
   return new Promise((resolve) => {
     if (!splashWin || splashWin.isDestroyed()) return resolve('quit');
@@ -516,10 +522,12 @@ function showDownloadErrorInSplash(errMessage) {
         var o = document.getElementById('vOffline'); if (o) o.classList.add('hidden');
         var e = document.getElementById('vDownloadError'); if (e) e.classList.remove('hidden');
         var em = document.getElementById('dlErrorMsg');
-        if (em) em.textContent = 'No se pudo descargar la nueva versión (' + '${safe}' + '). Por favor cierra la app e intenta abrirla nuevamente más tarde.';
+        if (em) em.textContent = 'No se pudo descargar la nueva versión (' + '${safe}' + '). Puedes cerrar la app e intentar nuevamente, o continuar usando la versión actual bajo tu propio riesgo.';
       })();
     `).catch(() => {});
-    ipcMain.once('splash-decision', () => resolve('quit'));
+    ipcMain.once('splash-decision', (_e, choice) => {
+      resolve(choice === 'continue' ? 'continue' : 'quit');
+    });
   });
 }
 
@@ -691,13 +699,17 @@ app.whenReady().then(async () => {
         return;
       }
     } catch(err) {
-      // v1.9.4: si la descarga de la actualizacion falla, NO caer a la version actual.
-      // Mostrar vista de error con boton "Cerrar app" — el usuario debe cerrar y reabrir
-      // para que /api/recalculate-style bugs en la version vieja no toquen la BD.
-      await showDownloadErrorInSplash(err.message);
-      if (splashWin && !splashWin.isDestroyed()) splashWin.close();
-      app.quit();
-      return;
+      // v1.9.4: si la descarga de la actualizacion falla, mostrar vista de error.
+      // v1.9.5: el usuario elige — "Cerrar app" (seguro, reintenta al reabrir) o
+      // "Continuar de todos modos" (escape hatch para situaciones de necesidad).
+      // Si elige continuar, cae a FASE 4b igual que el offline-continue.
+      const userChoice = await showDownloadErrorInSplash(err.message);
+      if (userChoice === 'quit') {
+        if (splashWin && !splashWin.isDestroyed()) splashWin.close();
+        app.quit();
+        return;
+      }
+      // userChoice === 'continue' → caer a FASE 4b (arranque normal con version actual)
     }
   } else if (decision === 'timeout') {
     // v1.9.3: cuando el chequeo expira por problemas de conexion, no decidimos por
@@ -712,14 +724,15 @@ app.whenReady().then(async () => {
     // userChoice === 'continue' → caer a FASE 4b
   }
 
-  // FASE 4b: sin update (skip, timeout-continue, o fallback de error) — arranque normal
+  // FASE 4b: sin update (skip, timeout-continue, o continue tras error de descarga) — arranque normal
   updateSplashMessage('Iniciando aplicacion...');
-  // Volver a vista loading si veniamos de la vista offline
+  // Volver a vista loading si veniamos de la vista offline o de la vista de error de descarga
   if (splashWin && !splashWin.isDestroyed()) {
     splashWin.webContents.executeJavaScript(`
       (function(){
         var l = document.getElementById('vLoading'); if (l) l.classList.remove('hidden');
         var o = document.getElementById('vOffline'); if (o) o.classList.add('hidden');
+        var e = document.getElementById('vDownloadError'); if (e) e.classList.add('hidden');
         var c = document.getElementById('countdown'); if (c) c.textContent = '';
       })();
     `).catch(() => {});
