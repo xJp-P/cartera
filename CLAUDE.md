@@ -61,6 +61,7 @@ Archivo: `cartera.db` (SQLite) — en desarrollo junto al código; instalado en 
   - `proximaCuotaExtra` + `proximaCuotaExtraN` — extra del prorrateo por cambio de día de pago, persiste tras /recalculate
   - `cuotaFijaPactada` (v1.8.8+) — cuota fija definida por el usuario en "fijar cuota" del abono o reestructurar; > 0 hace que /recalculate use buildScheduleFixedPMT
   - `capitalPerdido` + `interesesPerdidos` — snapshot al cierre forzoso para reportes
+  - `gananciaFija` (v1.10.0+) — solo aplica a modalidad `Pago Unico`; monto en COP de la ganancia pactada con el deudor. `POST/PUT /api/loans` lo fuerza a 0 si la modalidad no es Pago Unico
 
 **payments** — Cronograma de cuotas (regulares + abonos):
 - prestamoId, nombreCliente, cuotaN, fechaPago
@@ -82,6 +83,7 @@ Archivo: `cartera.db` (SQLite) — en desarrollo junto al código; instalado en 
 | `Intereses` | Solo paga intereses, capital al final. Plazo **∞** (indefinido) |
 | `Capital + Intereses` | Amortización francesa (PMT). Plazo fijo |
 | `Prestamo` | 0% interés, 1 cuota por el capital total. Tasa, plazo y frecuencia bloqueados |
+| `Pago Unico` | **v1.10.0**: 1 cuota en fecha exacta + ganancia pactada (por % o monto fijo). Columna `loans.gananciaFija` (REAL, COP). En la única cuota: `interesPeriodo = gananciaFija`, `abonoCapital = capital`, `cuotaTotal = capital + ganancia`. Abonos reducen el capital pero la ganancia se mantiene fija. Espejo de `Prestamo` en `/recalculate` y `PUT /loans/:id` (solo regenera si `regularConsumed === 0`) |
 
 **Fórmula PMT:** `PMT = pv * r * (1+r)^n / ((1+r)^n - 1)`
 

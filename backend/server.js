@@ -136,6 +136,8 @@ module.exports = function createApp(dbPath) {
   `);
   const logAction = db.prepare('INSERT INTO activity_log(tipo, mensaje) VALUES (?, ?)');
   try { db.exec("ALTER TABLE loans ADD COLUMN fechaDevolucion TEXT DEFAULT ''"); } catch(_){}
+  // v1.10.0: ganancia para modalidad 'Pago Unico' (monto unico pactado en COP)
+  try { db.exec("ALTER TABLE loans ADD COLUMN gananciaFija REAL DEFAULT 0"); } catch(_){}
 
 
   // ── Motor financiero ──────────────────────────────────────────────────────
@@ -213,6 +215,27 @@ module.exports = function createApp(dbPath) {
         fechaPago: fechaCuota,
         saldoInicial: Math.round(montoCOP), interesPeriodo: 0,
         abonoCapital: 0, cuotaTotal: Math.round(montoCOP),
+        saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
+        montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0, extraConsolidado: 0
+      });
+      return rows;
+    }
+
+    // v1.10.0 — Pago Unico: 1 cuota con capital + ganancia fija pactada
+    // interesPeriodo carga la ganancia → entra al KPI Ganancias del Dashboard
+    // abonoCapital carga el capital → entra al calculo de Saldo Pendiente
+    // cuotaTotal = capital + ganancia → entra al Recaudo del mes
+    if (modalidad === 'Pago Unico') {
+      var fechaCuotaPU = loan.fechaDevolucion || getPayDate(fechaInicio, 1, diaPago, freq);
+      var capitalPU = Math.round(montoCOP);
+      var gananciaPU = Math.round(+loan.gananciaFija || 0);
+      rows.push({
+        id: `${id}-1`, prestamoId: id, nombreCliente: nombre, cuotaN: 1,
+        fechaPago: fechaCuotaPU,
+        saldoInicial: capitalPU,
+        interesPeriodo: gananciaPU,
+        abonoCapital: capitalPU,
+        cuotaTotal: capitalPU + gananciaPU,
         saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
         montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0, extraConsolidado: 0
       });
@@ -395,6 +418,9 @@ module.exports = function createApp(dbPath) {
           // Para Prestamo (sin intereses, 1 cuota) seguimos usando montoCOP — su flujo
           // no es PMT y montoCOP refleja el saldo correctamente tras abonos.
           if (regularConsumed === 0 && loan.montoCOP > 0) schedule = buildSchedule(loan);
+        } else if (loan.modalidad === 'Pago Unico') {
+          // v1.10.0: espejo de Prestamo — 1 cuota unica, regenera si no se consumio
+          if (regularConsumed === 0 && loan.montoCOP > 0) schedule = buildSchedule(loan);
         } else {
           // Intereses o Capital+Intereses sin cuotaFija — usar saldoReal computado
           const remaining = indefinido
@@ -427,12 +453,26 @@ module.exports = function createApp(dbPath) {
     db.prepare(`UPDATE payments SET estadoPago='En Mora' WHERE estadoPago='Pendiente' AND fechaPago < ?`)
       .run(hoyStr());
     // Fix cuotas en mora de Prestamo (sin intereses): cuotaTotal = saldo actual
+    // v1.10.0 fix housekeeping: tambien saldoInicial y abonoCapital para mantener
+    // consistencia interna de la cuota tras abonos previos.
     const fixP = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Prestamo'").all();
     fixP.forEach(fl => {
-      db.prepare(`UPDATE payments SET cuotaTotal = ?, saldoFinal = 0
+      const ns = Math.round(fl.montoCOP);
+      db.prepare(`UPDATE payments SET saldoInicial = ?, abonoCapital = ?, cuotaTotal = ?, saldoFinal = 0
         WHERE prestamoId = ? AND estadoPago = 'En Mora'
         AND id NOT LIKE '%-ab-%'`)
-        .run(fl.montoCOP, fl.id);
+        .run(ns, ns, ns, fl.id);
+    });
+    // v1.10.0 — Fix cuotas en mora de Pago Unico: cuotaTotal = saldo + ganancia
+    // (la ganancia pactada se mantiene aunque el deudor caiga en mora)
+    const fixPU = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Pago Unico'").all();
+    fixPU.forEach(fl => {
+      const gPU = Math.round(+fl.gananciaFija || 0);
+      const nsPU = Math.round(fl.montoCOP);
+      db.prepare(`UPDATE payments SET saldoInicial = ?, abonoCapital = ?, cuotaTotal = ?, saldoFinal = 0
+        WHERE prestamoId = ? AND estadoPago = 'En Mora'
+        AND id NOT LIKE '%-ab-%'`)
+        .run(nsPU, nsPU, nsPU + gPU, fl.id);
     });
     res.json({ ok: true, updated });
   });
@@ -454,28 +494,38 @@ module.exports = function createApp(dbPath) {
   });
 
   app.post('/api/loans', (req, res) => {
-    const loan = { fechaDevolucion: '', comprasUSD: '', ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
+    const loan = { fechaDevolucion: '', comprasUSD: '', gananciaFija: 0, ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
     // Si comprasUSD viene como array/objeto, serializar a JSON
     if (loan.comprasUSD && typeof loan.comprasUSD !== 'string') loan.comprasUSD = JSON.stringify(loan.comprasUSD);
+    // v1.10.0: gananciaFija solo aplica para modalidad Pago Unico — forzar 0 en el resto
+    if (loan.modalidad !== 'Pago Unico') loan.gananciaFija = 0;
+    else loan.gananciaFija = Math.round(+loan.gananciaFija || 0);
     db.prepare(`
       INSERT INTO loans(id,nombre,cedula,telefono,moneda,montoOrigen,trmAcordada,montoCOP,
-        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia,fechaDevolucion,comprasUSD)
+        tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia,fechaDevolucion,comprasUSD,gananciaFija)
       VALUES (@id,@nombre,@cedula,@telefono,@moneda,@montoOrigen,@trmAcordada,@montoCOP,
-        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia,@fechaDevolucion,@comprasUSD)
+        @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia,@fechaDevolucion,@comprasUSD,@gananciaFija)
     `).run(loan);
     insertSchedule(buildSchedule(loan));
-    logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + (loan.moneda === 'USD' ? 'USD $' + loan.montoOrigen : '$' + Math.round(loan.montoCOP).toLocaleString()) + ' (' + loan.modalidad + ')');
+    var detalleLog = (loan.moneda === 'USD' ? 'USD $' + loan.montoOrigen : '$' + Math.round(loan.montoCOP).toLocaleString()) + ' (' + loan.modalidad + ')';
+    if (loan.modalidad === 'Pago Unico' && loan.gananciaFija > 0) {
+      detalleLog += ' [ganancia $' + Math.round(loan.gananciaFija).toLocaleString('es-CO') + ']';
+    }
+    logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + detalleLog);
     res.status(201).json(loan);
   });
 
   app.put('/api/loans/:id', (req, res) => {
-    const loan = { fechaDevolucion: '', comprasUSD: '', ...req.body, id: req.params.id };
+    const loan = { fechaDevolucion: '', comprasUSD: '', gananciaFija: 0, ...req.body, id: req.params.id };
     if (loan.comprasUSD && typeof loan.comprasUSD !== 'string') loan.comprasUSD = JSON.stringify(loan.comprasUSD);
+    // v1.10.0: gananciaFija solo aplica para modalidad Pago Unico — forzar 0 en el resto
+    if (loan.modalidad !== 'Pago Unico') loan.gananciaFija = 0;
+    else loan.gananciaFija = Math.round(+loan.gananciaFija || 0);
     db.prepare(`
       UPDATE loans SET nombre=@nombre, cedula=@cedula, telefono=@telefono, moneda=@moneda,
         montoOrigen=@montoOrigen, trmAcordada=@trmAcordada, montoCOP=@montoCOP,
         tasaMensual=@tasaMensual, plazoMeses=@plazoMeses, modalidad=@modalidad,
-        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion, comprasUSD=@comprasUSD
+        fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion, comprasUSD=@comprasUSD, gananciaFija=@gananciaFija
       WHERE id=@id
     `).run(loan);
 
@@ -526,6 +576,9 @@ module.exports = function createApp(dbPath) {
           if (remaining > 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual }, nextRegularNEdit, saldoActual, remaining);
         }
       } else if (loan.modalidad === 'Prestamo') {
+        if (regularConsumedEdit === 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual });
+      } else if (loan.modalidad === 'Pago Unico') {
+        // v1.10.0: igual que Prestamo — solo regenera si no se consumio la cuota unica
         if (regularConsumedEdit === 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual });
       } else {
         const remaining = indefinidoEdit
@@ -783,11 +836,27 @@ module.exports = function createApp(dbPath) {
       db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente'").run(req.params.id);
 
       // Para Prestamo: actualizar cuotaTotal de cuotas En Mora al nuevo saldo
+      // v1.10.0 fix housekeeping: tambien actualizar saldoInicial y abonoCapital para
+      // que la cuota refleje correctamente el estado tras el abono. Sin este fix los
+      // valores quedaban con el monto original e inflaban marginalmente el KPI de
+      // "capital recuperado" cuando se pagaba la cuota en mora.
       if (loan.modalidad === 'Prestamo') {
         const moraRegulares = allPays.filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+        const ns = Math.max(0, nuevoSaldo);
         moraRegulares.forEach(p => {
-          db.prepare('UPDATE payments SET cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
-            .run(Math.max(0, nuevoSaldo), 0, p.id);
+          db.prepare('UPDATE payments SET saldoInicial = ?, abonoCapital = ?, cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
+            .run(ns, ns, ns, 0, p.id);
+        });
+      }
+      // v1.10.0 — Pago Unico: igual que Prestamo pero conservando la ganancia pactada
+      // (cuotaTotal = capital restante + ganancia; abonoCapital solo el capital)
+      if (loan.modalidad === 'Pago Unico') {
+        const gPU2 = Math.round(+loan.gananciaFija || 0);
+        const moraRegularesPU = allPays.filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+        const nsPU = Math.max(0, nuevoSaldo);
+        moraRegularesPU.forEach(p => {
+          db.prepare('UPDATE payments SET saldoInicial = ?, abonoCapital = ?, cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
+            .run(nsPU, nsPU, nsPU + gPU2, 0, p.id);
         });
       }
 
