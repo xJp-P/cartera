@@ -895,6 +895,11 @@ function App(){
       'En la pestaña Cartera, al desplegar el cronograma de un prestamo en dolares ya finalizado, ahora ves el resumen completo de ganancia: "Ganancia por intereses", "Ganancia/Perdida por TRM" y "Ganancia total"',
       'La ganancia/perdida por TRM (en verde si el dolar subio al cobrar, en rojo si bajo) ya estaba en la vista de Rendimiento; ahora tambien la tenes a mano directamente en Cartera sin cambiar de pestaña',
       'Aplica tanto a prestamos finalizados con exito como a los cerrados forzosamente (sobre lo que el deudor alcanzo a pagar). Los prestamos en pesos no muestran estas lineas porque no aplica'
+    ],
+    '1.10.2': [
+      'La tarjeta "Pagos en Mora" del Inicio ahora muestra TODOS los pagos en mora (antes se cortaba en los primeros): la tarjeta mantiene su tamaño y el listado hace scroll interno cuando hay muchos',
+      'El texto de ganancia/perdida por TRM ahora es dinamico en todas las vistas: dice "Ganancia por TRM" (verde) o "Perdida por TRM" (rojo) segun corresponda, en Cartera y en el perfil del deudor',
+      'Antes en el perfil del deudor el titulo era fijo ("Ganancia/Perdida TRM"); ahora cambia segun el resultado real, igual que en la pestaña Cartera'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1588,7 +1593,7 @@ function DashView(props){
         h('div',{className:'dash-list-body'},
         metrics.mora.length===0
           ? emptyMsg('¡Excelente! No hay pagos en mora.')
-          : metrics.mora.slice(0,8).map(function(p,i){
+          : metrics.mora.map(function(p,i){
               var pl=loanMap[p.prestamoId];var isU=pl&&pl.moneda==='USD';
               var hasPartial=(p.partialPaid||0)>0;var val=pendCuota(p);
               var saldoL=loanSaldoMap[p.prestamoId]||0;
@@ -2211,7 +2216,7 @@ function DebtorModal(props){
                     h('div',{className:'mono',style:{fontSize:13,color:'var(--green)',fontWeight:500}},'+'+fmt(intCobrados)),
                     esUSD&&intCobrados>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intCobrados,l.trmAcordada))),
                   null,{first:true}),
-                esUSD&&row('Ganancia/Perdida por TRM',
+                esUSD&&row(gananciaTRM<0?'Perdida por TRM':'Ganancia por TRM',
                   h('div',{className:'mono',style:{fontSize:13,color:gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text3)',fontWeight:500}},(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM))),
                   gananciaTRM===0?'Sin datos de TRM al cobro':gananciaTRM>0?'TRM subio al cobrar':'TRM bajo al cobrar'),
                 esUSD&&row('Ganancia total',
@@ -2469,7 +2474,7 @@ function DebtorModal(props){
                 h('span',{className:'mono',style:{color:'var(--text)',fontWeight:300}},'+'+fmt(intPagados))),
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'5px 0',fontSize:11,borderTop:'1px solid rgba(88,166,255,.12)'}},
                 h('div',null,
-                  h('div',{style:{color:'var(--text2)'}},'Ganancia/Perdida TRM'),
+                  h('div',{style:{color:'var(--text2)'}},gananciaTRMHist<0?'Perdida TRM':'Ganancia TRM'),
                   h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1}},gananciaTRMHist===0?'Sin datos de TRM al cobro':gananciaTRMHist>0?'TRM subio al cobrar':'TRM bajo al cobrar')),
                 h('span',{className:'mono',style:{color:gananciaTRMHist>0?'var(--green)':gananciaTRMHist<0?'var(--red)':'var(--text3)',fontWeight:300}},(gananciaTRMHist>0?'+':gananciaTRMHist<0?'-':'')+fmt(Math.abs(gananciaTRMHist)))),
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0 3px',borderTop:'1px solid var(--blue-bd)',marginTop:3}},
