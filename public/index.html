@@ -450,7 +450,6 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     w.onload = function() { w.print(); };
   }
 }
-function fmtM(s) { return s?new Date(s+'-01T12:00:00').toLocaleDateString('es-CO',{month:'short',year:'2-digit'}):''; }
 function nowStr()    { var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function addDays(s,n){ var d=new Date(s+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().split('T')[0]; }
 

@@ -104,6 +104,10 @@ npm run build:all    # Ambos
 | Instalador | NSIS (Windows) / DMG (Mac) |
 | Auto-update | electron-updater (Win) / custom updater (Mac) + GitHub Releases |
 
+## Para desarrolladores
+
+Toda la documentación interna vive en **`CLAUDE.md`**: arquitectura, esquema de BD, endpoints, modalidades, lógica de negocio, estado actual, historial de sprints, backlog y convenciones de trabajo.
+
 ---
 
 Uso privado.

@@ -31,8 +31,7 @@ Proyecto_PTM/
 ├── .github/workflows/
 │   └── build.yml         # GitHub Actions: compila .exe (Windows) y .dmg+.zip (Mac)
 ├── package.json          # "main": "desktop/main.js" — "files": desktop, backend, public
-├── CLAUDE.md             # Este archivo (contexto para Claude)
-├── ESTADO_DEL_PROYECTO.md # Estado actual y pendientes
+├── CLAUDE.md             # Este archivo (contexto + estado + sprints + convenciones)
 └── .claudesignore        # Ignorados al escanear el proyecto
 ```
 
@@ -326,10 +325,10 @@ FASE 4-OFFLINE — Timeout sin internet (v1.9.3+)
 
 **Cada vez que el usuario autoriza un commit + push de una actualización**, además del bump de versión en `package.json` y la entrada en el objeto `CHANGELOGS` de `public/index.html`, se DEBEN actualizar en el mismo commit del release:
 
-- **`ESTADO_DEL_PROYECTO.md`** — actualizar versión actual, último sprint, nuevas features/lógicas implementadas, y el estado de working tree / releases. Es un documento vivo (refrescar el campo "Última revisión").
+- **`CLAUDE.md`** (este archivo) — actualizar la sección "Estado Actual" (versión + resumen del sprint), agregar a "Bugs Corregidos" los fixes nuevos, y reflejar cualquier nueva feature/lógica en las secciones técnicas correspondientes (modalidades, endpoints, lógica de negocio, etc.).
 - **`README.md`** — solo si la actualización agrega o cambia funcionalidades visibles para el usuario final (nuevas modalidades, vistas, capacidades). Reflejarlo en la lista de Funcionalidades y secciones afectadas. Si el cambio es interno (refactor, fix sin impacto en UX), README puede no requerir cambios.
 
-**Regla de consistencia:** tras cada release, `package.json` (versión), `CHANGELOGS`, `ESTADO_DEL_PROYECTO.md` y (si aplica) `README.md` deben quedar coherentes entre sí y con lo realmente implementado. Igual que con el changelog, **no documentar operaciones administrativas internas** (reparaciones manuales de BD, scripts únicos) en README.
+**Regla de consistencia:** tras cada release, `package.json` (versión), `CHANGELOGS`, `CLAUDE.md` y (si aplica) `README.md` deben quedar coherentes entre sí y con lo realmente implementado. Igual que con el changelog, **no documentar operaciones administrativas internas** (reparaciones manuales de BD, scripts únicos) en README.
 
 ## Bugs Corregidos (historial)
 
@@ -354,4 +353,63 @@ FASE 4-OFFLINE — Timeout sin internet (v1.9.3+)
 
 ## Estado Actual
 
-La app está funcionando y estable en v1.9.3 (release publicada en GitHub). Las actualizaciones se distribuyen vía GitHub Actions > Build Instaladores y los usuarios reciben auto-update protegido por el nuevo boot sequence.
+- **Versión:** `1.10.2` (publicada en GitHub Releases; el run de "Build Instaladores" sobre `main` incluyó todo lo acumulado desde v1.9.3).
+- **Estado:** App funcional y estable en Windows y Mac. Auto-update operativo y protegido por el boot sequence de 4 fases.
+- **Repositorio:** `xJp-P/cartera-prestamos`. Working tree limpio, `main` sincronizada con `origin/main`.
+
+### Historial de sprints (resumen)
+
+- **v1.9.0 → v1.9.3** (el más denso): recálculo flexible en abono (`mantener`/`modificarPlazo`/`fijarCuota` + `cuotaFijaPactada`), endpoint `reestructurar`, pre-flight de mora, bloqueo de campos sensibles, rediseño del Dashboard, recaudo del mes como flujo de caja, atomicidad de `/abono`, boot sequence protegido con splash + countdown + vista offline.
+- **v1.9.4 → v1.9.5**: escape hatch tras error de descarga de update ("Continuar de todos modos" junto a "Cerrar app") + % numérico en el splash durante la descarga.
+- **v1.10.0**: modalidad **Pago Unico** + fix housekeeping (cuotas en mora de Prestamo/Pago Unico actualizan también `saldoInicial`/`abonoCapital`).
+- **v1.10.1**: Ganancia/Pérdida por TRM en el resumen de Cartera (Finalizados/Cancelados USD).
+- **v1.10.2**: card "Pagos en Mora" del Dashboard muestra todo con scroll + título dinámico Ganancia/Pérdida por TRM unificado en las 3 ubicaciones.
+
+## Backlog / pendientes
+
+**Infraestructura:**
+- Optimizar `extraResources` en `package.json` (hoy duplica `desktop/` + `backend/` + `public/`).
+- Dividir `public/index.html` (~3800 líneas): extraer `styles.css`, separar componentes grandes a `<script>` aparte, o migrar a esbuild/Vite + JSX.
+- Separar rutas del backend en archivos temáticos (`backend/routes/loans.js`, etc.) + `backend/db.js` para el schema.
+
+**UX / Funcional:**
+- Notificaciones de vencimientos vía Electron `Notification` API (hoy solo al abrir la app).
+- Backup automático de la BD a carpeta configurable (snapshot diario).
+- Exportar reporte financiero mensual (PDF con recaudo, mora y proyección).
+
+**Técnico:**
+- Migrar auto-extend (Intereses) de cada `GET /api/payments` a un cron en el proceso Electron.
+- Firma de código para Mac (Apple Developer $99/año) → reemplazar custom updater por Squirrel.Mac.
+
+## Convenciones de trabajo (importante)
+
+1. **Modo Auditor antes de ejecutar:** para tareas no triviales, generar plan estructurado con preguntas (`AskUserQuestion`) y esperar aprobación antes de tocar código.
+2. **Tareas no triviales se trackean** con la lista de tareas (in_progress al empezar, completed al terminar).
+3. **Atomicidad de endpoints:** todo endpoint que modifique BD valida + computa TODO antes de la primera escritura. Si algo falla → 4xx sin tocar BD. Mutaciones múltiples dentro de `db.transaction()`.
+4. **Defense-in-depth:** validaciones críticas en frontend Y backend.
+5. **Verificación con Python `sqlite3`:** `better-sqlite3` está compilado para Electron, NO corre en Node standalone. Para inspeccionar la BD del usuario usar Python builtin. Para tests del motor financiero, replicar funciones en Python.
+6. **Backups antes de tocar la BD productiva:** cualquier script que escriba en `cartera.db` real hace `shutil.copy()` con timestamp ANTES de cualquier cambio.
+7. **Sintaxis siempre validada:** `node --check backend/server.js`; para frontend extraer scripts del HTML y validar con `new Function(code)`.
+8. **Sin build step:** UI en `public/index.html` con React UMD + `React.createElement`. Estilos inline con variables CSS. NO usar Tailwind ni utilidades externas.
+9. **Commits:** HEREDOC + firma `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>` + título `vX.Y.Z: descripción` o `Fix: descripción`. Bump en `package.json` + entrada en `CHANGELOGS`.
+10. **Changelog del usuario final:** NO incluir operaciones administrativas internas. Solo cambios que aplican a la experiencia general.
+11. **Push solo cuando el usuario lo pida explícitamente.** El workflow de Build Instaladores lo dispara el usuario manualmente.
+12. **Mantenimiento de docs post-release (OBLIGATORIO):** ver sección homónima arriba.
+
+## Decisiones que NO se renegocian (arquitectura ya tomada)
+
+- **Boot sequence de 4 fases** (FASE 1 prefs → FASE 2 splash → FASE 3 update check con countdown → FASE 4a install / 4b normal / 4-OFFLINE decision). v1.9.5: tras error de descarga, el splash da "Cerrar app" + "Continuar de todos modos".
+- **Recaudo del mes** = cuotas del mes + mora recuperada (no mora histórica pendiente).
+- **`/recalculate`** computa `saldoReal = originalCOP − capitalPagado` (no usa `loan.montoCOP`).
+- **`hasActivity`** para bloqueo de campos = cuotas pagadas > 0 OR abonos > 0 OR cuotas mora > 0.
+- **Dashboard** grid 2x2 estricto con `.dash-card { height: 380px }` y `.dash-card-header { min-height: 54px }`.
+- **Fórmula de saldo:** `montoOrigen - todoCapPagado` (NO `montoCOP`, es poco confiable).
+- **Separación abonos vs. cuotas regulares:** filtro `id.indexOf('-ab-')` SIEMPRE.
+
+## Recordatorios operativos
+
+- **BD productiva del usuario:** `C:\Users\juanp\Desktop\bd_App_PTM_Backup\cartera.db` (NO la del repo). En modo dev `npm start`, `prefs.json` apunta a esa ruta.
+- **Distribución:** el usuario corre manualmente "Build Instaladores" en GitHub Actions. Un solo run publica la última versión de `main` (incluye todo lo acumulado).
+- **Build Mac requiere Python 3.12** (3.14 rompe `distutils` que necesita `node-gyp`).
+- **Memoria persistente** en `~/.claude/projects/C--Users-juanp-Documents-Proyecto-PTM/memory/`.
+- **`.claudesignore`** excluye `node_modules`, `dist`, `build`, `.git`, `.github`, DB y binarios para bajar consumo de contexto.
