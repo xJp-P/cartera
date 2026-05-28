@@ -4,19 +4,20 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 
 ## Funcionalidades
 
-- **Prestamos en COP y USD** con conversion automatica via TRM
-- **3 modalidades:** Intereses (plazo indefinido), Capital + Intereses (amortizacion francesa), Prestamo (0% interes)
+- **Prestamos en COP y USD** con conversion automatica via TRM (incluye compras fraccionadas a distintas tasas)
+- **4 modalidades:** Intereses (plazo indefinido), Capital + Intereses (amortizacion francesa), Prestamo (0% interes), Pago Unico (una cuota en fecha exacta + ganancia pactada por % o monto fijo)
 - **Frecuencia de cobro:** semanal, quincenal o mensual
-- **Abonos a capital** con recalculo automatico del cronograma
+- **Abonos a capital** con recalculo automatico del cronograma (mantener plazo, modificar plazo o fijar cuota)
+- **Reestructuracion** de cronograma sin necesidad de abono (Capital + Intereses)
 - **Recibos PDF** generados al registrar un pago
 - **Cronograma PDF** con valor de liquidacion desde el perfil de cada deudor
-- **Dashboard** con KPIs: cartera activa, mora, recaudo del mes, proximos vencimientos
+- **Dashboard** con KPIs: capital original, recaudo del mes, saldo pendiente, ganancias, mora y proximos vencimientos
 - **Perfiles de deudores** con historial completo de creditos
-- **Seccion de rendimiento** con ganancias por prestamo
+- **Seccion de rendimiento** con ganancias por prestamo (intereses + ganancia/perdida por TRM en USD)
 - **Calculadora** para simular prestamos antes de crearlos
 - **Historial de acciones** (log de todo lo que hiciste)
 - **Tema claro/oscuro** (PDFs se generan con el tema activo)
-- **Actualizaciones automaticas** desde GitHub Releases (Windows y Mac)
+- **Actualizaciones automaticas** desde GitHub Releases (Windows y Mac), con arranque protegido que blinda la base de datos durante el chequeo de updates
 - **Sincronizacion** via iCloud Drive, OneDrive, etc.
 
 ## Como instalar en Mac

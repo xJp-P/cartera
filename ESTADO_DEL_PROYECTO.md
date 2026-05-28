@@ -1,15 +1,15 @@
 # Estado del Proyecto — Cartera de Préstamos
 
 > Documento vivo. Se actualiza al finalizar cada iteración importante.
-> Última revisión: **2026-05-26** — Sprint v1.9.0 → v1.9.3 (release publicada en GitHub).
+> Última revisión: **2026-05-28** — Sprint v1.9.4 → v1.10.2 (release publicada en GitHub).
 
 ---
 
 ## 1. Versión y estado general
 
-- **Versión local (en `package.json`):** `1.9.3`
-- **Última release publicada en GitHub:** `1.9.3` (instaladores Windows + Mac disponibles)
-- **Estado:** App funcional y estable en Windows y Mac. Auto-update operativo y protegido por nuevo boot sequence.
+- **Versión local (en `package.json`):** `1.10.2`
+- **Última release publicada en GitHub:** `1.10.2` (instaladores Windows + Mac disponibles; el run de "Build Instaladores" sobre `main` incluyó todo lo acumulado desde v1.9.3).
+- **Estado:** App funcional y estable en Windows y Mac. Auto-update operativo y protegido por boot sequence.
 - **Repositorio:** `xJp-P/cartera-prestamos`
 - **Working tree:** limpio, `main` sincronizada con `origin/main`.
 
@@ -36,9 +36,38 @@ Archivos de apoyo:
 
 ---
 
-## 3. Sprint v1.9.0 → v1.9.3 (el más denso del proyecto)
+## 3. Sprints
 
-### Features nuevas
+### Sprint v1.9.4 → v1.10.2 (más reciente — Pago Único + TRM en Cartera + refinamientos)
+
+**Escape hatch tras error de descarga de update (v1.9.4 → v1.9.5):**
+- v1.9.4: si falla la descarga de un update, el splash muestra vista de error con botón "Cerrar app".
+- v1.9.5: se agrega "Continuar de todos modos" (escape hatch) junto a "Cerrar app". La invariante estricta de v1.9.4 se relajó a propósito para no bloquear al usuario de su herramienta de trabajo por una falla transitoria de red.
+- v1.9.5: el splash muestra el porcentaje numérico junto a la barra durante cualquier descarga (ej: "Descargando v1.9.5... 45%"). Aplica a Win y Mac, in-app y boot.
+
+**Nueva modalidad "Pago Unico" (v1.10.0):**
+- 1 cuota en fecha exacta + ganancia pactada (por % sobre el capital o por monto fijo). Indicador en vivo de la equivalencia entre ambas formas.
+- Nueva columna `loans.gananciaFija` (REAL, COP). `POST/PUT /api/loans` la fuerza a 0 si la modalidad no es Pago Unico.
+- En la única cuota: `interesPeriodo = gananciaFija`, `abonoCapital = capital`, `cuotaTotal = capital + ganancia`.
+- Espejo de `Prestamo` en `buildSchedule`, `/recalculate` y `PUT /loans/:id` (solo regenera si `regularConsumed === 0`).
+- Abonos a capital reducen el capital pero la ganancia pactada se mantiene fija.
+- Soporta COP y USD (con compras fraccionadas a TRMs distintas). Dashboard sin cambios: la modalidad puebla los mismos campos de `payments` que ya leen los KPIs.
+- Solo se agrega en LoanModal directo (no en la Calculadora, por decisión del usuario).
+
+**Ganancia/Pérdida por TRM en Cartera (v1.10.1):**
+- El resumen del cronograma expandido de préstamos USD terminales (Finalizado y Cancelado) ahora muestra "Ganancia por intereses" + "Ganancia/Pérdida por TRM" + "Ganancia total", reutilizando la lógica de RendimientoView.
+- En COP no cambia (sigue "Ganancia obtenida", sin líneas TRM).
+
+**Refinamientos UX (v1.10.2):**
+- La card "Pagos en Mora" del Dashboard muestra TODOS los pagos en mora (antes `slice(0,8)`); el `.dash-list-body` hace scroll interno sin romper el tamaño fijo de la card.
+- Título dinámico de ganancia/pérdida por TRM unificado en las 3 ubicaciones (Cartera + las 2 secciones del perfil del deudor): dice "Ganancia…" (verde) o "Pérdida…" (rojo) según el signo.
+
+**Bugfix housekeeping (v1.10.0):**
+- Al hacer un abono sobre `Prestamo` / `Pago Unico`, los UPDATEs de cuotas En Mora ahora actualizan también `saldoInicial` y `abonoCapital` (no solo `cuotaTotal` y `saldoFinal`), evitando el inflado marginal del KPI "capital recuperado". Mismo fix en `/recalculate`.
+
+### Sprint v1.9.0 → v1.9.3 (el más denso del proyecto)
+
+#### Features nuevas
 
 **Recálculo flexible en abono a capital (v1.9.0):**
 - `POST /api/loans/:id/abono` acepta `recalcMode` (`mantener` | `modificarPlazo` | `fijarCuota`) + `recalcValor`
@@ -98,7 +127,7 @@ Archivos de apoyo:
 - Si no hay update O usuario eligió continuar → arranque normal
 - **v1.9.3:** countdown visible de 60s arriba del spinner; al timeout se cambia a vista offline con botones "Continuar" / "Cerrar app" (no se auto-decide por el usuario)
 
-### Bugfixes críticos
+#### Bugfixes críticos
 
 1. **`/api/recalculate` y `PUT /api/loans/:id` sobrescribían cuotas Pagadas + Mora** → ahora solo borran Pendientes; Pagadas + Mora + Abonos quedan intactos
 2. **`/api/abono` no era atómico** — si la validación de `recalcMode` fallaba tras el DELETE de Pendientes, la BD quedaba corrupta → toda validación + cómputo ahora ocurre ANTES de la primera escritura, dentro de `db.transaction()`
@@ -112,7 +141,7 @@ Archivos de apoyo:
 ## 4. Funcionalidades principales en producción
 
 ### Gestión de préstamos
-- Modalidades: `Intereses` (plazo ∞), `Capital + Intereses` (amortización francesa con opción de cuota fija pactada), `Prestamo` (0% interés, una cuota).
+- Modalidades: `Intereses` (plazo ∞), `Capital + Intereses` (amortización francesa con opción de cuota fija pactada), `Prestamo` (0% interés, una cuota), `Pago Unico` (v1.10.0: una cuota en fecha exacta + ganancia pactada por % o monto fijo, columna `gananciaFija`).
 - Frecuencias: Mensual, Quincenal, Semanal (conversión de tasa automática).
 - Moneda: COP y USD con TRM acordada por préstamo. Compras fraccionadas con tasa promedio ponderada para USD.
 - **Reestructuración:** modificar plazo o fijar cuota sin tener que hacer abono.
@@ -120,7 +149,7 @@ Archivos de apoyo:
 
 ### Vistas (8)
 1. **Inicio (Dashboard)** — rediseñado en v1.9.1, modern SaaS layout
-2. **Cartera** — Activos/Finalizados + cronograma expandible unificado
+2. **Cartera** — Activos/Finalizados + cronograma expandible unificado. En Finalizados/Cancelados USD muestra resumen con Ganancia por intereses + Ganancia/Pérdida por TRM + Ganancia total (v1.10.1)
 3. **Deudores** — Perfiles con historial + botonera de 3 tiers
 4. **Pagos** — Pendientes/Mora + toggle pagados
 5. **Rendimiento** — KPIs globales + tabs Activo/Cancelado
@@ -133,7 +162,8 @@ Archivos de apoyo:
 - **Auto-finalización:** todas las cuotas regulares `'Pagado'` → `loan.estado='Finalizado'`. Si tiene `cuotaFijaPactada > 0`, se limpia al finalizar.
 - **Auto-extend (Intereses):** si quedan < 3 cuotas pendientes futuras, se generan 3 más automáticamente.
 - **Auto-link deudores:** al crear préstamo, consolida por nombre (case-insensitive).
-- **Fix cuotas mora Préstamo:** `cuotaTotal` de mora se ajusta al `montoCOP` actual tras abonos.
+- **Fix cuotas mora Préstamo / Pago Unico:** `cuotaTotal` (+ `saldoInicial` + `abonoCapital`) de mora se ajustan al saldo actual tras abonos. Para Pago Unico la ganancia pactada se conserva (`cuotaTotal = capital restante + gananciaFija`).
+- **Ganancia fija en Pago Unico:** los abonos reducen el capital pero `gananciaFija` no cambia; el deudor termina pagando lo acordado.
 - **Persistencia cuota fija pactada:** sobrevive a `/recalculate` y `PUT /loans`.
 - **Persistencia prorrateo:** `proximaCuotaExtra` + `proximaCuotaExtraN` sobreviven a `/recalculate`.
 
@@ -173,7 +203,7 @@ Archivos de apoyo:
 
 ## 6. Bugs conocidos
 
-Ninguno abierto en este momento. El sprint v1.9.0 → v1.9.3 cerró todos los bugs críticos detectados. Historial completo está en `CLAUDE.md` sección "Bugs Corregidos".
+Ninguno abierto en este momento. Los sprints v1.9.0 → v1.10.2 cerraron todos los bugs críticos detectados. Historial completo está en `CLAUDE.md` sección "Bugs Corregidos".
 
 ---
 
@@ -191,6 +221,7 @@ Ninguno abierto en este momento. El sprint v1.9.0 → v1.9.3 cerró todos los bu
 8. **Commits:** HEREDOC + firma Co-Authored-By + título `vX.Y.Z: descripción` o `Fix: descripción`. Bumpeo de versión va en `package.json` + entrada nueva en el objeto `CHANGELOGS` de `public/index.html`.
 9. **Changelog del usuario final:** NO incluir operaciones administrativas internas (reparaciones manuales de BD productiva, scripts de migración únicos). Solo cambios que aplican al usuario general.
 10. **Push solo cuando el usuario lo pida explícitamente.** El workflow de Build Instaladores en GitHub Actions lo dispara el usuario manualmente.
+11. **Mantenimiento de docs post-release (OBLIGATORIO):** tras cada commit + push de una actualización autorizada, actualizar `ESTADO_DEL_PROYECTO.md` (siempre) y `README.md` (si hay cambios de funcionalidad visible) en el mismo commit del release. Mantener coherencia entre `package.json`, `CHANGELOGS`, este documento y el README. Detalle en `CLAUDE.md` → "Mantenimiento de documentación post-release".
 
 ### Cosas que NO se renegocian (decisiones de arquitectura ya tomadas)
 

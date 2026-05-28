@@ -322,6 +322,15 @@ FASE 4-OFFLINE — Timeout sin internet (v1.9.3+)
 - **Distribuir:** GitHub Actions > "Build Instaladores" > Run workflow → publica release automáticamente
 - **Build Mac:** Requiere Python 3.12 (3.14 rompe `distutils` que necesita `node-gyp`)
 
+## Mantenimiento de documentación post-release (OBLIGATORIO)
+
+**Cada vez que el usuario autoriza un commit + push de una actualización**, además del bump de versión en `package.json` y la entrada en el objeto `CHANGELOGS` de `public/index.html`, se DEBEN actualizar en el mismo commit del release:
+
+- **`ESTADO_DEL_PROYECTO.md`** — actualizar versión actual, último sprint, nuevas features/lógicas implementadas, y el estado de working tree / releases. Es un documento vivo (refrescar el campo "Última revisión").
+- **`README.md`** — solo si la actualización agrega o cambia funcionalidades visibles para el usuario final (nuevas modalidades, vistas, capacidades). Reflejarlo en la lista de Funcionalidades y secciones afectadas. Si el cambio es interno (refactor, fix sin impacto en UX), README puede no requerir cambios.
+
+**Regla de consistencia:** tras cada release, `package.json` (versión), `CHANGELOGS`, `ESTADO_DEL_PROYECTO.md` y (si aplica) `README.md` deben quedar coherentes entre sí y con lo realmente implementado. Igual que con el changelog, **no documentar operaciones administrativas internas** (reparaciones manuales de BD, scripts únicos) en README.
+
 ## Bugs Corregidos (historial)
 
 1. Abono duplicaba cuotas → `buildSchedule` con parámetro `numCuotas` y offset correcto de fechas
