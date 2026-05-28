@@ -890,6 +890,11 @@ function App(){
       'Funciona con COP y con USD (con compras fraccionadas a distintas TRMs si aplica), igual que el resto de modalidades',
       'Cuando hagas un abono a capital sobre un Pago Unico, el capital baja pero la ganancia pactada se mantiene intacta — el deudor te termina pagando lo que se acordo desde el inicio',
       'Los KPIs del Inicio (Capital Original, Cobros del Mes, Saldo Pendiente, Ganancias) y las cards de Vence Hoy / Proximos 7 dias incluyen automaticamente los pagos unicos, sin cambios visuales necesarios'
+    ],
+    '1.10.1': [
+      'En la pestaña Cartera, al desplegar el cronograma de un prestamo en dolares ya finalizado, ahora ves el resumen completo de ganancia: "Ganancia por intereses", "Ganancia/Perdida por TRM" y "Ganancia total"',
+      'La ganancia/perdida por TRM (en verde si el dolar subio al cobrar, en rojo si bajo) ya estaba en la vista de Rendimiento; ahora tambien la tenes a mano directamente en Cartera sin cambiar de pestaña',
+      'Aplica tanto a prestamos finalizados con exito como a los cerrados forzosamente (sobre lo que el deudor alcanzo a pagar). Los prestamos en pesos no muestran estas lineas porque no aplica'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1799,6 +1804,14 @@ function CarteraView(props){
                 // Valores netos: positivos para Finalizado, pueden ser negativos para Cancelado
                 var gananciaNeta=intCobrados-(esCanc?intPerd:0);
                 var capitalNeto=capRecuperado-(esCanc?capPerd:0);
+                // v1.10.1 — Ganancia/Perdida por TRM (solo USD): misma logica que RendimientoView.
+                // Diferencia entre lo cobrado realmente en COP y el valor contractual a TRM acordada.
+                //   - Cuotas regulares pagadas: montoCOPRecibido - cuotaTotal
+                //   - Abonos pagados con USD: montoCOPRecibido - (montoUSDRecibido * trmAcordada)
+                var gananciaTRMReg=esUSD?regsPag.filter(function(p){return p.montoCOPRecibido&&p.montoCOPRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-p.cuotaTotal);},0):0;
+                var gananciaTRMAb=esUSD?abonos.filter(function(p){return p.estadoPago==='Pagado'&&p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-(p.montoUSDRecibido*loan.trmAcordada));},0):0;
+                var gananciaTRM=Math.round(gananciaTRMReg+gananciaTRMAb);
+                var gananciaTotalUSD=gananciaNeta+gananciaTRM; // intereses netos + diferencial cambiario
                 var cuotasPagCnt=regsPag.length;
                 var denomCuotas=loan.modalidad==='Intereses'?'∞':(loan.plazoMeses||cuotasReg.length||'-');
                 var acento=esCanc?'var(--red)':'var(--green)';
@@ -1812,7 +1825,10 @@ function CarteraView(props){
                 return h('div',{style:{borderTop:'1px solid var(--bg3)',padding:'12px',background:'transparent'}},
                   h('div',{style:{fontSize:11,fontWeight:600,color:acento,marginBottom:4,display:'flex',alignItems:'center',gap:6,letterSpacing:.5}},
                     h(Ico,{name:esCanc?'x':'check',size:13,color:acento,sw:2.4}),'RESUMEN '+(esCanc?'(CIERRE FORZOSO)':'(FINALIZADO)')),
-                  rowItem('GANANCIA OBTENIDA',(gananciaNeta<0?'-':'')+fmt(Math.abs(gananciaNeta)),gananciaNeta<0?'var(--red)':gananciaNeta>0?'var(--green)':'var(--text2)',esUSD&&Math.abs(gananciaNeta)>0?copToUsd(Math.abs(gananciaNeta),loan.trmAcordada):null),
+                  rowItem(esUSD?'GANANCIA POR INTERESES':'GANANCIA OBTENIDA',(gananciaNeta<0?'-':'')+fmt(Math.abs(gananciaNeta)),gananciaNeta<0?'var(--red)':gananciaNeta>0?'var(--green)':'var(--text2)',esUSD&&Math.abs(gananciaNeta)>0?copToUsd(Math.abs(gananciaNeta),loan.trmAcordada):null),
+                  // v1.10.1 — Ganancia/Perdida por TRM y Ganancia total (solo USD)
+                  esUSD&&rowItem(gananciaTRM<0?'PERDIDA POR TRM':'GANANCIA POR TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',Math.abs(gananciaTRM)>0?copToUsd(Math.abs(gananciaTRM),loan.trmAcordada):null),
+                  esUSD&&rowItem('GANANCIA TOTAL',(gananciaTotalUSD<0?'-':'+')+fmt(Math.abs(gananciaTotalUSD)),gananciaTotalUSD<0?'var(--red)':gananciaTotalUSD>0?'var(--green)':'var(--text2)',Math.abs(gananciaTotalUSD)>0?copToUsd(Math.abs(gananciaTotalUSD),loan.trmAcordada):null),
                   rowItem('CAPITAL RECUPERADO',(capitalNeto<0?'-':'')+fmt(Math.abs(capitalNeto)),capitalNeto<0?'var(--red)':'var(--text)',esUSD&&Math.abs(capitalNeto)>0?copToUsd(Math.abs(capitalNeto),loan.trmAcordada):null),
                   capAbonosCOP>0&&rowItem('TOTAL ABONOS A CAPITAL',fmt(capAbonosCOP),'var(--blue)',esUSD?copToUsd(capAbonosCOP,loan.trmAcordada):null),
                   rowItem('CUOTAS PAGADAS',cuotasPagCnt+(loan.modalidad==='Intereses'?'':'/'+denomCuotas)),

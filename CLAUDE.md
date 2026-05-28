@@ -107,7 +107,7 @@ La modalidad `Prestamo` no permite seleccionar frecuencia (siempre una sola cuot
    - Grid 2x2 estricto (`.dash-card height:380px`, headers alineados con `.dash-card-header min-height:54px`)
    - 4 cards siempre visibles (Vence Hoy, Próximos 7 días, Mora, Transacciones Recientes) — con empty state si vacías
    - max-width 1180px centrado para no estirarse en monitores grandes
-2. **Cartera** — Lista de préstamos Activos/Finalizados, cronograma expandible con columnas Capital + Interés + Deuda corrida + Cuota, historial de abonos separado
+2. **Cartera** — Lista de préstamos Activos/Finalizados, cronograma expandible con columnas Capital + Interés + Deuda corrida + Cuota, historial de abonos separado. En Finalizados/Cancelados muestra resumen; para USD (v1.10.1+) incluye Ganancia por intereses + Ganancia/Pérdida por TRM + Ganancia total (misma lógica que Rendimiento: `montoCOPRecibido − cuotaTotal` para cuotas, `montoCOPRecibido − montoUSDRecibido×trmAcordada` para abonos)
 3. **Deudores** — Perfiles con préstamos expandibles, cronograma in-app, historial de créditos. Botonera de acciones en 3 tiers: Cobrar (verde sólido + outline) / Ajustar (gris outline: Reestructurar, Cambiar fecha) / Cronograma (ghost dashed: Ver detalle, PDF)
 4. **Pagos** — Pendientes/mora + toggle para ver pagados, secciones: En Mora, Vence Hoy, Próximas a Cobrar
 5. **Rendimiento** — Portfolio con KPIs globales, tarjetas por préstamo, tabs Activo/Cancelado
