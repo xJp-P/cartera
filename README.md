@@ -11,7 +11,7 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 - **Reestructuracion** de cronograma sin necesidad de abono (Capital + Intereses)
 - **Recibos PDF** generados al registrar un pago
 - **Cronograma PDF** con valor de liquidacion desde el perfil de cada deudor
-- **Dashboard** con KPIs: capital original, recaudo del mes, saldo pendiente, ganancias, mora y proximos vencimientos
+- **Dashboard** con KPIs (capital original, recaudo del mes, saldo pendiente, ganancias, mora y proximos vencimientos), selector de meses en el recaudo para revisar periodos pasados y mini-graficos de tendencia en las tarjetas
 - **Perfiles de deudores** con historial completo de creditos
 - **Seccion de rendimiento** con ganancias por prestamo (intereses + ganancia/perdida por TRM en USD)
 - **Calculadora** para simular prestamos antes de crearlos

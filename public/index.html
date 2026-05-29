@@ -475,6 +475,8 @@ var ICONS = {
   clock:     'M12 2a10 10 0 100 20A10 10 0 0012 2z M12 6v6l4 2',
   search:    'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
   chevdown:  'M6 9l6 6 6-6',
+  chevleft:  'M15 18l-6-6 6-6',
+  chevright: 'M9 18l6-6-6-6',
   bell:      'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
   refresh:   'M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0114.85-3.36L23 10 M1 14l4.64 4.36A9 9 0 0020.49 15',
   dollar:    'M12 1v22 M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6',
@@ -902,6 +904,11 @@ function App(){
     ],
     '1.10.3': [
       'Mejoras internas de mantenimiento y estabilidad'
+    ],
+    '1.11.0': [
+      'Cartera: cada barra de progreso ahora muestra el porcentaje exacto de avance (ej: 75%) junto a la barra',
+      'Inicio: la tarjeta "Recaudo del mes" ahora tiene un selector de meses (‹ Mayo De 2026 ›) para navegar a periodos anteriores o futuros y revisar el recaudo de cada mes, sin afectar el resto del tablero',
+      'Inicio: nuevos mini-graficos de tendencia en las tarjetas de KPIs — "Ganancias" muestra los ultimos 6 meses y "Cobros del Mes" la evolucion diaria del mes en curso, con ejes, cuadricula y valores de referencia'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1402,11 +1409,82 @@ function App(){
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
+// ── Gráfico financiero compacto (SVG puro, sin dependencias) ────────────────
+// Marco clasico (eje Y Oeste + eje X Sur solidos), grid tenue punteado, linea de
+// tendencia + relleno degradado, etiquetas Y (max/min, abreviadas k/M) e eje X (meses).
+// Caja ESTRICTA via overflow:hidden. Padding asimetrico: padL deja aire al eje Y y sus
+// etiquetas; padB deja aire al eje X + la fila de meses. Todo cabe dentro de w x hgt.
+function SparklineChart(props){
+  var data=props.data||[];
+  if(data.length<2) return null;
+  var labels=props.labels||[];
+  var w=props.width||298,hgt=props.height||98,stroke=props.color||'var(--green)';
+  var padL=32,padR=12,padT=8,padB=22;                 // padB aloja eje X + fila de meses
+  var plotL=padL,plotR=w-padR,plotT=padT,plotB=hgt-padB;
+  var min=Math.min.apply(null,data),max=Math.max.apply(null,data),flat=max===min,range=(max-min)||1,n=data.length;
+  function fmtSpark(v){var a=Math.abs(v);if(a>=1e6)return (v/1e6).toFixed(a>=1e7?0:1).replace(/\.0$/,'')+'M';if(a>=1e3)return Math.round(v/1e3)+'k';return String(Math.round(v));}
+  var pts=data.map(function(v,i){
+    var x=plotL+(i*(plotR-plotL)/(n-1));
+    var y=flat?(plotT+plotB)/2:plotT+(1-(v-min)/range)*(plotB-plotT);
+    return [Math.round(x*10)/10,Math.round(y*10)/10];
+  });
+  var line=pts.map(function(p,i){return (i===0?'M':'L')+p[0]+' '+p[1];}).join(' ');
+  var area='M'+pts[0][0]+' '+plotB+' '+pts.map(function(p){return 'L'+p[0]+' '+p[1];}).join(' ')+' L'+pts[n-1][0]+' '+plotB+' Z';
+  var gid='spark-'+String(props.id||'g').replace(/[^a-z0-9]/gi,'');
+  var lblStyle={fill:'var(--text3)',fontSize:9,fontFamily:"'Cascadia Code','Consolas',monospace"};
+  var hGrid=[0.25,0.5,0.75].map(function(f){return Math.round((plotT+f*(plotB-plotT))*10)/10;});
+  return h('svg',{width:w,height:hgt,viewBox:'0 0 '+w+' '+hgt,style:Object.assign({display:'block',overflow:'hidden'},props.style||{})},
+    h('defs',null,
+      h('linearGradient',{id:gid,x1:'0',y1:'0',x2:'0',y2:'1'},
+        h('stop',{offset:'0%',style:{stopColor:stroke,stopOpacity:.24}}),
+        h('stop',{offset:'100%',style:{stopColor:stroke,stopOpacity:0}}))),
+    hGrid.map(function(y,i){return h('line',{key:'h'+i,x1:plotL,y1:y,x2:plotR,y2:y,stroke:'var(--border)',strokeWidth:1,strokeDasharray:'2,4',opacity:.5});}),
+    pts.map(function(p,i){return (!labels.length||labels[i])?h('line',{key:'v'+i,x1:p[0],y1:plotT,x2:p[0],y2:plotB,stroke:'var(--border)',strokeWidth:1,strokeDasharray:'2,4',opacity:.5}):null;}),
+    h('path',{d:area,fill:'url(#'+gid+')',stroke:'none'}),
+    h('line',{x1:plotL,y1:plotT,x2:plotL,y2:plotB,stroke:'var(--border)',strokeWidth:1}),
+    h('line',{x1:plotL,y1:plotB,x2:plotR,y2:plotB,stroke:'var(--border)',strokeWidth:1}),
+    h('path',{d:line,fill:'none',stroke:stroke,strokeWidth:2,strokeLinecap:'round',strokeLinejoin:'round'}),
+    h('circle',{cx:pts[n-1][0],cy:pts[n-1][1],r:2.6,fill:stroke}),
+    h('text',{x:plotL-4,y:plotT+3,textAnchor:'end',style:lblStyle},fmtSpark(max)),
+    h('text',{x:plotL-4,y:plotB,textAnchor:'end',style:lblStyle},fmtSpark(min)),
+    labels.length===n&&pts.map(function(p,i){return labels[i]?h('text',{key:'m'+i,x:p[0],y:plotB+13,textAnchor:'middle',style:lblStyle},labels[i]):null;}));
+}
+
 function DashView(props){
   var metrics=props.metrics,isEmpty=props.isEmpty,onNav=props.onNav,loans=props.loans||[],pays=props.pays||[],onNameClick=props.onNameClick,onNewLoan=props.onNewLoan;
   var loanMap={};loans.forEach(function(l){loanMap[l.id]=l;});
   var pct=metrics.esperado>0?Math.round(metrics.recibido/metrics.esperado*100):0;
   var _recOpen=useState(false);var recaudoOpen=_recOpen[0];var setRecaudoOpen=_recOpen[1];
+  // ── Selector de mes en la tarjeta "Recaudo" ────────────────────────────────
+  // Solo ESTA tarjeta pagina; el KPI "Cobros del Mes" sigue fijo en el mes actual
+  // (usa el metrics global). El default es el mes en curso.
+  var _selM=useState(nowStr().slice(0,7));var selMonth=_selM[0];var setSelMonth=_selM[1];
+  function shiftMonth(delta){
+    var y=parseInt(selMonth.slice(0,4),10),m=parseInt(selMonth.slice(5,7),10)-1+delta;
+    var dd=new Date(y,m,1);
+    setSelMonth(dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0'));
+  }
+  var MESES_ES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var selMonthLabel=MESES_ES[parseInt(selMonth.slice(5,7),10)-1]+' De '+selMonth.slice(0,4);
+  // Recaudo del mes seleccionado (hibrido aprobado): cuotas Pagadas se cuentan por fecha
+  // de transaccion (fechaRecaudo) -> la mora vieja cobrada este mes cuenta este mes; los
+  // parciales EN CURSO se cuentan por fechaPago (unica fecha disponible para un parcial).
+  var recaudoMes=useMemo(function(){
+    var noAb=function(p){return p.id.indexOf('-ab-')===-1;};
+    var dueMes=pays.filter(function(p){return noAb(p)&&p.fechaPago.startsWith(selMonth);});
+    var paidMes=pays.filter(function(p){return noAb(p)&&p.estadoPago==='Pagado'&&p.fechaRecaudo&&p.fechaRecaudo.startsWith(selMonth);});
+    var esperado=dueMes.reduce(function(s,p){return s+p.cuotaTotal;},0);
+    var recibA=paidMes.reduce(function(s,p){return s+(p.montoCOPRecibido||p.cuotaTotal);},0);
+    var recibB=dueMes.reduce(function(s,p){return p.estadoPago!=='Pagado'?s+(p.partialPaid||0):s;},0);
+    var seen={},list=[];
+    dueMes.concat(paidMes).forEach(function(p){if(!seen[p.id]){seen[p.id]=1;list.push(p);}});
+    list.sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago)||a.nombreCliente.localeCompare(b.nombreCliente);});
+    return {esperado:esperado,recibido:recibA+recibB,list:list};
+  },[pays,selMonth]);
+  var hayMeta=recaudoMes.esperado>0;
+  var pctMes=hayMeta?Math.round(recaudoMes.recibido/recaudoMes.esperado*100):0;
+  var pctTxt=hayMeta?pctMes+'%':'—';
+  var hayReg=pays.some(function(p){return p.id.indexOf('-ab-')===-1;});
   // v1.9.x — Metricas adicionales calculadas desde loans/pays
   var activos=loans.filter(function(l){return l.estado==='Activo';});
   var capOriginal=activos.reduce(function(s,l){return s+(l.moneda==='USD'?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen));},0);
@@ -1429,12 +1507,48 @@ function DashView(props){
       var fa=a.fechaRecaudo||a.fechaPago,fb=b.fechaRecaudo||b.fechaPago;
       return fb.localeCompare(fa);
     }).slice(0,10);
+  // Sparkline "Ganancias": ganancia recibida por mes (ultimos 6 meses), agrupada por fechaRecaudo.
+  // Misma definicion de ganancia que el KPI total: USD -> montoCOPRecibido - abonoCapital; COP -> interesPeriodo. Excluye abonos.
+  var sparkGanancias=useMemo(function(){
+    var moneda={};loans.forEach(function(l){moneda[l.id]=l.moneda;});
+    var byMonth={};
+    pays.forEach(function(p){
+      if(p.estadoPago!=='Pagado'||!p.fechaRecaudo||p.id.indexOf('-ab-')!==-1) return;
+      var ym=p.fechaRecaudo.slice(0,7);
+      var g=(moneda[p.prestamoId]==='USD'&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-p.abonoCapital):p.interesPeriodo;
+      byMonth[ym]=(byMonth[ym]||0)+g;
+    });
+    var base=new Date(nowStr()+'T12:00:00'),vals=[],labs=[];
+    for(var i=5;i>=0;i--){
+      var d=new Date(base.getFullYear(),base.getMonth()-i,1);
+      vals.push(Math.round(byMonth[d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')]||0));
+      labs.push(MESES_ES[d.getMonth()].slice(0,3));
+    }
+    return {values:vals,labels:labs};
+  },[pays,loans]);
+  // Sparkline "Cobros del Mes": evolucion DIARIA del mes EN CURSO (fijo — ignora selMonth).
+  // Suma por dia el monto recibido (montoCOPRecibido||cuotaTotal) de cuotas Pagadas con
+  // fechaRecaudo ese dia. Excluye abonos (igual que el KPI metrics.recibido).
+  var sparkCobros=useMemo(function(){
+    var curM=nowStr().slice(0,7);
+    var y=parseInt(curM.slice(0,4),10),mo=parseInt(curM.slice(5,7),10),dim=new Date(y,mo,0).getDate();
+    var byDay={};
+    pays.forEach(function(p){
+      if(p.estadoPago!=='Pagado'||!p.fechaRecaudo||p.id.indexOf('-ab-')!==-1) return;
+      if(p.fechaRecaudo.slice(0,7)!==curM) return;
+      var dd=parseInt(p.fechaRecaudo.slice(8,10),10);
+      byDay[dd]=(byDay[dd]||0)+(p.montoCOPRecibido||p.cuotaTotal);
+    });
+    var keyDays={1:1,8:1,15:1,22:1,29:1},vals=[],labs=[];
+    for(var d=1;d<=dim;d++){vals.push(Math.round(byDay[d]||0));labs.push(keyDays[d]?String(d):'');}
+    return {values:vals,labels:labs};
+  },[pays]);
   // KPIs (v1.9.x — diferenciados sin redundancia: ORIGINAL (historico) vs PENDIENTE (actual))
   var kpis=[
     {icon:'briefcase',label:'Capital Original',val:fmt(capOriginal),sub:'Total prestado · '+activos.length+' activo'+(activos.length===1?'':'s'),accent:'blue'},
-    {icon:'dollar',   label:'Cobros del Mes',val:fmt(metrics.recibido),sub:pct+'% de $'+fmtN(metrics.esperado)+' esperado',accent:'green'},
+    {icon:'dollar',   label:'Cobros del Mes',val:fmt(metrics.recibido),sub:pct+'% de $'+fmtN(metrics.esperado)+' esperado',accent:'green',spark:sparkCobros,sparkColor:'var(--green)'},
     {icon:'clock',    label:'Saldo Pendiente',val:fmt(metrics.totalCartera),sub:'Capital por recuperar (actual)',accent:'yellow'},
-    {icon:'trending', label:'Ganancias',val:fmt(metrics.totalInteresesRecibidos),sub:'Historico total',accent:'green'}
+    {icon:'trending', label:'Ganancias',val:fmt(metrics.totalInteresesRecibidos),sub:'Historico total',accent:'green',spark:sparkGanancias,sparkColor:'var(--green)'}
   ];
   // Acciones rapidas
   var quickActions=[
@@ -1463,13 +1577,16 @@ function DashView(props){
     // ── KPI CARDS (2x2 grid) ────────────────────────────────────────────
     h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:14}},
       kpis.map(function(k){
-        return h('div',{key:k.label,style:{background:'var(--bg2)',borderRadius:14,padding:'14px',border:'1px solid var(--border)',boxShadow:'var(--shadow)',transition:'all .15s'}},
-          h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
+        return h('div',{key:k.label,style:{position:'relative',overflow:'hidden',background:'var(--bg2)',borderRadius:14,padding:'14px',border:'1px solid var(--border)',boxShadow:'var(--shadow)',transition:'all .15s',minHeight:120}},
+          h('div',{style:{position:'relative',zIndex:1,display:'flex',alignItems:'center',gap:8,marginBottom:10}},
             h('div',{style:{width:32,height:32,borderRadius:9,background:'var(--'+k.accent+'-bg)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},
               h(Ico,{name:k.icon,size:16,color:'var(--'+k.accent+')',sw:2.2})),
             h('div',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',letterSpacing:.6,textTransform:'uppercase'}},k.label)),
-          h('div',{className:'mono',style:{fontSize:17,fontWeight:700,color:'var(--text)',letterSpacing:-.3,lineHeight:1.1}},k.val),
-          h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4}},k.sub));
+          h('div',{style:{position:'relative',zIndex:1,maxWidth:k.spark?'calc(100% - 314px)':'none'}},
+            h('div',{className:'mono',style:{fontSize:17,fontWeight:700,color:'var(--text)',letterSpacing:-.3,lineHeight:1.1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},k.val),
+            h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},k.sub)),
+          k.spark&&h('div',{style:{position:'absolute',right:16,bottom:10,zIndex:0,pointerEvents:'none'}},
+            h(SparklineChart,{data:k.spark.values,labels:k.spark.labels,color:k.sparkColor||'var(--green)',id:k.label,width:298,height:98})));
       })),
     // ── ACCIONES RAPIDAS (4 cols grid) ──────────────────────────────────
     h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}},
@@ -1488,24 +1605,29 @@ function DashView(props){
     // ── RECAUDO DEL MES (progress bar collapsible) ──────────────────────
     // v1.9.x — si pct > 100 (se supero la meta gracias a mora recuperada), la barra se capa
     // visualmente al 100% pero el % real se renderiza y se cambia el color a dorado.
-    metrics.esperado>0&&function(){
-      var sobrecumplido=pct>100;
+    hayReg&&function(){
+      var sobrecumplido=hayMeta&&pctMes>100;
       var barGradient=sobrecumplido?'linear-gradient(90deg,#bb8009,var(--yellow))':'linear-gradient(90deg,#2ea043,#3fb950)';
-      var pctColor=sobrecumplido?'var(--yellow)':'var(--green)';
+      var pctColor=sobrecumplido?'var(--yellow)':hayMeta?'var(--green)':'var(--text3)';
       return h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'13px 14px',border:'1px solid '+(sobrecumplido?'var(--yellow)':'var(--border)'),marginBottom:16,transition:'border-color .3s'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,cursor:'pointer'},onClick:function(){setRecaudoOpen(!recaudoOpen);}},
-          h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-            h('span',{style:{fontWeight:600,fontSize:14,color:'var(--text)'}},'Recaudo del mes'),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,gap:8}},
+          h('div',{onClick:function(){setRecaudoOpen(!recaudoOpen);},style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',minWidth:0}},
+            h('span',{style:{fontWeight:600,fontSize:14,color:'var(--text)'}},'Recaudo'),
             sobrecumplido&&h('span',{style:{fontSize:10,fontWeight:700,color:'var(--yellow)',background:'var(--yellow-bg)',padding:'2px 7px',borderRadius:99,letterSpacing:.4}},'META SUPERADA'),
             h(Ico,{name:recaudoOpen?'chevron-up':'chevron-down',size:14,color:'var(--text3)',sw:2})),
-          h('span',{className:'mono',style:{fontWeight:700,fontSize:16,color:pctColor,transition:'color .3s'}},pct+'%')),
+          h('div',{style:{display:'flex',alignItems:'center',gap:10,flexShrink:0}},
+            h('div',{onClick:function(e){e.stopPropagation();},style:{display:'inline-flex',alignItems:'center',gap:1,background:'var(--bg4)',borderRadius:99,padding:'2px 3px'}},
+              h('button',{onClick:function(e){e.stopPropagation();shiftMonth(-1);},title:'Mes anterior',style:{display:'flex',alignItems:'center',background:'none',border:'none',cursor:'pointer',padding:3,borderRadius:99,fontFamily:'inherit'}},h(Ico,{name:'chevleft',size:14,color:'var(--blue)',sw:2.5})),
+              h('span',{style:{fontSize:12,fontWeight:700,color:'var(--blue)',minWidth:108,textAlign:'center',userSelect:'none'}},selMonthLabel),
+              h('button',{onClick:function(e){e.stopPropagation();shiftMonth(1);},title:'Mes siguiente',style:{display:'flex',alignItems:'center',background:'none',border:'none',cursor:'pointer',padding:3,borderRadius:99,fontFamily:'inherit'}},h(Ico,{name:'chevright',size:14,color:'var(--blue)',sw:2.5}))),
+            h('span',{className:'mono',style:{fontWeight:700,fontSize:16,color:pctColor,transition:'color .3s'}},pctTxt))),
         h('div',{style:{height:8,background:'var(--bg4)',borderRadius:99,overflow:'hidden'}},
-          h('div',{style:{height:'100%',width:Math.min(pct,100)+'%',maxWidth:'100%',background:barGradient,borderRadius:99,transition:'width .6s ease, background .3s'}})),
+          h('div',{style:{height:'100%',width:(hayMeta?Math.min(pctMes,100):0)+'%',maxWidth:'100%',background:barGradient,borderRadius:99,transition:'width .6s ease, background .3s'}})),
         h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:12,color:'var(--text3)'}},
-          h('span',null,'Recibido: '+fmt(metrics.recibido)),
-          h('span',null,'Esperado mes: '+fmt(metrics.esperado))),
-      recaudoOpen&&metrics.recaudoList.length>0&&h('div',{style:{marginTop:12,borderTop:'1px solid var(--border)',paddingTop:10}},
-        metrics.recaudoList.map(function(p,i){
+          h('span',null,'Recibido: '+fmt(recaudoMes.recibido)),
+          h('span',null,hayMeta?('Esperado: '+fmt(recaudoMes.esperado)):'Sin vencimientos este mes')),
+      recaudoOpen&&recaudoMes.list.length>0&&h('div',{style:{marginTop:12,borderTop:'1px solid var(--border)',paddingTop:10}},
+        recaudoMes.list.map(function(p,i){
           var pl=loanMap[p.prestamoId];
           var isU=pl&&pl.moneda==='USD';
           var pagado=p.estadoPago==='Pagado';
@@ -1723,8 +1845,10 @@ function CarteraView(props){
                 loan.estado==='Activo'&&onForceClose&&h('button',{onClick:function(){onForceClose(loan);},title:'Cerrar prestamo (forzar)',style:{padding:7,background:'var(--yellow-bg)',border:'none',borderRadius:8,cursor:'pointer',display:'flex'}},h(Ico,{name:'xCircle',size:14,color:'var(--yellow)',sw:1.8})),
                 h('button',{onClick:function(){onEdit(loan);},title:'Editar',style:{padding:7,background:'var(--blue-bg)',border:'none',borderRadius:8,cursor:'pointer',display:'flex'}},h(Ico,{name:'edit',size:14,color:'var(--blue)',sw:1.8})),
                 h('button',{onClick:function(){onDelete(loan.id);},title:'Eliminar prestamo',style:{padding:7,background:'var(--red-bg)',border:'none',borderRadius:8,cursor:'pointer',display:'flex'}},h(Ico,{name:'trash',size:14,color:'var(--red)',sw:1.8})))),
-            lp.length>0&&(loan.modalidad==='Intereses'?h('div',{style:{marginTop:10,fontSize:10,color:'var(--text3)'}},paid+' cuotas pagadas \u2022 \u221E'):h('div',{style:{marginTop:10,height:5,background:'var(--bg4)',borderRadius:99,overflow:'hidden'}},
-              h('div',{style:{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#2ea043,#3fb950)',borderRadius:99}}))),
+            lp.length>0&&(loan.modalidad==='Intereses'?h('div',{style:{marginTop:10,fontSize:10,color:'var(--text3)'}},paid+' cuotas pagadas \u2022 \u221E'):h('div',{style:{marginTop:10,display:'flex',alignItems:'center',gap:8}},
+              h('div',{style:{flex:1,height:5,background:'var(--bg4)',borderRadius:99,overflow:'hidden'}},
+                h('div',{style:{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#2ea043,#3fb950)',borderRadius:99}})),
+              h('span',{className:'mono',style:{fontSize:15,fontWeight:700,color:'var(--green)',flexShrink:0,minWidth:42,textAlign:'right'}},pct+'%'))),
             h('button',{onClick:function(){setExp(isExp?null:loan.id);},style:{marginTop:8,background:'none',border:'none',cursor:'pointer',color:'var(--green)',fontSize:12,fontWeight:600,display:'flex',alignItems:'center',gap:4,padding:0}},
               isExp?'Ocultar cronograma':'Ver cronograma')),
           isExp&&function(){
