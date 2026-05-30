@@ -1,6 +1,6 @@
 {
   "name": "cartera-prestamos",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "Gestión de cartera de préstamos personales",
   "main": "desktop/main.js",
   "scripts": {

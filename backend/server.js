@@ -91,6 +91,9 @@ module.exports = function createApp(dbPath) {
   try { db.exec('ALTER TABLE payments ADD COLUMN montoUSDRecibido REAL DEFAULT 0'); } catch(_){}
   // Pagos parciales: acumulado recibido antes de completar la cuota
   try { db.exec('ALTER TABLE payments ADD COLUMN partialPaid REAL DEFAULT 0'); } catch(_){}
+  // v1.11.1: timestamp real (YYYY-MM-DD HH:MM:SS) de cuando se marco Pagado. Permite ordenar
+  // "Transacciones recientes" por HORA exacta y no solo por fecha de recaudo (que empata el mismo dia).
+  try { db.exec('ALTER TABLE payments ADD COLUMN paidAt TEXT'); } catch(_){}
   // Renombrar modalidad legacy
   try { db.exec("UPDATE loans SET modalidad = 'Intereses' WHERE modalidad = 'Solo Intereses'"); } catch(_){}
   // Migración: frecuencia de pago
@@ -660,8 +663,14 @@ module.exports = function createApp(dbPath) {
     if (estadoPago === 'Pagado' && payBefore) newPartial = payBefore.cuotaTotal;
     else if ((estadoPago === 'Pendiente' || estadoPago === 'En Mora') && payBefore) newPartial = 0;
     else newPartial = payBefore ? (payBefore.partialPaid || 0) : 0;
-    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=? WHERE id=?')
-      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, montoUSDRecibido || 0, newPartial, req.params.id);
+    // v1.11.1: paidAt = hora real del marcado. Se conserva si ya estaba pagado; se limpia al revertir.
+    const nowTs = db.prepare("SELECT datetime('now','localtime') AS t").get().t;
+    let newPaidAt;
+    if (estadoPago === 'Pagado') newPaidAt = (payBefore && payBefore.paidAt) ? payBefore.paidAt : nowTs;
+    else if (estadoPago === 'Pendiente' || estadoPago === 'En Mora') newPaidAt = null;
+    else newPaidAt = payBefore ? (payBefore.paidAt || null) : null;
+    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, paidAt=? WHERE id=?')
+      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, montoUSDRecibido || 0, newPartial, newPaidAt, req.params.id);
     if (payBefore) {
       const label = estadoPago === 'Pagado' ? 'Registraste pago' : estadoPago === 'En Mora' ? 'Marcaste en mora' : 'Revertiste a pendiente';
       logAction.run('pago', label + ': ' + payBefore.nombreCliente + ' cuota #' + payBefore.cuotaN + ' por $' + Math.round(payBefore.cuotaTotal).toLocaleString());
@@ -724,7 +733,7 @@ module.exports = function createApp(dbPath) {
     if (completa) {
       // Completa la cuota: marcar Pagado
       const usdAcum = (pay.montoUSDRecibido || 0) + (+montoUSD || 0);
-      db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=? WHERE id=?')
+      db.prepare("UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, paidAt=datetime('now','localtime') WHERE id=?")
         .run('Pagado', fechaPago, obsCombinada, pay.cuotaTotal, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, req.params.id);
       logAction.run('pago', 'Pago parcial final: ' + pay.nombreCliente + ' cuota #' + pay.cuotaN + ' $' + montoNum.toLocaleString() + ' (completo $' + Math.round(pay.cuotaTotal).toLocaleString() + ')');
 
@@ -880,11 +889,12 @@ module.exports = function createApp(dbPath) {
         partialPaid: 0,
         extraConsolidado: 0
       });
+      db.prepare("UPDATE payments SET paidAt = datetime('now','localtime') WHERE id = ?").run(abonoId);
 
       if (nuevoSaldo <= 0) {
         // Capital saldado
         if (liquidar) {
-          db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ? WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaAbono, req.params.id);
+          db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ?, paidAt = datetime('now','localtime') WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaAbono, req.params.id);
           db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ?").run(req.params.id);
         } else {
           const moraRestante = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora'").get(req.params.id);

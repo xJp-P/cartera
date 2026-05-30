@@ -12,7 +12,7 @@
     --green:#3fb950;--green2:#238636;--green-bg:#0f2b19;--green-bd:#1b4332;
     --blue:#58a6ff;--blue-bg:#0d2040;--blue-bd:#1d3a6e;
     --red:#f85149;--red-bg:#2d1117;--red-bd:#5c1b18;
-    --yellow:#d29922;--yellow-bg:#2b2005;
+    --yellow:#d29922;--yellow-bg:#2b2005;--gold:#e3b341;
     --shadow:0 1px 6px rgba(0,0,0,.5);
   }
   [data-theme="light"]{
@@ -22,7 +22,7 @@
     --green:#1a7f37;--green2:#1a7f37;--green-bg:#dafbe1;--green-bd:#aceebb;
     --blue:#0969da;--blue-bg:#ddf4ff;--blue-bd:#b6e3ff;
     --red:#cf222e;--red-bg:#ffebe9;--red-bd:#ffcecb;
-    --yellow:#9a6700;--yellow-bg:#fff8c5;
+    --yellow:#9a6700;--yellow-bg:#fff8c5;--gold:#bf8700;
     --shadow:0 1px 6px rgba(0,0,0,.1);
   }
   .tooltip-wrap{position:relative}
@@ -909,6 +909,12 @@ function App(){
       'Cartera: cada barra de progreso ahora muestra el porcentaje exacto de avance (ej: 75%) junto a la barra',
       'Inicio: la tarjeta "Recaudo del mes" ahora tiene un selector de meses (‹ Mayo De 2026 ›) para navegar a periodos anteriores o futuros y revisar el recaudo de cada mes, sin afectar el resto del tablero',
       'Inicio: nuevos mini-graficos de tendencia en las tarjetas de KPIs — "Ganancias" muestra los ultimos 6 meses y "Cobros del Mes" la evolucion diaria del mes en curso, con ejes, cuadricula y valores de referencia'
+    ],
+    '1.11.1': [
+      'Inicio: los mini-graficos de Ganancias y Cobros del Mes ahora son interactivos — pasa el cursor sobre un punto para ver el periodo y el monto exacto',
+      'Los puntos con movimiento real se marcan en dorado; los dias o meses sin actividad quedan limpios (pero igual puedes ver su detalle al pasar el cursor)',
+      'La tarjeta "Transacciones recientes" pasa a ser "Transacciones del Mes" y lista todas las transacciones del mes en curso (con scroll si hay muchas)',
+      'Las transacciones del mismo dia se ordenan por la hora real en que las registraste (antes podian aparecer en desorden al compartir la misma fecha)'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1415,11 +1421,12 @@ function App(){
 // Caja ESTRICTA via overflow:hidden. Padding asimetrico: padL deja aire al eje Y y sus
 // etiquetas; padB deja aire al eje X + la fila de meses. Todo cabe dentro de w x hgt.
 function SparklineChart(props){
+  var _hov=useState(null);var hoveredIndex=_hov[0];var setHoveredIndex=_hov[1];
   var data=props.data||[];
   if(data.length<2) return null;
-  var labels=props.labels||[];
+  var labels=props.labels||[],tipLabels=props.tipLabels||[];
   var w=props.width||298,hgt=props.height||98,stroke=props.color||'var(--green)';
-  var padL=32,padR=12,padT=8,padB=22;                 // padB aloja eje X + fila de meses
+  var padL=32,padR=20,padT=16,padB=22;                // padding moderado (el fix real fue z-index): recupera variacion vertical. padB aloja eje X + meses
   var plotL=padL,plotR=w-padR,plotT=padT,plotB=hgt-padB;
   var min=Math.min.apply(null,data),max=Math.max.apply(null,data),flat=max===min,range=(max-min)||1,n=data.length;
   function fmtSpark(v){var a=Math.abs(v);if(a>=1e6)return (v/1e6).toFixed(a>=1e7?0:1).replace(/\.0$/,'')+'M';if(a>=1e3)return Math.round(v/1e3)+'k';return String(Math.round(v));}
@@ -1433,6 +1440,21 @@ function SparklineChart(props){
   var gid='spark-'+String(props.id||'g').replace(/[^a-z0-9]/gi,'');
   var lblStyle={fill:'var(--text3)',fontSize:9,fontFamily:"'Cascadia Code','Consolas',monospace"};
   var hGrid=[0.25,0.5,0.75].map(function(f){return Math.round((plotT+f*(plotB-plotT))*10)/10;});
+  // Tooltip interactivo: geometria del punto activo, anclada para NO salirse de la caja.
+  var dense=n>14,rBase=dense?2:3.4,mono="'Cascadia Code','Consolas',monospace",tip=null;
+  if(hoveredIndex!=null&&pts[hoveredIndex]){
+    var cx=pts[hoveredIndex][0],cy=pts[hoveredIndex][1];
+    var tLab=tipLabels[hoveredIndex]||labels[hoveredIndex]||('#'+(hoveredIndex+1));
+    var tVal=fmt(data[hoveredIndex]);
+    // Anclaje NATIVO con text-anchor (el motor de fuentes resuelve el ancho; sin medir tw).
+    // rect de ancho FIJO; mitad derecha -> tooltip a la IZQ, mitad izq -> a la DER. Auto-acotado.
+    var rightHalf=cx>w/2,anchor=rightHalf?'end':'start',rectW=78,rectH=26;
+    var textX=rightHalf?cx-12:cx+12;
+    var rectX=rightHalf?textX-(rectW-8):textX-5;
+    var rectY=(cy<30)?cy+12:cy-12-rectH;                 // punto alto (cerca del techo) -> tooltip ABAJO; si no, arriba
+    rectY=Math.max(2,Math.min(rectY,hgt-rectH-2));        // clamp vertical (textos relativos a rectY -> sin desync)
+    tip={cx:cx,cy:cy,tLab:tLab,tVal:tVal,anchor:anchor,textX:textX,rectX:rectX,rectW:rectW,rectH:rectH,rectY:rectY};
+  }
   return h('svg',{width:w,height:hgt,viewBox:'0 0 '+w+' '+hgt,style:Object.assign({display:'block',overflow:'hidden'},props.style||{})},
     h('defs',null,
       h('linearGradient',{id:gid,x1:'0',y1:'0',x2:'0',y2:'1'},
@@ -1444,10 +1466,20 @@ function SparklineChart(props){
     h('line',{x1:plotL,y1:plotT,x2:plotL,y2:plotB,stroke:'var(--border)',strokeWidth:1}),
     h('line',{x1:plotL,y1:plotB,x2:plotR,y2:plotB,stroke:'var(--border)',strokeWidth:1}),
     h('path',{d:line,fill:'none',stroke:stroke,strokeWidth:2,strokeLinecap:'round',strokeLinejoin:'round'}),
-    h('circle',{cx:pts[n-1][0],cy:pts[n-1][1],r:2.6,fill:stroke}),
+    tip&&h('line',{x1:tip.cx,y1:tip.cy,x2:tip.cx,y2:plotB,stroke:stroke,strokeWidth:1,strokeDasharray:'2,2',opacity:.55}),
+    pts.map(function(p,i){
+      var act=i===hoveredIndex,on=data[i]>0;   // on = periodo con actividad (>0) -> dorado; si es 0 -> invisible pero interactivo
+      return on
+        ? h('circle',{key:'pt'+i,cx:p[0],cy:p[1],r:act?rBase+2:rBase,fill:'var(--gold)',stroke:'var(--bg2)',strokeWidth:act?1.5:1,opacity:act?1:(dense?.6:.9),pointerEvents:'all',style:{cursor:'pointer'},onMouseEnter:function(){setHoveredIndex(i);},onMouseLeave:function(){setHoveredIndex(null);}})
+        : h('circle',{key:'pt'+i,cx:p[0],cy:p[1],r:dense?3.2:4,fill:'transparent',pointerEvents:'all',style:{cursor:'pointer'},onMouseEnter:function(){setHoveredIndex(i);},onMouseLeave:function(){setHoveredIndex(null);}});
+    }),
     h('text',{x:plotL-4,y:plotT+3,textAnchor:'end',style:lblStyle},fmtSpark(max)),
     h('text',{x:plotL-4,y:plotB,textAnchor:'end',style:lblStyle},fmtSpark(min)),
-    labels.length===n&&pts.map(function(p,i){return labels[i]?h('text',{key:'m'+i,x:p[0],y:plotB+13,textAnchor:'middle',style:lblStyle},labels[i]):null;}));
+    labels.length===n&&pts.map(function(p,i){return labels[i]?h('text',{key:'m'+i,x:p[0],y:plotB+13,textAnchor:'middle',style:lblStyle},labels[i]):null;}),
+    tip&&h('g',{style:{pointerEvents:'none'}},
+      h('rect',{x:tip.rectX,y:tip.rectY,width:tip.rectW,height:tip.rectH,rx:4,ry:4,fill:'var(--bg4)',stroke:'var(--border)',strokeWidth:1}),
+      h('text',{x:tip.textX,y:tip.rectY+10,textAnchor:tip.anchor,style:{fill:'var(--text3)',fontSize:8.5,fontFamily:mono}},tip.tLab),
+      h('text',{x:tip.textX,y:tip.rectY+21,textAnchor:tip.anchor,style:{fill:'var(--text)',fontSize:10,fontWeight:700,fontFamily:mono}},tip.tVal)));
 }
 
 function DashView(props){
@@ -1501,12 +1533,14 @@ function DashView(props){
     var partialPend=lp.filter(function(p){return p.id.indexOf('-ab-')===-1&&p.estadoPago!=='Pagado';}).reduce(function(a,p){return a+(p.partialPaid||0);},0);
     loanSaldoMap[l.id]=Math.max(0,orig-todoCap-partialPend);
   });
-  // Transacciones recientes: ultimos 10 pagos Pagados (cuotas regulares + abonos), por fechaRecaudo desc
-  var recentTxs=pays.filter(function(p){return p.estadoPago==='Pagado'&&(p.fechaRecaudo||p.fechaPago);})
+  // Transacciones del mes: TODOS los pagos Pagados (cuotas regulares + abonos) cuya fecha de recaudo
+  // cae en el mes actual, ordenados por paidAt (hora real) desc. La card tiene scroll interno.
+  var thisMonthTx=nowStr().slice(0,7);
+  var monthTxs=pays.filter(function(p){return p.estadoPago==='Pagado'&&(p.fechaRecaudo||p.fechaPago||'').slice(0,7)===thisMonthTx;})
     .slice().sort(function(a,b){
-      var fa=a.fechaRecaudo||a.fechaPago,fb=b.fechaRecaudo||b.fechaPago;
+      var fa=a.paidAt||a.fechaRecaudo||a.fechaPago,fb=b.paidAt||b.fechaRecaudo||b.fechaPago;
       return fb.localeCompare(fa);
-    }).slice(0,10);
+    });
   // Sparkline "Ganancias": ganancia recibida por mes (ultimos 6 meses), agrupada por fechaRecaudo.
   // Misma definicion de ganancia que el KPI total: USD -> montoCOPRecibido - abonoCapital; COP -> interesPeriodo. Excluye abonos.
   var sparkGanancias=useMemo(function(){
@@ -1518,13 +1552,14 @@ function DashView(props){
       var g=(moneda[p.prestamoId]==='USD'&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-p.abonoCapital):p.interesPeriodo;
       byMonth[ym]=(byMonth[ym]||0)+g;
     });
-    var base=new Date(nowStr()+'T12:00:00'),vals=[],labs=[];
+    var base=new Date(nowStr()+'T12:00:00'),vals=[],labs=[],tips=[];
     for(var i=5;i>=0;i--){
       var d=new Date(base.getFullYear(),base.getMonth()-i,1);
       vals.push(Math.round(byMonth[d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')]||0));
       labs.push(MESES_ES[d.getMonth()].slice(0,3));
+      tips.push(MESES_ES[d.getMonth()].slice(0,3)+' '+d.getFullYear());
     }
-    return {values:vals,labels:labs};
+    return {values:vals,labels:labs,tipLabels:tips};
   },[pays,loans]);
   // Sparkline "Cobros del Mes": evolucion DIARIA del mes EN CURSO (fijo — ignora selMonth).
   // Suma por dia el monto recibido (montoCOPRecibido||cuotaTotal) de cuotas Pagadas con
@@ -1539,9 +1574,10 @@ function DashView(props){
       var dd=parseInt(p.fechaRecaudo.slice(8,10),10);
       byDay[dd]=(byDay[dd]||0)+(p.montoCOPRecibido||p.cuotaTotal);
     });
-    var keyDays={1:1,8:1,15:1,22:1,29:1},vals=[],labs=[];
-    for(var d=1;d<=dim;d++){vals.push(Math.round(byDay[d]||0));labs.push(keyDays[d]?String(d):'');}
-    return {values:vals,labels:labs};
+    var monAb=MESES_ES[mo-1].slice(0,3);
+    var keyDays={1:1,8:1,15:1,22:1,29:1},vals=[],labs=[],tips=[];
+    for(var d=1;d<=dim;d++){vals.push(Math.round(byDay[d]||0));labs.push(keyDays[d]?String(d):'');tips.push(d+' '+monAb);}
+    return {values:vals,labels:labs,tipLabels:tips};
   },[pays]);
   // KPIs (v1.9.x — diferenciados sin redundancia: ORIGINAL (historico) vs PENDIENTE (actual))
   var kpis=[
@@ -1582,11 +1618,11 @@ function DashView(props){
             h('div',{style:{width:32,height:32,borderRadius:9,background:'var(--'+k.accent+'-bg)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},
               h(Ico,{name:k.icon,size:16,color:'var(--'+k.accent+')',sw:2.2})),
             h('div',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',letterSpacing:.6,textTransform:'uppercase'}},k.label)),
-          h('div',{style:{position:'relative',zIndex:1,maxWidth:k.spark?'calc(100% - 314px)':'none'}},
+          h('div',{style:{position:'relative',zIndex:1,maxWidth:k.spark?'calc(100% - 322px)':'none'}},
             h('div',{className:'mono',style:{fontSize:17,fontWeight:700,color:'var(--text)',letterSpacing:-.3,lineHeight:1.1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},k.val),
             h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},k.sub)),
-          k.spark&&h('div',{style:{position:'absolute',right:16,bottom:10,zIndex:0,pointerEvents:'none'}},
-            h(SparklineChart,{data:k.spark.values,labels:k.spark.labels,color:k.sparkColor||'var(--green)',id:k.label,width:298,height:98})));
+          k.spark&&h('div',{style:{position:'absolute',right:16,bottom:10,zIndex:3}},
+            h(SparklineChart,{data:k.spark.values,labels:k.spark.labels,tipLabels:k.spark.tipLabels,color:k.sparkColor||'var(--green)',id:k.label,width:298,height:98})));
       })),
     // ── ACCIONES RAPIDAS (4 cols grid) ──────────────────────────────────
     h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}},
@@ -1733,17 +1769,17 @@ function DashView(props){
                   isU&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',marginTop:1}},copToUsd(val,pl.trmAcordada)),
                   saldoL>0&&h('div',{className:'mono',style:{fontSize:10,fontWeight:400,color:'var(--text3)',marginTop:3}},'Saldo: '+fmt(saldoL))));
             }))),
-      // ── TRANSACCIONES RECIENTES ───────────────────────────────────────
+      // ── TRANSACCIONES DEL MES ─────────────────────────────────────────
       h('div',{className:'dash-card',style:{background:'var(--bg2)',border:'1px solid var(--border)',boxShadow:'var(--shadow)'}},
         h('div',{className:'dash-card-header'},
           h('div',{style:{display:'flex',alignItems:'center',gap:6}},
             h(Ico,{name:'activity',size:14,color:'var(--green)',sw:2.2}),
-            h('span',{style:{fontSize:14,fontWeight:700,color:'var(--text)'}},'Transacciones recientes')),
+            h('span',{style:{fontSize:14,fontWeight:700,color:'var(--text)'}},'Transacciones del Mes')),
           h('button',{onClick:function(){onNav('historial');},style:{fontSize:12,color:'var(--text3)',fontWeight:600,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}},'Ver historial →')),
         h('div',{className:'dash-list-body'},
-          recentTxs.length===0
-            ? emptyMsg('Aún no hay transacciones recientes.')
-            : recentTxs.map(function(p,i){
+          monthTxs.length===0
+            ? emptyMsg('Sin transacciones este mes.')
+            : monthTxs.map(function(p,i){
                 var pl=loanMap[p.prestamoId];var isU=pl&&pl.moneda==='USD';
                 var esAbono=p.id&&p.id.indexOf('-ab-')!==-1;
                 var monto=p.montoCOPRecibido||p.cuotaTotal;
