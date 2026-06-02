@@ -193,9 +193,9 @@ function sendUpdateStatus(status, info) {
   // v1.9.2: si el splash esta activo y la ventana principal aun no — rutear al splash
   if (splashWin && !splashWin.isDestroyed() && (!mainWin || mainWin.isDestroyed())) {
     if (status === 'downloading') {
-      updateSplashMessage('Descargando v' + (info.version || macUpdateVersion || '') + '...', info.percent);
+      updateSplashMessage('Descargando v' + (info.version || macUpdateVersion || ''), info.percent);
     } else if (status === 'downloaded') {
-      updateSplashMessage('Listo. Reiniciando para instalar...');
+      updateSplashMessage('Listo. Reiniciando para instalar');
     } else if (status === 'error') {
       updateSplashMessage('Error: ' + (info.message || 'desconocido'));
     }
@@ -402,11 +402,12 @@ function createSplashWindow() {
     + 'h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px;}'
     + 'p#msg,p#offlineMsg{font-size:13px;color:#8b949e;margin:8px 0 0;'
     + 'text-align:center;padding:0 8px;line-height:1.5;}'
-    + '.bar{width:280px;height:5px;background:#21262d;border-radius:99px;'
-    + 'margin-top:14px;overflow:hidden;display:none;}'
-    + '.bar.show{display:block;}'
+    + '.barwrap{display:none;align-items:center;gap:8px;margin-top:14px;}'
+    + '.barwrap.show{display:flex;}'
+    + '.bar{width:248px;height:5px;background:#21262d;border-radius:99px;overflow:hidden;}'
     + '.bar-fill{height:100%;background:linear-gradient(90deg,#2ea043,#3fb950);'
     + 'width:0%;transition:width .3s ease;border-radius:99px;}'
+    + "#pct{font-size:12px;color:#8b949e;font-family:'Cascadia Code','Consolas',monospace;min-width:34px;text-align:right;}"
     + 'small{font-size:11px;color:#6e7681;margin-top:14px;}'
     + '.warn-icon{font-size:36px;line-height:1;margin-bottom:12px;color:#d29922;}'
     + '.btns{display:flex;gap:8px;margin-top:18px;-webkit-app-region:no-drag;}'
@@ -422,8 +423,8 @@ function createSplashWindow() {
     + '<div class="countdown" id="countdown">60s</div>'
     + '<div class="spinner"></div>'
     + '<h1>Cartera de Préstamos</h1>'
-    + '<p id="msg">Buscando actualizaciones...</p>'
-    + '<div class="bar" id="bar"><div class="bar-fill" id="fill"></div></div>'
+    + '<p id="msg">Buscando actualizaciones</p>'
+    + '<div class="barwrap" id="barwrap"><div class="bar" id="bar"><div class="bar-fill" id="fill"></div></div><span id="pct"></span></div>'
     + '<small>v' + version + '</small>'
     + '</div>'
     + '<div id="vOffline" class="view hidden">'
@@ -460,16 +461,14 @@ function updateSplashMessage(msg, percent) {
   if (!splashWin || splashWin.isDestroyed()) return;
   const showBar = typeof percent === 'number';
   const pctClamped = Math.min(100, Math.max(0, percent || 0));
-  // v1.9.5: cuando hay percent numerico, concatenar ' XX%' al msg para que se vea
-  // visualmente ademas de la barra (ej: "Descargando v1.9.5... 45%").
-  const msgWithPct = showBar ? (String(msg || '') + ' ' + pctClamped + '%') : String(msg || '');
-  const safe = msgWithPct.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  // v1.11.2: el % se muestra JUNTO a la barra (#pct), ya NO concatenado al mensaje (evita ruido visual).
+  const safe = String(msg || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const code = `
     (function(){
       var m = document.getElementById('msg'); if (m) m.textContent = '${safe}';
-      var b = document.getElementById('bar'); var f = document.getElementById('fill');
-      if (b && f) {
-        ${showBar ? "b.classList.add('show'); f.style.width = '" + pctClamped + "%';" : "b.classList.remove('show');"}
+      var w = document.getElementById('barwrap'); var f = document.getElementById('fill'); var p = document.getElementById('pct');
+      if (w && f) {
+        ${showBar ? "w.classList.add('show'); f.style.width = '" + pctClamped + "%'; if(p) p.textContent = '" + pctClamped + "%';" : "w.classList.remove('show'); if(p) p.textContent = '';"}
       }
     })();
   `;
@@ -629,7 +628,7 @@ async function macDownloadAndInstallAtBoot(version) {
   const zipPath = path.join(tmpDir, 'update.zip');
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  updateSplashMessage('Descargando v' + version + '...', 0);
+  updateSplashMessage('Descargando v' + version, 0);
 
   await new Promise((resolve, reject) => {
     httpsGet(zipUrl).then((res) => {
@@ -638,7 +637,7 @@ async function macDownloadAndInstallAtBoot(version) {
       const file = fs.createWriteStream(zipPath);
       res.on('data', (chunk) => {
         downloaded += chunk.length;
-        if (total > 0) updateSplashMessage('Descargando v' + version + '...', Math.round((downloaded/total)*100));
+        if (total > 0) updateSplashMessage('Descargando v' + version, Math.round((downloaded/total)*100));
       });
       res.pipe(file);
       file.on('finish', () => { file.close(); resolve(); });
@@ -646,7 +645,7 @@ async function macDownloadAndInstallAtBoot(version) {
     }).catch(reject);
   });
 
-  updateSplashMessage('Instalando v' + version + '...', 100);
+  updateSplashMessage('Instalando v' + version, 100);
   execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
   const extractedApp = path.join(tmpDir, 'Cartera de Prestamos.app');
   if (!fs.existsSync(extractedApp)) throw new Error('No se encontro la app en el zip');
@@ -678,7 +677,7 @@ app.whenReady().then(async () => {
 
   if (decision === 'install') {
     // FASE 4a: hay update — instalar SIN tocar BD
-    updateSplashMessage('Actualizacion v' + macUpdateVersion + ' encontrada. Descargando...', 0);
+    updateSplashMessage('Descargando v' + macUpdateVersion, 0);
     try {
       if (process.platform === 'darwin') {
         await macDownloadAndInstallAtBoot(macUpdateVersion);
@@ -686,10 +685,10 @@ app.whenReady().then(async () => {
       } else {
         await new Promise((resolve, reject) => {
           autoUpdater.on('download-progress', (prog) => {
-            updateSplashMessage('Descargando v' + macUpdateVersion + '...', Math.round(prog.percent));
+            updateSplashMessage('Descargando v' + macUpdateVersion, Math.round(prog.percent));
           });
           autoUpdater.once('update-downloaded', () => {
-            updateSplashMessage('Instalando v' + macUpdateVersion + '...');
+            updateSplashMessage('Instalando v' + macUpdateVersion);
             setTimeout(() => autoUpdater.quitAndInstall(false, true), 1000);
             // app sale, no se resuelve
           });
@@ -725,7 +724,7 @@ app.whenReady().then(async () => {
   }
 
   // FASE 4b: sin update (skip, timeout-continue, o continue tras error de descarga) — arranque normal
-  updateSplashMessage('Iniciando aplicacion...');
+  updateSplashMessage('Iniciando');
   // Volver a vista loading si veniamos de la vista offline o de la vista de error de descarga
   if (splashWin && !splashWin.isDestroyed()) {
     splashWin.webContents.executeJavaScript(`
