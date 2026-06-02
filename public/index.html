@@ -209,7 +209,19 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     var cmp = a.fechaPago.localeCompare(b.fechaPago);
     return cmp !== 0 ? cmp : a.cuotaN - b.cuotaN;
   });
-  var freqLabel = loan.frecuencia === 'Semanal' ? 'Semanal' : loan.frecuencia === 'Quincenal' ? 'Quincenal' : 'Mensual';
+  // Pago Unico: la "frecuencia" base (Mensual) confunde -> se fuerza a "Pago Unico"
+  var freqLabel = loan.modalidad === 'Pago Unico' ? 'Pago Unico' : (loan.frecuencia === 'Semanal' ? 'Semanal' : loan.frecuencia === 'Quincenal' ? 'Quincenal' : 'Mensual');
+  // Fecha de finalizacion = fecha programada de la ultima cuota (Indefinido para modalidad Intereses)
+  var fechaFinPrestamo = loan.modalidad === 'Intereses' ? null : (cuotasAll.length ? cuotasAll.reduce(function(mx, p){ return p.fechaPago > mx ? p.fechaPago : mx; }, '') : null);
+  // Tasa: Pago Unico imprime la ganancia pactada como % del capital; el resto, su tasa mensual
+  var capCOPpdf = esUSD ? Math.round(loan.montoOrigen * trm) : Math.round(loan.montoOrigen);
+  var tasaPdfRow;
+  if (loan.modalidad === 'Pago Unico') {
+    var puPct = (loan.gananciaFija > 0 && capCOPpdf > 0) ? (Math.round(loan.gananciaFija / capCOPpdf * 1000) / 10) : (loan.tasaMensual || 0);
+    tasaPdfRow = '<div class="row"><span class="label">Tasa</span><span class="value">' + puPct + '% (ganancia pactada)</span></div>';
+  } else {
+    tasaPdfRow = loan.tasaMensual > 0 ? '<div class="row"><span class="label">Tasa</span><span class="value">' + loan.tasaMensual + '% mensual</span></div>' : '';
+  }
   var html = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cronograma de Pagos</title>',
     '<style>',
@@ -270,8 +282,9 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     '<div class="row"><span class="label">Monto prestado</span><span class="value">' + (esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) + '</span></div>',
     '<div class="row"><span class="label">Modalidad</span><span class="value">' + loan.modalidad + '</span></div>',
     '<div class="row"><span class="label">Frecuencia</span><span class="value">' + freqLabel + '</span></div>',
-    loan.tasaMensual > 0 ? '<div class="row"><span class="label">Tasa</span><span class="value">' + loan.tasaMensual + '% mensual</span></div>' : '',
+    tasaPdfRow,
     '<div class="row"><span class="label">Fecha inicio</span><span class="value">' + fmtD(loan.fechaInicio) + '</span></div>',
+    '<div class="row"><span class="label">Fecha de finalizacion</span><span class="value">' + (loan.modalidad === 'Intereses' ? 'Indefinido' : (fechaFinPrestamo ? fmtD(fechaFinPrestamo) : '—')) + '</span></div>',
     loan.modalidad !== 'Intereses' ? '<div class="row"><span class="label">Cuotas</span><span class="value">' + cuotas.length + '</span></div>' : '',
     '</div>',
     '<div class="section">',
@@ -359,6 +372,12 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   var trm = loan.trmAcordada || 1;
   // Para USD: mostrar solo dolares; para COP: mostrar pesos
   var fv = esUSD ? function(cop) { return copToUsd(cop, trm); } : fmt;
+  // ¿Este pago liquida el prestamo? = pago completo (no parcial), modalidad con fin definido (no Intereses)
+  // y no queda NINGUNA otra cuota regular sin pagar. allPays es snapshot pre-pago: excluimos este pay y miramos el resto.
+  var otrasRegPend = Array.isArray(allPays) ? allPays.filter(function(p){
+    return p.prestamoId === loan.id && p.id.indexOf('-ab-') === -1 && p.id !== pay.id && p.estadoPago !== 'Pagado';
+  }) : null;
+  var esLiquidacion = !esParcial && loan.modalidad !== 'Intereses' && otrasRegPend !== null && otrasRegPend.length === 0;
   var html = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo de Pago</title>',
     '<style>',
@@ -419,6 +438,10 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="amount">' + (esUSD && usdRec ? fmtUSD(usdRec) : fv(montoRecibido)) + '</div>',
     esUSD && usdRec ? '<div class="sub">' + fv(montoRecibido) + ' COP</div>' : '',
     '</div>',
+    esLiquidacion ? '<div style="margin:16px 0;padding:14px 16px;background:' + (dark ? '#0f2b19' : '#dafbe1') + ';border:1px solid ' + (dark ? '#1b4332' : '#aceebb') + ';border-radius:8px;text-align:center">' +
+      '<div style="font-size:15px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + '">¡Felicidades! Ha cancelado la totalidad de su prestamo</div>' +
+      '<div style="font-size:11px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:3px">Con este pago se salda el 100% del prestamo. ¡Gracias por tu cumplimiento!</div>' +
+      '</div>' : '',
     esParcial ? '<div class="section"><div class="section-title">Estado de la cuota</div>' +
       '<div class="row"><span class="label">Total cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>' +
       '<div class="row"><span class="label">Total abonado (con este pago)</span><span class="value">' + fv(totalAcum) + '</span></div>' +
@@ -918,6 +941,13 @@ function App(){
     ],
     '1.11.2': [
       'Pantalla de carga mas prolija: textos sin puntos suspensivos y, durante una actualizacion, el porcentaje de descarga ahora se muestra junto a la barra de progreso'
+    ],
+    '1.11.3': [
+      'Nuevo prestamo: ahora puedes asignar el credito a un cliente que ya existe — un buscador te deja elegirlo por nombre sin volver a escribir sus datos',
+      'Calculadora de dolares: nuevo campo "Total pagado en COP" que calcula la tasa de cambio automaticamente (en el modo simple y en el desglose de varias compras)',
+      'Inicio: la grafica de tendencia de "Ganancias" ahora muestra los ultimos 12 meses (antes 6)',
+      'Cronograma PDF: ahora incluye la fecha de finalizacion del prestamo; para "Pago Unico" imprime la tasa/ganancia pactada y la frecuencia correcta (antes mostraba "Mensual")',
+      'Recibo PDF: cuando un pago cancela la totalidad del prestamo, el recibo muestra un mensaje de felicitaciones'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1349,7 +1379,7 @@ function App(){
       view==='historial'   && h(HistorialView,{actLog:actLog,onRefresh:function(){fetch('/api/activity').then(function(r){return r.json();}).then(function(data){setActLog(data);showToast('Historial actualizado');});}}),
       view==='desarrollador'&& h(DevView,  {showToast:showToast,isMac:isMac,onNeedsRestart:function(){setNeedsRestart(true);},onSync:recalculate,onConfirm:function(cfg){setConfirmDlg(cfg);}}))
     ), /* end main-area */
-    loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,pays:pays,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
+    loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,pays:pays,clientes:deudores,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
     payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onPartial:markPartial,onClose:function(){setPayModal(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);}}),
     debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onReestructurar:function(l){var dRef=debtorModal;setDebtorModal(null);setRestructureModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');registrarAbono(loanId,monto,nowStr(),obs,0,true);setDebtorModal(null);},onReload:reload}),
@@ -1544,7 +1574,7 @@ function DashView(props){
       var fa=a.paidAt||a.fechaRecaudo||a.fechaPago,fb=b.paidAt||b.fechaRecaudo||b.fechaPago;
       return fb.localeCompare(fa);
     });
-  // Sparkline "Ganancias": ganancia recibida por mes (ultimos 6 meses), agrupada por fechaRecaudo.
+  // Sparkline "Ganancias": ganancia recibida por mes (ultimos 12 meses), agrupada por fechaRecaudo.
   // Misma definicion de ganancia que el KPI total: USD -> montoCOPRecibido - abonoCapital; COP -> interesPeriodo. Excluye abonos.
   var sparkGanancias=useMemo(function(){
     var moneda={};loans.forEach(function(l){moneda[l.id]=l.moneda;});
@@ -1556,11 +1586,13 @@ function DashView(props){
       byMonth[ym]=(byMonth[ym]||0)+g;
     });
     var base=new Date(nowStr()+'T12:00:00'),vals=[],labs=[],tips=[];
-    for(var i=5;i>=0;i--){
+    for(var i=11;i>=0;i--){
       var d=new Date(base.getFullYear(),base.getMonth()-i,1);
+      var ab=MESES_ES[d.getMonth()].slice(0,3);
       vals.push(Math.round(byMonth[d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')]||0));
-      labs.push(MESES_ES[d.getMonth()].slice(0,3));
-      tips.push(MESES_ES[d.getMonth()].slice(0,3)+' '+d.getFullYear());
+      // 12 meses: etiqueta X cada 2 (incluye el mes actual) para no amontonar; el tooltip los tiene todos
+      labs.push((vals.length-1)%2===1 ? ab : '');
+      tips.push(ab+' '+d.getFullYear());
     }
     return {values:vals,labels:labs,tipLabels:tips};
   },[pays,loans]);
@@ -3600,13 +3632,33 @@ function LoanModal(props){
   var f=fs[0]; var setF=fs[1];
   var isNew=!loan||!!loan._prefill||!!loan._calcPrefill;
   function set(k,v){setF(function(p){var n=Object.assign({},p);n[k]=v;return n;});}
+  // v1.11.x — Selector "Cliente nuevo / existente" (solo al dar de alta un prestamo). La app asocia por
+  // NOMBRE (no hay persona_id): elegir un cliente existente reusa su nombre/cedula/telefono y el backend
+  // lo consolida en el mismo perfil (identico a crear el prestamo desde el perfil del deudor).
+  var clientes=props.clientes||[];
+  var cmS=useState(prefill.nombre?'existente':'nuevo'); var clientMode=cmS[0]; var setClientMode=cmS[1];
+  var cqS=useState(prefill.nombre||''); var clientQuery=cqS[0]; var setClientQuery=cqS[1];
+  var coS=useState(false); var clientOpen=coS[0]; var setClientOpen=coS[1];
+  function switchClientMode(mode){
+    if(mode===clientMode) return;
+    setClientMode(mode); setClientQuery(''); setClientOpen(false);
+    setF(function(p){return Object.assign({},p,{nombre:'',cedula:'',telefono:''});}); // limpia residuales al cambiar
+  }
+  function pickCliente(c){
+    setF(function(p){return Object.assign({},p,{nombre:c.nombre,cedula:c.cedula||'',telefono:c.telefono||''});});
+    setClientQuery(c.nombre); setClientOpen(false);
+  }
+  var clienteQNorm=clientQuery.trim().toLowerCase();
+  var clientesMatch=clientes.filter(function(c){return !clienteQNorm||(c.nombre||'').toLowerCase().indexOf(clienteQNorm)!==-1;}).slice(0,8);
   // Compras fraccionadas de USD
   var comprasIniciales=function(){
-    if(loan&&loan.comprasUSD){try{var p=typeof loan.comprasUSD==='string'?JSON.parse(loan.comprasUSD):loan.comprasUSD;if(Array.isArray(p)&&p.length>0)return p;}catch(_){}}
-    return [{monto:'',tasa:''},{monto:'',tasa:''}];
+    if(loan&&loan.comprasUSD){try{var p=typeof loan.comprasUSD==='string'?JSON.parse(loan.comprasUSD):loan.comprasUSD;if(Array.isArray(p)&&p.length>0)return p.map(function(c){return {monto:c.monto,tasa:c.tasa,totalCOP:((+c.monto)>0&&(+c.tasa)>0)?Math.round((+c.monto)*(+c.tasa)):''};});}catch(_){}}
+    return [{monto:'',tasa:'',totalCOP:''},{monto:'',tasa:'',totalCOP:''}];
   };
   var cus=useState(comprasIniciales()); var compras=cus[0]; var setCompras=cus[1];
   var cfs=useState(!!(loan&&loan.comprasUSD&&loan.comprasUSD.length>2)); var compraFrac=cfs[0]; var setCompraFrac=cfs[1];
+  // v1.11.x — "Total pagado en COP" del modo simple: auxiliar de UI (NO se persiste). Init derivado al editar.
+  var tcS=useState(loan&&loan.moneda==='USD'&&(+loan.trmAcordada)>0&&(+loan.montoOrigen)>0?Math.round((+loan.montoOrigen)*(+loan.trmAcordada)):''); var totalCOPInput=tcS[0]; var setTotalCOPInput=tcS[1];
   // Cálculo ponderado en vivo (solo filas con valores válidos)
   var comprasValidas=compras.filter(function(c){return (+c.monto)>0&&(+c.tasa)>0;});
   var totalUSDComprado=comprasValidas.reduce(function(s,c){return s+(+c.monto);},0);
@@ -3618,8 +3670,23 @@ function LoanModal(props){
   var excedeMonto=aplicaFracc&&(+f.montoOrigen||0)>0&&totalUSDComprado>(+f.montoOrigen||0);
   var faltaUSD=aplicaFracc&&(+f.montoOrigen||0)>0&&totalUSDComprado>0&&totalUSDComprado<(+f.montoOrigen||0);
   function setCompra(i,k,v){setCompras(function(prev){var n=prev.slice();n[i]=Object.assign({},n[i]);n[i][k]=v;return n;});}
-  function addCompra(){setCompras(function(prev){return prev.concat([{monto:'',tasa:''}]);});}
+  // Derivacion por fila: monto USD + (tasa | totalCOP) -> calcula el faltante. Todo sincronico (sin useEffect).
+  function setCompraField(i,field,value){
+    setCompras(function(prev){
+      var n=prev.slice(); var row=Object.assign({},n[i]); row[field]=value;
+      var usd=+row.monto||0;
+      if(field==='totalCOP'){ if(usd>0) row.tasa=(+value)>0?Math.round((+value)/usd):''; }
+      else if(field==='tasa'){ if(usd>0) row.totalCOP=(+value)>0?Math.round((+value)*usd):''; }
+      else if(field==='monto'){ if(usd>0){ if((+row.tasa)>0) row.totalCOP=Math.round((+row.tasa)*usd); else if((+row.totalCOP)>0) row.tasa=Math.round((+row.totalCOP)/usd); } }
+      n[i]=row; return n;
+    });
+  }
+  function addCompra(){setCompras(function(prev){return prev.concat([{monto:'',tasa:'',totalCOP:''}]);});}
   function delCompra(i){setCompras(function(prev){if(prev.length<=1)return prev;var n=prev.slice();n.splice(i,1);return n;});}
+  // Modo simple: Tasa <-> Total COP derivados via Capital USD (todo sincronico, sin useEffect -> sin loops)
+  function syncSimpleFromTasa(v){ set('trmAcordada',v); var usd=+f.montoOrigen||0; if(usd>0) setTotalCOPInput((+v)>0?Math.round((+v)*usd):''); }
+  function syncSimpleFromTotal(v){ setTotalCOPInput(v); var usd=+f.montoOrigen||0; if(usd>0) set('trmAcordada',(+v)>0?Math.round((+v)/usd):''); }
+  function syncMonto(raw){ var v=parseNum(raw); set('montoOrigen',v); if(f.moneda==='USD'&&!compraFrac){ var usd=+v||0; if(usd>0){ if((+f.trmAcordada)>0) setTotalCOPInput(Math.round((+f.trmAcordada)*usd)); else if((+totalCOPInput)>0) set('trmAcordada',Math.round((+totalCOPInput)/usd)); } } }
   var esSI=f.modalidad==='Intereses';
   var esUnaCuota=f.modalidad==='Prestamo'||f.modalidad==='Pago Unico'; // v1.10.0: ambas son 1 cuota
   var montoCOP=f.moneda==='USD'?Math.round((+f.montoOrigen||0)*(trmEfectiva||1)):(+f.montoOrigen||0);
@@ -3685,6 +3752,7 @@ function LoanModal(props){
     if(isSubmitting) return; // bloqueo defensivo
     var needsPlazo=f.modalidad==='Capital + Intereses';
     var errores=[];
+    if(isNew&&clientMode==='existente'&&!f.nombre.trim()){_showError('Selecciona un cliente existente de la lista');return;}
     if(!f.nombre.trim()) errores.push('Nombre');
     if(!f.montoOrigen||+f.montoOrigen<=0) errores.push('Monto');
     if(needsPlazo&&(!f.plazoMeses||+f.plazoMeses<=0)) errores.push('Plazo');
@@ -3743,16 +3811,46 @@ function LoanModal(props){
       h('div',{style:{flex:1}},
         h('div',{style:{fontSize:12,color:'var(--yellow)',fontWeight:700,marginBottom:2}},'Algunos campos estan bloqueados'),
         h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4}},'Este prestamo ya registra pagos, abonos o cuotas en mora. Para preservar la integridad del cronograma pactado, los campos que afectan a la amortizacion no se pueden modificar.'))),
-    h(Fld,{label:'Nombre del cliente *'},h('input',{value:f.nombre,onChange:function(e){set('nombre',e.target.value);},placeholder:'Nombre completo',className:'inp',autoFocus:isNew})),
-    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+    // v1.11.x — Toggle "Cliente nuevo / existente" (solo en alta de prestamo)
+    isNew&&h('div',{style:{display:'flex',gap:6,marginBottom:12,background:'var(--bg3)',borderRadius:10,padding:4}},
+      [['nuevo','Cliente nuevo'],['existente','Cliente existente']].map(function(opt){
+        var active=clientMode===opt[0];
+        return h('button',{key:opt[0],type:'button',onClick:function(){switchClientMode(opt[0]);},style:{flex:1,padding:'8px 0',borderRadius:8,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:13,fontWeight:700,background:active?'var(--green2)':'transparent',color:active?'#fff':'var(--text2)',transition:'all .15s'}},opt[1]);
+      })),
+    // Cliente NUEVO (o edicion): inputs de datos personales
+    (!isNew||clientMode==='nuevo')&&h(Fld,{label:'Nombre del cliente *'},h('input',{value:f.nombre,onChange:function(e){set('nombre',e.target.value);},placeholder:'Nombre completo',className:'inp',autoFocus:isNew&&clientMode==='nuevo'})),
+    (!isNew||clientMode==='nuevo')&&h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Cedula / ID'},h('input',{value:f.cedula,  onChange:function(e){set('cedula',  e.target.value);},placeholder:'0000000',className:'inp'})),
       h(Fld,{label:'Telefono'},   h('input',{value:f.telefono,onChange:function(e){set('telefono',e.target.value);},placeholder:'+57...',  className:'inp'}))),
+    // Cliente EXISTENTE: buscador con autocompletado (asocia por nombre)
+    isNew&&clientMode==='existente'&&h(Fld,{label:'Buscar cliente *'},
+      h('div',{style:{position:'relative'}},
+        h('input',{value:clientQuery,onChange:function(e){setClientQuery(e.target.value);setClientOpen(true);if(f.nombre)setF(function(p){return Object.assign({},p,{nombre:'',cedula:'',telefono:''});});},onFocus:function(){setClientOpen(true);},onBlur:function(){setTimeout(function(){setClientOpen(false);},150);},placeholder:clientes.length?'Escribe el nombre del cliente...':'No hay clientes registrados aun',className:'inp',autoFocus:true}),
+        clientOpen&&clientesMatch.length>0&&h('div',{style:{position:'absolute',top:'100%',left:0,right:0,zIndex:30,marginTop:4,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,maxHeight:200,overflowY:'auto',boxShadow:'var(--shadow)'}},
+          clientesMatch.map(function(c,ci){
+            var sub=[c.cedula&&c.cedula!=='0'?'CC '+c.cedula:'',c.telefono&&c.telefono!=='0'?c.telefono:''].filter(Boolean).join('  ·  ');
+            return h('button',{key:c.nombre+ci,type:'button',onClick:function(){pickCliente(c);},style:{display:'block',width:'100%',textAlign:'left',padding:'9px 12px',background:'none',border:'none',borderTop:ci>0?'1px solid var(--border)':'none',cursor:'pointer',fontFamily:'inherit'}},
+              h('div',{style:{fontSize:13,fontWeight:600,color:'var(--text)'}},c.nombre),
+              sub&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:1}},sub));
+          })))),
+    isNew&&clientMode==='existente'&&f.nombre&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:10,padding:'9px 12px',marginBottom:10,display:'flex',alignItems:'center',gap:8}},
+      h(Ico,{name:'check',size:14,color:'var(--green)',sw:2.4}),
+      h('div',{style:{flex:1,minWidth:0}},
+        h('div',{style:{fontSize:13,fontWeight:700,color:'var(--text)'}},f.nombre),
+        h('div',{style:{fontSize:11,color:'var(--text3)'}},'Se asignara este prestamo al cliente existente'))),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Moneda'},h('select',{value:f.moneda,onChange:function(e){set('moneda',e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}},h('option',null,'COP'),h('option',null,'USD'))),
-      h(Fld,{label:f.moneda==='USD'?'Monto original (USD) *':'Monto (COP) *'},h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.montoOrigen),onChange:function(e){set('montoOrigen',parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
-    f.moneda==='USD'&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD)'+(aplicaFracc?' — calculada automaticamente':'')},
-      h('input',{type:'text',inputMode:'numeric',value:aplicaFracc?(tasaPromedio>0?fmtNumInput(tasaPromedio):''):fmtNumInput(f.trmAcordada),onChange:function(e){if(!aplicaFracc&&!lockSens)set('trmAcordada',parseNum(e.target.value));},className:'inp',disabled:aplicaFracc||lockSens,placeholder:aplicaFracc?'Llena el desglose abajo':'',style:(aplicaFracc||lockSens)?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
-      h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP))),
+      h(Fld,{label:f.moneda==='USD'?'Monto original (USD) *':'Monto (COP) *'},h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.montoOrigen),onChange:function(e){if(!lockSens)syncMonto(e.target.value);},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
+    // Modo simple (una compra): Tasa <-> Total pagado en COP sincronizados por derivacion
+    f.moneda==='USD'&&!aplicaFracc&&h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+      h(Fld,{label:'Tasa de cambio (COP x 1 USD)'},
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.trmAcordada),onChange:function(e){if(!lockSens)syncSimpleFromTasa(parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+      h(Fld,{label:'Total pagado en COP'},
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(totalCOPInput),onChange:function(e){if(!lockSens)syncSimpleFromTotal(parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
+    // Modo fraccionado: la tasa es la promedio ponderada (solo lectura)
+    f.moneda==='USD'&&aplicaFracc&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD) — calculada automaticamente'},
+      h('input',{type:'text',inputMode:'numeric',value:tasaPromedio>0?fmtNumInput(tasaPromedio):'',onChange:function(){},className:'inp',disabled:true,placeholder:'Llena el desglose abajo',style:{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}})),
+    f.moneda==='USD'&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4,marginBottom:8,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP)),
     f.moneda==='USD'&&h('label',{style:{display:'flex',alignItems:'center',gap:10,background:'var(--bg3)',border:'1px solid '+(compraFrac?'var(--blue)':'var(--border)'),borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:lockSens?'not-allowed':'pointer',transition:'border-color .2s',opacity:lockSens?.5:1}},
       h('input',{type:'checkbox',checked:compraFrac,onChange:function(){if(!lockSens)setCompraFrac(!compraFrac);},disabled:lockSens,style:{width:16,height:16,accentColor:'var(--blue)',cursor:lockSens?'not-allowed':'pointer',margin:0}}),
       h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Compraste el USD en varias partes/tasas?')),
@@ -3763,10 +3861,13 @@ function LoanModal(props){
         return h('div',{key:i,style:{display:'flex',gap:8,alignItems:'flex-end',marginBottom:8}},
           h('div',{style:{flex:1}},
             h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,marginBottom:3}},'Compra '+(i+1)+' (USD)'),
-            h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(c.monto),onChange:function(e){if(!lockSens)setCompra(i,'monto',parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+            h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(c.monto),onChange:function(e){if(!lockSens)setCompraField(i,'monto',parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
           h('div',{style:{flex:1}},
             h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,marginBottom:3}},'Tasa (COP)'),
-            h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(c.tasa),onChange:function(e){if(!lockSens)setCompra(i,'tasa',parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+            h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(c.tasa),onChange:function(e){if(!lockSens)setCompraField(i,'tasa',parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,marginBottom:3}},'Total pagado (COP)'),
+            h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(c.totalCOP),onChange:function(e){if(!lockSens)setCompraField(i,'totalCOP',parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
           h('button',{onClick:function(){if(!lockSens)delCompra(i);},disabled:lockSens||compras.length<=1,title:'Eliminar fila',style:{flexShrink:0,padding:'9px 10px',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,color:'var(--red)',cursor:(lockSens||compras.length<=1)?'not-allowed':'pointer',opacity:(lockSens||compras.length<=1)?.4:1,display:'flex',alignItems:'center'}},h(Ico,{name:'x',size:13,color:'var(--red)',sw:2.4})));
       }),
       h('button',{onClick:function(){if(!lockSens)addCompra();},disabled:lockSens,style:{width:'100%',padding:'8px 0',background:'transparent',border:'1px dashed var(--blue)',borderRadius:8,color:'var(--blue)',fontSize:12,fontWeight:600,cursor:lockSens?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:10,opacity:lockSens?.5:1}},

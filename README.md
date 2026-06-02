@@ -4,7 +4,7 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 
 ## Funcionalidades
 
-- **Prestamos en COP y USD** con conversion automatica via TRM (incluye compras fraccionadas a distintas tasas)
+- **Prestamos en COP y USD** con conversion automatica via TRM (incluye compras fraccionadas a distintas tasas); al crear puedes asignar el prestamo a un **cliente existente** (buscador por nombre) o registrar uno nuevo
 - **4 modalidades:** Intereses (plazo indefinido), Capital + Intereses (amortizacion francesa), Prestamo (0% interes), Pago Unico (una cuota en fecha exacta + ganancia pactada por % o monto fijo)
 - **Frecuencia de cobro:** semanal, quincenal o mensual
 - **Abonos a capital** con recalculo automatico del cronograma (mantener plazo, modificar plazo o fijar cuota)
@@ -14,7 +14,7 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 - **Dashboard** con KPIs (capital original, recaudo del mes, saldo pendiente, ganancias, mora y proximos vencimientos), selector de meses en el recaudo para revisar periodos pasados y mini-graficos de tendencia en las tarjetas
 - **Perfiles de deudores** con historial completo de creditos
 - **Seccion de rendimiento** con ganancias por prestamo (intereses + ganancia/perdida por TRM en USD)
-- **Calculadora** para simular prestamos antes de crearlos
+- **Calculadora** para simular prestamos antes de crearlos, con calculo automatico de la tasa de cambio desde el "Total pagado en COP"
 - **Historial de acciones** (log de todo lo que hiciste)
 - **Tema claro/oscuro** (PDFs se generan con el tema activo)
 - **Actualizaciones automaticas** desde GitHub Releases (Windows y Mac), con arranque protegido que blinda la base de datos durante el chequeo de updates
