@@ -94,6 +94,11 @@ module.exports = function createApp(dbPath) {
   // v1.11.1: timestamp real (YYYY-MM-DD HH:MM:SS) de cuando se marco Pagado. Permite ordenar
   // "Transacciones recientes" por HORA exacta y no solo por fecha de recaudo (que empata el mismo dia).
   try { db.exec('ALTER TABLE payments ADD COLUMN paidAt TEXT'); } catch(_){}
+  // v1.11.4: ledger de recibos (flujo de caja real). JSON [{fecha,cop}] — un evento por
+  // transaccion (cada parcial en su fecha de recaudo + el pago final). Permite que "Cobros del
+  // Mes" cuente los parciales en curso en su dia exacto sin doble conteo. Las filas sin ledger
+  // (historico, abonos, liquidaciones de mora) usan fallback a fechaRecaudo en el frontend.
+  try { db.exec("ALTER TABLE payments ADD COLUMN recibos TEXT DEFAULT '[]'"); } catch(_){}
   // Renombrar modalidad legacy
   try { db.exec("UPDATE loans SET modalidad = 'Intereses' WHERE modalidad = 'Solo Intereses'"); } catch(_){}
   // Migración: frecuencia de pago
@@ -669,8 +674,26 @@ module.exports = function createApp(dbPath) {
     if (estadoPago === 'Pagado') newPaidAt = (payBefore && payBefore.paidAt) ? payBefore.paidAt : nowTs;
     else if (estadoPago === 'Pendiente' || estadoPago === 'En Mora') newPaidAt = null;
     else newPaidAt = payBefore ? (payBefore.paidAt || null) : null;
-    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, paidAt=? WHERE id=?')
-      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, montoUSDRecibido || 0, newPartial, newPaidAt, req.params.id);
+    // v1.11.4: ledger de recibos. Al marcar Pagado, anadir el REMANENTE (lo que falta para cubrir
+    // el monto recibido) como un evento en fechaRecaudo: preserva parciales previos en sus fechas
+    // reales y nunca duplica. En el flujo normal (cuota sin parciales) el remanente == monto total.
+    // Al revertir se limpia el ledger (coherente con partialPaid=0). En otros casos se conserva.
+    let newRecibos;
+    let prevRec; try { prevRec = JSON.parse((payBefore && payBefore.recibos) || '[]'); } catch (_) { prevRec = []; }
+    if (!Array.isArray(prevRec)) prevRec = [];
+    if (estadoPago === 'Pagado' && payBefore) {
+      const target = Math.round((montoCOPRecibido || payBefore.cuotaTotal) || 0);
+      const prevSum = prevRec.reduce((a, r) => a + (Math.round(+r.cop) || 0), 0);
+      const remanente = target - prevSum;
+      if (remanente > 0) prevRec.push({ fecha: fechaRecaudo || hoyStr(), cop: remanente });
+      newRecibos = JSON.stringify(prevRec);
+    } else if ((estadoPago === 'Pendiente' || estadoPago === 'En Mora') && payBefore) {
+      newRecibos = '[]';
+    } else {
+      newRecibos = (payBefore && payBefore.recibos) || '[]';
+    }
+    db.prepare('UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, recibos=?, paidAt=? WHERE id=?')
+      .run(estadoPago, fechaRecaudo || null, observaciones || '', montoCOPRecibido || 0, montoUSDRecibido || 0, newPartial, newRecibos, newPaidAt, req.params.id);
     if (payBefore) {
       const label = estadoPago === 'Pagado' ? 'Registraste pago' : estadoPago === 'En Mora' ? 'Marcaste en mora' : 'Revertiste a pendiente';
       logAction.run('pago', label + ': ' + payBefore.nombreCliente + ' cuota #' + payBefore.cuotaN + ' por $' + Math.round(payBefore.cuotaTotal).toLocaleString());
@@ -729,12 +752,18 @@ module.exports = function createApp(dbPath) {
     const obsPrev = pay.observaciones || '';
     const obsNueva = (observaciones || '').trim();
     const obsCombinada = [obsPrev, obsNueva && ('Parcial ' + fechaPago + ': $' + montoNum.toLocaleString() + (obsNueva ? ' — ' + obsNueva : ''))].filter(Boolean).join(' | ');
+    // v1.11.4: registrar este parcial como evento de caja en el ledger (con su fecha real de
+    // recaudo). La suma de los parciales == cuotaTotal al completar (montoNum <= restante).
+    let recibosArr; try { recibosArr = JSON.parse(pay.recibos || '[]'); } catch (_) { recibosArr = []; }
+    if (!Array.isArray(recibosArr)) recibosArr = [];
+    recibosArr.push({ fecha: fechaPago, cop: montoNum });
+    const recibosJSON = JSON.stringify(recibosArr);
 
     if (completa) {
       // Completa la cuota: marcar Pagado
       const usdAcum = (pay.montoUSDRecibido || 0) + (+montoUSD || 0);
-      db.prepare("UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, paidAt=datetime('now','localtime') WHERE id=?")
-        .run('Pagado', fechaPago, obsCombinada, pay.cuotaTotal, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, req.params.id);
+      db.prepare("UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, recibos=?, paidAt=datetime('now','localtime') WHERE id=?")
+        .run('Pagado', fechaPago, obsCombinada, pay.cuotaTotal, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, recibosJSON, req.params.id);
       logAction.run('pago', 'Pago parcial final: ' + pay.nombreCliente + ' cuota #' + pay.cuotaN + ' $' + montoNum.toLocaleString() + ' (completo $' + Math.round(pay.cuotaTotal).toLocaleString() + ')');
 
       // Si era la cuota con proximaCuotaExtra, limpiarla del loan
@@ -753,8 +782,8 @@ module.exports = function createApp(dbPath) {
       // Solo suma al partialPaid, estado permanece
       const copAcum = (pay.montoCOPRecibido || 0) + montoNum;
       const usdAcum = (pay.montoUSDRecibido || 0) + (+montoUSD || 0);
-      db.prepare('UPDATE payments SET partialPaid=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=? WHERE id=?')
-        .run(nuevoPartial, obsCombinada, copAcum, Math.round(usdAcum * 100) / 100, req.params.id);
+      db.prepare('UPDATE payments SET partialPaid=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, recibos=? WHERE id=?')
+        .run(nuevoPartial, obsCombinada, copAcum, Math.round(usdAcum * 100) / 100, recibosJSON, req.params.id);
       const faltan = pay.cuotaTotal - nuevoPartial;
       logAction.run('pago', 'Pago parcial: ' + pay.nombreCliente + ' cuota #' + pay.cuotaN + ' $' + montoNum.toLocaleString() + ' (faltan $' + Math.round(faltan).toLocaleString() + ')');
     }

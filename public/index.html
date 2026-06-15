@@ -151,6 +151,25 @@ function fmtN(n) { return new Intl.NumberFormat('es-CO').format(Math.round(n||0)
 function pendCuota(p){ return Math.max(0,(p.cuotaTotal||0)-(p.partialPaid||0)); }
 // Convierte COP a USD usando TRM del préstamo; retorna string "USD $X.XX"
 function copToUsd(cop,trm){ return trm>0?fmtUSD(cop/trm):''; }
+// v1.11.4: eventos de caja reales de un pago. Devuelve [{fecha:'YYYY-MM-DD', cop:int}].
+// Fuente de verdad = ledger payments.recibos (cada parcial en su fecha + el pago final). Si la fila
+// no tiene ledger (historico previo, abonos a capital, liquidaciones de mora) cae al FALLBACK: un
+// unico evento en fechaRecaudo por (montoCOPRecibido||cuotaTotal). metrics.recibido y sparkCobros
+// usan ESTA funcion -> el KPI y la suma del grafico cuadran por construccion, sin doble conteo.
+function cobrosDe(p){
+  if(!p) return [];
+  if(p.recibos){
+    var arr; try{arr=JSON.parse(p.recibos);}catch(_){arr=null;}
+    if(Array.isArray(arr)&&arr.length){
+      return arr.filter(function(r){return r&&r.fecha&&(+r.cop)>0;})
+                .map(function(r){return {fecha:String(r.fecha),cop:Math.round(+r.cop)};});
+    }
+  }
+  if(p.estadoPago==='Pagado'&&p.fechaRecaudo){
+    return [{fecha:p.fechaRecaudo,cop:Math.round(p.montoCOPRecibido||p.cuotaTotal)}];
+  }
+  return [];
+}
 function fmtD(s) { return s?new Date(s+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'-'; }
 // ── Input numérico con formato automático (1.000.000) ──
 function fmtNumInput(v){
@@ -948,6 +967,10 @@ function App(){
       'Inicio: la grafica de tendencia de "Ganancias" ahora muestra los ultimos 12 meses (antes 6)',
       'Cronograma PDF: ahora incluye la fecha de finalizacion del prestamo; para "Pago Unico" imprime la tasa/ganancia pactada y la frecuencia correcta (antes mostraba "Mensual")',
       'Recibo PDF: cuando un pago cancela la totalidad del prestamo, el recibo muestra un mensaje de felicitaciones'
+    ],
+    '1.11.4': [
+      'Inicio: "Cobros del Mes" ahora refleja el flujo de caja real al instante — cada pago parcial suma al total y al mini-grafico el mismo dia en que lo recibes, sin esperar a que la cuota quede completa',
+      'Inicio: los abonos a capital tambien se cuentan dentro de "Cobros del Mes" en su fecha de registro (antes quedaban fuera de ese indicador)'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1185,11 +1208,13 @@ function App(){
     },0);
     // ESPERADO = SOLO cuotas con fechaPago en el mes actual (la meta real, sin mora arrastrada)
     var esperadoTot=mp.reduce(function(s,p){return s+p.cuotaTotal;},0);
-    // RECIBIDO = (A) lo recaudado de cuotas del mes + (B) mora recuperada (otros meses, pagada este mes)
-    var recibidoTot=mp.reduce(function(s,p){
-      if(p.estadoPago==='Pagado') return s+(p.montoCOPRecibido||p.cuotaTotal);
-      return s+(p.partialPaid||0);
-    },0)+moraRecuperadaMes.reduce(function(s,p){return s+(p.montoCOPRecibido||p.cuotaTotal);},0);
+    // RECIBIDO (Cobros del Mes) = flujo de caja real por FECHA DE TRANSACCION via cobrosDe():
+    // ledger de recibos (cada parcial en su dia exacto + el pago final) con fallback a fechaRecaudo.
+    // Incluye parciales EN CURSO y abonos a capital. Definicion IDENTICA a sparkCobros -> el KPI ==
+    // suma de los puntos del grafico por construccion, sin doble conteo.
+    var recibidoTot=pays.reduce(function(s,p){
+      return s+cobrosDe(p).reduce(function(a,e){return a+(e.fecha.slice(0,7)===thisM?e.cop:0);},0);
+    },0);
     return {
       totalCartera:totalDeuda,
       activeCount:active.length,
@@ -1597,17 +1622,19 @@ function DashView(props){
     return {values:vals,labels:labs,tipLabels:tips};
   },[pays,loans]);
   // Sparkline "Cobros del Mes": evolucion DIARIA del mes EN CURSO (fijo — ignora selMonth).
-  // Suma por dia el monto recibido (montoCOPRecibido||cuotaTotal) de cuotas Pagadas con
-  // fechaRecaudo ese dia. Excluye abonos (igual que el KPI metrics.recibido).
+  // Suma por dia los eventos de caja via cobrosDe(): ledger de recibos (cada parcial en su dia +
+  // pago final) con fallback a fechaRecaudo. Incluye parciales en curso y abonos a capital. Misma
+  // base que el KPI metrics.recibido -> el total del KPI == suma de los puntos de este grafico.
   var sparkCobros=useMemo(function(){
     var curM=nowStr().slice(0,7);
     var y=parseInt(curM.slice(0,4),10),mo=parseInt(curM.slice(5,7),10),dim=new Date(y,mo,0).getDate();
     var byDay={};
     pays.forEach(function(p){
-      if(p.estadoPago!=='Pagado'||!p.fechaRecaudo||p.id.indexOf('-ab-')!==-1) return;
-      if(p.fechaRecaudo.slice(0,7)!==curM) return;
-      var dd=parseInt(p.fechaRecaudo.slice(8,10),10);
-      byDay[dd]=(byDay[dd]||0)+(p.montoCOPRecibido||p.cuotaTotal);
+      cobrosDe(p).forEach(function(e){
+        if(e.fecha.slice(0,7)!==curM) return;
+        var dd=parseInt(e.fecha.slice(8,10),10);
+        byDay[dd]=(byDay[dd]||0)+e.cop;
+      });
     });
     var monAb=MESES_ES[mo-1].slice(0,3);
     var keyDays={1:1,8:1,15:1,22:1,29:1},vals=[],labs=[],tips=[];
