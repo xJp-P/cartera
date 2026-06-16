@@ -17,6 +17,11 @@ function hoyStr() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// ID unico estilo timestamp + sufijo aleatorio (mismo formato que los IDs de loans)
+function genId() {
+  return Date.now().toString() + Math.random().toString(36).slice(2, 6);
+}
+
 module.exports = function createApp(dbPath) {
 
   const app = express();
@@ -141,6 +146,29 @@ module.exports = function createApp(dbPath) {
       tipo      TEXT NOT NULL,
       mensaje   TEXT NOT NULL
     )
+  `);
+
+  // ── Modulo "Mis Deudas" (lo que YO debo) — registro manual ──────────────────
+  // Sin intereses ni cuotas automaticas. El saldo se reduce manualmente via abonos
+  // registrados en el ledger pagos_deudas. mis_deudas primero (la FK la referencia).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mis_deudas (
+      id              TEXT PRIMARY KEY,
+      acreedor        TEXT NOT NULL,
+      concepto        TEXT DEFAULT '',
+      monto_original  REAL NOT NULL DEFAULT 0,
+      saldo_pendiente REAL NOT NULL DEFAULT 0,
+      estado          TEXT NOT NULL DEFAULT 'Activa',
+      fecha_creacion  TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS pagos_deudas (
+      id           TEXT PRIMARY KEY,
+      deuda_id     TEXT NOT NULL,
+      monto_pagado REAL NOT NULL DEFAULT 0,
+      fecha_pago   TEXT NOT NULL,
+      notas        TEXT DEFAULT '',
+      FOREIGN KEY(deuda_id) REFERENCES mis_deudas(id) ON DELETE CASCADE
+    );
   `);
   const logAction = db.prepare('INSERT INTO activity_log(tipo, mensaje) VALUES (?, ?)');
   try { db.exec("ALTER TABLE loans ADD COLUMN fechaDevolucion TEXT DEFAULT ''"); } catch(_){}
@@ -1140,6 +1168,73 @@ module.exports = function createApp(dbPath) {
   app.get('/api/activity', (_req, res) => {
     const rows = db.prepare('SELECT * FROM activity_log ORDER BY id DESC LIMIT 100').all();
     res.json(rows);
+  });
+
+  // ── API: Modulo "Mis Deudas" (registro manual, sin intereses) ───────────────
+
+  // Lista todas las deudas con su saldo_pendiente actual (Activas primero, luego por fecha desc)
+  app.get('/api/debts', (_req, res) => {
+    res.json(db.prepare('SELECT * FROM mis_deudas ORDER BY estado ASC, fecha_creacion DESC, id DESC').all());
+  });
+
+  // Detalle de una deuda + su historial de pagos (ledger pagos_deudas)
+  app.get('/api/debts/:id', (req, res) => {
+    const deuda = db.prepare('SELECT * FROM mis_deudas WHERE id = ?').get(req.params.id);
+    if (!deuda) return res.status(404).json({ error: 'Deuda no encontrada' });
+    const pagos = db.prepare('SELECT * FROM pagos_deudas WHERE deuda_id = ? ORDER BY fecha_pago DESC, id DESC').all(req.params.id);
+    res.json({ ...deuda, pagos });
+  });
+
+  // Crea una deuda. saldo_pendiente arranca igual al monto_original; estado 'Activa'.
+  app.post('/api/debts', (req, res) => {
+    const acreedor = (req.body.acreedor || '').trim();
+    const concepto = (req.body.concepto || '').trim();
+    const monto = Math.round(+req.body.monto_original || 0);
+    if (!acreedor) return res.status(400).json({ error: 'El acreedor es obligatorio' });
+    if (monto <= 0) return res.status(400).json({ error: 'El monto original debe ser mayor a 0' });
+    const id = genId();
+    db.prepare(`INSERT INTO mis_deudas(id, acreedor, concepto, monto_original, saldo_pendiente, estado)
+                VALUES (?, ?, ?, ?, ?, 'Activa')`).run(id, acreedor, concepto, monto, monto);
+    logAction.run('deuda', 'Nueva deuda con ' + acreedor + (concepto ? ' (' + concepto + ')' : '') + ' por $' + monto.toLocaleString('es-CO'));
+    res.json(db.prepare('SELECT * FROM mis_deudas WHERE id = ?').get(id));
+  });
+
+  // Registra un abono manual: inserta en pagos_deudas y resta saldo_pendiente.
+  // Si el saldo llega a 0 -> estado 'Pagada'. ATOMICO: valida y computa TODO antes
+  // de la primera escritura; las mutaciones van dentro de db.transaction (all-or-nothing).
+  app.post('/api/debts/:id/pay', (req, res) => {
+    // FASE 1 — lectura + validacion (sin escrituras)
+    const deuda = db.prepare('SELECT * FROM mis_deudas WHERE id = ?').get(req.params.id);
+    if (!deuda) return res.status(404).json({ error: 'Deuda no encontrada' });
+    if (deuda.estado === 'Pagada') return res.status(400).json({ error: 'La deuda ya esta pagada' });
+    const monto = Math.round(+req.body.monto_pagado || 0);
+    if (monto <= 0) return res.status(400).json({ error: 'El monto del abono debe ser mayor a 0' });
+    if (monto > deuda.saldo_pendiente) {
+      return res.status(400).json({ error: 'El abono ($' + monto.toLocaleString('es-CO') + ') supera el saldo pendiente ($' + Math.round(deuda.saldo_pendiente).toLocaleString('es-CO') + ')' });
+    }
+    const fecha = (req.body.fecha_pago || hoyStr()).toString().slice(0, 10);
+    const notas = (req.body.notas || '').trim();
+    const nuevoSaldo = Math.max(0, Math.round((deuda.saldo_pendiente - monto) * 100) / 100);
+    const nuevoEstado = nuevoSaldo <= 0 ? 'Pagada' : deuda.estado;
+    const pagoId = genId();
+
+    // FASE 2 — escrituras atomicas (all-or-nothing)
+    const aplicar = db.transaction(() => {
+      db.prepare('INSERT INTO pagos_deudas(id, deuda_id, monto_pagado, fecha_pago, notas) VALUES (?, ?, ?, ?, ?)')
+        .run(pagoId, deuda.id, monto, fecha, notas);
+      db.prepare('UPDATE mis_deudas SET saldo_pendiente = ?, estado = ? WHERE id = ?')
+        .run(nuevoSaldo, nuevoEstado, deuda.id);
+    });
+    aplicar();
+
+    logAction.run('deuda', 'Abono a deuda con ' + deuda.acreedor + ': $' + monto.toLocaleString('es-CO')
+      + (nuevoSaldo <= 0 ? ' (PAGADA)' : ' — saldo: $' + Math.round(nuevoSaldo).toLocaleString('es-CO')));
+
+    res.json({
+      ok: true,
+      pago: db.prepare('SELECT * FROM pagos_deudas WHERE id = ?').get(pagoId),
+      deuda: db.prepare('SELECT * FROM mis_deudas WHERE id = ?').get(deuda.id)
+    });
   });
 
   return app;
