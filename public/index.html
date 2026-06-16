@@ -147,6 +147,8 @@ function pmt(r,n,pv){ return r===0?pv/n:pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1)
 function fmt(n)  { return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n||0); }
 function fmtUSD(n){ return 'USD $'+new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0); }
 function fmtN(n) { return new Intl.NumberFormat('es-CO').format(Math.round(n||0)); }
+// Proper Case (Capitalizacion de Titulos): "pa"->"Pa", "juan PEREZ"->"Juan Perez"
+function properCase(s){ return String(s||'').trim().split(/\s+/).map(function(w){return w?w.charAt(0).toUpperCase()+w.slice(1).toLowerCase():w;}).join(' '); }
 // Saldo restante de una cuota considerando pagos parciales
 function pendCuota(p){ return Math.max(0,(p.cuotaTotal||0)-(p.partialPaid||0)); }
 // Convierte COP a USD usando TRM del préstamo; retorna string "USD $X.XX"
@@ -570,6 +572,8 @@ function App(){
   var s19=useState(function(){return localStorage.getItem('theme')||'dark';}); var theme=s19[0]; var setTheme=s19[1];
   var s20=useState([]); var actLog=s20[0]; var setActLog=s20[1];
   var sDebts=useState([]); var debts=sDebts[0]; var setDebts=sDebts[1];
+  var sNewDebt=useState(false); var newDebtOpen=sNewDebt[0]; var setNewDebtOpen=sNewDebt[1];
+  var sDebtPay=useState(null); var debtPayModal=sDebtPay[0]; var setDebtPayModal=sDebtPay[1];
   var s21=useState(null); var globalUpdate=s21[0]; var setGlobalUpdate=s21[1];
   var s22=useState(null); var confirmDlg=s22[0]; var setConfirmDlg=s22[1];
   var s24=useState(null); var errorDlg=s24[0]; var setErrorDlg=s24[1];
@@ -1013,6 +1017,25 @@ function App(){
     return API.get('/api/debts').then(function(data){ if(data) setDebts(data); });
   },[]);
 
+  // Crear deuda (POST /api/debts). En error, handleApiError ya mostro el toast (r===null).
+  var createDebt=useCallback(function(data){
+    return API.post('/api/debts',data).then(function(r){
+      if(!r) return;
+      setNewDebtOpen(false);
+      return loadDebts().then(function(){ showToast('Deuda registrada'); });
+    });
+  },[loadDebts]);
+
+  // Abonar a una deuda (POST /api/debts/:id/pay). Cierra el modal y recarga la lista.
+  var payDebt=useCallback(function(id,data){
+    return API.post('/api/debts/'+id+'/pay',data).then(function(r){
+      if(!r) return;
+      var saldada=r.deuda&&r.deuda.estado==='Pagada';
+      setDebtPayModal(null);
+      return loadDebts().then(function(){ showToast(saldada?'Deuda saldada':'Abono registrado'); });
+    });
+  },[loadDebts]);
+
   useEffect(function(){
     API.post('/api/recalculate',{}).then(function(){return reload();});
     loadDebts();
@@ -1412,11 +1435,13 @@ function App(){
       view==='rendimiento'&& h(PortfolioView,{loans:loans,pays:pays}),
       view==='calculadora'&& h(CalcView,   {onConfirm:confirmarCalc}),
       view==='historial'   && h(HistorialView,{actLog:actLog,onRefresh:function(){fetch('/api/activity').then(function(r){return r.json();}).then(function(data){setActLog(data);showToast('Historial actualizado');});}}),
-      view==='deudas'      && h(DebtsView,{debts:debts,onReload:loadDebts}),
+      view==='deudas'      && h(DebtsView,{debts:debts,onReload:loadDebts,onNew:function(){setNewDebtOpen(true);},onPay:function(d){setDebtPayModal(d);}}),
       view==='desarrollador'&& h(DevView,  {showToast:showToast,isMac:isMac,onNeedsRestart:function(){setNeedsRestart(true);},onSync:recalculate,onConfirm:function(cfg){setConfirmDlg(cfg);}}))
     ), /* end main-area */
     loanModal&&h(LoanModal,{loan:loanModal==='new'?null:loanModal,trm:cfg.trm,pays:pays,clientes:deudores,onSave:saveLoan,onClose:function(){setLoanModal(null);}}),
     payModal &&h(PayModal, {pay:payModal.pay,loan:payModal.loan,allPays:pays,onMark:markPay,onPartial:markPartial,onClose:function(){setPayModal(null);}}),
+    newDebtOpen&&h(DebtModal,{onSave:createDebt,onClose:function(){setNewDebtOpen(false);}}),
+    debtPayModal&&h(DebtPayModal,{debt:debtPayModal,onSave:payDebt,onClose:function(){setDebtPayModal(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);}}),
     debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onReestructurar:function(l){var dRef=debtorModal;setDebtorModal(null);setRestructureModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');registrarAbono(loanId,monto,nowStr(),obs,0,true);setDebtorModal(null);},onReload:reload}),
     restructureModal&&h(RestructureModal,{loan:restructureModal.loan||restructureModal,pays:pays,onSave:reestructurarPrestamo,onClose:function(){if(restructureModal.fromDeudor){setDebtorModal(restructureModal.fromDeudor);} setRestructureModal(null);}}),
@@ -4053,11 +4078,33 @@ function HistorialView(props){
 function DebtsView(props){
   var debts=props.debts||[];
   var onReload=props.onReload;
+  var onNew=props.onNew;
+  var onPay=props.onPay;
+  var sSel=useState(null); var selectedAcreedor=sSel[0]; var setSelectedAcreedor=sSel[1];
+
+  // KPIs globales: gran total, visibles en todo momento sin importar el nivel.
   var stats=useMemo(function(){
     var activas=debts.filter(function(d){return d.estado==='Activa';});
     var totalActiva=activas.reduce(function(s,d){return s+(+d.saldo_pendiente||0);},0);
     return {totalActiva:totalActiva,count:debts.length,activas:activas.length,pagadas:debts.length-activas.length};
   },[debts]);
+
+  // Agrupacion por acreedor (case-insensitive). El nombre se muestra en Proper Case.
+  // totalActiva = suma de saldo_pendiente de las deudas Activas de ese acreedor.
+  var grupos=useMemo(function(){
+    var map={};
+    debts.forEach(function(d){
+      var key=(d.acreedor||'').trim().toLowerCase();
+      if(!map[key]) map[key]={key:key,nombre:properCase(d.acreedor),deudas:[],totalActiva:0,activas:0,pagadas:0};
+      var g=map[key];
+      g.deudas.push(d);
+      if(d.estado==='Activa'){ g.totalActiva+=(+d.saldo_pendiente||0); g.activas++; } else { g.pagadas++; }
+    });
+    return Object.keys(map).map(function(k){return map[k];})
+      .sort(function(a,b){return b.totalActiva-a.totalActiva || a.nombre.localeCompare(b.nombre);});
+  },[debts]);
+
+  var detalle=selectedAcreedor?(grupos.filter(function(g){return g.key===selectedAcreedor;})[0]||null):null;
 
   function estadoBadge(estado){
     var c=estado==='Pagada'?'var(--green)':'var(--yellow)';
@@ -4073,8 +4120,51 @@ function DebtsView(props){
       h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:2}},sub));
   }
 
+  function avatar(nombre,size){
+    return h('div',{style:{width:size,height:size,borderRadius:99,background:'var(--bg3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontWeight:700,fontSize:Math.round(size*0.4),color:'var(--text2)'}},(nombre||'?').charAt(0).toUpperCase());
+  }
+
+  function subProfiles(g){
+    return g.activas+' deuda'+(g.activas===1?'':'s')+' activa'+(g.activas===1?'':'s')+(g.pagadas>0?' · '+g.pagadas+' pagada'+(g.pagadas===1?'':'s'):'');
+  }
+
+  // Tarjeta de UNA deuda (reusada en el detalle del acreedor; boton Abonar intacto).
+  function debtCard(d){
+    return h('div',{key:d.id,style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:12,padding:'13px 15px'}},
+      h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10}},
+        h('div',{style:{minWidth:0}},
+          h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},d.concepto||'Deuda'),
+          h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:2}},'Registrada '+fmtD((d.fecha_creacion||'').slice(0,10)))),
+        estadoBadge(d.estado)),
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12}},
+        h('div',null,
+          h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:2}},'Monto original'),
+          h('div',{className:'mono',style:{fontSize:13,color:'var(--text2)',fontWeight:600}},fmt(d.monto_original))),
+        h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:2}},'Saldo pendiente'),
+          h('div',{className:'mono',style:{fontSize:16,fontWeight:700,color:d.estado==='Pagada'?'var(--green)':'var(--yellow)'}},fmt(d.saldo_pendiente)))),
+      d.estado==='Activa'&&h('div',{style:{display:'flex',justifyContent:'flex-end',marginTop:10}},
+        h('button',{onClick:function(){onPay(d);},style:{background:'var(--green2)',border:'none',borderRadius:8,padding:'7px 16px',cursor:'pointer',color:'#fff',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:6}},
+          h(Ico,{name:'dollar',size:14,color:'#fff'}),'Abonar')));
+  }
+
+  // Tarjeta de PERFIL (Nivel 1): al hacer clic abre el detalle del acreedor.
+  function perfilCard(g){
+    return h('div',{key:g.key,onClick:function(){setSelectedAcreedor(g.key);},style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:12,padding:'13px 15px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:12,minWidth:0}},
+        avatar(g.nombre,42),
+        h('div',{style:{minWidth:0}},
+          h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},g.nombre),
+          h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:2}},subProfiles(g)))),
+      h('div',{style:{display:'flex',alignItems:'center',gap:10,flexShrink:0}},
+        h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontSize:11,color:'var(--text3)'}},'Deuda total'),
+          h('div',{className:'mono',style:{fontSize:16,fontWeight:700,color:g.totalActiva>0?'var(--yellow)':'var(--green)'}},fmt(g.totalActiva))),
+        h(Ico,{name:'chevright',size:18,color:'var(--text3)'})));
+  }
+
   return h('div',{style:{padding:16,maxWidth:1180,margin:'0 auto'}},
-    // Cabecera: titulo + acciones (Actualizar + Nueva Deuda preparada para Bloque 3)
+    // Cabecera: titulo + acciones (siempre visible)
     h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:16,flexWrap:'wrap'}},
       h('div',{style:{display:'flex',alignItems:'center',gap:8}},
         h(Ico,{name:'wallet',size:20,color:'var(--green)'}),
@@ -4082,36 +4172,104 @@ function DebtsView(props){
       h('div',{style:{display:'flex',gap:8}},
         h('button',{onClick:onReload,title:'Actualizar',style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',cursor:'pointer',color:'var(--text)',fontSize:13,display:'flex',alignItems:'center',gap:6}},
           h(Ico,{name:'refresh',size:14,color:'var(--text2)'}),'Actualizar'),
-        h('button',{onClick:function(){},style:{background:'var(--green2)',border:'none',borderRadius:8,padding:'8px 14px',cursor:'pointer',color:'#fff',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:6}},
+        h('button',{onClick:onNew,style:{background:'var(--green2)',border:'none',borderRadius:8,padding:'8px 14px',cursor:'pointer',color:'#fff',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:6}},
           h(Ico,{name:'plus',size:15,color:'#fff'}),'Nueva Deuda'))),
 
-    // KPIs superiores
+    // KPIs globales (siempre visibles, gran total)
     h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:12,marginBottom:18}},
       kpi('wallet','var(--yellow)','Deuda Total Activa',fmt(stats.totalActiva),stats.activas+' deuda'+(stats.activas===1?'':'s')+' activa'+(stats.activas===1?'':'s')),
       kpi('clipboard','var(--blue)','Cantidad de Deudas',String(stats.count),stats.activas+' activas · '+stats.pagadas+' pagadas')),
 
-    // Lista de deudas
+    // Cuerpo: vacio / Nivel 2 (detalle de un acreedor) / Nivel 1 (perfiles)
     debts.length===0?
       h('div',{style:{textAlign:'center',padding:40,color:'var(--text3)'}},
         h(Ico,{name:'wallet',size:32,color:'var(--text3)'}),
         h('p',{style:{marginTop:12,fontSize:13}},'No tienes deudas registradas aun'),
-        h('p',{style:{marginTop:4,fontSize:12,color:'var(--text3)'}},'Usa "Nueva Deuda" para agregar la primera')):
+        h('p',{style:{marginTop:4,fontSize:12,color:'var(--text3)'}},'Usa "Nueva Deuda" para agregar la primera'))
+    : detalle?
+      h('div',null,
+        h('button',{onClick:function(){setSelectedAcreedor(null);},style:{background:'none',border:'none',cursor:'pointer',color:'var(--text2)',fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:6,padding:'2px 0',marginBottom:10}},
+          h(Ico,{name:'chevleft',size:16,color:'var(--text2)'}),'Volver a acreedores'),
+        h('div',{style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:12,padding:'14px 16px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:12,minWidth:0}},
+            avatar(detalle.nombre,44),
+            h('div',{style:{minWidth:0}},
+              h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},detalle.nombre),
+              h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:2}},subProfiles(detalle)))),
+          h('div',{style:{textAlign:'right',flexShrink:0}},
+            h('div',{style:{fontSize:11,color:'var(--text3)'}},'Deuda total'),
+            h('div',{className:'mono',style:{fontSize:18,fontWeight:700,color:detalle.totalActiva>0?'var(--yellow)':'var(--green)'}},fmt(detalle.totalActiva)))),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          detalle.deudas.slice().sort(function(a,b){
+            var aA=a.estado==='Activa'?0:1,bA=b.estado==='Activa'?0:1;
+            return aA-bA || ((+b.saldo_pendiente||0)-(+a.saldo_pendiente||0));
+          }).map(debtCard)))
+    :
       h('div',{style:{display:'flex',flexDirection:'column',gap:8}},
-        debts.map(function(d){
-          return h('div',{key:d.id,style:{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:12,padding:'13px 15px'}},
-            h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10}},
-              h('div',{style:{minWidth:0}},
-                h('div',{style:{fontWeight:700,fontSize:15,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},d.acreedor),
-                d.concepto?h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:2}},d.concepto):null),
-              estadoBadge(d.estado)),
-            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12}},
-              h('div',null,
-                h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:2}},'Monto original'),
-                h('div',{className:'mono',style:{fontSize:13,color:'var(--text2)',fontWeight:600}},fmt(d.monto_original))),
-              h('div',{style:{textAlign:'right'}},
-                h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:2}},'Saldo pendiente'),
-                h('div',{className:'mono',style:{fontSize:16,fontWeight:700,color:d.estado==='Pagada'?'var(--green)':'var(--yellow)'}},fmt(d.saldo_pendiente)))));
-        })));
+        grupos.map(perfilCard)));
+}
+
+// ── Modales de Mis Deudas (Bloque 3) ──────────────────────────────────────────
+function DebtModal(props){
+  var onSave=props.onSave,onClose=props.onClose;
+  var s1=useState(''); var acreedor=s1[0]; var setAcreedor=s1[1];
+  var s2=useState(''); var monto=s2[0]; var setMonto=s2[1];
+  var s3=useState(''); var interes=s3[0]; var setInteres=s3[1];
+  var s4=useState(''); var concepto=s4[0]; var setConcepto=s4[1];
+
+  function submit(){
+    var acr=acreedor.trim();
+    var m=Math.round(+monto||0);
+    if(!acr){_showError('Ingresa el acreedor');return;}
+    if(m<=0){_showError('Ingresa un monto original valido');return;}
+    // UX: no hay columna de interes en la BD -> concatenamos "Interes - Concepto" en concepto.
+    var conceptoFinal=[interes.trim(),concepto.trim()].filter(Boolean).join(' - ');
+    onSave({acreedor:acr,monto_original:m,concepto:conceptoFinal});
+  }
+
+  return h(Modal,{onClose:onClose},
+    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},'Nueva Deuda'),
+    h('div',{style:{fontSize:12,color:'var(--text3)'}},'Registra una deuda que tienes con un tercero.'),
+    h(Fld,{label:'Acreedor *'},h('input',{value:acreedor,onChange:function(e){setAcreedor(e.target.value);},placeholder:'A quien le debes',className:'inp',autoFocus:true})),
+    h(Fld,{label:'Monto original (COP) *'},h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp'})),
+    h(Fld,{label:'Interes / Tasa pactada (opcional)'},h('input',{value:interes,onChange:function(e){setInteres(e.target.value);},placeholder:'Ej: 5% mensual',className:'inp'})),
+    h(Fld,{label:'Razon / Concepto (opcional)'},h('textarea',{value:concepto,onChange:function(e){setConcepto(e.target.value);},placeholder:'Ej: Pago de tarjeta, cubrir intereses',className:'inp',rows:2,style:{resize:'vertical',minHeight:58,fontFamily:'inherit'}})),
+    (interes.trim()&&concepto.trim())?h('div',{style:{fontSize:11,color:'var(--text3)',fontStyle:'italic'}},'Se guardara como: "'+[interes.trim(),concepto.trim()].filter(Boolean).join(' - ')+'"'):null,
+    h('div',{style:{display:'flex',gap:8,marginTop:8}},
+      h(ABtn,{color:'var(--green2)',onClick:submit,icon:'check',label:'Crear deuda'})));
+}
+
+function DebtPayModal(props){
+  var debt=props.debt,onSave=props.onSave,onClose=props.onClose;
+  var saldo=Math.round(+debt.saldo_pendiente||0);
+  var s1=useState(nowStr()); var fecha=s1[0]; var setFecha=s1[1];
+  var s2=useState(''); var monto=s2[0]; var setMonto=s2[1];
+  var s3=useState(''); var notas=s3[0]; var setNotas=s3[1];
+  var m=Math.round(+monto||0);
+  var excede=m>saldo;
+  var valido=m>0&&!excede;
+
+  function submit(){
+    if(m<=0){_showError('Ingresa el monto a abonar');return;}
+    if(excede){_showError('El abono supera el saldo pendiente ('+fmt(saldo)+')');return;}
+    onSave(debt.id,{monto_pagado:m,fecha_pago:fecha,notas:notas.trim()});
+  }
+
+  return h(Modal,{onClose:onClose},
+    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},'Abonar a deuda'),
+    h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'12px 14px',border:'1px solid var(--border)'}},
+      h('div',{style:{fontWeight:700,color:'var(--text)'}},debt.acreedor),
+      debt.concepto?h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:2}},debt.concepto):null,
+      h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:8,textTransform:'uppercase',letterSpacing:'.5px'}},'Saldo pendiente'),
+      h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--yellow)'}},fmt(saldo))),
+    h(Fld,{label:'Fecha de pago'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
+    h(Fld,{label:'Monto a abonar (COP) *'},
+      h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp',style:excede?{border:'1px solid var(--red)'}:{}}),
+      (m>0)?h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:excede?'var(--red)':'var(--text2)'}},
+        excede?('Supera el saldo por '+fmt(m-saldo)):(m>=saldo?'Con este abono la deuda quedaria SALDADA':'Quedaria pendiente: '+fmt(saldo-m))):null),
+    h(Fld,{label:'Notas (opcional)'},h('input',{value:notas,onChange:function(e){setNotas(e.target.value);},placeholder:'Detalles del pago...',className:'inp'})),
+    h('div',{style:{display:'flex',gap:8,marginTop:8}},
+      h(ABtn,{color:valido?'var(--green2)':'var(--bg4)',onClick:valido?submit:function(){},icon:'check',label:'Registrar abono'})));
 }
 
 // ── Desarrollador ─────────────────────────────────────────────────────────────
