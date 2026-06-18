@@ -989,6 +989,10 @@ function App(){
       'Mas proteccion para tu informacion: no puedes dejar una deuda con un monto menor a lo que ya abonaste, y las confirmaciones para eliminar usan ventanas propias de la app (claras y seguras) en lugar de los avisos del sistema',
       'Menu lateral renovado en formato acordeon (Prestamos y Deudas) que recuerda como lo dejaste la proxima vez que abres la app; tus acreedores se agrupan en Activos e Inactivos y se ordenan por antiguedad, igual que ya funcionaban los deudores',
       'Al crear un prestamo o una deuda, un buscador con autocompletado te sugiere clientes y acreedores que ya existen mientras escribes, con un diseño unificado en toda la app'
+    ],
+    '1.12.1': [
+      'Ajuste visual: la pantalla de carga al iniciar ahora muestra el nuevo nombre "Cartera"',
+      'Correccion: la ventana de novedades vuelve a aparecer automaticamente despues de cada actualizacion'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -997,7 +1001,12 @@ function App(){
     window.electronAPI.getAppVersion().then(function(ver){
       window._appVersion=ver;
       var lastSeen = localStorage.getItem('lastSeenVersion');
-      if(lastSeen && lastSeen !== ver && CHANGELOGS[ver]){
+      // v1.12.1: se quito el guard `lastSeen &&`. El rebranding mueve userData a
+      // %APPDATA%\cartera\ -> localStorage arranca vacio (lastSeen null) y el modal
+      // de novedades nunca disparaba. Ahora dispara siempre que la version guardada
+      // difiera de la actual (incluido null) y exista changelog. El setItem de abajo
+      // garantiza que solo se muestre una vez por version.
+      if(lastSeen !== ver && CHANGELOGS[ver]){
         setChangelogDlg({version:ver, items:CHANGELOGS[ver]});
       }
       localStorage.setItem('lastSeenVersion', ver);

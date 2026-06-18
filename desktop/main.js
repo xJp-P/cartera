@@ -422,7 +422,7 @@ function createSplashWindow() {
     + '<div id="vLoading" class="view">'
     + '<div class="countdown" id="countdown">60s</div>'
     + '<div class="spinner"></div>'
-    + '<h1>Cartera de Préstamos</h1>'
+    + '<h1>Cartera</h1>'
     + '<p id="msg">Buscando actualizaciones</p>'
     + '<div class="barwrap" id="barwrap"><div class="bar" id="bar"><div class="bar-fill" id="fill"></div></div><span id="pct"></span></div>'
     + '<small>v' + version + '</small>'
