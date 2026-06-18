@@ -151,7 +151,7 @@ ipcMain.handle('get-startup-errors', () => {
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 1000, minHeight: 700,
-    title: 'Cartera de Prestamos',
+    title: 'Cartera',
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
     show: false,
@@ -238,7 +238,7 @@ ipcMain.handle('check-for-updates', () => {
 // ── Mac: actualizador personalizado (sin firma de código) ────────────
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'cartera-prestamos' } }, (res) => {
+    https.get(url, { headers: { 'User-Agent': 'cartera' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         return httpsGet(res.headers.location).then(resolve).catch(reject);
       }
@@ -254,7 +254,7 @@ function httpsGet(url) {
 let macUpdateScript = null;
 
 function macDownloadAndInstall(version) {
-  const zipUrl = `https://github.com/xJp-P/cartera-prestamos/releases/download/v${version}/Instalador-Mac-${version}.zip`;
+  const zipUrl = `https://github.com/xJp-P/cartera/releases/download/v${version}/Instalador-Mac-${version}.zip`;
   const tmpDir = path.join(os.tmpdir(), 'cartera-update-' + Date.now());
   const zipPath = path.join(tmpDir, 'update.zip');
 
@@ -280,14 +280,14 @@ function macDownloadAndInstall(version) {
         sendUpdateStatus('downloading', { percent: 100 });
         // Extraer zip
         execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
-        const extractedApp = path.join(tmpDir, 'Cartera de Prestamos.app');
+        const extractedApp = path.join(tmpDir, 'Cartera.app');
         if (!fs.existsSync(extractedApp)) {
           sendUpdateStatus('error', { message: 'No se encontro la app en el zip' });
           return;
         }
         // Quitar restricción de macOS
         execSync(`xattr -cr "${extractedApp}"`);
-        // Obtener ruta de la app actual (/Applications/Cartera de Prestamos.app)
+        // Obtener ruta de la app actual (/Applications/Cartera.app)
         const appPath = path.dirname(path.dirname(path.dirname(app.getAppPath())));
         // Crear script que reemplaza la app después de cerrar
         const scriptPath = path.join(tmpDir, 'update.sh');
@@ -378,7 +378,7 @@ function createSplashWindow() {
     backgroundColor: '#0d1117',
     center: true,
     skipTaskbar: false,
-    title: 'Cartera de Prestamos',
+    title: 'Cartera',
     webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
   w.setMenu(null);
@@ -545,7 +545,7 @@ function httpsGetJson(url) {
   return new Promise((resolve, reject) => {
     https.get(url, {
       headers: {
-        'User-Agent': 'cartera-prestamos',
+        'User-Agent': 'cartera',
         'Accept': 'application/vnd.github+json'
       }
     }, (res) => {
@@ -569,7 +569,7 @@ function httpsGetJson(url) {
 
 async function checkMacUpdateAvailable() {
   try {
-    const json = await httpsGetJson('https://api.github.com/repos/xJp-P/cartera-prestamos/releases/latest');
+    const json = await httpsGetJson('https://api.github.com/repos/xJp-P/cartera/releases/latest');
     const latestTag = String(json.tag_name || '').replace(/^v/, '');
     const currentVer = app.getVersion();
     if (latestTag && compareVersions(latestTag, currentVer) > 0) {
@@ -623,7 +623,7 @@ async function checkForUpdatesAtBoot() {
 
 // ── Mac: descarga + instalacion automatica al arrancar ──────────────────
 async function macDownloadAndInstallAtBoot(version) {
-  const zipUrl = `https://github.com/xJp-P/cartera-prestamos/releases/download/v${version}/Instalador-Mac-${version}.zip`;
+  const zipUrl = `https://github.com/xJp-P/cartera/releases/download/v${version}/Instalador-Mac-${version}.zip`;
   const tmpDir = path.join(os.tmpdir(), 'cartera-update-' + Date.now());
   const zipPath = path.join(tmpDir, 'update.zip');
   fs.mkdirSync(tmpDir, { recursive: true });
@@ -647,7 +647,7 @@ async function macDownloadAndInstallAtBoot(version) {
 
   updateSplashMessage('Instalando v' + version, 100);
   execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
-  const extractedApp = path.join(tmpDir, 'Cartera de Prestamos.app');
+  const extractedApp = path.join(tmpDir, 'Cartera.app');
   if (!fs.existsSync(extractedApp)) throw new Error('No se encontro la app en el zip');
   execSync(`xattr -cr "${extractedApp}"`);
   const appPath = path.dirname(path.dirname(path.dirname(app.getAppPath())));

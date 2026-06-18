@@ -1,6 +1,6 @@
 {
-  "name": "cartera-prestamos",
-  "version": "1.11.4",
+  "name": "cartera",
+  "version": "1.12.0",
   "description": "Gestión de cartera de préstamos personales",
   "main": "desktop/main.js",
   "scripts": {
@@ -24,7 +24,7 @@
   },
   "build": {
     "appId": "com.juanp.cartera",
-    "productName": "Cartera de Prestamos",
+    "productName": "Cartera",
     "icon": "build/icon.png",
     "win": {
       "target": "nsis",
@@ -38,7 +38,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Cartera de Prestamos",
+      "shortcutName": "Cartera",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeader": "build/icon.png",
@@ -55,7 +55,7 @@
     "publish": {
       "provider": "github",
       "owner": "xJp-P",
-      "repo": "cartera-prestamos",
+      "repo": "cartera",
       "releaseType": "release"
     },
     "directories": {

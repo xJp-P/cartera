@@ -1,6 +1,6 @@
-# Cartera de Prestamos
+# Cartera
 
-App de escritorio para gestionar prestamos personales. Controla tu cartera de manera simple: registra prestamos, cobra cuotas, genera recibos y lleva el seguimiento de tus deudores.
+App de escritorio para gestionar tu cartera de credito personal en ambos sentidos: lo que te deben (prestamos que otorgas) y lo que tu debes (tus propias deudas). Registra prestamos, cobra cuotas, genera recibos, lleva el seguimiento de tus deudores y controla tus obligaciones, todo en un solo lugar.
 
 ## Funcionalidades
 
@@ -13,6 +13,7 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 - **Cronograma PDF** con valor de liquidacion desde el perfil de cada deudor
 - **Dashboard** con KPIs (capital original, recaudo del mes, saldo pendiente, ganancias, mora y proximos vencimientos), selector de meses en el recaudo para revisar periodos pasados y mini-graficos de tendencia en las tarjetas
 - **Perfiles de deudores** con historial completo de creditos
+- **Mis Deudas (lo que tu debes):** modulo de cuenta rotativa de doble via para llevar el control de tus propias deudas — registra abonos que reducen el saldo y cargos que lo aumentan, con estado de cuenta cronologico y barra de progreso por acreedor (agrupados en Activos e Inactivos)
 - **Seccion de rendimiento** con ganancias por prestamo (intereses + ganancia/perdida por TRM en USD)
 - **Calculadora** para simular prestamos antes de crearlos, con calculo automatico de la tasa de cambio desde el "Total pagado en COP"
 - **Historial de acciones** (log de todo lo que hiciste)
@@ -22,7 +23,7 @@ App de escritorio para gestionar prestamos personales. Controla tu cartera de ma
 
 ## Como instalar en Mac
 
-Descarga el instalador desde [Releases](https://github.com/xJp-P/cartera-prestamos/releases):
+Descarga el instalador desde [Releases](https://github.com/xJp-P/cartera/releases):
 
 - **Windows:** `Instalador-Windows-X.X.X.exe`
 - **Mac:** `Instalador-Mac-X.X.X.dmg`
@@ -40,7 +41,7 @@ Al abrir la app por primera vez, macOS puede mostrar un mensaje diciendo que la 
 3. Copia y pega el siguiente comando en la Terminal y presiona **Enter**:
 
 ```bash
-xattr -cr /Applications/Cartera\ de\ Prestamos.app
+xattr -cr /Applications/Cartera.app
 ```
 
 4. Cierra la Terminal
@@ -54,8 +55,8 @@ La base de datos es un archivo SQLite (`cartera.db`) que se crea automaticamente
 
 | Sistema | Ubicacion por defecto |
 |---|---|
-| Windows | `%APPDATA%\cartera-prestamos\cartera.db` |
-| Mac | `~/Library/Application Support/cartera-prestamos/cartera.db` |
+| Windows | `%APPDATA%\cartera\cartera.db` |
+| Mac | `~/Library/Application Support/cartera/cartera.db` |
 
 Desde la seccion **Desarrollador** dentro de la app puedes cambiar la ubicacion de la base de datos a cualquier carpeta (por ejemplo, una carpeta de iCloud Drive o OneDrive para sincronizar entre equipos).
 
