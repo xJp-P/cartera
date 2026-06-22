@@ -344,7 +344,9 @@ ipcMain.handle('print-pdf', async (_e, html, filename) => {
   const pdfBuf = await win.webContents.printToPDF({
     printBackground: true,
     preferCSSPageSize: true,
-    margins: { marginType: 'default' }
+    // Borde a borde (paperless): sin margenes de pagina del sistema; el inset
+    // seguro del contenido lo da el padding:2cm del body en @media print.
+    margins: { marginType: 'none' }
   });
   win.destroy();
   const savePath = await dialog.showSaveDialog(mainWin, {

@@ -285,8 +285,8 @@ function generateCronogramaPDF(loan, payments, darkMode) {
            '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
     dark ? '.nota{margin-top:12px;padding:10px 14px;background:#2b2005;border:1px solid #3d2e08;border-radius:8px;font-size:11px;color:#d29922}' :
            '.nota{margin-top:12px;padding:10px 14px;background:#fff8c5;border:1px solid #d4a72c;border-radius:8px;font-size:11px;color:#7a5900}',
-    dark ? '@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}body{padding:15px;font-size:11px;background:#0d1117!important;color:#e6edf3!important}@page{margin:10mm}}' :
-           '@media print{body{padding:15px;font-size:11px}@page{margin:10mm}}',
+    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:2cm;font-size:11px;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}' :
+           '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:2cm;font-size:11px;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
     '</style></head><body>',
     '<div class="header">',
     '<h1>Cronograma de Pagos</h1>',
@@ -424,8 +424,8 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
            '.total-box .sub{font-size:12px;color:#166534;margin-top:2px}',
     dark ? '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #30363d;font-size:10px;color:#6e7681}' :
            '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
-    dark ? '@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}body{padding:20px;background:#0d1117!important;color:#e6edf3!important}@page{margin:15mm}}' :
-           '@media print{body{padding:20px}@page{margin:15mm}}',
+    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:2cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}' :
+           '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:2cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
     '</style></head><body>',
     '<div class="header">',
     '<h1>' + tipoTitulo + '</h1>',
@@ -993,6 +993,10 @@ function App(){
     '1.12.1': [
       'Ajuste visual: la pantalla de carga al iniciar ahora muestra el nuevo nombre "Cartera"',
       'Correccion: la ventana de novedades vuelve a aparecer automaticamente despues de cada actualizacion'
+    ],
+    '1.12.3': [
+      'Hotfix: Correccion de calculo de tasa dinamica en previsualizacion bimonetaria.',
+      'Mejora: Exportacion de PDFs eco-friendly sin margenes de sistema y actualizacion de metadatos corporativos.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -4065,9 +4069,9 @@ function LoanModal(props){
       h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:5}},
         h('span',{style:{fontSize:12,color:'var(--text2)'}},f.modalidad==='Prestamo'?'Monto a devolver':f.modalidad==='Pago Unico'?'Total a cobrar (capital + ganancia)':f.modalidad==='Intereses'?'Cuota de interes'+(f.frecuencia==='Semanal'?' semanal':f.frecuencia==='Quincenal'?' quincenal':' mensual'):'Cuota '+(f.frecuencia==='Semanal'?'semanal':f.frecuencia==='Quincenal'?'quincenal':'mensual')),
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:f.modalidad==='Prestamo'?'var(--blue)':'var(--green)'}},fmt(preview.cuota))),
-      f.moneda==='USD'&&+f.trmAcordada>0&&h('div',{style:{display:'flex',justifyContent:'space-between'}},
+      f.moneda==='USD'&&trmEfectiva>0&&h('div',{style:{display:'flex',justifyContent:'space-between'}},
         h('span',{style:{fontSize:12,color:'var(--text2)'}},'Cuota '+freqCuotaLabel(f.frecuencia)+' en USD'),
-        h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},fmtUSD(preview.cuota/(+f.trmAcordada)))),
+        h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},fmtUSD(preview.cuota/(trmEfectiva||1)))),
       f.modalidad==='Intereses'&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:6}},'\u221E Plazo indefinido - paga intereses hasta abonar todo el capital'),
       f.modalidad==='Prestamo'&&f.fechaDevolucion&&h('div',{style:{fontSize:11,color:'var(--yellow)',marginTop:6}},'Sin intereses - devolucion: '+fmtD(f.fechaDevolucion)),
       f.modalidad==='Pago Unico'&&f.fechaDevolucion&&h('div',{style:{fontSize:11,color:'var(--green)',marginTop:6}},'Vence el '+fmtD(f.fechaDevolucion)+' \u2014 capital '+fmt(montoCOP)+' + ganancia '+fmt(gananciaCOPCalc)),
@@ -4079,7 +4083,7 @@ function LoanModal(props){
             ['#','Interes','Capital','Cuota','Saldo'].map(function(hd){
               return h('th',{key:hd,style:{padding:'6px 8px',textAlign:hd==='#'?'center':'right',fontWeight:600,color:'var(--text2)',whiteSpace:'nowrap'}},hd);}))),
           h('tbody',null,preview.rows.map(function(r){
-            var t=+f.trmAcordada||1;
+            var t=trmEfectiva||1;
             return h('tr',{key:r.n,style:{borderTop:'1px solid rgba(63,185,80,.12)'}},
               h('td',{style:{padding:'5px 8px',textAlign:'center',color:'var(--text3)'}},r.n),
               h('td',{className:'mono',style:{padding:'5px 8px',textAlign:'right',color:'var(--yellow)'}},fmtN(r.interes),

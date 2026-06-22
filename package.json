@@ -1,7 +1,7 @@
 {
   "name": "cartera",
-  "version": "1.12.1",
-  "description": "Gestión de cartera de préstamos personales",
+  "version": "1.12.3",
+  "description": "Gestión integral de activos, pasivos y cartera rotativa.",
   "main": "desktop/main.js",
   "scripts": {
     "start": "electron .",
