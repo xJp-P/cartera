@@ -442,7 +442,10 @@ module.exports = function createApp(dbPath) {
       // con montoCOP porque su flujo es diferente.
       const originalCOPRec = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
       const capPorAbonos = prev.filter(p => p.id.indexOf('-ab-') !== -1 && p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
-      const capPorCuotasPagadas = prevPagadasYMora.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+      // v1.12.x FIX (bug de mora): restar tambien el capital de las cuotas EN MORA (deuda
+      // independiente, su capital NO se re-amortiza en las pendientes). prevPagadasYMora =
+      // Pagadas + Mora -> simetrico con regularConsumed (que tambien las cuenta). Antes solo Pagadas.
+      const capPorCuotasPagadas = prevPagadasYMora.reduce((s, p) => s + p.abonoCapital, 0);
       const saldoReal = Math.max(0, originalCOPRec - capPorAbonos - capPorCuotasPagadas);
       let schedule = [];
 
@@ -596,9 +599,9 @@ module.exports = function createApp(dbPath) {
     const totalAbonado = prevAbonos.filter(p => p.estadoPago === 'Pagado')
       .reduce((s, p) => s + p.abonoCapital, 0);
     // capital ya consumido por cuotas Pagadas regulares (no abonos)
-    const capPorCuotasPagadas = prevPagadasYMora
-      .filter(p => p.estadoPago === 'Pagado')
-      .reduce((s, p) => s + p.abonoCapital, 0);
+    // v1.12.x FIX (bug de mora): incluir el capital de las cuotas EN MORA (deuda independiente)
+    // para que saldoActual sea simetrico con regularConsumedEdit (que cuenta Pagadas + Mora).
+    const capPorCuotasPagadas = prevPagadasYMora.reduce((s, p) => s + p.abonoCapital, 0);
     const originalCOPEdit = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
     const saldoActual = Math.max(0, originalCOPEdit - totalAbonado - capPorCuotasPagadas);
     const regularConsumedEdit = prevPagadasYMora.length;
@@ -835,7 +838,12 @@ module.exports = function createApp(dbPath) {
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
 
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
-    const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    // v1.12.x FIX (bug de mora): el capital de las cuotas EN MORA tambien esta "consumido"
+    // (deuda independiente) -> restarlo, simetrico con regularConsumed (cuenta Pagadas + Mora).
+    const todoCapPagado = allPays.filter(p =>
+      p.estadoPago === 'Pagado' ||
+      (p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0))
+    ).reduce((s, p) => s + p.abonoCapital, 0);
     const saldoReal = Math.max(0, originalCOP - todoCapPagado);
     const montoNum = +monto || 0;
     if (montoNum <= 0) return res.status(400).json({ error: 'El monto del abono debe ser mayor a 0' });
@@ -1004,7 +1012,12 @@ module.exports = function createApp(dbPath) {
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
 
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
-    const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    // v1.12.x FIX (bug de mora): incluir el capital de las cuotas EN MORA (deuda independiente),
+    // simetrico con regularConsumed (cuenta Pagadas + Mora).
+    const todoCapPagado = allPays.filter(p =>
+      p.estadoPago === 'Pagado' ||
+      (p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0))
+    ).reduce((s, p) => s + p.abonoCapital, 0);
     const saldoReal = Math.max(0, originalCOP - todoCapPagado);
     if (saldoReal <= 0) return res.status(400).json({ error: 'El prestamo no tiene saldo de capital pendiente para reestructurar' });
 
@@ -1120,6 +1133,10 @@ module.exports = function createApp(dbPath) {
 
     // Saldo actual (capital pendiente)
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+    // NOTA (bug de mora): aqui NO se suma el capital de cuotas En Mora a proposito — esta ruta
+    // YA borro las cuotas Pendiente+Mora arriba (L1109): su capital vuelve al residual y el interes
+    // de mora se consolida en la primera cuota nueva. Por eso todoCapPagado (solo Pagadas) ya es
+    // simetrico con regularConsumed. NO replicar aqui el fix de /recalculate (no quedan filas En Mora).
     const todoCapPagado = todasCuotas.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
     const saldoActual = Math.max(0, originalCOP - todoCapPagado);
 
