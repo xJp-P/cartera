@@ -782,7 +782,15 @@ module.exports = function createApp(dbPath) {
     if (montoNum > restante) return res.status(400).json({ error: 'El monto supera el saldo pendiente de la cuota ($' + Math.round(restante).toLocaleString() + ')' });
 
     const nuevoPartial = yaPagado + montoNum;
-    const completa = nuevoPartial >= pay.cuotaTotal;
+    // v1.12.x FIX (pago bimonetario): en prestamos USD, si el USD recibido cubre la cuota en USD
+    // (cuotaTotal / trmAcordada), la cuota se completa aunque los COP sean menores por una baja de
+    // la TRM. Se acepta el deficit/superavit cambiario sin penalizar el estado de la cuota.
+    const loanPay = db.prepare('SELECT moneda, trmAcordada FROM loans WHERE id = ?').get(pay.prestamoId);
+    const cuotaEnUSD = (loanPay && loanPay.moneda === 'USD' && loanPay.trmAcordada > 0)
+      ? Math.round((pay.cuotaTotal / loanPay.trmAcordada) * 100) / 100 : 0;
+    const usdRecibidoAcum = Math.round(((pay.montoUSDRecibido || 0) + (+montoUSD || 0)) * 100) / 100;
+    const completaUSD = cuotaEnUSD > 0 && usdRecibidoAcum >= cuotaEnUSD - 0.005; // tolerancia de centavo
+    const completa = nuevoPartial >= pay.cuotaTotal || completaUSD;
     const fechaPago = fecha || hoyStr();
     const obsPrev = pay.observaciones || '';
     const obsNueva = (observaciones || '').trim();
@@ -798,7 +806,7 @@ module.exports = function createApp(dbPath) {
       // Completa la cuota: marcar Pagado
       const usdAcum = (pay.montoUSDRecibido || 0) + (+montoUSD || 0);
       db.prepare("UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, recibos=?, paidAt=datetime('now','localtime') WHERE id=?")
-        .run('Pagado', fechaPago, obsCombinada, pay.cuotaTotal, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, recibosJSON, req.params.id);
+        .run('Pagado', fechaPago, obsCombinada, nuevoPartial, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, recibosJSON, req.params.id);
       logAction.run('pago', 'Pago parcial final: ' + pay.nombreCliente + ' cuota #' + pay.cuotaN + ' $' + montoNum.toLocaleString() + ' (completo $' + Math.round(pay.cuotaTotal).toLocaleString() + ')');
 
       // Si era la cuota con proximaCuotaExtra, limpiarla del loan

@@ -373,7 +373,11 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   var montoRecibido = copRec || pay.cuotaTotal;
   var yaAbonadoPrev = opts.yaAbonadoPrev || 0;
   var totalAcum = yaAbonadoPrev + montoRecibido;
-  var esParcial = totalAcum < pay.cuotaTotal;
+  // v1.12.x FIX (recibo bimonetario): en prestamos USD, si el USD recibido cubre la cuota en USD
+  // (cuotaTotal/trmAcordada), el pago NO es parcial aunque los COP sean menores por la baja de la
+  // TRM. Espeja la logica del backend para que el recibo no marque "Abono parcial" por error.
+  var cubreEnUSD = esUSD && (loan.trmAcordada > 0) && (+usdRec || 0) >= Math.round((pay.cuotaTotal / loan.trmAcordada) * 100) / 100 - 0.005;
+  var esParcial = totalAcum < pay.cuotaTotal && !cubreEnUSD;
   var completaCuota = !esParcial && yaAbonadoPrev > 0;
   var tipoTitulo = esParcial ? 'Recibo de Abono Parcial' : completaCuota ? 'Recibo Final de Cuota' : 'Recibo de Pago';
   var tipoEtiqueta = esParcial ? 'Abono parcial a cuota' : completaCuota ? 'Pago final (completa cuota)' : 'Pago completo';
@@ -457,7 +461,7 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="total-box">',
     '<div style="font-size:10px;color:' + (dark ? '#8b949e' : '#656d76') + ';margin-bottom:4px">' + (esParcial ? 'ABONO RECIBIDO' : 'MONTO RECIBIDO') + '</div>',
     '<div class="amount">' + (esUSD && usdRec ? fmtUSD(usdRec) : fv(montoRecibido)) + '</div>',
-    esUSD && usdRec ? '<div class="sub">' + fv(montoRecibido) + ' COP</div>' : '',
+    esUSD && usdRec ? '<div class="sub">' + fmt(montoRecibido) + ' COP</div>' : '',
     '</div>',
     esLiquidacion ? '<div style="margin:16px 0;padding:14px 16px;background:' + (dark ? '#0f2b19' : '#dafbe1') + ';border:1px solid ' + (dark ? '#1b4332' : '#aceebb') + ';border-radius:8px;text-align:center">' +
       '<div style="font-size:15px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + '">¡Felicidades! Ha cancelado la totalidad de su prestamo</div>' +
@@ -1003,6 +1007,10 @@ function App(){
     ],
     '1.12.5': [
       'Fix (Prestamos): corregida la inicializacion del modal de edicion de Pago Unico. Ahora reconstruye la ganancia como monto fijo absoluto, evitando calculos erroneos de porcentajes desbordados al cargar el formulario.'
+    ],
+    '1.12.6': [
+      'Pagos en USD: si recibes la cuota completa en dolares pero la TRM bajo (entran menos pesos), el pago ya se marca como COMPLETO en vez de "parcial"; la diferencia queda registrada como perdida/ganancia por TRM.',
+      'Pagos en USD: las "Transacciones del Mes", la lista de cobrados y el recibo ahora muestran los dolares realmente recibidos, no un valor recalculado desde los pesos a la tasa pactada.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1972,7 +1980,7 @@ function DashView(props){
                     h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},tipoTx(p,pl)+' · '+fmtD(fecha))),
                   h('div',{style:{textAlign:'right',flexShrink:0}},
                     h('div',{className:'mono',style:{fontSize:15,fontWeight:700,color:'var(--text)'}},fmt(monto)),
-                    isU&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},copToUsd(monto,pl.trmAcordada))));
+                    isU&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',marginTop:1}},(+p.montoUSDRecibido>0?fmtUSD(p.montoUSDRecibido):copToUsd(monto,pl.trmAcordada)))));
               })))),
     // ── EMPTY STATE ─────────────────────────────────────────────────────
     isEmpty&&h('div',{style:{textAlign:'center',padding:'44px 0',color:'var(--text3)'}},
@@ -2960,7 +2968,7 @@ function PagosView(props){
             h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:1}},'Cuota '+p.cuotaN+' \u2022 '+fmtD(p.fechaRecaudo||p.fechaPago))),
           h('div',{style:{textAlign:'right'}},
             h('div',{className:'mono',style:{fontWeight:300,fontSize:14,color:'var(--green)'}},fmt(p.montoCOPRecibido||p.cuotaTotal)),
-            esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(p.montoCOPRecibido||p.cuotaTotal,trm))));
+            esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},(+p.montoUSDRecibido>0?fmtUSD(p.montoUSDRecibido):copToUsd(p.montoCOPRecibido||p.cuotaTotal,trm)))));
       })));
 }
 
