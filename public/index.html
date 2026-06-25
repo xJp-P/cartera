@@ -1000,6 +1000,9 @@ function App(){
     ],
     '1.12.4': [
       'Hotfix critico: correccion matematica en el motor de amortizacion que inflaba las cuotas (in-app y en PDF) cuando el prestamo entraba en mora.'
+    ],
+    '1.12.5': [
+      'Fix (Prestamos): corregida la inicializacion del modal de edicion de Pago Unico. Ahora reconstruye la ganancia como monto fijo absoluto, evitando calculos erroneos de porcentajes desbordados al cargar el formulario.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -3766,8 +3769,14 @@ function LoanModal(props){
     // v1.10.0 — campos para modalidad Pago Unico
     // gananciaFija siempre se persiste en COP; gananciaInput es el valor visible (puede ser % o COP)
     gananciaFija:loan&&loan.gananciaFija||0,
-    gananciaMode:'pct', // 'pct' | 'monto' — solo estado de UI, no se persiste
-    gananciaInput:loan&&loan.gananciaFija?String(Math.round(+loan.gananciaFija)):'',
+    // v1.12.x FIX: al EDITAR un Pago Unico con ganancia guardada, reconstruir el modo. Solo se
+    // persiste gananciaFija (COP absoluto), NO el modo original -> lo representamos como "monto
+    // fijo" (exacto, sin perdida). El input va en la moneda del prestamo (USD = gananciaFija/TRM).
+    // Antes quedaba fijo en 'pct' con el COP absoluto en el input -> calculaba 25000% del capital.
+    gananciaMode:(loan&&loan.modalidad==='Pago Unico'&&(+loan.gananciaFija||0)>0)?'monto':'pct',
+    gananciaInput:(loan&&(+loan.gananciaFija||0)>0)
+      ?String(Math.round((loan.moneda==='USD'&&(+loan.trmAcordada||0)>0)?(+loan.gananciaFija/+loan.trmAcordada):+loan.gananciaFija))
+      :'',
     estado:loan&&loan.estado||'Activo',notas:loan&&loan.notas||''
   });
   var f=fs[0]; var setF=fs[1];
