@@ -452,7 +452,7 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="row"><span class="label">Tipo</span><span class="value">' + tipoEtiqueta + '</span></div>',
     '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + '</span></div>',
     '<div class="row"><span class="label">Fecha vencimiento</span><span class="value">' + fmtD(pay.fechaPago) + '</span></div>',
-    '<div class="row"><span class="label">Fecha recaudo</span><span class="value">' + fmtD(pay.fechaRecaudo || nowStr()) + '</span></div>',
+    '<div class="row"><span class="label">Fecha recaudo</span><span class="value">' + fmtD(opts.fechaRecaudo || pay.fechaRecaudo || nowStr()) + '</span></div>',
     !esParcial && pay.interesPeriodo > 0 ? '<div class="row"><span class="label">Intereses</span><span class="value">' + fv(pay.interesPeriodo) + '</span></div>' : '',
     !esParcial && pay.abonoCapital > 0 ? '<div class="row"><span class="label">Abono a capital</span><span class="value">' + fv(pay.abonoCapital) + '</span></div>' : '',
     '<div class="row"><span class="label">Monto cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>',
@@ -1011,6 +1011,9 @@ function App(){
     '1.12.6': [
       'Pagos en USD: si recibes la cuota completa en dolares pero la TRM bajo (entran menos pesos), el pago ya se marca como COMPLETO en vez de "parcial"; la diferencia queda registrada como perdida/ganancia por TRM.',
       'Pagos en USD: las "Transacciones del Mes", la lista de cobrados y el recibo ahora muestran los dolares realmente recibidos, no un valor recalculado desde los pesos a la tasa pactada.'
+    ],
+    '1.12.7': [
+      'Recibo PDF: el campo "Fecha recaudo" ahora muestra la fecha real del pago que elegiste al registrarlo (antes imprimia siempre la fecha del dia en que se generaba el recibo). La "Fecha de emision" se mantiene con la fecha de impresion.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -3293,17 +3296,17 @@ function PayModal(props){
     var m=+montoParcial||0;
     if(m<=0){_showError('Ingresa el monto del pago parcial');return;}
     if(m>restante){_showError('El monto supera el saldo pendiente ('+fmt(restante)+')');return;}
-    if(genRecibo&&loan){generateRecibo(pay,loan,m,+parcialUSD||0,allPays,{yaAbonadoPrev:yaPagado});}
+    if(genRecibo&&loan){generateRecibo(pay,loan,m,+parcialUSD||0,allPays,{yaAbonadoPrev:yaPagado,fechaRecaudo:fecha});}
     onPartial(pay.id,m,fecha,obs,+parcialUSD||0);
   }
   function submitCompleto(){
     if(esUSD&&(!copRec||+copRec<=0)){_showError('Ingresa el monto COP recibido para prestamos en USD');return;}
     if(yaPagado>0){
       // Habia pagos parciales: el recibo es "Pago final" que completa la cuota
-      if(genRecibo){generateRecibo(pay,loan,restante,+usdRec||0,allPays,{yaAbonadoPrev:yaPagado});}
+      if(genRecibo){generateRecibo(pay,loan,restante,+usdRec||0,allPays,{yaAbonadoPrev:yaPagado,fechaRecaudo:fecha});}
       onPartial(pay.id,restante,fecha,obs,+usdRec||0);
     } else {
-      if(genRecibo){generateRecibo(pay,loan,+copRec||pay.cuotaTotal,+usdRec||0,allPays);}
+      if(genRecibo){generateRecibo(pay,loan,+copRec||pay.cuotaTotal,+usdRec||0,allPays,{fechaRecaudo:fecha});}
       onMark(pay.id,'Pagado',fecha,obs,+copRec||pay.cuotaTotal,+usdRec||0);
     }
   }
