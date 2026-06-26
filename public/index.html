@@ -1014,6 +1014,15 @@ function App(){
     ],
     '1.12.7': [
       'Recibo PDF: el campo "Fecha recaudo" ahora muestra la fecha real del pago que elegiste al registrarlo (antes imprimia siempre la fecha del dia en que se generaba el recibo). La "Fecha de emision" se mantiene con la fecha de impresion.'
+    ],
+    '1.12.8': [
+      'Rendimiento: la ganancia en USD ahora muestra los dolares realmente recibidos (antes reconvertia los pesos por la TRM y daba un valor menor cuando el dolar se devaluaba).',
+      'Rendimiento: los prestamos a 0% interes (modalidad Prestamo) ya no muestran su capital como ganancia; el resultado se etiqueta "Efecto TRM" y aclara si la diferencia viene de una subida o baja del dolar.',
+      'Rendimiento: las ganancias negativas (perdida por TRM) se muestran en rojo.',
+      'Rendimiento: los prestamos finalizados se ordenan del ultimo finalizado al mas antiguo.',
+      'Rendimiento: en prestamos cerrados con perdida se especifica si proviene de intereses no cobrados, de capital no recuperado, o de ambos.',
+      'Rendimiento: las tarjetas "Capital Colocado" y "Capital Recuperado" aclaran que suman solo prestamos activos.',
+      'Perfil del deudor: nuevo bloque "Proyeccion de Ganancias" que compara lo ya cobrado contra la ganancia esperada del prestamo.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -2624,11 +2633,52 @@ function DebtorModal(props){
                   h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0 2px',fontSize:11,borderTop:'1px solid var(--bg3)',marginTop:2}},
                     h('span',{style:{color:'var(--text3)'}},'Total invertido en COP'),
                     h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(lotesCOP))))),
+              // \u2500\u2500 GRUPO 5b: PROYECCION DE GANANCIAS \u2500\u2500
+              l.modalidad!=='Prestamo'&&h('div',{style:grupoStyle},
+                h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,marginBottom:2}},'PROYECCION DE GANANCIAS'),
+                (function(){
+                  if(l.modalidad==='Intereses'){
+                    var rentaMensual=Math.round(saldo*(+l.tasaMensual||0)/100);
+                    return [
+                      row('Cobrado hasta hoy',
+                        h('div',null,
+                          h('div',{className:'mono',style:{fontSize:13,color:'var(--green)',fontWeight:500}},'+'+fmt(intCobrados)),
+                          esUSD&&intCobrados>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intCobrados,l.trmAcordada))),
+                        'Ganancia acumulada por intereses',{first:true,key:'proy-cob'}),
+                      row('Renta mensual',
+                        h('div',null,
+                          h('div',{className:'mono',style:{fontSize:13,color:'var(--text)',fontWeight:500}},'+'+fmt(rentaMensual)),
+                          esUSD&&rentaMensual>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(rentaMensual,l.trmAcordada))),
+                        'Saldo '+fmt(saldo)+' x '+l.tasaMensual+'%',{key:'proy-renta'})
+                    ];
+                  }
+                  var gananciaEsperada=l.modalidad==='Pago Unico'?(+l.gananciaFija||0):regulares.reduce(function(s,p){return s+p.interesPeriodo;},0);
+                  var pctProy=gananciaEsperada>0?Math.min(100,Math.round(intCobrados/gananciaEsperada*100)):0;
+                  return [
+                    h('div',{key:'proy-bar',style:{padding:'8px 0 4px'}},
+                      h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:4}},
+                        h('span',{style:{color:'var(--green)',fontWeight:600}},pctProy+'% cobrado'),
+                        h('span',{className:'mono',style:{color:'var(--text3)',fontWeight:400}},fmt(intCobrados)+' / '+fmt(gananciaEsperada))),
+                      h('div',{style:{height:6,borderRadius:3,background:'var(--bg4)',overflow:'hidden'}},
+                        h('div',{style:{height:'100%',borderRadius:3,background:'var(--green2)',width:pctProy+'%',transition:'width .3s'}}))),
+                    row('Ganancia esperada',
+                      h('div',null,
+                        h('div',{className:'mono',style:{fontSize:13,color:'var(--text)',fontWeight:500}},fmt(gananciaEsperada)),
+                        esUSD&&gananciaEsperada>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(gananciaEsperada,l.trmAcordada))),
+                      'Total de intereses del cronograma',{key:'proy-esp'}),
+                    row('Cobrado',
+                      h('div',null,
+                        h('div',{className:'mono',style:{fontSize:13,color:'var(--green)',fontWeight:500}},'+'+fmt(intCobrados)),
+                        esUSD&&intCobrados>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intCobrados,l.trmAcordada))),
+                      null,{key:'proy-cob'}),
+                    gananciaEsperada>intCobrados&&row('Pendiente por cobrar',
+                      h('div',null,
+                        h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',fontWeight:500}},fmt(gananciaEsperada-intCobrados)),
+                        esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(gananciaEsperada-intCobrados,l.trmAcordada))),
+                      null,{key:'proy-pend'})
+                  ];
+                })()),
               // \u2500\u2500 GRUPO 6: ACCIONES (botones) \u2500\u2500
-              // v1.9.x rediseno: jerarquia visual en 3 tiers
-              // Tier 1 (Cobrar): verde solido (Registrar abono) + verde outline (Liquidar)
-              // Tier 2 (Ajustar cronograma): outline neutral (Reestructurar / Cambiar fecha)
-              // Tier 3 (Cronograma): ghost dashed pareado (Ver detalle / Descargar PDF)
               h('div',{style:grupoStyle},
             (function(){
               var isActive=l.estado==='Activo'&&saldo>0;
@@ -2764,7 +2814,7 @@ function DebtorModal(props){
         // KPI del header: para USD usa ganancia total (incluye TRM); para COP solo intereses
         var kpiValor=esCancelado?totalPerdido:(esUSD?gananciaTotalHist:Math.round(intPagados));
         var kpiColor=esCancelado?'var(--red)':(esUSD&&gananciaTotalHist<0?'var(--red)':'var(--green)');
-        var kpiLabel=esCancelado?'PERDIDA':'GANANCIA';
+        var kpiLabel=esCancelado?'PERDIDA':((esUSD&&l.modalidad==='Prestamo')?'EFECTO TRM':'GANANCIA');
         var origCOP=esUSD?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen);
         // Calcular duración
         var duracion='';
@@ -2818,9 +2868,9 @@ function DebtorModal(props){
               h('div',null,
                 h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},esCancelado?'FECHA DE CIERRE':'ULTIMO PAGO'),
                 h('div',{style:{fontSize:13,fontWeight:500,color:'var(--text2)'}},fechaFin?fmtD(fechaFin):'N/A'))),
-            esUSD&&intPagados>0&&h('div',{style:{marginBottom:capAbonos>0||esCancelado?10:0,padding:'10px 12px',background:'rgba(88,166,255,.04)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
+            esUSD&&(intPagados>0||gananciaTRMHist!==0)&&h('div',{style:{marginBottom:capAbonos>0||esCancelado?10:0,padding:'10px 12px',background:'rgba(88,166,255,.04)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
               h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600,letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
-                h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' DESGLOSE GANANCIA (USD)'),
+                h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),(l.modalidad==='Prestamo')?' DESGLOSE RESULTADO (USD)':' DESGLOSE GANANCIA (USD)'),
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',fontSize:11}},
                 h('span',{style:{color:'var(--text2)'}},'Ganancia interes'),
                 h('span',{className:'mono',style:{color:'var(--text)',fontWeight:300}},'+'+fmt(intPagados))),
@@ -2830,7 +2880,7 @@ function DebtorModal(props){
                   h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1}},gananciaTRMHist===0?'Sin datos de TRM al cobro':gananciaTRMHist>0?'TRM subio al cobrar':'TRM bajo al cobrar')),
                 h('span',{className:'mono',style:{color:gananciaTRMHist>0?'var(--green)':gananciaTRMHist<0?'var(--red)':'var(--text3)',fontWeight:300}},(gananciaTRMHist>0?'+':gananciaTRMHist<0?'-':'')+fmt(Math.abs(gananciaTRMHist)))),
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0 3px',borderTop:'1px solid var(--blue-bd)',marginTop:3}},
-                h('span',{style:{fontSize:11,color:'var(--blue)',fontWeight:600,letterSpacing:.3}},'GANANCIA TOTAL'),
+                h('span',{style:{fontSize:11,color:'var(--blue)',fontWeight:600,letterSpacing:.3}},(l.modalidad==='Prestamo')?'RESULTADO TOTAL':'GANANCIA TOTAL'),
                 h('span',{className:'mono',style:{fontSize:13,color:gananciaTotalHist>=0?'var(--green)':'var(--red)',fontWeight:600}},(gananciaTotalHist<0?'-':'+')+fmt(Math.abs(gananciaTotalHist))))),
             esCancelado&&h('div',{style:{padding:'10px 12px',background:'var(--bg3)',borderRadius:8,borderLeft:'3px solid var(--red)',marginBottom:capAbonos>0?8:0,display:'flex',justifyContent:'space-between',alignItems:'center'}},
               h('div',null,
@@ -2999,13 +3049,28 @@ function PortfolioView(props){
       if(esUSD){
         ganancia=regularesPaid.reduce(function(s,p){
           if(p.montoCOPRecibido&&p.montoCOPRecibido>0){
-            return s+(p.montoCOPRecibido-p.abonoCapital);
+            // Capital robusto: cuotaTotal-interesPeriodo (en Prestamo abonoCapital=0,
+            // de lo contrario el COP recibido se contaria entero como ganancia fantasma).
+            return s+(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo));
           }
           return s+p.interesPeriodo;
         },0);
       } else {
         ganancia=paid.reduce(function(s,p){return s+p.interesPeriodo;},0);
       }
+
+      // ── GANANCIA EN USD REAL (Bug #23 / v1.12.6): el USD efectivamente recibido como utilidad,
+      // NO copToUsd(gananciaCOP) que reconvierte por TRM y recontaria la perdida/ganancia cambiaria.
+      // Por cuota pagada: USD recibido - capital en USD (abonoCapital a TRM acordada).
+      // Fallback (sin montoUSDRecibido): interes contractual en USD = interesPeriodo / trmAcordada.
+      var gananciaUSD=esUSD?regularesPaid.reduce(function(s,p){
+        var trm=loan.trmAcordada>0?loan.trmAcordada:1;
+        // Capital en USD robusto para las 4 modalidades: cuotaTotal-interesPeriodo
+        // (en Prestamo abonoCapital se guarda en 0, no sirve como base).
+        var capUSD=(p.cuotaTotal-p.interesPeriodo)/trm;
+        if(p.montoUSDRecibido&&p.montoUSDRecibido>0) return s+(p.montoUSDRecibido-capUSD);
+        return s+(p.interesPeriodo/trm);
+      },0):0;
 
       // ── CAPITAL RECUPERADO: abonos explícitos + capital amortizado en cuotas regulares pagadas ──
       var capitalAmortizado=regularesPaid.reduce(function(s,p){return s+p.abonoCapital;},0);
@@ -3039,18 +3104,31 @@ function PortfolioView(props){
       // ── MORA: tiene cuotas en mora? ──
       var enMora=lp.some(function(p){return p.estadoPago==='En Mora';});
 
+      // ── FECHA DE FINALIZACION (derivada): ultimo pago registrado ──
+      // No hay columna fechaFinalizado; se infiere del pago mas reciente:
+      // paidAt (timestamp real v1.11.1) > fechaRecaudo > fechaPago; fallback fechaInicio.
+      var fechaFin=paid.reduce(function(mx,p){var d=p.paidAt||p.fechaRecaudo||p.fechaPago||'';return d>mx?d:mx;},'')||loan.fechaInicio;
+
       return {loan:loan,ganancia:Math.round(ganancia),capRec:Math.round(capRec),saldo:saldo,
         cuotasPaid:cuotasPaid,cuotasTotal:cuotasTotal,enMora:enMora,capitalAbonos:Math.round(capitalAbonos),
-        pctMonto:pctMonto,parcialesPend:Math.round(parcialesPend)};
+        pctMonto:pctMonto,parcialesPend:Math.round(parcialesPend),fechaFin:fechaFin,gananciaUSD:gananciaUSD};
     }).sort(function(a,b){
       var aAct=a.loan.estado==='Activo',bAct=b.loan.estado==='Activo';
       if(aAct!==bAct) return aAct?-1:1;
-      return b.loan.fechaInicio.localeCompare(a.loan.fechaInicio);
+      // Activos: por fecha de inicio desc. Finalizados/Cancelados: por fecha de finalizacion desc
+      // (el ultimo finalizado arriba), con fechaInicio como desempate.
+      if(aAct) return b.loan.fechaInicio.localeCompare(a.loan.fechaInicio);
+      return b.fechaFin.localeCompare(a.fechaFin)||b.loan.fechaInicio.localeCompare(a.loan.fechaInicio);
     });
   },[loans,pays]);
+  // Ganancia Obtenida: historica (incluye finalizados/cancelados — ya realizada).
   var totalGanancia=loanMetrics.reduce(function(s,m){return s+m.ganancia;},0);
-  var totalColocado=loans.reduce(function(s,l){return s+(l.moneda==='USD'?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen));},0);
-  var totalCapRec=loanMetrics.reduce(function(s,m){return s+m.capRec;},0);
+  // Capital Colocado / Recuperado: SOLO prestamos Activos, para coincidir con el KPI
+  // "Capital Original" del Dashboard (misma formula+filtro) y cumplir la identidad contable
+  // Colocado = Recuperado + Saldo. Saldo ya esta acotado a activos (saldo=0 si no Activo).
+  var activosR=loans.filter(function(l){return l.estado==='Activo';});
+  var totalColocado=activosR.reduce(function(s,l){return s+(l.moneda==='USD'?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen));},0);
+  var totalCapRec=loanMetrics.reduce(function(s,m){return m.loan.estado==='Activo'?s+m.capRec:s;},0);
   var totalSaldo=loanMetrics.reduce(function(s,m){return s+m.saldo;},0);
 
   function kpi(label,val,sub,color,bd){
@@ -3065,8 +3143,8 @@ function PortfolioView(props){
     h('div',{style:{fontSize:13,color:'var(--text2)',marginBottom:14}},'Ganancias obtenidas y estado del capital'),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}},
       kpi('GANANCIA OBTENIDA',fmt(totalGanancia),'Intereses cobrados','var(--green)','var(--green-bd)'),
-      kpi('CAPITAL COLOCADO',fmt(totalColocado),'Total invertido','var(--blue)','var(--blue-bd)'),
-      kpi('CAPITAL RECUPERADO',fmt(totalCapRec),'Capital + abonos','var(--blue)','var(--blue-bd)'),
+      kpi('CAP. COLOCADO (ACTIVOS)',fmt(totalColocado),'Total invertido · solo activos','var(--blue)','var(--blue-bd)'),
+      kpi('CAP. RECUPERADO (ACTIVOS)',fmt(totalCapRec),'Capital + abonos · solo activos','var(--blue)','var(--blue-bd)'),
       kpi('SALDO PENDIENTE',fmt(totalSaldo),'Capital expuesto','var(--yellow)','var(--border)')),
     h('div',{style:{display:'flex',gap:0,marginBottom:12,background:'var(--bg2)',borderRadius:10,border:'1px solid var(--border)',overflow:'hidden'}},
       [['Activo','Activo'],['Finalizados','Finalizados']].map(function(t){
@@ -3107,13 +3185,23 @@ function PortfolioView(props){
             'Capital: '+(esUSD?'USD $'+fmtN(l.montoOrigen)+' ('+fmt(Math.round(l.montoOrigen*l.trmAcordada))+')':fmt(Math.round(l.montoOrigen)))),
           h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}},
             h('div',null,
-              h('div',{style:{fontSize:11,color:'var(--green)',fontWeight:600}},'Ganancia obtenida'),
-              h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:'var(--green)'}},fmt(m.ganancia)),
-              esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(m.ganancia,l.trmAcordada))),
+              h('div',{style:{fontSize:11,color:m.ganancia<0?'var(--red)':'var(--green)',fontWeight:600}},(esUSD&&l.modalidad==='Prestamo')?'Efecto TRM':'Ganancia obtenida'),
+              h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:m.ganancia<0?'var(--red)':'var(--green)'}},fmt(m.ganancia)),
+              esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},fmtUSD(m.gananciaUSD)),
+              (esUSD&&l.modalidad==='Prestamo')&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},m.ganancia<0?'Sin interes · TRM bajo al cobrar':m.ganancia>0?'Sin interes · TRM subio al cobrar':'Sin interes · sin variacion TRM')),
             h('div',null,
               h('div',{style:{fontSize:11,color:saldoColor,fontWeight:600}},esCancelado?'Perdida total':'Saldo pendiente'),
               h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:saldoColor}},l.estado==='Activo'?fmt(m.saldo):esCancelado?'-'+fmt(perdidaTotal):'Saldado'),
-              esUSD&&l.estado==='Activo'&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(m.saldo,l.trmAcordada))),
+              esUSD&&l.estado==='Activo'&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(m.saldo,l.trmAcordada)),
+              esCancelado&&(function(){
+                var capP=Math.round(l.capitalPerdido||0),intP=Math.round(l.interesesPerdidos||0);
+                if(capP>0&&intP>0) return h('div',{style:{marginTop:3,fontSize:9,lineHeight:1.6}},
+                  h('div',{style:{color:'var(--text3)'}},'Capital ',h('span',{className:'mono',style:{color:'var(--red)'}},'-'+fmt(capP))),
+                  h('div',{style:{color:'var(--text3)'}},'Intereses ',h('span',{className:'mono',style:{color:'var(--red)'}},'-'+fmt(intP))));
+                if(capP>0) return h('div',{style:{marginTop:2,fontSize:9,color:'var(--text3)',fontStyle:'italic'}},'Solo capital no recuperado');
+                if(intP>0) return h('div',{style:{marginTop:2,fontSize:9,color:'var(--text3)',fontStyle:'italic'}},'Solo intereses no cobrados');
+                return null;
+              })()),
             m.capitalAbonos>0&&h('div',{style:{gridColumn:'1/3',marginTop:2}},
               h('div',{style:{fontSize:11,color:'var(--blue)',fontWeight:600}},'Abonos a capital'),
               h('div',{className:'mono',style:{fontSize:14,fontWeight:500,color:'var(--blue)'}},fmt(m.capitalAbonos),

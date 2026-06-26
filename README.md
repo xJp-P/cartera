@@ -12,7 +12,7 @@ App de escritorio para gestionar tu cartera de credito personal en ambos sentido
 - **Recibos PDF** generados al registrar un pago
 - **Cronograma PDF** con valor de liquidacion desde el perfil de cada deudor
 - **Dashboard** con KPIs (capital original, recaudo del mes, saldo pendiente, ganancias, mora y proximos vencimientos), selector de meses en el recaudo para revisar periodos pasados y mini-graficos de tendencia en las tarjetas
-- **Perfiles de deudores** con historial completo de creditos
+- **Perfiles de deudores** con historial completo de creditos y proyeccion de ganancia esperada por prestamo
 - **Mis Deudas (lo que tu debes):** modulo de cuenta rotativa de doble via para llevar el control de tus propias deudas — registra abonos que reducen el saldo y cargos que lo aumentan, con estado de cuenta cronologico y barra de progreso por acreedor (agrupados en Activos e Inactivos)
 - **Seccion de rendimiento** con ganancias por prestamo (intereses + ganancia/perdida por TRM en USD)
 - **Calculadora** para simular prestamos antes de crearlos, con calculo automatico de la tasa de cambio desde el "Total pagado en COP"
