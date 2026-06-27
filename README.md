@@ -9,7 +9,7 @@ App de escritorio para gestionar tu cartera de credito personal en ambos sentido
 - **Frecuencia de cobro:** semanal, quincenal o mensual
 - **Abonos a capital** con recalculo automatico del cronograma (mantener plazo, modificar plazo o fijar cuota)
 - **Reestructuracion** de cronograma sin necesidad de abono (Capital + Intereses)
-- **Recibos PDF** generados al registrar un pago
+- **Recibos PDF** generados al registrar un pago, con mensaje segun la puntualidad (agradecimiento por pago puntual/anticipado o aviso con los dias de retraso)
 - **Cronograma PDF** con valor de liquidacion desde el perfil de cada deudor
 - **Dashboard** con KPIs (capital original, recaudo del mes, saldo pendiente, ganancias, mora y proximos vencimientos), selector de meses en el recaudo para revisar periodos pasados y mini-graficos de tendencia en las tarjetas
 - **Perfiles de deudores** con historial completo de creditos y proyeccion de ganancia esperada por prestamo

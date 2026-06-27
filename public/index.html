@@ -403,6 +403,34 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     return p.prestamoId === loan.id && p.id.indexOf('-ab-') === -1 && p.id !== pay.id && p.estadoPago !== 'Pagado';
   }) : null;
   var esLiquidacion = !esParcial && loan.modalidad !== 'Intereses' && otrasRegPend !== null && otrasRegPend.length === 0;
+  // Banner dinamico: liquidacion (prioridad absoluta) > puntualidad. Compara la fecha REAL de cobro
+  // (la elegida en el form, fallback fechaRecaudo/hoy) contra la fechaPago esperada, ambas ancladas a
+  // mediodia local para evitar desfases por zona horaria. La puntualidad solo aplica a pagos COMPLETOS
+  // (no parciales, no abonos a capital).
+  var fechaRealPago = opts.fechaRecaudo || pay.fechaRecaudo || nowStr();
+  var diasRetraso = (pay.fechaPago && fechaRealPago && pay.id.indexOf('-ab-') === -1)
+    ? Math.round((new Date(fechaRealPago + 'T12:00:00') - new Date(pay.fechaPago + 'T12:00:00')) / 86400000) : 0;
+  function bannerBox(bg, bd, tx, titulo, sub) {
+    return '<div style="margin:16px 0;padding:14px 16px;background:' + bg + ';border:1px solid ' + bd + ';border-radius:8px;text-align:center">' +
+      '<div style="font-size:15px;font-weight:700;color:' + tx + '">' + titulo + '</div>' +
+      '<div style="font-size:11px;color:' + tx + ';margin-top:3px">' + sub + '</div></div>';
+  }
+  var bannerHTML = '';
+  if (esLiquidacion) {
+    bannerHTML = bannerBox(dark ? '#0f2b19' : '#dafbe1', dark ? '#1b4332' : '#aceebb', dark ? '#3fb950' : '#166534',
+      '¡Felicidades! Ha cancelado la totalidad de su prestamo',
+      'Con este pago se salda el 100% del prestamo. ¡Gracias por tu cumplimiento!');
+  } else if (!esParcial && pay.fechaPago && pay.id.indexOf('-ab-') === -1) {
+    if (diasRetraso > 0) {
+      bannerHTML = bannerBox(dark ? '#2d2410' : '#fff8c5', dark ? '#3d3115' : '#eac54f', dark ? '#d29922' : '#9a6700',
+        'Pago recibido con ' + diasRetraso + ' ' + (diasRetraso === 1 ? 'dia' : 'dias') + ' de retraso',
+        'Procura pagar a tiempo para evitar inconvenientes.');
+    } else {
+      bannerHTML = bannerBox(dark ? '#0d2440' : '#ddf4ff', dark ? '#1f3a5f' : '#b6e3ff', dark ? '#58a6ff' : '#0969da',
+        diasRetraso < 0 ? '¡Gracias por tu pago anticipado!' : '¡Gracias por tu pago puntual!',
+        diasRetraso < 0 ? 'Recibimos tu pago antes de la fecha acordada. ¡Excelente!' : 'Recibimos tu pago en la fecha acordada. ¡Gracias por tu cumplimiento!');
+    }
+  }
   var html = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo de Pago</title>',
     '<style>',
@@ -463,10 +491,7 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="amount">' + (esUSD && usdRec ? fmtUSD(usdRec) : fv(montoRecibido)) + '</div>',
     esUSD && usdRec ? '<div class="sub">' + fmt(montoRecibido) + ' COP</div>' : '',
     '</div>',
-    esLiquidacion ? '<div style="margin:16px 0;padding:14px 16px;background:' + (dark ? '#0f2b19' : '#dafbe1') + ';border:1px solid ' + (dark ? '#1b4332' : '#aceebb') + ';border-radius:8px;text-align:center">' +
-      '<div style="font-size:15px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + '">¡Felicidades! Ha cancelado la totalidad de su prestamo</div>' +
-      '<div style="font-size:11px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:3px">Con este pago se salda el 100% del prestamo. ¡Gracias por tu cumplimiento!</div>' +
-      '</div>' : '',
+    bannerHTML,
     esParcial ? '<div class="section"><div class="section-title">Estado de la cuota</div>' +
       '<div class="row"><span class="label">Total cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>' +
       '<div class="row"><span class="label">Total abonado (con este pago)</span><span class="value">' + fv(totalAcum) + '</span></div>' +
@@ -1023,6 +1048,12 @@ function App(){
       'Rendimiento: en prestamos cerrados con perdida se especifica si proviene de intereses no cobrados, de capital no recuperado, o de ambos.',
       'Rendimiento: las tarjetas "Capital Colocado" y "Capital Recuperado" aclaran que suman solo prestamos activos.',
       'Perfil del deudor: nuevo bloque "Proyeccion de Ganancias" que compara lo ya cobrado contra la ganancia esperada del prestamo.'
+    ],
+    '1.12.9': [
+      'Inicio: la tarjeta "Ganancias" usa la misma base de capital robusto que Rendimiento; ya no infla el historico contando el capital de prestamos a 0% interes (el total coincide en ambas vistas).',
+      'Recibos PDF: mensaje dinamico segun la puntualidad del pago — agradecimiento si pagaste puntual o anticipado, o aviso con los dias exactos de retraso si llego tarde. El mensaje de liquidacion total ("Felicidades") mantiene prioridad.',
+      'Rendimiento: las tarjetas "Capital Colocado" y "Capital Recuperado" aclaran que suman solo prestamos activos.',
+      'Rendimiento y perfil del deudor: en prestamos a 0% interes en USD el resultado se rotula "Efecto TRM" e indica si la diferencia viene de una subida o baja del dolar; en prestamos cerrados con perdida se especifica si proviene de intereses no cobrados o de capital no recuperado.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1289,14 +1320,16 @@ function App(){
         && p.fechaRecaudo
         && p.fechaRecaudo.startsWith(thisM);
     });
-    // Ganancia real: para USD usa montoCOPRecibido - abonoCapital (incluye utilidad cambiaria
-    // por subida de TRM). Para COP usa interesPeriodo. Excluye abonos a capital.
+    // Ganancia real (historica, todos los estados): para USD usa montoCOPRecibido - capital robusto
+    // (cuotaTotal - interesPeriodo), no abonoCapital (que se persiste en 0 en modalidad Prestamo y
+    // contaria el capital como ganancia fantasma — Bug #25). Para COP usa interesPeriodo. Excluye abonos.
+    // Misma definicion que loanMetrics.ganancia en PortfolioView -> ambas vistas cuadran.
     var loanCurrency={};loans.forEach(function(l){loanCurrency[l.id]=l.moneda;});
     var totalInteresesRecibidos=pays.filter(function(p){return p.estadoPago==='Pagado'&&p.id.indexOf('-ab-')===-1;})
       .reduce(function(s,p){
         var esUSD=loanCurrency[p.prestamoId]==='USD';
         if(esUSD&&p.montoCOPRecibido&&p.montoCOPRecibido>0){
-          return s+(p.montoCOPRecibido-p.abonoCapital);
+          return s+(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo));
         }
         return s+p.interesPeriodo;
       },0);
@@ -1737,14 +1770,14 @@ function DashView(props){
       return fb.localeCompare(fa);
     });
   // Sparkline "Ganancias": ganancia recibida por mes (ultimos 12 meses), agrupada por fechaRecaudo.
-  // Misma definicion de ganancia que el KPI total: USD -> montoCOPRecibido - abonoCapital; COP -> interesPeriodo. Excluye abonos.
+  // Misma definicion de ganancia que el KPI total: USD -> montoCOPRecibido - (cuotaTotal - interesPeriodo); COP -> interesPeriodo. Excluye abonos.
   var sparkGanancias=useMemo(function(){
     var moneda={};loans.forEach(function(l){moneda[l.id]=l.moneda;});
     var byMonth={};
     pays.forEach(function(p){
       if(p.estadoPago!=='Pagado'||!p.fechaRecaudo||p.id.indexOf('-ab-')!==-1) return;
       var ym=p.fechaRecaudo.slice(0,7);
-      var g=(moneda[p.prestamoId]==='USD'&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-p.abonoCapital):p.interesPeriodo;
+      var g=(moneda[p.prestamoId]==='USD'&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo)):p.interesPeriodo;
       byMonth[ym]=(byMonth[ym]||0)+g;
     });
     var base=new Date(nowStr()+'T12:00:00'),vals=[],labs=[],tips=[];
