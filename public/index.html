@@ -1054,6 +1054,12 @@ function App(){
       'Recibos PDF: mensaje dinamico segun la puntualidad del pago — agradecimiento si pagaste puntual o anticipado, o aviso con los dias exactos de retraso si llego tarde. El mensaje de liquidacion total ("Felicidades") mantiene prioridad.',
       'Rendimiento: las tarjetas "Capital Colocado" y "Capital Recuperado" aclaran que suman solo prestamos activos.',
       'Rendimiento y perfil del deudor: en prestamos a 0% interes en USD el resultado se rotula "Efecto TRM" e indica si la diferencia viene de una subida o baja del dolar; en prestamos cerrados con perdida se especifica si proviene de intereses no cobrados o de capital no recuperado.'
+    ],
+    '1.13.0': [
+      'Prestamos cerrados: el resumen ahora arranca con "TOTAL RECIBIDO" (lo que realmente entro) y debajo desglosa capital, intereses y efecto TRM que lo componen — en Cartera y en el perfil del deudor.',
+      'Prestamos activos: nuevo bloque "RECAUDADO A LA FECHA" que muestra cuanto se ha cobrado hasta hoy y como se reparte (capital recuperado a la fecha, intereses, efecto TRM), al final del cronograma en Cartera y en el perfil del deudor.',
+      'La fila de capital en prestamos cerrados pasa a llamarse "Capital prestado": ya no dice "recuperado" cuando por una baja de la TRM en dolares recibiste menos pesos de los pactados.',
+      'Las cifras en dolares (USD) muestran el valor real recibido/ganado y quedan consistentes entre Cartera, perfil del deudor y Rendimiento.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -2187,52 +2193,104 @@ function CarteraView(props){
                       h('div',{className:'mono',style:{fontSize:10,color:'var(--text3)'}},'Saldo: '+fmt(ab.saldoFinal),
                         loan.moneda==='USD'&&h('span',{style:{marginLeft:4}},copToUsd(ab.saldoFinal,loan.trmAcordada)))));
                 })),
+              loan.estado==='Activo'&&function(){
+                var esUSD=loan.moneda==='USD';
+                var regsPag=cuotasReg.filter(function(p){return p.estadoPago==='Pagado';});
+                var abonosPag=abonos.filter(function(p){return p.estadoPago==='Pagado';});
+                if(regsPag.length===0&&abonosPag.length===0)return null; // aun no se cobra nada
+                var trm=loan.trmAcordada;
+                var intCobrados=Math.round(regsPag.reduce(function(s,p){return s+p.interesPeriodo;},0));
+                var capRecHoy=Math.round(regsPag.reduce(function(s,p){return s+p.abonoCapital;},0)+abonosPag.reduce(function(s,p){return s+p.abonoCapital;},0));
+                var gananciaTRMReg=esUSD?regsPag.filter(function(p){return p.montoCOPRecibido&&p.montoCOPRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-p.cuotaTotal);},0):0;
+                var gananciaTRMAb=esUSD?abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-(p.montoUSDRecibido*trm));},0):0;
+                var gananciaTRM=Math.round(gananciaTRMReg+gananciaTRMAb);
+                var totalRecibidoCOP=capRecHoy+intCobrados+gananciaTRM;
+                var gananciaTotalCOP=intCobrados+gananciaTRM;
+                var efectoTRMUSD=esUSD&&trm>0?(regsPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
+                var capitalUSD=esUSD&&trm>0?capRecHoy/trm:0;
+                var intUSD=esUSD&&trm>0?intCobrados/trm:0;
+                var totalRecibidoUSD=capitalUSD+intUSD+efectoTRMUSD;
+                var gananciaTotalUSD=intUSD+efectoTRMUSD;
+                function rowItem(label,value,valColor,subUSD,opts){
+                  opts=opts||{};
+                  var bt=opts.topBorder===false?'none':(opts.accentTop?'2px solid var(--green)':'1px solid var(--bg3)');
+                  return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:opts.note?'flex-start':'center',padding:opts.master?'4px 0 10px':'8px 0',borderTop:bt,marginTop:opts.accentTop?3:0}},
+                    h('div',null,
+                      h('div',{style:{fontSize:opts.master?12:10,color:opts.master?'var(--text)':'var(--text3)',fontWeight:opts.master?700:600,letterSpacing:.5}},label),
+                      opts.note&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:2,fontWeight:400,letterSpacing:.2}},opts.note)),
+                    h('div',{style:{textAlign:'right'}},
+                      h('div',{className:'mono',style:{fontSize:opts.master?16:(opts.strong?14:13),fontWeight:(opts.master||opts.strong)?700:500,color:valColor||'var(--text)'}},value),
+                      subUSD&&h('div',{className:'mono',style:{fontSize:opts.master?11:10,color:'var(--blue)',fontWeight:400}},subUSD)));
+                }
+                return h('div',{style:{borderTop:'1px solid var(--bg3)',padding:'12px',background:'transparent'}},
+                  h('div',{style:{fontSize:11,fontWeight:600,color:'var(--green)',marginBottom:8,display:'flex',alignItems:'center',gap:6,letterSpacing:.5}},
+                    h(Ico,{name:'dollar',size:13,color:'var(--green)',sw:2.4}),'RECAUDADO A LA FECHA'),
+                  rowItem('TOTAL RECIBIDO',fmt(totalRecibidoCOP),'var(--text)',esUSD?fmtUSD(totalRecibidoUSD):null,{master:true,topBorder:false}),
+                  rowItem('CAPITAL RECUPERADO',fmt(capRecHoy),'var(--text)',esUSD?copToUsd(capRecHoy,trm):null),
+                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?copToUsd(intCobrados,trm):null),
+                  esUSD&&rowItem('EFECTO TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',null,{note:gananciaTRM>0?'TRM subio al cobrar':gananciaTRM<0?'TRM bajo al cobrar':'Sin efecto cambiario'}),
+                  esUSD&&rowItem(loan.modalidad==='Prestamo'?'RESULTADO TOTAL':'GANANCIA TOTAL',(gananciaTotalCOP<0?'-':'+')+fmt(Math.abs(gananciaTotalCOP)),gananciaTotalCOP<0?'var(--red)':gananciaTotalCOP>0?'var(--green)':'var(--text2)',(gananciaTotalUSD<0?'-':'+')+fmtUSD(Math.abs(gananciaTotalUSD)),{accentTop:true,strong:true}));
+              }(),
               loan.estado!=='Activo'&&function(){
                 var esCanc=loan.estado==='Cancelado';
                 var esUSD=loan.moneda==='USD';
                 var regsPag=cuotasReg.filter(function(p){return p.estadoPago==='Pagado';});
+                var abonosPag=abonos.filter(function(p){return p.estadoPago==='Pagado';});
                 var intCobrados=Math.round(regsPag.reduce(function(s,p){return s+p.interesPeriodo;},0));
-                var capAbonosCOP=Math.round(abonos.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0));
+                var capAbonosCOP=Math.round(abonosPag.reduce(function(s,p){return s+p.abonoCapital;},0));
                 var origCOP=esUSD?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
                 var capPerd=Math.round(loan.capitalPerdido||0);
                 var intPerd=Math.round(loan.interesesPerdidos||0);
                 var totPerd=capPerd+intPerd;
-                // Capital recuperado: derivado del monto original menos lo perdido (no de abonoCapital
-                // que el backend deja en 0 para modalidad Prestamo e Intereses)
+                // Capital efectivamente recuperado (bruto): monto original menos lo perdido en cierre forzoso.
                 var capRecuperado=esCanc?Math.max(0,origCOP-capPerd):origCOP;
-                // Valores netos: positivos para Finalizado, pueden ser negativos para Cancelado
-                var gananciaNeta=intCobrados-(esCanc?intPerd:0);
-                var capitalNeto=capRecuperado-(esCanc?capPerd:0);
-                // v1.10.1 — Ganancia/Perdida por TRM (solo USD): misma logica que RendimientoView.
-                // Diferencia entre lo cobrado realmente en COP y el valor contractual a TRM acordada.
+                // Efecto TRM en COP (medido): diferencia entre lo cobrado en COP y el valor contractual (TRM acordada).
                 //   - Cuotas regulares pagadas: montoCOPRecibido - cuotaTotal
-                //   - Abonos pagados con USD: montoCOPRecibido - (montoUSDRecibido * trmAcordada)
+                //   - Abonos pagados con USD:   montoCOPRecibido - (montoUSDRecibido * trmAcordada)
                 var gananciaTRMReg=esUSD?regsPag.filter(function(p){return p.montoCOPRecibido&&p.montoCOPRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-p.cuotaTotal);},0):0;
-                var gananciaTRMAb=esUSD?abonos.filter(function(p){return p.estadoPago==='Pagado'&&p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-(p.montoUSDRecibido*loan.trmAcordada));},0):0;
+                var gananciaTRMAb=esUSD?abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-(p.montoUSDRecibido*loan.trmAcordada));},0):0;
                 var gananciaTRM=Math.round(gananciaTRMReg+gananciaTRMAb);
-                var gananciaTotalUSD=gananciaNeta+gananciaTRM; // intereses netos + diferencial cambiario
+                // Flujo de caja COP: TOTAL RECIBIDO = capital recuperado + intereses cobrados +/- efecto TRM
+                // (derivado: la suma SIEMPRE cuadra con las filas mostradas, aun en datos sin montoCOPRecibido).
+                var totalRecibidoCOP=capRecuperado+intCobrados+gananciaTRM;
+                var gananciaTotalCOP=intCobrados+gananciaTRM; // utilidad = total recibido - capital
+                // Columna USD (Bug #25): capital/intereses contractuales + efecto TRM en USD (residual ~0:
+                // los dolares llegan completos, la perdida es solo de pesos). TOTAL USD = USD realmente recibido.
+                var trm=loan.trmAcordada;
+                var efectoTRMUSD=esUSD&&trm>0?(regsPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
+                var capitalUSD=esUSD&&trm>0?capRecuperado/trm:0;
+                var intUSD=esUSD&&trm>0?intCobrados/trm:0;
+                var totalRecibidoUSD=capitalUSD+intUSD+efectoTRMUSD;
+                var gananciaTotalUSD=intUSD+efectoTRMUSD;
                 var cuotasPagCnt=regsPag.length;
                 var denomCuotas=loan.modalidad==='Intereses'?'∞':(loan.plazoMeses||cuotasReg.length||'-');
                 var acento=esCanc?'var(--red)':'var(--green)';
-                function rowItem(label,value,valColor,subUSD){
-                  return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderTop:'1px solid var(--bg3)'}},
-                    h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},label),
+                function rowItem(label,value,valColor,subUSD,opts){
+                  opts=opts||{};
+                  var bt=opts.topBorder===false?'none':(opts.accentTop?'2px solid '+acento:'1px solid var(--bg3)');
+                  return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:opts.note?'flex-start':'center',padding:opts.master?'4px 0 10px':'8px 0',borderTop:bt,marginTop:opts.accentTop?3:0}},
+                    h('div',null,
+                      h('div',{style:{fontSize:opts.master?12:10,color:opts.master?'var(--text)':'var(--text3)',fontWeight:opts.master?700:600,letterSpacing:.5}},label),
+                      opts.note&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:2,fontWeight:400,letterSpacing:.2}},opts.note)),
                     h('div',{style:{textAlign:'right'}},
-                      h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:valColor||'var(--text)'}},value),
-                      subUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',fontWeight:400}},subUSD)));
+                      h('div',{className:'mono',style:{fontSize:opts.master?16:(opts.strong?14:13),fontWeight:(opts.master||opts.strong)?700:500,color:valColor||'var(--text)'}},value),
+                      subUSD&&h('div',{className:'mono',style:{fontSize:opts.master?11:10,color:'var(--blue)',fontWeight:400}},subUSD)));
                 }
                 return h('div',{style:{borderTop:'1px solid var(--bg3)',padding:'12px',background:'transparent'}},
-                  h('div',{style:{fontSize:11,fontWeight:600,color:acento,marginBottom:4,display:'flex',alignItems:'center',gap:6,letterSpacing:.5}},
+                  h('div',{style:{fontSize:11,fontWeight:600,color:acento,marginBottom:8,display:'flex',alignItems:'center',gap:6,letterSpacing:.5}},
                     h(Ico,{name:esCanc?'x':'check',size:13,color:acento,sw:2.4}),'RESUMEN '+(esCanc?'(CIERRE FORZOSO)':'(FINALIZADO)')),
-                  rowItem(esUSD?'GANANCIA POR INTERESES':'GANANCIA OBTENIDA',(gananciaNeta<0?'-':'')+fmt(Math.abs(gananciaNeta)),gananciaNeta<0?'var(--red)':gananciaNeta>0?'var(--green)':'var(--text2)',esUSD&&Math.abs(gananciaNeta)>0?copToUsd(Math.abs(gananciaNeta),loan.trmAcordada):null),
-                  // v1.10.1 — Ganancia/Perdida por TRM y Ganancia total (solo USD)
-                  esUSD&&rowItem(gananciaTRM<0?'PERDIDA POR TRM':'GANANCIA POR TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',Math.abs(gananciaTRM)>0?copToUsd(Math.abs(gananciaTRM),loan.trmAcordada):null),
-                  esUSD&&rowItem('GANANCIA TOTAL',(gananciaTotalUSD<0?'-':'+')+fmt(Math.abs(gananciaTotalUSD)),gananciaTotalUSD<0?'var(--red)':gananciaTotalUSD>0?'var(--green)':'var(--text2)',Math.abs(gananciaTotalUSD)>0?copToUsd(Math.abs(gananciaTotalUSD),loan.trmAcordada):null),
-                  rowItem('CAPITAL RECUPERADO',(capitalNeto<0?'-':'')+fmt(Math.abs(capitalNeto)),capitalNeto<0?'var(--red)':'var(--text)',esUSD&&Math.abs(capitalNeto)>0?copToUsd(Math.abs(capitalNeto),loan.trmAcordada):null),
-                  capAbonosCOP>0&&rowItem('TOTAL ABONOS A CAPITAL',fmt(capAbonosCOP),'var(--blue)',esUSD?copToUsd(capAbonosCOP,loan.trmAcordada):null),
+                  // Dato maestro: TOTAL RECIBIDO (flujo de caja real)
+                  rowItem('TOTAL RECIBIDO',fmt(totalRecibidoCOP),'var(--text)',esUSD?fmtUSD(totalRecibidoUSD):null,{master:true,topBorder:false}),
+                  // Desglose que compone el total
+                  rowItem(esCanc?'CAPITAL RECUPERADO':'CAPITAL PRESTADO',fmt(capRecuperado),'var(--text)',esUSD?copToUsd(capRecuperado,trm):null),
+                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?copToUsd(intCobrados,trm):null),
+                  esUSD&&rowItem('EFECTO TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',null,{note:gananciaTRM>0?'TRM subio al cobrar':gananciaTRM<0?'TRM bajo al cobrar':'Sin efecto cambiario'}),
+                  // Subtotal de utilidad (solo USD; en COP la ganancia = intereses, seria redundante)
+                  esUSD&&rowItem(loan.modalidad==='Prestamo'?'RESULTADO TOTAL':'GANANCIA TOTAL',(gananciaTotalCOP<0?'-':'+')+fmt(Math.abs(gananciaTotalCOP)),gananciaTotalCOP<0?'var(--red)':gananciaTotalCOP>0?'var(--green)':'var(--text2)',(gananciaTotalUSD<0?'-':'+')+fmtUSD(Math.abs(gananciaTotalUSD)),{accentTop:true,strong:true}),
                   rowItem('CUOTAS PAGADAS',cuotasPagCnt+(loan.modalidad==='Intereses'?'':'/'+denomCuotas)),
-                  esCanc&&rowItem('CAPITAL DEBIENDO',fmt(capPerd),capPerd>0?'var(--red)':'var(--text2)',esUSD&&capPerd>0?copToUsd(capPerd,loan.trmAcordada):null),
-                  esCanc&&rowItem('INTERESES DEBIENDO',fmt(intPerd),intPerd>0?'var(--red)':'var(--text2)',esUSD&&intPerd>0?copToUsd(intPerd,loan.trmAcordada):null),
+                  capAbonosCOP>0&&rowItem('TOTAL ABONOS A CAPITAL',fmt(capAbonosCOP),'var(--blue)',esUSD?copToUsd(capAbonosCOP,trm):null),
+                  esCanc&&rowItem('CAPITAL DEBIENDO',fmt(capPerd),capPerd>0?'var(--red)':'var(--text2)',esUSD&&capPerd>0?copToUsd(capPerd,trm):null),
+                  esCanc&&rowItem('INTERESES DEBIENDO',fmt(intPerd),intPerd>0?'var(--red)':'var(--text2)',esUSD&&intPerd>0?copToUsd(intPerd,trm):null),
                   esCanc&&h('div',{style:{marginTop:12,padding:'10px 12px',background:'var(--bg3)',borderRadius:8,borderLeft:'3px solid var(--red)',display:'flex',justifyContent:'space-between',alignItems:'center'}},
                     h('div',null,
                       h('div',{style:{fontSize:10,color:'var(--text2)',fontWeight:600,letterSpacing:.5}},'MONTO TOTAL PERDIDO'),
@@ -2574,6 +2632,16 @@ function DebtorModal(props){
             var lotesUSD=lotes?lotes.reduce(function(s,c){return s+(+c.monto||0);},0):0;
             var lotesCOP=lotes?lotes.reduce(function(s,c){return s+(+c.monto||0)*(+c.tasa||0);},0):0;
             var lotesTRMProm=lotes&&lotesUSD>0?Math.round(lotesCOP/lotesUSD):0;
+            // ── Recaudado a la fecha (flujo de caja parcial) ──
+            var recCapHoy=Math.round(todoCapPag); // capital recuperado a la fecha (parcial)
+            var recTotalHoy=recCapHoy+Math.round(intCobrados)+gananciaTRM; // total recibido hasta hoy (COP, derivado)
+            var trm=l.trmAcordada;
+            var recRegPag=regulares.filter(function(p){return p.estadoPago==='Pagado';});
+            var recAboPag=abonosList.filter(function(p){return p.estadoPago==='Pagado';});
+            var efectoTRMUSDHoy=esUSD&&trm>0?(recRegPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+recAboPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
+            var recCapUSD=esUSD&&trm>0?recCapHoy/trm:0;
+            var recTotalUSD=recCapUSD+(esUSD&&trm>0?intCobrados/trm:0)+efectoTRMUSDHoy;
+            var ganTotUSDHoy=recTotalUSD-recCapUSD; // = interes USD + efecto TRM USD (real, Bug #25)
             // Helper row: label izquierda, valor derecha. divider=true \u2192 linea entre filas internas.
             function row(label,value,sub,opts){
               opts=opts||{};
@@ -2602,21 +2670,32 @@ function DebtorModal(props){
                     esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--text3)'}},fmt(origCOPDisplay)+' \u00B7 TRM $'+fmtN(l.trmAcordada))),
                   null,{first:true}),
                 row('Cuotas pagadas',h('div',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},pagadas+' / '+(l.modalidad==='Intereses'?'\u221E':totalReg)))),
-              // \u2500\u2500 GRUPO 3: GANANCIAS \u2500\u2500
-              h('div',{style:grupoStyle},
-                h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,marginBottom:2}},'GANANCIAS'),
-                row('Ganancia por intereses',
+              // \u2500\u2500 GRUPO 3: RECAUDADO A LA FECHA (flujo de caja parcial + ganancia) \u2500\u2500
+              (pagadas>0||capAbonos>0)&&h('div',{style:grupoStyle},
+                h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,marginBottom:4}},'RECAUDADO A LA FECHA'),
+                h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'2px 0 9px',borderBottom:'1px solid var(--bg2)'}},
                   h('div',null,
-                    h('div',{className:'mono',style:{fontSize:13,color:'var(--green)',fontWeight:500}},'+'+fmt(intCobrados)),
-                    esUSD&&intCobrados>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intCobrados,l.trmAcordada))),
+                    h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:600,letterSpacing:.3}},'TOTAL RECIBIDO'),
+                    h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Lo cobrado hasta hoy')),
+                  h('div',{style:{textAlign:'right'}},
+                    h('div',{className:'mono',style:{fontSize:16,fontWeight:600,color:'var(--text)'}},fmt(recTotalHoy)),
+                    esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},fmtUSD(recTotalUSD)))),
+                row('Capital recuperado',
+                  h('div',null,
+                    h('div',{className:'mono',style:{fontSize:13,color:'var(--text)',fontWeight:500}},fmt(recCapHoy)),
+                    esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(recCapHoy,l.trmAcordada))),
                   null,{first:true}),
+                row('Intereses cobrados',
+                  h('div',null,
+                    h('div',{className:'mono',style:{fontSize:13,color:intCobrados>0?'var(--green)':'var(--text3)',fontWeight:500}},(intCobrados>0?'+':'')+fmt(intCobrados)),
+                    esUSD&&intCobrados>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intCobrados,l.trmAcordada)))),
                 esUSD&&row(gananciaTRM<0?'Perdida por TRM':'Ganancia por TRM',
                   h('div',{className:'mono',style:{fontSize:13,color:gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text3)',fontWeight:500}},(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM))),
                   gananciaTRM===0?'Sin datos de TRM al cobro':gananciaTRM>0?'TRM subio al cobrar':'TRM bajo al cobrar'),
-                esUSD&&row('Ganancia total',
+                esUSD&&row(l.modalidad==='Prestamo'?'Resultado total':'Ganancia total',
                   h('div',null,
                     h('div',{className:'mono',style:{fontSize:14,color:gananciaTotal<0?'var(--red)':'var(--green)',fontWeight:600}},(gananciaTotal<0?'-':'+')+fmt(Math.abs(gananciaTotal))),
-                    h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',fontWeight:400}},copToUsd(Math.abs(gananciaTotal),l.trmAcordada))),
+                    h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',fontWeight:400}},(ganTotUSDHoy<0?'-':'+')+fmtUSD(Math.abs(ganTotUSDHoy)))),
                   null,{strong:true}),
                 capAbonos>0&&row('Abonos a capital recibidos',
                   h('div',null,
@@ -2901,20 +2980,37 @@ function DebtorModal(props){
               h('div',null,
                 h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},esCancelado?'FECHA DE CIERRE':'ULTIMO PAGO'),
                 h('div',{style:{fontSize:13,fontWeight:500,color:'var(--text2)'}},fechaFin?fmtD(fechaFin):'N/A'))),
-            esUSD&&(intPagados>0||gananciaTRMHist!==0)&&h('div',{style:{marginBottom:capAbonos>0||esCancelado?10:0,padding:'10px 12px',background:'rgba(88,166,255,.04)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
-              h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600,letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
-                h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),(l.modalidad==='Prestamo')?' DESGLOSE RESULTADO (USD)':' DESGLOSE GANANCIA (USD)'),
-              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',fontSize:11}},
-                h('span',{style:{color:'var(--text2)'}},'Ganancia interes'),
-                h('span',{className:'mono',style:{color:'var(--text)',fontWeight:300}},'+'+fmt(intPagados))),
-              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'5px 0',fontSize:11,borderTop:'1px solid rgba(88,166,255,.12)'}},
-                h('div',null,
-                  h('div',{style:{color:'var(--text2)'}},gananciaTRMHist<0?'Perdida TRM':'Ganancia TRM'),
-                  h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1}},gananciaTRMHist===0?'Sin datos de TRM al cobro':gananciaTRMHist>0?'TRM subio al cobrar':'TRM bajo al cobrar')),
-                h('span',{className:'mono',style:{color:gananciaTRMHist>0?'var(--green)':gananciaTRMHist<0?'var(--red)':'var(--text3)',fontWeight:300}},(gananciaTRMHist>0?'+':gananciaTRMHist<0?'-':'')+fmt(Math.abs(gananciaTRMHist)))),
-              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0 3px',borderTop:'1px solid var(--blue-bd)',marginTop:3}},
-                h('span',{style:{fontSize:11,color:'var(--blue)',fontWeight:600,letterSpacing:.3}},(l.modalidad==='Prestamo')?'RESULTADO TOTAL':'GANANCIA TOTAL'),
-                h('span',{className:'mono',style:{fontSize:13,color:gananciaTotalHist>=0?'var(--green)':'var(--red)',fontWeight:600}},(gananciaTotalHist<0?'-':'+')+fmt(Math.abs(gananciaTotalHist))))),
+            esUSD&&(intPagados>0||gananciaTRMHist!==0)&&(function(){
+              var regsPagH=regulares.filter(function(p){return p.estadoPago==='Pagado';});
+              var capRecH=esCancelado?Math.max(0,origCOP-capPerd):origCOP;
+              var totRecCOP=capRecH+Math.round(intPagados)+gananciaTRMHist;
+              var trm=l.trmAcordada;
+              // Efecto TRM en USD = residual (~0): los dolares llegan completos, la perdida es de pesos.
+              var efectoTRMUSD=trm>0?(regsPagH.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+abonos.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
+              var capUSD=trm>0?capRecH/trm:0;
+              var intUSD=trm>0?intPagados/trm:0;
+              var totRecUSD=capUSD+intUSD+efectoTRMUSD; // = USD realmente recibido
+              var ganTotUSD=intUSD+efectoTRMUSD;
+              var esPrestamo=l.modalidad==='Prestamo';
+              function drow(label,value,valColor,subUSD,opts){
+                opts=opts||{};
+                return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:opts.note?'flex-start':'center',padding:opts.master?'2px 0 7px':'5px 0',borderTop:opts.topBorder===false?'none':(opts.accentTop?'1px solid var(--blue-bd)':'1px solid rgba(88,166,255,.12)'),marginTop:opts.accentTop?3:0}},
+                  h('div',null,
+                    h('div',{style:{fontSize:11,color:opts.master?'var(--text)':opts.accentTop?'var(--blue)':'var(--text2)',fontWeight:opts.master?700:opts.accentTop?600:400,letterSpacing:opts.master||opts.accentTop?.3:0}},label),
+                    opts.note&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1}},opts.note)),
+                  h('div',{style:{textAlign:'right'}},
+                    h('span',{className:'mono',style:{fontSize:opts.master?14:(opts.accentTop?13:11),color:valColor||'var(--text)',fontWeight:(opts.master||opts.accentTop)?600:300}},value),
+                    subUSD&&h('div',{className:'mono',style:{fontSize:9,color:'var(--blue)',fontWeight:400}},subUSD)));
+              }
+              return h('div',{style:{marginBottom:capAbonos>0||esCancelado?10:0,padding:'10px 12px',background:'rgba(88,166,255,.04)',borderRadius:8,border:'1px solid var(--blue-bd)'}},
+                h('div',{style:{fontSize:10,color:'var(--blue)',fontWeight:600,letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
+                  h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' DESGLOSE DE CAJA (USD)'),
+                drow('TOTAL RECIBIDO',fmt(totRecCOP),'var(--text)',fmtUSD(totRecUSD),{master:true,topBorder:false}),
+                drow(esCancelado?'Capital recuperado':'Capital prestado',fmt(capRecH),'var(--text2)',copToUsd(capRecH,trm)),
+                drow('Intereses cobrados',(intPagados>0?'+':'')+fmt(intPagados),intPagados>0?'var(--green)':'var(--text2)',intPagados>0?copToUsd(intPagados,trm):null),
+                drow('Efecto TRM',(gananciaTRMHist>0?'+':gananciaTRMHist<0?'-':'')+fmt(Math.abs(gananciaTRMHist)),gananciaTRMHist>0?'var(--green)':gananciaTRMHist<0?'var(--red)':'var(--text3)',null,{note:gananciaTRMHist===0?'Sin datos de TRM al cobro':gananciaTRMHist>0?'TRM subio al cobrar':'TRM bajo al cobrar'}),
+                drow(esPrestamo?'RESULTADO TOTAL':'GANANCIA TOTAL',(gananciaTotalHist<0?'-':'+')+fmt(Math.abs(gananciaTotalHist)),gananciaTotalHist>=0?'var(--green)':'var(--red)',(ganTotUSD<0?'-':'+')+fmtUSD(Math.abs(ganTotUSD)),{accentTop:true}));
+            })(),
             esCancelado&&h('div',{style:{padding:'10px 12px',background:'var(--bg3)',borderRadius:8,borderLeft:'3px solid var(--red)',marginBottom:capAbonos>0?8:0,display:'flex',justifyContent:'space-between',alignItems:'center'}},
               h('div',null,
                 h('div',{style:{fontSize:10,color:'var(--text2)',fontWeight:600,letterSpacing:.5}},'MONTO TOTAL PERDIDO'),
