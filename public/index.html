@@ -1060,6 +1060,9 @@ function App(){
       'Prestamos activos: nuevo bloque "RECAUDADO A LA FECHA" que muestra cuanto se ha cobrado hasta hoy y como se reparte (capital recuperado a la fecha, intereses, efecto TRM), al final del cronograma en Cartera y en el perfil del deudor.',
       'La fila de capital en prestamos cerrados pasa a llamarse "Capital prestado": ya no dice "recuperado" cuando por una baja de la TRM en dolares recibiste menos pesos de los pactados.',
       'Las cifras en dolares (USD) muestran el valor real recibido/ganado y quedan consistentes entre Cartera, perfil del deudor y Rendimiento.'
+    ],
+    '1.13.1': [
+      'Pago rapido (check verde) en Pagos: los prestamos a 0% interes (modalidad Prestamo) y los de pago unico ya se cobran directo con el check. Antes se bloqueaban mostrando por error una vista de "Detalle Abono Capital" que obligaba a liquidar desde el perfil del deudor.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -3497,7 +3500,9 @@ function PayModal(props){
   var s8=useState(''); var parcialUSD=s8[0]; var setParcialUSD=s8[1];
   var so=ST[pay.estadoPago]||{bg:'var(--bg3)',color:'var(--text2)',icon:'?'};
   var esUSD=loan&&loan.moneda==='USD';
-  var esAbono=pay.abonoCapital>0&&pay.interesPeriodo===0;
+  // Abono real = id con '-ab-' (regla canonica). NO usar la heuristica interes===0 && capital>0:
+  // la cuota unica de un Prestamo (o un Pago Unico sin ganancia) tambien la cumple y bloqueaba el pago.
+  var esAbono=pay.id&&pay.id.indexOf('-ab-')!==-1;
   if(esAbono) return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:12}},'Detalle Abono Capital'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'14px',border:'1px solid var(--border)'}},
