@@ -744,8 +744,11 @@ module.exports = function createApp(dbPath) {
           db.prepare('UPDATE loans SET proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?').run(pay.prestamoId);
         }
         const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(pay.prestamoId);
-        // Cuotas regulares = las que NO son abonos a capital (abono = interesPeriodo=0 AND abonoCapital>0)
-        const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+        // Cuotas regulares = las que NO son abonos a capital. Regla canonica: id con '-ab-'.
+        // NO usar la heuristica interes===0 && capital>0: la cuota unica de un Prestamo (o Pago Unico
+        // sin ganancia) tambien la cumple -> quedaba fuera de 'regulares', 'todasPagadas' nunca era
+        // true y el prestamo no auto-finalizaba al pagar (gemelo backend del Bug #26).
+        const regulares = allPays.filter(p => p.id.indexOf('-ab-') === -1);
         const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
         if (todasPagadas) {
           db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
@@ -774,7 +777,7 @@ module.exports = function createApp(dbPath) {
     const pay = db.prepare('SELECT * FROM payments WHERE id = ?').get(req.params.id);
     if (!pay) return res.status(404).json({ error: 'Cuota no encontrada' });
     if (pay.estadoPago === 'Pagado') return res.status(400).json({ error: 'La cuota ya está pagada' });
-    if (pay.interesPeriodo === 0 && pay.abonoCapital > 0) return res.status(400).json({ error: 'No se pueden aplicar pagos parciales sobre un abono a capital' });
+    if (pay.id.indexOf('-ab-') !== -1) return res.status(400).json({ error: 'No se pueden aplicar pagos parciales sobre un abono a capital' });
     const montoNum = Math.round(+monto || 0);
     if (montoNum <= 0) return res.status(400).json({ error: 'El monto debe ser mayor a 0' });
     const yaPagado = pay.partialPaid || 0;
@@ -816,7 +819,7 @@ module.exports = function createApp(dbPath) {
       }
       // Auto-finalización del préstamo
       const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(pay.prestamoId);
-      const regulares = allPays.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+      const regulares = allPays.filter(p => p.id.indexOf('-ab-') === -1); // abono = id con '-ab-' (canonico, ver Bug #26)
       const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
       if (todasPagadas) {
         db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
