@@ -387,17 +387,32 @@ function generateReportePrestamosPDF(loans, pays, darkMode) {
     var moras = lp.filter(function(p) { return p.id.indexOf('-ab-') === -1 && p.estadoPago === 'En Mora'; })
                   .sort(function(a, b) { return a.cuotaN - b.cuotaN; });
     var vencido = moras.reduce(function(s, p) { return s + p.cuotaTotal; }, 0);
-    // Proxima cuota regular = la mas antigua sin pagar (Pendiente o, si esta atrasado, la mas antigua En Mora)
-    var pendientes = lp.filter(function(p) { return p.id.indexOf('-ab-') === -1 && p.estadoPago !== 'Pagado'; })
+    // Fila principal = proxima cuota PENDIENTE (el ciclo regular activo). Las En Mora NO van aqui:
+    // se detallan en sub-filas rojas. Si no queda ninguna Pendiente (cronograma terminado) -> '—'.
+    var pendientes = lp.filter(function(p) { return p.id.indexOf('-ab-') === -1 && p.estadoPago === 'Pendiente'; })
                        .sort(function(a, b) { return a.cuotaN - b.cuotaN; });
-    var prox = pendientes.length ? pendientes[0] : null;
-    var proxLabel, proxValor;
-    if (prox) {
-      proxValor = prox.cuotaTotal;
-      if (l.modalidad === 'Intereses') proxLabel = '#' + prox.cuotaN;              // plazo indefinido
+    var mainCuota = pendientes.length ? pendientes[0] : null;
+    // Cuota transitoria (cambio de fecha): extraConsolidado != 0. La fila principal muestra su valor
+    // REGULAR (cuotaTotal - extraConsolidado) como referencia; el prorrateo real va en sub-fila ambar.
+    var esTransitoria = !!(mainCuota && mainCuota.extraConsolidado && mainCuota.extraConsolidado !== 0);
+    var transValor = esTransitoria ? mainCuota.cuotaTotal : 0;
+    var transFechaLabel = esTransitoria ? fmtD(mainCuota.fechaPago) : '';   // fecha REAL de la transitoria (sub-fila ambar)
+    var vencLabel, proxLabel, proxValor, proxValorLabel;
+    if (mainCuota) {
+      proxValor = esTransitoria ? (mainCuota.cuotaTotal - mainCuota.extraConsolidado) : mainCuota.cuotaTotal;
+      proxValorLabel = fmt(proxValor);
+      if (esTransitoria) {
+        // Vencimiento de la fila principal = fecha del PROXIMO ciclo regular (la cuota siguiente a la
+        // transitoria): el mes en que retoma la normalidad. La fecha de la transitoria va en la sub-fila.
+        var nextReg = pendientes.length > 1 ? pendientes[1] : null;
+        vencLabel = fmtD(nextReg ? nextReg.fechaPago : mainCuota.fechaPago);
+      } else {
+        vencLabel = fmtD(mainCuota.fechaPago);
+      }
+      if (l.modalidad === 'Intereses') proxLabel = '#' + mainCuota.cuotaN;              // plazo indefinido
       else if (l.modalidad === 'Prestamo' || l.modalidad === 'Pago Unico') proxLabel = '1/1';
-      else proxLabel = prox.cuotaN + '/' + (l.plazoMeses || '?');                   // N/M
-    } else { proxLabel = '—'; proxValor = 0; }
+      else proxLabel = mainCuota.cuotaN + '/' + (l.plazoMeses || '?');                   // N/M
+    } else { vencLabel = '—'; proxLabel = '—'; proxValor = 0; proxValorLabel = '—'; }
     var tasaStr;
     if (l.modalidad === 'Pago Unico') {
       var pct = (l.gananciaFija > 0 && originalCOP > 0) ? (Math.round(l.gananciaFija / originalCOP * 1000) / 10) : 0;
@@ -408,7 +423,8 @@ function generateReportePrestamosPDF(loans, pays, darkMode) {
       tasaStr = (l.tasaMensual || 0) + '% mensual';
     }
     var modLabel = l.modalidad === 'Capital + Intereses' ? 'Cap. + Int.' : l.modalidad;
-    return { l: l, esUSD: esUSD, trm: trm, saldo: saldo, moras: moras, vencido: vencido, tasaStr: tasaStr, modLabel: modLabel, proxLabel: proxLabel, proxValor: proxValor };
+    return { l: l, esUSD: esUSD, trm: trm, saldo: saldo, moras: moras, vencido: vencido, tasaStr: tasaStr, modLabel: modLabel,
+             vencLabel: vencLabel, proxLabel: proxLabel, proxValor: proxValor, proxValorLabel: proxValorLabel, esTransitoria: esTransitoria, transValor: transValor, transFechaLabel: transFechaLabel };
   });
 
   // Orden (mapa de riesgo): En Mora primero por TOTAL VENCIDO desc; luego Al dia por SALDO desc
@@ -429,21 +445,27 @@ function generateReportePrestamosPDF(loans, pays, darkMode) {
     var usdSub = r.esUSD ? '<div class="usd-sub">' + copToUsd(r.saldo, r.trm) + '</div>' : '';
     var usdSubCuota = (r.esUSD && r.proxValor > 0) ? '<div class="usd-sub">' + copToUsd(r.proxValor, r.trm) + '</div>' : '';
     var loanTr = '<tr class="loan-row' + (esMora ? ' mora' : '') + '">' +
-      '<td>' + fmtD(l.fechaInicio) + '</td>' +
+      '<td>' + r.vencLabel + '</td>' +
       '<td><strong>' + l.nombre + '</strong></td>' +
       '<td>' + r.modLabel + '</td>' +
       '<td>' + r.tasaStr + '</td>' +
       '<td style="text-align:center">' + r.proxLabel + '</td>' +
-      '<td style="text-align:right">' + fmt(r.proxValor) + usdSubCuota + '</td>' +
+      '<td style="text-align:right">' + r.proxValorLabel + usdSubCuota + '</td>' +
       '<td style="text-align:right"><strong>' + fmt(r.saldo) + '</strong>' + usdSub + '</td>' +
       '<td style="text-align:center">' + estadoBadge + '</td></tr>';
+    // Sub-filas rojas: cuotas En Mora. El valor USD va en azul (igual que el resto de valores USD).
     var moraTrs = r.moras.map(function(p) {
       var dias = diasAtraso(p.fechaPago);
+      var usdMora = r.esUSD ? ' &middot; <span class="usd-i">' + copToUsd(p.cuotaTotal, r.trm) + '</span>' : '';
       return '<tr class="mora-sub"><td colspan="8"><div class="mora-detalle">' +
         '<span>&#8627; Cuota #' + p.cuotaN + ' &middot; vence ' + fmtD(p.fechaPago) + ' &middot; ' + dias + ' dia' + (dias === 1 ? '' : 's') + ' de atraso</span>' +
-        '<span><strong>' + fmt(p.cuotaTotal) + '</strong></span></div></td></tr>';
+        '<span><strong>' + fmt(p.cuotaTotal) + '</strong>' + usdMora + '</span></div></td></tr>';
     }).join('');
-    return loanTr + moraTrs;
+    // Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha)
+    var transTr = r.esTransitoria ? ('<tr class="tran-sub"><td colspan="8"><div class="tran-detalle">' +
+      '<span>&#8627; Cuota transitoria &middot; vence ' + r.transFechaLabel + ' &middot; interes prorrateado</span>' +
+      '<span><strong>' + fmt(r.transValor) + '</strong>' + (r.esUSD ? ' &middot; <span class="usd-i">' + copToUsd(r.transValor, r.trm) + '</span>' : '') + '</span></div></td></tr>') : '';
+    return loanTr + moraTrs + transTr;
   }).join('');
 
   var html = [
@@ -468,6 +490,9 @@ function generateReportePrestamosPDF(loans, pays, darkMode) {
     '.usd-sub{font-size:9px;color:' + (dark ? '#79c0ff' : '#0969da') + ';margin-top:2px;font-weight:400}',
     dark ? 'tr.mora-sub td{border-top:none;background:#1a0e11;padding:3px 9px}' : 'tr.mora-sub td{border-top:none;background:#fff8f7;padding:3px 9px}',
     '.mora-detalle{display:flex;justify-content:space-between;gap:12px;padding-left:16px;font-size:10px;color:' + (dark ? '#f85149' : '#cf222e') + '}',
+    '.usd-i{color:' + (dark ? '#79c0ff' : '#0969da') + ';font-weight:700}',
+    dark ? 'tr.tran-sub td{border-top:none;background:#2b2005;padding:4px 9px}' : 'tr.tran-sub td{border-top:none;background:#fff8e1;padding:4px 9px}',
+    '.tran-detalle{display:flex;justify-content:space-between;gap:12px;padding-left:16px;font-size:10px;font-weight:700;color:' + (dark ? '#d29922' : '#7a5900') + '}',
     '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700}',
     dark ? '.badge-pagado{background:#0f2b19;color:#3fb950;border:1px solid #1b4332}' : '.badge-pagado{background:#dafbe1;color:#166534}',
     dark ? '.badge-mora{background:#2d1117;color:#f85149;border:1px solid #5c1b18}' : '.badge-mora{background:#ffebe9;color:#cf222e}',
@@ -482,11 +507,15 @@ function generateReportePrestamosPDF(loans, pays, darkMode) {
       '<span>Total vencido: <strong>' + fmt(totalVencido) + '</strong></span></div>',
     rows.length === 0 ?
       '<div style="text-align:center;padding:36px 0;font-size:12px;color:' + (dark ? '#8b949e' : '#656d76') + '">No hay prestamos activos.</div>' :
-      '<table><tr><th>Fecha</th><th>Deudor</th><th>Modalidad</th><th>Tasa</th><th style="text-align:center">Cuota</th><th style="text-align:right">Valor cuota</th><th style="text-align:right">Saldo Pendiente</th><th style="text-align:center">Estado</th></tr>' + filasHTML + '</table>',
+      '<table><tr><th>Vencimiento</th><th>Deudor</th><th>Modalidad</th><th>Tasa</th><th style="text-align:center">Cuota</th><th style="text-align:right">Valor cuota</th><th style="text-align:right">Saldo Pendiente</th><th style="text-align:center">Estado</th></tr>' + filasHTML + '</table>',
     '<div style="margin-top:18px;padding:14px 18px;background:' + (dark ? '#0f2b19' : '#f0fdf4') + ';border:1px solid ' + (dark ? '#1b4332' : '#4ade80') + ';border-radius:8px;display:flex;justify-content:space-between;align-items:center">' +
       '<div><div style="font-size:11px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + ';text-transform:uppercase;letter-spacing:1px">Capital total en la calle</div>' +
       '<div style="font-size:10px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:2px">' + rows.length + ' prestamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + (countMora > 0 ? ' &middot; ' + countMora + ' en mora' : '') + '</div></div>' +
       '<div style="font-size:24px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + '">' + fmt(totalSaldo) + '</div></div>',
+    (countMora > 0 || rows.some(function(r) { return r.esTransitoria; })) ?
+      '<div style="margin-top:12px;font-size:9px;line-height:1.7;color:' + (dark ? '#8b949e' : '#656d76') + ';border-top:1px solid ' + (dark ? '#30363d' : '#eaeef2') + ';padding-top:8px">' +
+      '<span style="color:' + (dark ? '#f85149' : '#cf222e') + '">&#9632;</span> Sub-fila roja: cuota vencida (mora); la fila principal muestra el proximo ciclo regular pendiente. &nbsp; ' +
+      '<span style="color:' + (dark ? '#d29922' : '#7a5900') + '">&#9632;</span> Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha); la fila principal conserva el numero y valor regular de referencia.</div>' : '',
     '<div class="footer"><p>Reporte informativo del estado actual de la cartera</p><p style="margin-top:4px">Cartera</p></div>',
     '</body></html>'
   ].join('\n');
@@ -616,7 +645,7 @@ function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="section">',
     '<div class="section-title">Detalle del pago</div>',
     '<div class="row"><span class="label">Tipo</span><span class="value">' + tipoEtiqueta + '</span></div>',
-    '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + '</span></div>',
+    '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + ((pay && pay.extraConsolidado && pay.extraConsolidado !== 0) ? ' <span style="color:' + (dark ? '#d29922' : '#9a6700') + ';font-weight:700">(Cuota Transitoria / Interes Prorrateado)</span>' : '') + '</span></div>',
     '<div class="row"><span class="label">Fecha vencimiento</span><span class="value">' + fmtD(pay.fechaPago) + '</span></div>',
     '<div class="row"><span class="label">Fecha recaudo</span><span class="value">' + fmtD(opts.fechaRecaudo || pay.fechaRecaudo || nowStr()) + '</span></div>',
     !esParcial && pay.interesPeriodo > 0 ? '<div class="row"><span class="label">Intereses</span><span class="value">' + fv(pay.interesPeriodo) + '</span></div>' : '',
@@ -1215,6 +1244,11 @@ function App(){
       'Nuevo: "Descargar Reporte de Prestamos (PDF)" en la seccion Desarrollador. Genera un PDF con todos los prestamos activos: fecha, deudor, modalidad, tasa, la cuota por la que va el deudor (N/M o #N) con su valor en COP y USD, saldo pendiente y estado.',
       'Mapa de riesgo: los prestamos EN MORA aparecen primero (ordenados por el total de dinero vencido, de mayor a menor) y luego los AL DIA (por saldo pendiente). Bajo cada prestamo en mora se detallan sus cuotas atrasadas con los dias de retraso.',
       'El reporte totaliza el "capital total en la calle" al final y respeta el tema claro/oscuro activo.'
+    ],
+    '1.15.1': [
+      'Reporte de Prestamos (PDF): la columna "Vencimiento" ahora muestra la fecha de la proxima cuota a cobrar (no la fecha de inicio del prestamo), y en prestamos con cuotas en mora la fila principal muestra el proximo ciclo regular pendiente mientras lo vencido se detalla en las sub-filas rojas.',
+      'Reporte de Prestamos (PDF): el valor en USD tambien aparece en las cuotas en mora. Y cuando una cuota es transitoria (interes prorrateado por cambio de fecha), la fila principal conserva el numero y valor regular de referencia con la fecha del ciclo regular, y una sub-fila ambar detalla la cuota transitoria con su fecha y valor real a cobrar.',
+      'Recibo de Pago (PDF): si la cuota cobrada es transitoria, el recibo lo aclara con "(Cuota Transitoria / Interes Prorrateado)" junto al numero de cuota, para que tu archivo contable no quede descuadrado.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
