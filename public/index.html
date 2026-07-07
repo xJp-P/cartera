@@ -518,10 +518,25 @@ function generateReportePrestamosPDF(loans, pays, darkMode) {
       '<div><div style="font-size:11px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + ';text-transform:uppercase;letter-spacing:1px">Capital total en la calle</div>' +
       '<div style="font-size:10px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:2px">' + rows.length + ' prestamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + (countMora > 0 ? ' &middot; ' + countMora + ' en mora' : '') + '</div></div>' +
       '<div style="font-size:24px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + '">' + fmt(totalSaldo) + '</div></div>',
-    (countMora > 0 || rows.some(function(r) { return r.esTransitoria; })) ?
-      '<div style="margin-top:12px;font-size:9px;line-height:1.7;color:' + (dark ? '#8b949e' : '#656d76') + ';border-top:1px solid ' + (dark ? '#30363d' : '#eaeef2') + ';padding-top:8px">' +
-      '<span style="color:' + (dark ? '#f85149' : '#cf222e') + '">&#9632;</span> Sub-fila roja: cuota vencida (mora); la fila principal muestra el proximo ciclo regular pendiente. &nbsp; ' +
-      '<span style="color:' + (dark ? '#d29922' : '#7a5900') + '">&#9632;</span> Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha); la fila principal conserva el numero y valor regular de referencia.</div>' : '',
+    rows.length > 0 ? function() {
+      var borde = dark ? '#30363d' : '#eaeef2';
+      var txt = dark ? '#8b949e' : '#656d76';
+      var rojo = dark ? '#f85149' : '#cf222e';
+      var ambar = dark ? '#d29922' : '#7a5900';
+      function item(chip, desc) {
+        return '<div style="display:flex;gap:9px;align-items:baseline;margin-bottom:4px">' +
+          '<span style="flex-shrink:0;width:72px">' + chip + '</span><span>' + desc + '</span></div>';
+      }
+      var cuad = function(c) { return '<span style="color:' + c + ';font-size:11px">&#9632;</span>'; };
+      return '<div style="margin-top:14px;border-top:1px solid ' + borde + ';padding-top:10px;font-size:9px;color:' + txt + '">' +
+        '<div style="font-size:9px;font-weight:700;color:' + txt + ';text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Referencia de estados</div>' +
+        item('<span class="badge badge-pagado">Al dia</span>', 'Sin cuotas vencidas.') +
+        item('<span class="badge badge-pend">Pendiente</span>', 'El prestamo tiene mora, pero la fila principal proyecta la proxima cuota (aun no vence); lo vencido se detalla en las sub-filas rojas.') +
+        item('<span class="badge badge-mora">En Mora</span>', 'Cronograma vencido por completo (sin ninguna cuota futura pendiente).') +
+        item(cuad(rojo), 'Sub-fila roja: cuota vencida, con sus dias de atraso.') +
+        item(cuad(ambar), 'Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha), con su fecha real a cobrar.') +
+        '</div>';
+    }() : '',
     '<div class="footer"><p>Reporte informativo del estado actual de la cartera</p><p style="margin-top:4px">Cartera</p></div>',
     '</body></html>'
   ].join('\n');
@@ -1251,11 +1266,12 @@ function App(){
       'Mapa de riesgo: los prestamos EN MORA aparecen primero (ordenados por el total de dinero vencido, de mayor a menor) y luego los AL DIA (por saldo pendiente). Bajo cada prestamo en mora se detallan sus cuotas atrasadas con los dias de retraso.',
       'El reporte totaliza el "capital total en la calle" al final y respeta el tema claro/oscuro activo.'
     ],
-    '1.15.1': [
+    '1.15.2': [
       'Reporte de Prestamos (PDF): la columna "Vencimiento" ahora muestra la fecha de la proxima cuota a cobrar (no la fecha de inicio del prestamo), y en prestamos con cuotas en mora la fila principal muestra el proximo ciclo regular pendiente mientras lo vencido se detalla en las sub-filas rojas.',
       'Reporte de Prestamos (PDF): el valor en USD tambien aparece en las cuotas en mora. Y cuando una cuota es transitoria (interes prorrateado por cambio de fecha), la fila principal conserva el numero y valor regular de referencia con la fecha del ciclo regular, y una sub-fila ambar detalla la cuota transitoria con su fecha y valor real a cobrar.',
-      'Recibo de Pago (PDF): si la cuota cobrada es transitoria, el recibo lo aclara con "(Cuota Transitoria / Interes Prorrateado)" junto al numero de cuota, para que tu archivo contable no quede descuadrado.',
-      'Reporte de Prestamos (PDF): en prestamos con cuotas atrasadas, el badge de Estado de la fila principal ahora dice "Pendiente" (neutral) en vez de "En mora", porque esa fila representa la proxima cuota que todavia no vence; las sub-filas rojas siguen alertando visualmente la mora del prestamo.'
+      'Reporte de Prestamos (PDF): en prestamos con cuotas atrasadas, el badge de Estado de la fila principal dice "Pendiente" (neutral) en vez de "En mora", porque esa fila representa la proxima cuota que todavia no vence; las sub-filas rojas siguen alertando visualmente la mora del prestamo.',
+      'Reporte de Prestamos (PDF): nueva seccion "Referencia de estados" al pie que explica, cada uno en su propia linea, los estados Al dia / Pendiente / En mora y el significado de las sub-filas roja (cuota vencida) y ambar (cuota transitoria).',
+      'Recibo de Pago (PDF): si la cuota cobrada es transitoria, el recibo lo aclara con "(Cuota Transitoria / Interes Prorrateado)" junto al numero de cuota, para que tu archivo contable no quede descuadrado.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
