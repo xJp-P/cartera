@@ -245,9 +245,9 @@ module.exports = function createApp(dbPath) {
     const cuotaFija = pmt(r, totalCuotas, montoCOP);
     const rows = [];
 
-    // Prestamo sin intereses: 1 cuota por el capital total
-    // interesPeriodo=1 (token) para que NO sea clasificado como abono a capital
-    // (el filtro de abonos es: interesPeriodo===0 && abonoCapital>0)
+    // Prestamo sin intereses: 1 cuota por el capital total (interesPeriodo=0, abonoCapital=0).
+    // Los abonos a capital se identifican por la regla canonica id.indexOf('-ab-') !== -1
+    // (NO por interesPeriodo===0 && abonoCapital>0, que confundiria esta cuota unica).
     if (modalidad === 'Prestamo') {
       var fechaCuota = loan.fechaDevolucion || getPayDate(fechaInicio, 1, diaPago, freq);
       rows.push({
@@ -398,7 +398,7 @@ module.exports = function createApp(dbPath) {
   fixPrestamos.forEach(fl => {
     db.prepare(`UPDATE payments SET cuotaTotal = ?, saldoFinal = 0
       WHERE prestamoId = ? AND estadoPago = 'En Mora'
-      AND NOT (interesPeriodo = 0 AND abonoCapital > 0)`)
+      AND id NOT LIKE '%-ab-%'`)
       .run(fl.montoCOP, fl.id);
   });
 
@@ -482,11 +482,11 @@ module.exports = function createApp(dbPath) {
           p.partialPaid = partial.partialPaid;
           if (partial.observaciones) p.observaciones = partial.observaciones;
         }
-        if (extraLoan > 0 && p.cuotaN === extraN) {
+        if (extraLoan !== 0 && p.cuotaN === extraN) {
           p.interesPeriodo = Math.round(p.interesPeriodo + extraLoan);
           p.cuotaTotal = Math.round(p.cuotaTotal + extraLoan);
           p.extraConsolidado = extraLoan;
-          if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extraLoan.toLocaleString('es-CO') + ')';
+          if (!p.observaciones) p.observaciones = 'Cuota transitoria por cambio de fecha de pago (' + (extraLoan >= 0 ? '+$' : '-$') + Math.abs(extraLoan).toLocaleString('es-CO') + ')';
         }
       });
       if (schedule.length > 0) insertSchedule(schedule);
@@ -640,11 +640,11 @@ module.exports = function createApp(dbPath) {
         p.partialPaid = partial.partialPaid;
         if (partial.observaciones) p.observaciones = partial.observaciones;
       }
-      if (extraLoanEdit > 0 && p.cuotaN === extraNEdit) {
+      if (extraLoanEdit !== 0 && p.cuotaN === extraNEdit) {
         p.interesPeriodo = Math.round(p.interesPeriodo + extraLoanEdit);
         p.cuotaTotal = Math.round(p.cuotaTotal + extraLoanEdit);
         p.extraConsolidado = extraLoanEdit;
-        if (!p.observaciones) p.observaciones = 'Cuota consolidada por cambio de fecha de pago (+$' + extraLoanEdit.toLocaleString('es-CO') + ')';
+        if (!p.observaciones) p.observaciones = 'Cuota transitoria por cambio de fecha de pago (' + (extraLoanEdit >= 0 ? '+$' : '-$') + Math.abs(extraLoanEdit).toLocaleString('es-CO') + ')';
       }
     });
     if (schedule.length > 0) insertSchedule(schedule);
@@ -849,11 +849,16 @@ module.exports = function createApp(dbPath) {
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
 
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
-    // v1.12.x FIX (bug de mora): el capital de las cuotas EN MORA tambien esta "consumido"
-    // (deuda independiente) -> restarlo, simetrico con regularConsumed (cuenta Pagadas + Mora).
+    // Regla canonica de abono: id con '-ab-'. Las modalidades de cuota unica (Prestamo, Pago Unico)
+    // NO aportan su capital a todoCapPagado: su abonoCapital ES el saldo vivo (no capital pagado);
+    // restarlo colapsaria saldoReal a 0 y rechazaria el abono (bug corregido en el sprint heuristica).
+    const esSingleCuota = loan.modalidad === 'Prestamo' || loan.modalidad === 'Pago Unico';
+    // v1.12.x FIX (bug de mora): en modalidades que amortizan (Capital + Intereses, Intereses) el
+    // capital de las cuotas EN MORA tambien esta "consumido" (deuda independiente) -> restarlo,
+    // simetrico con regularConsumed. En Prestamo/Pago Unico se excluye por !esSingleCuota.
     const todoCapPagado = allPays.filter(p =>
       p.estadoPago === 'Pagado' ||
-      (p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0))
+      (p.estadoPago === 'En Mora' && !esSingleCuota)
     ).reduce((s, p) => s + p.abonoCapital, 0);
     const saldoReal = Math.max(0, originalCOP - todoCapPagado);
     const montoNum = +monto || 0;
@@ -861,10 +866,10 @@ module.exports = function createApp(dbPath) {
     const nuevoSaldo = Math.round(saldoReal - montoNum);
     if (nuevoSaldo < 0) return res.status(400).json({ error: 'El abono supera el saldo actual' });
 
-    // Un registro de abono se identifica por interesPeriodo=0 AND abonoCapital>0
+    // Un registro de abono se identifica por la regla canonica: id con '-ab-'.
     const regularConsumed = allPays.filter(p =>
       (p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') &&
-      !(p.interesPeriodo === 0 && p.abonoCapital > 0)
+      p.id.indexOf('-ab-') === -1
     ).length;
     const maxExistingN = allPays.reduce((max, p) => Math.max(max, p.cuotaN), 0);
 
@@ -930,7 +935,7 @@ module.exports = function createApp(dbPath) {
       // valores quedaban con el monto original e inflaban marginalmente el KPI de
       // "capital recuperado" cuando se pagaba la cuota en mora.
       if (loan.modalidad === 'Prestamo') {
-        const moraRegulares = allPays.filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+        const moraRegulares = allPays.filter(p => p.estadoPago === 'En Mora' && p.id.indexOf('-ab-') === -1);
         const ns = Math.max(0, nuevoSaldo);
         moraRegulares.forEach(p => {
           db.prepare('UPDATE payments SET saldoInicial = ?, abonoCapital = ?, cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
@@ -941,7 +946,7 @@ module.exports = function createApp(dbPath) {
       // (cuotaTotal = capital restante + ganancia; abonoCapital solo el capital)
       if (loan.modalidad === 'Pago Unico') {
         const gPU2 = Math.round(+loan.gananciaFija || 0);
-        const moraRegularesPU = allPays.filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0));
+        const moraRegularesPU = allPays.filter(p => p.estadoPago === 'En Mora' && p.id.indexOf('-ab-') === -1);
         const nsPU = Math.max(0, nuevoSaldo);
         moraRegularesPU.forEach(p => {
           db.prepare('UPDATE payments SET saldoInicial = ?, abonoCapital = ?, cuotaTotal = ?, saldoFinal = ? WHERE id = ?')
@@ -1024,17 +1029,18 @@ module.exports = function createApp(dbPath) {
 
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
     // v1.12.x FIX (bug de mora): incluir el capital de las cuotas EN MORA (deuda independiente),
-    // simetrico con regularConsumed (cuenta Pagadas + Mora).
+    // simetrico con regularConsumed (cuenta Pagadas + Mora). Regla canonica '-ab-' (endpoint
+    // gated a Capital + Intereses, asi que Prestamo/Pago Unico no llegan aqui).
     const todoCapPagado = allPays.filter(p =>
       p.estadoPago === 'Pagado' ||
-      (p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0))
+      (p.estadoPago === 'En Mora' && p.id.indexOf('-ab-') === -1)
     ).reduce((s, p) => s + p.abonoCapital, 0);
     const saldoReal = Math.max(0, originalCOP - todoCapPagado);
     if (saldoReal <= 0) return res.status(400).json({ error: 'El prestamo no tiene saldo de capital pendiente para reestructurar' });
 
     const regularConsumed = allPays.filter(p =>
       (p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') &&
-      !(p.interesPeriodo === 0 && p.abonoCapital > 0)
+      p.id.indexOf('-ab-') === -1
     ).length;
     const nextRegularN = regularConsumed + 1;
     const updatedLoan = Object.assign({}, loan, { montoCOP: saldoReal });
@@ -1100,7 +1106,7 @@ module.exports = function createApp(dbPath) {
     const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
     const capitalPerdido = Math.max(0, Math.round(originalCOP - todoCapPagado));
     const interesesPerdidos = Math.round(allPays
-      .filter(p => p.estadoPago === 'En Mora' && !(p.interesPeriodo === 0 && p.abonoCapital > 0))
+      .filter(p => p.estadoPago === 'En Mora' && p.id.indexOf('-ab-') === -1)
       .reduce((s, p) => s + p.interesPeriodo, 0));
 
     db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente', 'En Mora')").run(req.params.id);
@@ -1113,85 +1119,108 @@ module.exports = function createApp(dbPath) {
   });
 
   // ── API: Cambiar día de pago (con prorrateo) ──────────────────────────────
-  // Cambia loan.diaPago, borra cuotas Pendientes/En Mora, regenera cronograma con
-  // la nueva fecha y consolida en la primera cuota: intereses en mora previos +
-  // prorrateo de los días extra hasta la nueva fecha.
+  // Cambia loan.diaPago y regenera el cronograma. La PRIMERA cuota regenerada es
+  // TRANSITORIA: su interes se prorratea a los DIAS REALES de su periodo (desde la
+  // ultima cuota PAGADA — o fechaInicio — hasta la nueva fecha), NO un mes completo.
+  // Las cuotas siguientes reanudan el ciclo normal de un mes. La mora previa se
+  // consolida aparte. Solo aplica a Intereses / Capital + Intereses en frecuencia
+  // Mensual. Atomico: valida + computa TODO antes de la primera escritura.
   app.post('/api/loans/:id/cambiar-dia-pago', (req, res) => {
-    const { nuevoDia, interesProrrateado, montoMoraConsolidada, diasExtra } = req.body;
+    const { nuevoDia } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
     if (loan.estado !== 'Activo') return res.status(400).json({ error: 'Solo se puede cambiar la fecha de prestamos activos' });
-    if (loan.modalidad === 'Prestamo') return res.status(400).json({ error: 'No aplica para prestamos sin interes' });
+    if (loan.modalidad === 'Prestamo' || loan.modalidad === 'Pago Unico') return res.status(400).json({ error: 'No aplica para prestamos sin cuotas periodicas' });
+    const freq = loan.frecuencia || 'Mensual';
+    if (freq !== 'Mensual') return res.status(400).json({ error: 'Cambiar el dia de pago solo aplica a prestamos de frecuencia Mensual' });
     const nuevoDiaInt = parseInt(nuevoDia, 10);
     if (!nuevoDiaInt || nuevoDiaInt < 1 || nuevoDiaInt > 31) return res.status(400).json({ error: 'Dia invalido' });
     if (nuevoDiaInt === loan.diaPago) return res.status(400).json({ error: 'El nuevo dia debe ser distinto al actual' });
 
-    const extra = Math.round((+interesProrrateado || 0) + (+montoMoraConsolidada || 0));
-    const moraCount = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora' AND NOT (interesPeriodo = 0 AND abonoCapital > 0)").get(req.params.id).c;
+    // ── FASE 1: LECTURA + VALIDACION + COMPUTO (sin escrituras) ───────────────
+    const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
+    const regularesTodas = allPays.filter(p => p.id.indexOf('-ab-') === -1); // regla canonica '-ab-'
 
-    // Borrar cuotas Pendientes y En Mora regulares (preserva Pagadas y abonos)
-    db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND NOT (interesPeriodo = 0 AND abonoCapital > 0)").run(req.params.id);
+    // Mora a consolidar: intereses de las cuotas En Mora regulares -> se suman a la 1a cuota nueva
+    const morasRegulares = regularesTodas.filter(p => p.estadoPago === 'En Mora');
+    const moraCount = morasRegulares.length;
+    const moraConsolidada = Math.round(morasRegulares.reduce((s, p) => s + p.interesPeriodo, 0));
 
-    // Actualizar día de pago
-    db.prepare('UPDATE loans SET diaPago = ? WHERE id = ?').run(nuevoDiaInt, req.params.id);
-    const loanActualizado = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
-
-    // Determinar punto de partida para el nuevo cronograma
-    const todasCuotas = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
-    const regularesExistentes = todasCuotas.filter(p => !(p.interesPeriodo === 0 && p.abonoCapital > 0));
-    const regularConsumed = regularesExistentes.length; // cuotas Pagadas que quedan
+    // Punto de partida: cuotas ya PAGADAS (las En Mora se borran; su capital vuelve al residual y
+    // se re-amortiza, simetrico con regularConsumed = solo Pagadas — misma doctrina que hoy).
+    const pagadasRegulares = regularesTodas.filter(p => p.estadoPago === 'Pagado');
+    const regularConsumed = pagadasRegulares.length;
     const nextRegularN = regularConsumed + 1;
 
-    // Saldo actual (capital pendiente)
+    // Saldo actual (capital pendiente). Solo Pagadas -> simetrico con regularConsumed.
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
-    // NOTA (bug de mora): aqui NO se suma el capital de cuotas En Mora a proposito — esta ruta
-    // YA borro las cuotas Pendiente+Mora arriba (L1109): su capital vuelve al residual y el interes
-    // de mora se consolida en la primera cuota nueva. Por eso todoCapPagado (solo Pagadas) ya es
-    // simetrico con regularConsumed. NO replicar aqui el fix de /recalculate (no quedan filas En Mora).
-    const todoCapPagado = todasCuotas.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const todoCapPagado = pagadasRegulares.reduce((s, p) => s + p.abonoCapital, 0);
     const saldoActual = Math.max(0, originalCOP - todoCapPagado);
-
     if (saldoActual <= 0) return res.status(400).json({ error: 'El prestamo no tiene saldo pendiente' });
 
-    // Calcular cuántas cuotas generar
-    const indefinido = loanActualizado.modalidad === 'Intereses';
-    const remaining = indefinido ? 3 : Math.max(1, (loanActualizado.plazoMeses || 12) - regularConsumed);
+    // CUOTA TRANSITORIA: prorratear el interes de la 1a cuota a los DIAS REALES de su periodo.
+    // Referencia = fechaPago de la ultima cuota PAGADA (o fechaInicio si aun no hay pagos).
+    // diasReales = nuevaFecha - referencia. La mora ya cubre su propio periodo (se suma aparte).
+    const lastSettledDate = pagadasRegulares.length > 0
+      ? pagadasRegulares.map(p => p.fechaPago).sort().slice(-1)[0]
+      : loan.fechaInicio;
+    const firstNewDate = getPayDate(loan.fechaInicio, nextRegularN, nuevoDiaInt, freq);
+    const MS_DIA = 24 * 60 * 60 * 1000;
+    const rawDias = Math.round((new Date(firstNewDate + 'T12:00:00') - new Date(lastSettledDate + 'T12:00:00')) / MS_DIA);
+    const diasReales = Math.max(1, rawDias);
+    const interesProrrateado = Math.round(saldoActual * (loan.tasaMensual / 100) * diasReales / 30);
 
-    // Generar cronograma nuevo desde la cuota siguiente
-    const nuevasCuotas = buildSchedule(loanActualizado, nextRegularN, saldoActual, remaining);
-
-    // Sobrescribir la PRIMERA cuota nueva con el monto consolidado
-    if (nuevasCuotas.length > 0 && extra > 0) {
+    // Regenerar cronograma con el nuevo dia y convertir la primera cuota en transitoria.
+    const loanConNuevoDia = Object.assign({}, loan, { diaPago: nuevoDiaInt });
+    const indefinido = loan.modalidad === 'Intereses';
+    const remaining = indefinido ? 3 : Math.max(1, (loan.plazoMeses || 12) - regularConsumed);
+    const nuevasCuotas = buildSchedule(loanConNuevoDia, nextRegularN, saldoActual, remaining);
+    let netAdj = 0;
+    if (nuevasCuotas.length > 0) {
       const primera = nuevasCuotas[0];
-      primera.interesPeriodo = Math.round(primera.interesPeriodo + extra);
-      primera.cuotaTotal = Math.round(primera.cuotaTotal + extra);
-      primera.extraConsolidado = extra; // Persistir en la cuota tambien (referencia)
-      const obsExtra = 'Cuota consolidada por cambio de fecha de pago. Incluye: '
-        + (montoMoraConsolidada > 0 ? 'intereses en mora previos $' + Math.round(montoMoraConsolidada).toLocaleString('es-CO') : '')
-        + (montoMoraConsolidada > 0 && interesProrrateado > 0 ? ' + ' : '')
-        + (interesProrrateado > 0 ? 'prorrateo ' + diasExtra + ' dias $' + Math.round(interesProrrateado).toLocaleString('es-CO') : '');
-      primera.observaciones = obsExtra;
-      // PERSISTIR el extra en el LOAN: sobrevive a cualquier regeneracion del cronograma.
-      // proximaCuotaExtraN = la cuotaN a la que se debe aplicar el extra al regenerar.
-      db.prepare('UPDATE loans SET proximaCuotaExtra = ?, proximaCuotaExtraN = ? WHERE id = ?')
-        .run(extra, primera.cuotaN, req.params.id);
+      const fullInt = primera.interesPeriodo;          // interes de mes completo que calculo buildSchedule
+      const deltaInt = fullInt - interesProrrateado;   // reduccion por periodo corto (negativo si el periodo es > 1 mes)
+      // Ajuste NETO con signo = (prorrateo + mora) - full. Se persiste para sobrevivir a /recalculate y PUT /loans.
+      netAdj = Math.round(moraConsolidada - deltaInt);
+      // interesPeriodo = interes prorrateado + mora; cuotaTotal baja el delta y suma la mora.
+      // abonoCapital y saldoFinal quedan INTACTOS -> amortizacion (Capital + Intereses) preservada.
+      primera.interesPeriodo = Math.round(interesProrrateado + moraConsolidada);
+      primera.cuotaTotal = Math.round(primera.cuotaTotal - deltaInt + moraConsolidada);
+      primera.extraConsolidado = netAdj;
+      primera.observaciones = 'Cuota transitoria: interes de ' + diasReales + ' dias prorrateado'
+        + (moraConsolidada > 0 ? ' + mora consolidada $' + moraConsolidada.toLocaleString('es-CO') : '');
     }
 
-    insertSchedule(nuevasCuotas);
+    // ── FASE 2: ESCRITURA (transaccion atomica) ──────────────────────────────
+    const aplicar = db.transaction(() => {
+      // Borrar Pendientes + En Mora regulares (preserva Pagadas y abonos '-ab-')
+      db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND id NOT LIKE '%-ab-%'").run(req.params.id);
+      db.prepare('UPDATE loans SET diaPago = ? WHERE id = ?').run(nuevoDiaInt, req.params.id);
+      // Persistir el ajuste NETO con signo (proximaCuotaExtra) para reproducir la cuota transitoria
+      // al regenerar. /recalculate y PUT /loans aplican `+= extra` con guard `!== 0`.
+      db.prepare('UPDATE loans SET proximaCuotaExtra = ?, proximaCuotaExtraN = ? WHERE id = ?')
+        .run(netAdj, nuevasCuotas.length > 0 ? nuevasCuotas[0].cuotaN : 0, req.params.id);
+      if (nuevasCuotas.length > 0) insertSchedule(nuevasCuotas);
+    });
+    aplicar();
 
     const logMsg = 'Cambiaste dia de pago de ' + loan.nombre + ' del ' + loan.diaPago + ' al ' + nuevoDiaInt
-      + (moraCount > 0 ? ' — consolidaste ' + moraCount + ' cuota' + (moraCount > 1 ? 's' : '') + ' en mora ($' + Math.round(montoMoraConsolidada || 0).toLocaleString('es-CO') + ')' : '')
-      + (interesProrrateado > 0 ? ' + prorrateo ' + diasExtra + ' dias ($' + Math.round(interesProrrateado).toLocaleString('es-CO') + ')' : '')
-      + (extra > 0 ? ' = primera cuota +$' + extra.toLocaleString('es-CO') : '');
+      + ' - 1a cuota transitoria de ' + diasReales + ' dias (interes $' + interesProrrateado.toLocaleString('es-CO') + ')'
+      + (moraCount > 0 ? ' + ' + moraCount + ' cuota' + (moraCount > 1 ? 's' : '') + ' en mora ($' + moraConsolidada.toLocaleString('es-CO') + ')' : '');
     logAction.run('cambio-fecha', logMsg);
 
     res.json({
       ok: true,
       nuevoDia: nuevoDiaInt,
       primeraCuota: nuevasCuotas[0] || null,
-      cuotasRecurrentes: nuevasCuotas.length > 1 ? nuevasCuotas[1].cuotaTotal : (nuevasCuotas[0] ? nuevasCuotas[0].cuotaTotal - extra : 0),
-      moraConsolidada: Math.round(montoMoraConsolidada || 0),
-      prorrateo: Math.round(interesProrrateado || 0),
+      // Radiografia de la cuota transitoria para el modal: capital (amortizacion normal, intacta),
+      // interes prorrateado (solo dias reales) y total. capitalCuota = abonoCapital de la 1a cuota.
+      capitalCuota: nuevasCuotas.length > 0 ? nuevasCuotas[0].abonoCapital : 0,
+      cuotaTotalTransitoria: nuevasCuotas.length > 0 ? nuevasCuotas[0].cuotaTotal : 0,
+      cuotasRecurrentes: nuevasCuotas.length > 1 ? nuevasCuotas[1].cuotaTotal : (nuevasCuotas[0] ? nuevasCuotas[0].cuotaTotal - netAdj : 0),
+      moraConsolidada: moraConsolidada,
+      prorrateo: interesProrrateado,
+      diasReales: diasReales,
       moraCount: moraCount
     });
   });

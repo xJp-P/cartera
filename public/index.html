@@ -1066,6 +1066,12 @@ function App(){
     ],
     '1.13.2': [
       'Prestamos a 0% interes (modalidad Prestamo) y de pago unico: al cobrar la ultima cuota, el prestamo ahora pasa automaticamente a Finalizado. Antes se quedaba en Activo aunque el saldo fuera $0 y seguia apareciendo como activo en todas las secciones.'
+    ],
+    '1.14.0': [
+      'Cambiar fecha de pago: la primera cuota ahora es una "cuota transitoria" que cobra intereses solo por los dias REALES de su periodo (desde la ultima cuota pagada hasta la nueva fecha), en vez de un mes completo mas dias extra. Ya no se sobrecobra al adelantar la fecha de cobro.',
+      'El modal desglosa la cuota transitoria: capital de la cuota (intacto) + intereses prorrateados (X dias) + total, para que se entienda de donde sale el monto; la mora previa se consolida por separado.',
+      'Cambiar fecha de pago aplica solo a prestamos mensuales con cuotas periodicas (Intereses / Capital + Intereses).',
+      'Mejoras internas de robustez en la identificacion de abonos a capital y el recalculo de cronogramas en todas las modalidades.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1213,7 +1219,7 @@ function App(){
     var origCOP=loan.moneda==='USD'?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
     var capPag=lp.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
     var capPerd=Math.max(0,Math.round(origCOP-capPag));
-    var intPerd=Math.round(lp.filter(function(p){return p.estadoPago==='En Mora'&&!(p.interesPeriodo===0&&p.abonoCapital>0);}).reduce(function(s,p){return s+p.interesPeriodo;},0));
+    var intPerd=Math.round(lp.filter(function(p){return p.estadoPago==='En Mora'&&p.id.indexOf('-ab-')===-1;}).reduce(function(s,p){return s+p.interesPeriodo;},0));
     var total=capPerd+intPerd;
     var msg='Cerrar a la fuerza el prestamo de '+loan.nombre+'. Se daran por perdidos:\n'
       +'• Capital pendiente: $'+capPerd.toLocaleString('es-CO')+'\n'
@@ -2133,8 +2139,8 @@ function CarteraView(props){
               isExp?'Ocultar cronograma':'Ver cronograma')),
           isExp&&function(){
             // v1.9.0 — Cronograma unificado con DebtorModal: muestra Capital + Interes + Deuda corrida (consideran abonos)
-            var cuotasReg=lp.filter(function(p){return !(p.abonoCapital>0&&p.interesPeriodo===0);}).filter(function(p){return loan.modalidad!=='Intereses'||p.estadoPago!=='Pendiente';});
-            var abonos=lp.filter(function(p){return p.abonoCapital>0&&p.interesPeriodo===0;});
+            var cuotasReg=lp.filter(function(p){return p.id.indexOf('-ab-')===-1;}).filter(function(p){return loan.modalidad!=='Intereses'||p.estadoPago!=='Pendiente';});
+            var abonos=lp.filter(function(p){return p.id.indexOf('-ab-')!==-1;});
             var esUSD=loan.moneda==='USD';
             var origCOP=esUSD?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
             var cronoItems=cuotasReg.slice().sort(function(a,b){return a.cuotaN-b.cuotaN;});
@@ -2436,22 +2442,27 @@ function DebtorModal(props){
     var diaActual=cfLoan.diaPago;
     var nuevoDia=parseInt(cambioFecha.nuevoDia,10);
     var validNuevo=nuevoDia>=1&&nuevoDia<=31&&nuevoDia!==diaActual;
-    // Calcular días extra entre fecha actual del próximo corte y nueva fecha de corte
-    // diasExtra = (nuevoDia - diaActual) si nuevoDia > diaActual, sino +30 días
-    var diasExtra=0;
-    if(validNuevo){
-      diasExtra=nuevoDia>diaActual?nuevoDia-diaActual:30-(diaActual-nuevoDia);
-    }
     var tasaMensual=+cfLoan.tasaMensual||0;
-    // Interés del mes vencido = saldoCapital × tasa/100 (un mes completo del periodo actual)
-    var intMesVencido=Math.round(cambioFecha.saldo*tasaMensual/100);
-    // Interés prorrateado = saldoCapital × (tasa/30/100) × diasExtra
-    var intProrrateado=validNuevo?Math.round(cambioFecha.saldo*(tasaMensual/30)/100*diasExtra):0;
-    // Mora consolidada = suma de interesPeriodo de cuotas En Mora ya calculada
+    // Cuota transitoria: interes prorrateado a los DIAS REALES del primer periodo (desde la
+    // ultima cuota pagada / fechaInicio hasta la nueva fecha). Replica el calculo del backend.
+    function _payDate(startISO,cuotaN,dp){var d=new Date(startISO+'T12:00:00');d.setDate(1);d.setMonth(d.getMonth()+cuotaN);d.setDate(Math.min(dp,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));return d.toISOString().split('T')[0];}
+    var _lastSettled=cambioFecha.lastSettled||cfLoan.fechaInicio;
+    var _nextN=(cambioFecha.regularConsumed||0)+1;
+    var diasReales=0,intProrrateado=0;
+    if(validNuevo){
+      var _first=_payDate(cfLoan.fechaInicio,_nextN,nuevoDia);
+      diasReales=Math.max(1,Math.round((new Date(_first+'T12:00:00')-new Date(_lastSettled+'T12:00:00'))/86400000));
+      intProrrateado=Math.round(cambioFecha.saldo*(tasaMensual/100)*diasReales/30);
+    }
+    var intMesNormal=Math.round(cambioFecha.saldo*tasaMensual/100);
+    // Capital de la cuota (misma logica que buildSchedule): 0 en Intereses; en C+I = PMT - interes normal.
+    var _r=tasaMensual/100;
+    var _n=Math.max(1,(+cfLoan.plazoMeses||12)-(cambioFecha.regularConsumed||0));
+    var _pmt=_r===0?cambioFecha.saldo/_n:cambioFecha.saldo*_r*Math.pow(1+_r,_n)/(Math.pow(1+_r,_n)-1);
+    var capitalCuota=cfLoan.modalidad==='Intereses'?0:Math.max(0,Math.round(_pmt-intMesNormal));
     var moraConsolidada=cambioFecha.intMora;
-    var primeraCuotaTotal=intMesVencido+intProrrateado+moraConsolidada;
-    // Cuota recurrente = interés del mes normal
-    var cuotaRecurrente=intMesVencido;
+    var primeraCuotaTotal=capitalCuota+intProrrateado+moraConsolidada;
+    var cuotaRecurrente=cfLoan.modalidad==='Intereses'?intMesNormal:Math.round(_pmt);
 
     // Render del estado SUCCESS (comprobante post-éxito)
     if(cambioFecha.step==='success'){
@@ -2471,16 +2482,19 @@ function DebtorModal(props){
               h('div',{className:'mono',style:{fontSize:22,fontWeight:700,color:'var(--green)'}},fmt(rs.primeraCuota&&rs.primeraCuota.cuotaTotal||primeraCuotaTotal)),
               cfEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(rs.primeraCuota&&rs.primeraCuota.cuotaTotal||primeraCuotaTotal,cfLoan.trmAcordada))))),
         h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',marginBottom:12,border:'1px solid var(--border)'}},
-          h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,padding:'10px 0 6px'}},'DESGLOSE DE LA PRIMERA CUOTA'),
-          (rs.moraConsolidada||0)>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
-            h('span',{style:{color:'var(--text2)'}},rs.moraCount+' cuota'+(rs.moraCount>1?'s':'')+' en mora (consolidada'+(rs.moraCount>1?'s':'')+')'),
-            h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(rs.moraConsolidada))),
+          h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,padding:'10px 0 6px'}},'DESGLOSE DE LA CUOTA TRANSITORIA'),
+          (rs.capitalCuota||0)>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+            h('span',{style:{color:'var(--text2)'}},'Capital de la cuota'),
+            h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(rs.capitalCuota))),
           h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
-            h('span',{style:{color:'var(--text2)'}},'Interes del mes que vence'),
-            h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(intMesVencido))),
-          (rs.prorrateo||0)>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
-            h('span',{style:{color:'var(--text2)'}},'Prorrateo '+diasExtra+' dias'),
-            h('span',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(rs.prorrateo)))),
+            h('span',{style:{color:'var(--text2)'}},'Intereses prorrateados ('+(rs.diasReales||diasReales)+' dias)'),
+            h('span',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(rs.prorrateo||intProrrateado))),
+          (rs.moraConsolidada||0)>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+            h('span',{style:{color:'var(--text2)'}},rs.moraCount+' cuota'+(rs.moraCount>1?'s':'')+' en mora'),
+            h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(rs.moraConsolidada))),
+          h('div',{style:{display:'flex',justifyContent:'space-between',padding:'9px 0 4px',borderTop:'2px solid var(--border)',fontSize:13}},
+            h('span',{style:{color:'var(--text)',fontWeight:700}},'Total cuota transitoria'),
+            h('span',{className:'mono',style:{color:'var(--green)',fontWeight:700}},fmt(rs.cuotaTotalTransitoria||(rs.primeraCuota&&rs.primeraCuota.cuotaTotal)||primeraCuotaTotal)))),
         h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'10px 12px',marginBottom:14,fontSize:12,color:'var(--text2)',display:'flex',justifyContent:'space-between',alignItems:'center'}},
           h('span',null,'Cuotas siguientes (cada dia '+rs.nuevoDia+')'),
           h('span',{className:'mono',style:{color:'var(--text)',fontWeight:600}},fmt(rs.cuotasRecurrentes||cuotaRecurrente))),
@@ -2503,20 +2517,23 @@ function DebtorModal(props){
         h('div',{style:{fontWeight:700,color:'var(--red)',marginBottom:4,display:'flex',alignItems:'center',gap:5}},h(Ico,{name:'alert',size:12,color:'var(--red)',sw:2.4}),' '+cambioFecha.moraCount+' CUOTA'+(cambioFecha.moraCount>1?'S':'')+' EN MORA'),
         'Se consolidaran en la primera cuota nueva ('+fmt(moraConsolidada)+' en intereses).'),
       validNuevo?h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',marginBottom:12,border:'1px solid var(--border)'}},
-        h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,padding:'10px 0 6px'}},'DESGLOSE DE LA PRIMERA CUOTA'),
+        h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,padding:'10px 0 6px'}},'DESGLOSE DE LA CUOTA TRANSITORIA'),
+        capitalCuota>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+          h('div',null,
+            h('div',{style:{color:'var(--text2)'}},'Capital de la cuota'),
+            h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Amortizacion (igual que una cuota normal)')),
+          h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(capitalCuota))),
+        h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
+          h('div',null,
+            h('div',{style:{color:'var(--text2)'}},'Intereses prorrateados ('+diasReales+' dias)'),
+            h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Saldo × ('+tasaMensual+'%/30) × '+diasReales+' dias')),
+          h('span',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(intProrrateado))),
         moraConsolidada>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
           h('span',{style:{color:'var(--text2)'}},'Mora consolidada'),
           h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(moraConsolidada))),
-        h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
-          h('div',null,
-            h('div',{style:{color:'var(--text2)'}},'Interes del mes que vence'),
-            h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Saldo × '+tasaMensual+'%')),
-          h('span',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(intMesVencido))),
-        diasExtra>0&&h('div',{style:{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid var(--bg)',fontSize:12}},
-          h('div',null,
-            h('div',{style:{color:'var(--text2)'}},'Prorrateo '+diasExtra+' dias'),
-            h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Saldo × ('+tasaMensual+'%/30) × '+diasExtra)),
-          h('span',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(intProrrateado)))):
+        h('div',{style:{display:'flex',justifyContent:'space-between',padding:'9px 0 4px',borderTop:'2px solid var(--border)',fontSize:13}},
+          h('span',{style:{color:'var(--text)',fontWeight:700}},'Total cuota transitoria'),
+          h('span',{className:'mono',style:{color:'var(--green)',fontWeight:700}},fmt(primeraCuotaTotal)))):
         h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'14px',marginBottom:12,fontSize:12,color:'var(--text3)',textAlign:'center'}},'Ingresa un nuevo dia (1-31) distinto al actual para ver el desglose'),
       validNuevo&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}},
         h('div',null,
@@ -2528,10 +2545,7 @@ function DebtorModal(props){
       h('button',{onClick:function(){
         if(!validNuevo){_showError('Ingresa un dia valido (1-31, distinto al actual)');return;}
         API.post('/api/loans/'+cfLoan.id+'/cambiar-dia-pago',{
-          nuevoDia:nuevoDia,
-          interesProrrateado:intProrrateado,
-          montoMoraConsolidada:moraConsolidada,
-          diasExtra:diasExtra
+          nuevoDia:nuevoDia
         }).then(function(r){
           if(!r)return;
           if(r.error){_showError(r.error);return;}
@@ -2827,7 +2841,7 @@ function DebtorModal(props){
                 var ajs=[h('div',{key:'lbl',style:labelStyle},'Ajustar cronograma')];
                 if(canReestructurar) ajs.push(h('button',{key:'r',onClick:function(e){e.stopPropagation();onReestructurar(l);},style:btnNeutral},
                   h(Ico,{name:'calc',size:14,color:'var(--text2)',sw:2}),'Reestructurar cuotas'));
-                if(canCambiarFecha) ajs.push(h('button',{key:'f',onClick:function(e){e.stopPropagation();setCambioFecha({loan:l,saldo:saldo,intMora:imora,moraCount:enMora.length,step:'form',nuevoDia:''});},style:Object.assign({},btnNeutral,{marginTop:canReestructurar?6:0})},
+                if(canCambiarFecha) ajs.push(h('button',{key:'f',onClick:function(e){e.stopPropagation();var _pg=lp.filter(function(p){return p.id.indexOf('-ab-')===-1&&p.estadoPago==='Pagado';});var _pgf=_pg.map(function(p){return p.fechaPago;}).sort();setCambioFecha({loan:l,saldo:saldo,intMora:imora,moraCount:enMora.length,lastSettled:_pgf.length?_pgf[_pgf.length-1]:l.fechaInicio,regularConsumed:_pg.length,step:'form',nuevoDia:''});},style:Object.assign({},btnNeutral,{marginTop:canReestructurar?6:0})},
                   h(Ico,{name:'calendar',size:14,color:'var(--text2)',sw:2}),'Cambiar fecha de pago'));
                 sects.push(h('div',{key:'g2',style:{marginTop:14}},ajs));
               }
