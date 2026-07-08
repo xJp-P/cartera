@@ -1272,6 +1272,9 @@ function App(){
       'Reporte de Prestamos (PDF): en prestamos con cuotas atrasadas, el badge de Estado de la fila principal dice "Pendiente" (neutral) en vez de "En mora", porque esa fila representa la proxima cuota que todavia no vence; las sub-filas rojas siguen alertando visualmente la mora del prestamo.',
       'Reporte de Prestamos (PDF): nueva seccion "Referencia de estados" al pie que explica, cada uno en su propia linea, los estados Al dia / Pendiente / En mora y el significado de las sub-filas roja (cuota vencida) y ambar (cuota transitoria).',
       'Recibo de Pago (PDF): si la cuota cobrada es transitoria, el recibo lo aclara con "(Cuota Transitoria / Interes Prorrateado)" junto al numero de cuota, para que tu archivo contable no quede descuadrado.'
+    ],
+    '1.15.3': [
+      'Actualizacion automatica en Windows: corregido el error "No se pudo descargar la nueva version (ENOENT... rename temp-*.exe)" que aparecia al actualizar. Ahora la app descarga el instalador completo (no por partes) y, si falla, reintenta una vez limpiando los archivos temporales del updater, lo que evita ese fallo.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];

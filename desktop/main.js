@@ -183,6 +183,11 @@ async function createWindow() {
 // ── Auto-updater ────────────────────────────────────────────────────────
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
+// v1.15.3: fuerza la descarga del instalador COMPLETO en vez de la diferencial por blockmap.
+// La descarga diferencial podia quedar parcial/corrupta (sobre todo al saltar muchas versiones
+// de golpe) y el rename final 'temp-*.exe' -> '*.exe' fallaba con ENOENT. Baja mas MB pero es
+// robusto. Solo aplica a Windows (Mac usa un updater propio).
+autoUpdater.disableDifferentialDownload = true;
 
 let mainWin = null;
 let splashWin = null;
@@ -234,6 +239,48 @@ ipcMain.handle('check-for-updates', () => {
   autoUpdater.checkForUpdates();
   return { status: 'checking' };
 });
+
+// v1.15.3: limpia el folder `pending` del updater de Windows (%LOCALAPPDATA%\cartera-updater\
+// pending). Ahi viven los temp-*.exe; si uno quedo parcial o bloqueado de un intento previo, el
+// rename fallaba con ENOENT. Todo en try/catch: si algo sale mal, no interrumpe el arranque.
+function cleanUpdaterPending() {
+  try {
+    const local = process.env.LOCALAPPDATA;
+    if (!local) return;
+    const pendingDir = path.join(local, app.getName() + '-updater', 'pending');
+    if (fs.existsSync(pendingDir)) fs.rmSync(pendingDir, { recursive: true, force: true });
+  } catch (_) { /* no-op */ }
+}
+
+// v1.15.3: descarga la actualizacion en Windows con 1 REINTENTO (limpiando `pending` antes de
+// cada intento). En exito la app se cierra para instalar (la promesa nunca se resuelve); solo
+// rechaza si el reintento tambien falla -> el llamador (FASE 4a) muestra la vista de error.
+function downloadUpdateWindows() {
+  const attempt = () => new Promise((resolve, reject) => {
+    const onProgress = (prog) => updateSplashMessage('Descargando v' + macUpdateVersion, Math.round(prog.percent));
+    const onDownloaded = () => {
+      updateSplashMessage('Instalando v' + macUpdateVersion);
+      setTimeout(() => autoUpdater.quitAndInstall(false, true), 1000);
+      // app sale; la promesa no se resuelve a proposito
+    };
+    function off() {
+      autoUpdater.removeListener('download-progress', onProgress);
+      autoUpdater.removeListener('update-downloaded', onDownloaded);
+      autoUpdater.removeListener('error', onError);
+    }
+    function onError(err) { off(); reject(err); }
+    autoUpdater.on('download-progress', onProgress);
+    autoUpdater.on('update-downloaded', onDownloaded);
+    autoUpdater.on('error', onError);
+    autoUpdater.downloadUpdate().catch(function(err) { off(); reject(err); });
+  });
+  cleanUpdaterPending();
+  return attempt().catch(function() {
+    cleanUpdaterPending();
+    updateSplashMessage('Reintentando descarga de v' + macUpdateVersion, 0);
+    return attempt();
+  });
+}
 
 // ── Mac: actualizador personalizado (sin firma de código) ────────────
 function httpsGet(url) {
@@ -685,18 +732,8 @@ app.whenReady().then(async () => {
         await macDownloadAndInstallAtBoot(macUpdateVersion);
         return; // app se cierra
       } else {
-        await new Promise((resolve, reject) => {
-          autoUpdater.on('download-progress', (prog) => {
-            updateSplashMessage('Descargando v' + macUpdateVersion, Math.round(prog.percent));
-          });
-          autoUpdater.once('update-downloaded', () => {
-            updateSplashMessage('Instalando v' + macUpdateVersion);
-            setTimeout(() => autoUpdater.quitAndInstall(false, true), 1000);
-            // app sale, no se resuelve
-          });
-          autoUpdater.once('error', reject);
-          autoUpdater.downloadUpdate().catch(reject);
-        });
+        // v1.15.3: descarga con reintento + limpieza de `pending` (fix del ENOENT al renombrar)
+        await downloadUpdateWindows();
         return;
       }
     } catch(err) {
