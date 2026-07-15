@@ -1477,6 +1477,10 @@ function App(){
       'Nuevo campo "Datos de pago" en la seccion Desarrollador: el texto que escribas ahi (cuentas, Nequi/Daviplata, a nombre de quien) aparece en el bloque "Como pagar" del recibo. Si lo dejas vacio, ese bloque no se muestra.',
       'Buscador de Pagos: ahora tambien puedes encontrar una cuota escribiendo su numero de factura (empieza a escribir "FC-").',
       'Reporte de Prestamos (PDF): el "Total vencido" y el "Capital total en la calle" ahora muestran ademas el equivalente sumado en dolares cuando hay prestamos en USD (ej: "Total vencido: $ 3.442.407 (Incluye USD $400.00)").'
+    ],
+    '1.16.1': [
+      'Cambiar fecha de pago: corregido el calculo de la cuota transitoria cuando el nuevo dia adelantaria el cobro. Antes, mover el dia de pago a uno mas temprano (ej. del 30 al 15) proyectaba la primera cuota al mismo mes y prorrateaba solo unos pocos dias de interes; ahora la proyecta al mes siguiente ("nunca adelantar el cobro"), con el prorrateo de dias completo que corresponde a un aplazamiento. El aplazamiento se conserva aunque uses "Sincronizar" o edites el prestamo.',
+      'El modal de cambio de fecha ahora muestra la fecha exacta proyectada de la primera cuota (ej. "PRIMERA CUOTA (15 de ago de 2026)") en vez de solo el numero del dia, y aclara que las siguientes se cobran el dia elegido de cada mes.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -2860,11 +2864,19 @@ function DebtorModal(props){
     // Cuota transitoria: interes prorrateado a los DIAS REALES del primer periodo (desde la
     // ultima cuota pagada / fechaInicio hasta la nueva fecha). Replica el calculo del backend.
     function _payDate(startISO,cuotaN,dp){var d=new Date(startISO+'T12:00:00');d.setDate(1);d.setMonth(d.getMonth()+cuotaN);d.setDate(Math.min(dp,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));return d.toISOString().split('T')[0];}
+    function _addMes(iso){var d=new Date(iso+'T12:00:00');d.setDate(1);d.setMonth(d.getMonth()+1);return d.toISOString().split('T')[0];}
+    function _fLarga(iso){if(!iso)return '';var d=new Date(iso+'T12:00:00');var M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];return d.getDate()+' de '+M[d.getMonth()]+' de '+d.getFullYear();}
+    var _base=cfLoan.fechaBaseCronograma||cfLoan.fechaInicio;
     var _lastSettled=cambioFecha.lastSettled||cfLoan.fechaInicio;
     var _nextN=(cambioFecha.regularConsumed||0)+1;
-    var diasReales=0,intProrrateado=0;
+    var diasReales=0,intProrrateado=0,_first='';
     if(validNuevo){
-      var _first=_payDate(cfLoan.fechaInicio,_nextN,nuevoDia);
+      // Misma regla "nunca adelantar" que el backend: si el nuevo dia caeria antes de la cuota ya
+      // agendada (dia menor en el mismo mes), la 1a cuota se proyecta al mes siguiente.
+      var _origNext=_payDate(_base,_nextN,diaActual);
+      var _naive=_payDate(_base,_nextN,nuevoDia);
+      var _baseCron=_naive<_origNext?_addMes(_base):_base;
+      _first=_payDate(_baseCron,_nextN,nuevoDia);
       diasReales=Math.max(1,Math.round((new Date(_first+'T12:00:00')-new Date(_lastSettled+'T12:00:00'))/86400000));
       intProrrateado=Math.round(cambioFecha.saldo*(tasaMensual/100)*diasReales/30);
     }
@@ -2890,8 +2902,8 @@ function DebtorModal(props){
           h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600,letterSpacing:.5,marginBottom:4}},'PROXIMA CUOTA'),
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:10}},
             h('div',null,
-              h('div',{style:{fontSize:13,color:'var(--text)',fontWeight:600}},'Dia '+rs.nuevoDia+' de cada mes'),
-              h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},'Primer cobro consolidado')),
+              h('div',{style:{fontSize:13,color:'var(--text)',fontWeight:600}},(rs.primeraCuota&&rs.primeraCuota.fechaPago)?_fLarga(rs.primeraCuota.fechaPago):('Dia '+rs.nuevoDia)),
+              h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},'Primer cobro · luego el dia '+rs.nuevoDia+' de cada mes')),
             h('div',{style:{textAlign:'right'}},
               h('div',{className:'mono',style:{fontSize:22,fontWeight:700,color:'var(--green)'}},fmt(rs.primeraCuota&&rs.primeraCuota.cuotaTotal||primeraCuotaTotal)),
               cfEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(rs.primeraCuota&&rs.primeraCuota.cuotaTotal||primeraCuotaTotal,cfLoan.trmAcordada))))),
@@ -2951,8 +2963,8 @@ function DebtorModal(props){
         h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'14px',marginBottom:12,fontSize:12,color:'var(--text3)',textAlign:'center'}},'Ingresa un nuevo dia (1-31) distinto al actual para ver el desglose'),
       validNuevo&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}},
         h('div',null,
-          h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600,letterSpacing:.5}},'PRIMERA CUOTA (dia '+nuevoDia+')'),
-          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'A partir de la 2a cuota: '+fmt(cuotaRecurrente)+' los dia '+nuevoDia)),
+          h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600,letterSpacing:.5}},'PRIMERA CUOTA ('+_fLarga(_first)+')'),
+          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'A partir de la 2a cuota: '+fmt(cuotaRecurrente)+' el dia '+nuevoDia+' de cada mes')),
         h('div',{style:{textAlign:'right'}},
           h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--green)'}},fmt(primeraCuotaTotal)),
           cfEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(primeraCuotaTotal,cfLoan.trmAcordada)))),

@@ -133,6 +133,11 @@ module.exports = function createApp(dbPath) {
   // Se limpia automaticamente cuando esa cuota se paga.
   try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtra REAL DEFAULT 0"); } catch(_){}
   try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtraN INTEGER DEFAULT 0"); } catch(_){}
+  // Base del cronograma SOLO para el calculo de FECHAS (no toca fechaInicio, que es historico y lo
+  // usan reportes/antiguedad). Default NULL -> buildSchedule cae a fechaInicio (cero cambio para
+  // prestamos sin salto). /cambiar-dia-pago la adelanta 1 mes cuando el nuevo dia adelantaria el
+  // cobro (regla "nunca adelantar"), para que el aplazamiento sobreviva a /recalculate y PUT /loans.
+  try { db.exec("ALTER TABLE loans ADD COLUMN fechaBaseCronograma TEXT"); } catch(_){}
   // Cuota fija pactada (modo "Fijar cuota" de abono opcion 3): cuando > 0, el cronograma debe
   // regenerarse usando buildScheduleFixedPMT en vez de buildSchedule.
   // Se limpia al saldar el prestamo o al hacer un abono con otra opcion (Mantener/Modificar plazo).
@@ -237,6 +242,8 @@ module.exports = function createApp(dbPath) {
     startN = startN || 1;
     const { id, nombre, tasaMensual, modalidad, fechaInicio, diaPago } = loan;
     const freq = loan.frecuencia || 'Mensual';
+    // Base para las FECHAS del cronograma (aplazamiento por cambio de dia de pago). NULL -> fechaInicio.
+    const baseCron = loan.fechaBaseCronograma || fechaInicio;
     const montoCOP = startSaldo !== undefined ? startSaldo : loan.montoCOP;
     const indefinido = modalidad === 'Intereses';
     const totalCuotas = numCuotas !== undefined ? numCuotas : (indefinido ? cuotasHastaHoy(fechaInicio, startN, 3, freq) : (loan.plazoMeses || 12));
@@ -249,7 +256,7 @@ module.exports = function createApp(dbPath) {
     // Los abonos a capital se identifican por la regla canonica id.indexOf('-ab-') !== -1
     // (NO por interesPeriodo===0 && abonoCapital>0, que confundiria esta cuota unica).
     if (modalidad === 'Prestamo') {
-      var fechaCuota = loan.fechaDevolucion || getPayDate(fechaInicio, 1, diaPago, freq);
+      var fechaCuota = loan.fechaDevolucion || getPayDate(baseCron, 1, diaPago, freq);
       rows.push({
         id: `${id}-1`, prestamoId: id, nombreCliente: nombre, cuotaN: 1,
         fechaPago: fechaCuota,
@@ -266,7 +273,7 @@ module.exports = function createApp(dbPath) {
     // abonoCapital carga el capital → entra al calculo de Saldo Pendiente
     // cuotaTotal = capital + ganancia → entra al Recaudo del mes
     if (modalidad === 'Pago Unico') {
-      var fechaCuotaPU = loan.fechaDevolucion || getPayDate(fechaInicio, 1, diaPago, freq);
+      var fechaCuotaPU = loan.fechaDevolucion || getPayDate(baseCron, 1, diaPago, freq);
       var capitalPU = Math.round(montoCOP);
       var gananciaPU = Math.round(+loan.gananciaFija || 0);
       rows.push({
@@ -299,7 +306,7 @@ module.exports = function createApp(dbPath) {
       const saldoFinal = Math.max(0, Math.round((saldo - capital) * 100) / 100);
       rows.push({
         id: `${id}-${cuotaN}`, prestamoId: id, nombreCliente: nombre, cuotaN: cuotaN,
-        fechaPago: getPayDate(fechaInicio, cuotaN, diaPago, freq),
+        fechaPago: getPayDate(baseCron, cuotaN, diaPago, freq),
         saldoInicial: Math.round(saldo), interesPeriodo: Math.round(interes),
         abonoCapital: Math.round(capital), cuotaTotal: Math.round(cuota),
         saldoFinal: Math.round(saldoFinal),
@@ -326,6 +333,7 @@ module.exports = function createApp(dbPath) {
   function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
     const { id, nombre, tasaMensual, fechaInicio, diaPago } = loan;
     const freq = loan.frecuencia || 'Mensual';
+    const baseCron = loan.fechaBaseCronograma || fechaInicio; // fechas via base de cronograma (aplazamiento)
     const r = tasaPeriodo(tasaMensual / 100, freq);
     const interesInicial = saldoInicial * r;
     // Validacion: cuota debe cubrir al menos el interes del primer periodo
@@ -358,7 +366,7 @@ module.exports = function createApp(dbPath) {
         prestamoId: id,
         nombreCliente: nombre,
         cuotaN: cuotaN,
-        fechaPago: getPayDate(fechaInicio, cuotaN, diaPago, freq),
+        fechaPago: getPayDate(baseCron, cuotaN, diaPago, freq),
         saldoInicial: Math.round(saldo),
         interesPeriodo: Math.round(interes),
         abonoCapital: Math.round(capital),
@@ -1164,14 +1172,28 @@ module.exports = function createApp(dbPath) {
     const lastSettledDate = pagadasRegulares.length > 0
       ? pagadasRegulares.map(p => p.fechaPago).sort().slice(-1)[0]
       : loan.fechaInicio;
-    const firstNewDate = getPayDate(loan.fechaInicio, nextRegularN, nuevoDiaInt, freq);
+    // Regla "NUNCA ADELANTAR EL COBRO": si el nuevo dia dejaria la 1a cuota ANTES de la que ya
+    // estaba agendada (mismo mes, dia menor), se rueda la base del cronograma +1 mes -> el pago
+    // queda PROYECTADO HACIA ADELANTE (aplazamiento). Se persiste en fechaBaseCronograma para que
+    // el salto sobreviva a /recalculate y PUT /loans (buildSchedule usa esa base para las fechas).
+    const baseActual = loan.fechaBaseCronograma || loan.fechaInicio;
+    const origNextDate = getPayDate(baseActual, nextRegularN, loan.diaPago, freq);   // fecha ya agendada
+    const naiveDate    = getPayDate(baseActual, nextRegularN, nuevoDiaInt, freq);
+    let baseCron = baseActual;
+    if (naiveDate < origNextDate) {
+      const b = new Date(baseActual + 'T12:00:00');
+      b.setDate(1);                    // evita overflow de mes antes de sumar
+      b.setMonth(b.getMonth() + 1);
+      baseCron = b.toISOString().split('T')[0];
+    }
+    const firstNewDate = getPayDate(baseCron, nextRegularN, nuevoDiaInt, freq);
     const MS_DIA = 24 * 60 * 60 * 1000;
     const rawDias = Math.round((new Date(firstNewDate + 'T12:00:00') - new Date(lastSettledDate + 'T12:00:00')) / MS_DIA);
     const diasReales = Math.max(1, rawDias);
     const interesProrrateado = Math.round(saldoActual * (loan.tasaMensual / 100) * diasReales / 30);
 
     // Regenerar cronograma con el nuevo dia y convertir la primera cuota en transitoria.
-    const loanConNuevoDia = Object.assign({}, loan, { diaPago: nuevoDiaInt });
+    const loanConNuevoDia = Object.assign({}, loan, { diaPago: nuevoDiaInt, fechaBaseCronograma: baseCron });
     const indefinido = loan.modalidad === 'Intereses';
     const remaining = indefinido ? 3 : Math.max(1, (loan.plazoMeses || 12) - regularConsumed);
     const nuevasCuotas = buildSchedule(loanConNuevoDia, nextRegularN, saldoActual, remaining);
@@ -1195,7 +1217,7 @@ module.exports = function createApp(dbPath) {
     const aplicar = db.transaction(() => {
       // Borrar Pendientes + En Mora regulares (preserva Pagadas y abonos '-ab-')
       db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND id NOT LIKE '%-ab-%'").run(req.params.id);
-      db.prepare('UPDATE loans SET diaPago = ? WHERE id = ?').run(nuevoDiaInt, req.params.id);
+      db.prepare('UPDATE loans SET diaPago = ?, fechaBaseCronograma = ? WHERE id = ?').run(nuevoDiaInt, baseCron, req.params.id);
       // Persistir el ajuste NETO con signo (proximaCuotaExtra) para reproducir la cuota transitoria
       // al regenerar. /recalculate y PUT /loans aplican `+= extra` con guard `!== 0`.
       db.prepare('UPDATE loans SET proximaCuotaExtra = ?, proximaCuotaExtraN = ? WHERE id = ?')
