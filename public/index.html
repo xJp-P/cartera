@@ -946,13 +946,22 @@ function generateReciboAbono(loan, allPays, opts) {
   var ini = properCase(String(loan.nombre || '')).replace(/\s+/g, '').slice(0, 2);
   var abCode = 'AB-' + ini + '-' + String(loan.id || '').slice(-3) + '-' + String(nAbonos || 1).padStart(2, '0');
 
+  // VALOR DE LIQUIDACION HOY — replica EXACTA de la formula del modal "Liquidar deuda"
+  // (index.html:3492 -> Math.max(0, saldo + intMora - partialPend)) para que el recibo
+  // nunca muestre una cifra distinta a la que ve el usuario en la app.
+  var moraReg = lp.filter(function(p){ return p.id.indexOf('-ab-') === -1 && p.estadoPago === 'En Mora'; });
+  var intMora = moraReg.reduce(function(s, p){ return s + p.interesPeriodo; }, 0);
+  var partialPend = lp.filter(function(p){ return p.id.indexOf('-ab-') === -1 && p.estadoPago !== 'Pagado'; })
+                      .reduce(function(s, p){ return s + (p.partialPaid || 0); }, 0);
+  var liquidacion = Math.max(0, saldoDespues + intMora - partialPend);
+
   var C = dark ? {
     bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
-    green:'#3fb950', greenBg:'#0f2b19', greenBd:'#1b4332', blue:'#79c0ff',
+    green:'#3fb950', greenBg:'#0f2b19', greenBd:'#1b4332', blue:'#79c0ff', blueBg:'#0d2440', blueBd:'#1f3a5f',
     amber:'#d29922', amberBg:'#2b2005', amberBd:'#3d2e08', headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
   } : {
     bg:'#ffffff', text:'#1f2328', muted:'#656d76', bd:'#d0d7de', rowbd:'#eeeeee', panel:'#f6f8fa',
-    green:'#166534', greenBg:'#f0fdf4', greenBd:'#4ade80', blue:'#0969da',
+    green:'#166534', greenBg:'#f0fdf4', greenBd:'#4ade80', blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#b6e3ff',
     amber:'#9a6700', amberBg:'#fff8e1', amberBd:'#eac54f', headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
   };
   // En prestamos USD el dolar es la moneda protagonista (misma doctrina que el Recibo de Cobro)
@@ -989,6 +998,18 @@ function generateReciboAbono(loan, allPays, opts) {
         (pre.intereses && pre.intereses > intDespues) ? ('&#9660; ' + money(pre.intereses - intDespues) + ' ahorrados') : '');
     }
     impactoHTML = '<div class="ab-st">Impacto del abono</div><div class="ab-imp">' + cards + '</div>';
+  }
+
+  // ── Bloque "¿Quieres liquidar la deuda hoy?" (va entre Impacto y Cronograma) ──
+  // En la variante corta solo se muestra si aporta algo distinto al saldo ya listado
+  // en el Resumen (es decir, cuando hay mora o parciales en curso que lo modifican).
+  var liqHTML = '';
+  if (!esPazYSalvo && (esCapInt || liquidacion !== saldoDespues)) {
+    var liqDet = 'Capital pendiente' + (intMora > 0 ? ' + intereses en mora' : '') +
+      (partialPend > 0 ? ' &minus; abonos parciales en curso' : '') + ', sin los intereses futuros del cronograma.';
+    liqHTML = '<div class="ab-liq"><div><div class="ab-liq-q">&iquest;Quieres liquidar la deuda hoy?</div>' +
+      '<div class="ab-liq-s">' + liqDet + '</div></div>' +
+      '<div class="ab-liq-v">' + money(liquidacion) + '</div></div>';
   }
 
   // ── Bloque CRONOGRAMA ACTUALIZADO (solo variante completa) ──
@@ -1076,6 +1097,10 @@ function generateReciboAbono(loan, allPays, opts) {
     '.ab-paz{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.greenBg + ';border:2px solid ' + C.greenBd + ';border-radius:14px}',
     '.ab-paz-t{font-size:20px;font-weight:700;letter-spacing:2px;color:' + C.green + '}',
     '.ab-paz-s{font-size:12px;color:' + C.text + ';margin-top:5px}',
+    '.ab-liq{margin-top:10px;padding:11px 14px;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + ';border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:12px}',
+    '.ab-liq-q{font-size:12.5px;font-weight:700;color:' + C.blue + '}',
+    '.ab-liq-s{font-size:10px;color:' + C.muted + ';margin-top:2px;line-height:1.35}',
+    '.ab-liq-v{font-size:20px;font-weight:700;color:' + C.blue + ';white-space:nowrap}',
     '.ab-nota{margin-top:9px;padding:8px 12px;background:' + C.amberBg + ';border:1px solid ' + C.amberBd + ';border-radius:9px;font-size:11px;line-height:1.4;color:' + C.amber + '}',
     '.ab-foot{margin-top:14px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:10px;line-height:1.5}',
     '.ab-foot b{color:' + C.green + '}',
@@ -1095,6 +1120,7 @@ function generateReciboAbono(loan, allPays, opts) {
     pazHTML,
     resumenHTML,
     impactoHTML,
+    liqHTML,
     cronoHTML,
     notaHTML,
     '<div class="ab-foot">' + (esPazYSalvo
@@ -1104,7 +1130,12 @@ function generateReciboAbono(loan, allPays, opts) {
     '</body></html>'
   ].join('\n');
 
-  var fname = esPazYSalvo ? ('Paz y Salvo ' + loan.nombre) : ('AB ' + loan.nombre + ' - N' + String(nAbonos || 1).padStart(2, '0'));
+  // Nombre de archivo con el monto (mas util al buscar que un consecutivo). Se formatea aparte
+  // porque fmt() mete un espacio duro (U+00A0) tras el '$' que ensuciaria el nombre.
+  var montoFname = esUSD
+    ? ((+opts.montoUSD > 0) ? fmtUSD(+opts.montoUSD) : copToUsd(monto, trm))
+    : ('$' + Math.round(monto).toLocaleString('es-CO'));
+  var fname = esPazYSalvo ? ('Paz y Salvo ' + loan.nombre) : ('AB ' + loan.nombre + ' - ' + montoFname);
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(html, fname);
   } else {
@@ -1696,6 +1727,12 @@ function App(){
       'En prestamos de Capital + Intereses el recibo incluye el cronograma de pagos actualizado completo (cuota por cuota, con interes, abono a capital, valor y saldo) y un bloque de impacto que se adapta a como recalculaste: si mantuviste el plazo muestra cuanto bajo la cuota y cuantos intereses te ahorras; si modificaste el plazo muestra cuantas cuotas menos quedan; y si fijaste la cuota muestra la nueva cuota pactada.',
       'Si el abono salda el prestamo por completo, el documento se convierte en un Paz y Salvo que certifica que no queda saldo pendiente.',
       'En prestamos sin cronograma amortizable (Intereses, Prestamo y Pago Unico) se genera una version corta del recibo con el monto abonado, la fecha y el nuevo saldo.'
+    ],
+    '1.17.1': [
+      'Corregido un error que podia registrar el MISMO abono dos veces cuando el boton recibia un doble clic (o un doble evento): se guardaba dos veces con milisegundos de diferencia y descontaba el doble del capital. Ahora el boton se bloquea y muestra "Registrando..." mientras se guarda el abono.',
+      'El modal de abono tiene un nuevo check "Generar recibo de abono" para decidir si quieres el PDF o no, igual que ya existia al registrar un pago.',
+      'El recibo de abono ahora incluye, entre el impacto y el cronograma, el valor exacto para liquidar la deuda hoy: "¿Quieres liquidar la deuda hoy?". Se calcula igual que el modal "Liquidar deuda" (capital pendiente + intereses en mora - abonos parciales en curso, sin los intereses futuros del cronograma), asi que las dos cifras siempre coinciden.',
+      'El recibo de abono se descarga con el monto en el nombre del archivo (ej. "AB David Pichott - $560.000") en vez de un consecutivo, para que sea mas facil de encontrar.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1910,7 +1947,7 @@ function App(){
     return {saldo:Math.max(0,orig-capPag),cuota:pend.length?pend[0].cuotaTotal:0,cuotas:pend.length,
             intereses:pend.reduce(function(s,p){return s+p.interesPeriodo;},0),plazo:l.plazoMeses};
   }
-  function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor){
+  function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo){
     var fromDeudor=abonoModal&&abonoModal.fromDeudor;
     var pre=_snapshotAbono(loanId);
     return API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar,recalcMode:recalcMode||null,recalcValor:recalcValor||null})
@@ -1927,7 +1964,8 @@ function App(){
           try{
             var fl=((fresh&&fresh[0])||loans).find(function(x){return x.id===loanId;});
             var fp=(fresh&&fresh[1])||pays;
-            if(fl) generateReciboAbono(fl,fp,{monto:monto,montoUSD:montoUSD,fecha:fecha,observaciones:obs,pre:pre,recalcMode:recalcMode,liquidar:!!liquidar});
+            // genRecibo!==false: la liquidacion (que no pasa el flag) mantiene el Paz y Salvo por defecto
+            if(fl&&genRecibo!==false) generateReciboAbono(fl,fp,{monto:monto,montoUSD:montoUSD,fecha:fecha,observaciones:obs,pre:pre,recalcMode:recalcMode,liquidar:!!liquidar});
           }catch(e){}
         });
       });
@@ -1951,15 +1989,16 @@ function App(){
     });
     return Promise.all(promises);
   }
-  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor){
+  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo){
     var needsPreflight=(recalcMode==='modificarPlazo'||recalcMode==='fijarCuota');
     var enRiesgo=needsPreflight?_cuotasEnRiesgo(pays,loanId):[];
-    if(enRiesgo.length===0){_doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor);return;}
+    // v1.17.1: se devuelve la promesa para que AbonoModal libere su guarda anti doble-submit
+    if(enRiesgo.length===0){return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);}
     var loanObj=loans.find(function(l){return l.id===loanId;});
     setPreflightDlg({
       cuotas:enRiesgo,loan:loanObj,
-      onMarkMora:function(){_marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);_doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor);});},
-      onContinue:function(){setPreflightDlg(null);_doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor);},
+      onMarkMora:function(){_marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);_doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);});},
+      onContinue:function(){setPreflightDlg(null);_doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);},
       onCancel:function(){setPreflightDlg(null);}
     });
   },[reload,abonoModal,pays,loans]);
@@ -4329,6 +4368,8 @@ function AbonoModal(props){
   var s2=useState(nowStr()); var fecha=s2[0]; var setFecha=s2[1];
   var s3=useState(''); var obs=s3[0]; var setObs=s3[1];
   var s4=useState(''); var montoUSD=s4[0]; var setMontoUSD=s4[1];
+  var sRec=useState(true); var genRecibo=sRec[0]; var setGenRecibo=sRec[1];      // v1.17.1: PDF opcional
+  var sSend=useState(false); var sending=sSend[0]; var setSending=sSend[1];      // v1.17.1: guarda anti doble-submit
   // Opciones de recalculo (solo para Capital + Intereses)
   var sm=useState('mantener'); var recalcMode=sm[0]; var setRecalcMode=sm[1];
   var sp=useState(''); var nuevoPlazo=sp[0]; var setNuevoPlazo=sp[1];
@@ -4380,6 +4421,10 @@ function AbonoModal(props){
     return null;
   }();
   function submit(){
+    // v1.17.1 — GUARDA ANTI DOBLE-SUBMIT. Sin esto, dos clicks (o un doble evento) disparaban
+    // dos POST /abono con ~60 ms de diferencia y el backend, que es atomico pero NO idempotente,
+    // aplicaba el abono DOS VECES (bug detectado en produccion el 18-jul-2026).
+    if(sending) return;
     if(!monto||+monto<=0){_showError('Ingresa un monto valido');return;}
     if(+monto>saldoActual){_showError('El abono maximo es '+fmt(saldoActual)+' (solo capital). Los intereses en mora se cobran por separado.');return;}
     if(esCapInt&&preview&&preview.error){_showError(preview.error);return;}
@@ -4387,7 +4432,11 @@ function AbonoModal(props){
     var valor=null;
     if(mode==='modificarPlazo') valor=parseInt(nuevoPlazo,10);
     else if(mode==='fijarCuota') valor=cuotaFijaEfectivaCOP; // siempre en COP (auto-conv de USD)
-    onSave(loan.id,+monto,fecha,obs,+montoUSD||0,false,mode,valor);
+    setSending(true);
+    var p=onSave(loan.id,+monto,fecha,obs,+montoUSD||0,false,mode,valor,genRecibo);
+    // Se libera al resolver (error o preflight). En exito el modal ya se desmonto.
+    if(p&&typeof p.then==='function') p.then(function(){setSending(false);},function(){setSending(false);});
+    else setSending(false);
   }
   // Auto-calcular COP cuando llenan USD
   function onUSDChange(e){
@@ -4520,7 +4569,11 @@ function AbonoModal(props){
               esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(preview.ultimaResidual,loan.trmAcordada))))))),
     h(Fld,{label:'Fecha del abono'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
     h(Fld,{label:'Observaciones'},h('input',{value:obs,onChange:function(e){setObs(e.target.value);},placeholder:'Notas opcionales...',className:'inp'})),
-    h('button',{onClick:submit,disabled:esCapInt&&preview&&!!preview.error,className:'btn-primary',style:{marginTop:8,background:(esCapInt&&preview&&preview.error)?'var(--bg3)':'var(--blue-bg)',border:'1px solid '+((esCapInt&&preview&&preview.error)?'var(--border)':'var(--blue)'),color:(esCapInt&&preview&&preview.error)?'var(--text3)':'var(--blue)',cursor:(esCapInt&&preview&&preview.error)?'not-allowed':'pointer'}},'Registrar abono'));
+    // v1.17.1 — el usuario decide si quiere el PDF (mismo patron que PayModal :4256)
+    h('label',{style:{display:'flex',alignItems:'center',gap:8,marginTop:14,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
+      h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--blue)',cursor:'pointer'}}),
+      'Generar recibo de abono'),
+    h('button',{onClick:submit,disabled:(esCapInt&&preview&&!!preview.error)||sending,className:'btn-primary',style:{marginTop:8,background:((esCapInt&&preview&&preview.error)||sending)?'var(--bg3)':'var(--blue-bg)',border:'1px solid '+(((esCapInt&&preview&&preview.error)||sending)?'var(--border)':'var(--blue)'),color:((esCapInt&&preview&&preview.error)||sending)?'var(--text3)':'var(--blue)',cursor:((esCapInt&&preview&&preview.error)||sending)?'not-allowed':'pointer'}},sending?'Registrando...':'Registrar abono'));
 }
 
 // ── RestructureModal (v1.9.0) ─────────────────────────────────────────────────
