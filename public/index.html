@@ -224,6 +224,16 @@ function generateCronogramaPDF(loan, payments, darkMode) {
   var esUSD = loan && loan.moneda === 'USD';
   var trm = loan.trmAcordada || 1;
   var fv = esUSD ? function(cop) { return copToUsd(cop, trm); } : fmt;
+  // Variante compacta SOLO para las celdas de la tabla del cronograma: en USD omite el
+  // prefijo "USD " (la tabla es monomoneda, el prefijo es redundante y roba ~28px por
+  // celda). Con 7 columnas en ~640px utiles ese ahorro es lo que evita el desborde.
+  var fvT = function(cop) { return fmtDisp(toDisp(cop)); };
+  // toDisp/fmtDisp separan el REDONDEO del FORMATO para poder reconciliar el capital en la
+  // MONEDA VISIBLE. Redondear cada rubro por separado en USD descuadra la identidad por 1
+  // centavo (363.25 + 96.74 = 459.99 != 460.00); reconciliando sobre valores ya redondeados
+  // cuadra por construccion. Misma doctrina que moneyCapital en generateFacturaCobro (v1.16.0).
+  function toDisp(cop) { return esUSD ? (trm > 0 ? Math.round((cop||0)/trm*100)/100 : 0) : Math.round(cop||0); }
+  function fmtDisp(v) { return esUSD ? '$' + new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0) : fmt(v); }
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   var dark = !!darkMode;
   // Todas las cuotas del préstamo
@@ -274,11 +284,16 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     dark ? '.row .label{color:#8b949e}' : '.row .label{color:#656d76}',
     '.row .value{font-weight:600;text-align:right}',
     'table{width:100%;border-collapse:collapse;margin-top:8px}',
-    dark ? 'th{background:#161b22;border:1px solid #30363d;padding:6px 8px;text-align:right;font-size:10px;font-weight:700;color:#8b949e;text-transform:uppercase}' :
-           'th{background:#f6f8fa;border:1px solid #d0d7de;padding:6px 8px;text-align:right;font-size:10px;font-weight:700;color:#656d76;text-transform:uppercase}',
+    // Cronograma de 7 columnas en ~640px utiles: el padding lateral baja de 8px a 4px
+    // (ahorra ~56px de cromo) y las cabeceras largas ("ABONO A CAPITAL", "VALOR CUOTA")
+    // envuelven a dos lineas en vez de ensanchar su columna.
+    dark ? 'th{background:#161b22;border:1px solid #30363d;padding:5px 4px;text-align:right;font-size:9px;font-weight:700;color:#8b949e;text-transform:uppercase;line-height:1.2}' :
+           'th{background:#f6f8fa;border:1px solid #d0d7de;padding:5px 4px;text-align:right;font-size:9px;font-weight:700;color:#656d76;text-transform:uppercase;line-height:1.2}',
     'th:first-child,td:first-child{text-align:center}',
-    dark ? 'td{border:1px solid #30363d;padding:5px 8px;text-align:right;font-size:11px}' :
-           'td{border:1px solid #d0d7de;padding:5px 8px;text-align:right;font-size:11px}',
+    // nowrap en los importes: sin el, el espacio duro de fmt() ("$ 3.445.494") parte el
+    // simbolo del numero en dos lineas al apretarse la columna.
+    dark ? 'td{border:1px solid #30363d;padding:4px 4px;text-align:right;font-size:10px;white-space:nowrap}' :
+           'td{border:1px solid #d0d7de;padding:4px 4px;text-align:right;font-size:10px;white-space:nowrap}',
     dark ? 'tr:nth-child(even){background:#161b22}' : 'tr:nth-child(even){background:#f6f8fa}',
     dark ? 'tr.pagado{background:#0f2b19 !important}' : 'tr.pagado{background:#f0fdf4 !important}',
     dark ? 'tr.pagado td{color:#3fb950}' : 'tr.pagado td{color:#166534}',
@@ -324,24 +339,42 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     '<div class="section">',
     '<div class="section-title">Cronograma</div>',
     '<table>',
-    '<tr><th>#</th><th>Fecha</th><th>Deuda</th><th>Cuota</th><th>Saldo</th><th>Estado</th></tr>',
+    '<tr><th>#</th><th>Vence</th><th>Interes</th><th>Abono a capital</th><th>Valor cuota</th><th>Saldo</th><th>Estado</th></tr>',
     filas.map(function(p) {
       var esAbono = p.id.indexOf('-ab-') !== -1;
       var isParcial = !esAbono && (p.partialPaid||0) > 0 && p.estadoPago !== 'Pagado';
       var cls = esAbono ? ' class="abono"' : isParcial ? ' class="mora"' : p.estadoPago === 'Pagado' ? ' class="pagado"' : p.estadoPago === 'En Mora' ? ' class="mora"' : ' class="pendiente"';
       var badge = esAbono ? '<span class="badge badge-abono">Abono</span>' : isParcial ? '<span class="badge badge-mora">'+(p.estadoPago==='En Mora'?'En Mora':'Pendiente')+'</span> <span class="badge badge-parcial">Parcial</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
       if (esAbono) {
-        return '<tr' + cls + '><td>-</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td><td>' + fv(p.saldoInicial) + '</td>' +
-          '<td><strong>' + fv(p.abonoCapital) + '</strong></td><td>' + fv(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
+        // Un abono no devenga interes: la columna INTERES va en guion (no "$0", que se
+        // confundiria con un interes calculado en cero).
+        return '<tr' + cls + '><td>-</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td><td>&mdash;</td>' +
+          '<td><strong>' + fvT(p.abonoCapital) + '</strong></td><td><strong>' + fvT(p.cuotaTotal) + '</strong></td>' +
+          '<td>' + fvT(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
       }
-      var cuotaCell = isParcial
-        ? '<strong>' + fv(Math.max(0,p.cuotaTotal-(p.partialPaid||0))) + '</strong><br><span style="font-size:9px;opacity:0.75">Abonado ' + fv(p.partialPaid||0) + '</span>'
-        : '<strong>' + fv(p.cuotaTotal) + '</strong>';
-      return '<tr' + cls + '><td>' + p.cuotaN + '</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td><td>' + fv(p.saldoInicial) + '</td>' +
-        '<td>' + cuotaCell + '</td><td>' + fv(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
+      // Capital RECONCILIADO (= Valor cuota - Interes), NO p.abonoCapital crudo: en modalidad
+      // Prestamo el backend persiste abonoCapital=0 (Bug #2 historico), lo que imprimiria
+      // "0 + 0 = 2.300.000" y afirmaria que no se amortizo capital pese a que el saldo cae a
+      // cero. Anclado a cuotaTotal, la identidad Interes + Capital = Valor cuota cuadra en las
+      // 4 modalidades. La resta va sobre valores YA redondeados a la moneda visible para que
+      // en USD tampoco descuadre el centavo (ver nota en toDisp/fmtDisp).
+      var intD = toDisp(p.interesPeriodo);
+      var cuoD = toDisp(p.cuotaTotal);
+      var capD = Math.max(0, Math.round((cuoD - intD) * 100) / 100);
+      // VALOR CUOTA es siempre cuotaTotal (el valor pactado de la cuota). En un parcial, lo ya
+      // abonado va como sub-linea: si la celda mostrara el remanente, romperia la identidad
+      // con las columnas de Interes y Capital, que si suman la cuota completa.
+      var cuotaCell = '<strong>' + fmtDisp(cuoD) + '</strong>' +
+        (isParcial ? '<br><span style="font-size:9px;opacity:0.75">Abonado ' + fvT(p.partialPaid||0) + '</span>' : '');
+      return '<tr' + cls + '><td>' + p.cuotaN + '</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td>' +
+        '<td>' + fmtDisp(intD) + '</td><td>' + fmtDisp(capD) + '</td><td>' + cuotaCell + '</td>' +
+        '<td>' + fvT(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
     }).join(''),
-    loan.modalidad === 'Intereses' ? function(){var intPagados=cuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.interesPeriodo;},0);return intPagados>0?'<tr class="total-row"><td></td><td style="text-align:left">INTERESES PAGADOS</td><td></td><td><strong>'+fv(intPagados)+'</strong></td><td></td><td></td></tr>':'';}() : loan.modalidad === 'Capital + Intereses' ? function(){var capPagado=cuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);return capPagado>0?'<tr class="total-row"><td></td><td style="text-align:left">CAPITAL PAGADO</td><td></td><td><strong>'+fv(capPagado)+'</strong></td><td></td><td></td></tr>':'';}() : '',
-    totalAbonos > 0 ? '<tr class="total-row" style="background:' + (dark ? '#131d2e' : '#ddf4ff') + ' !important;color:' + (dark ? '#79c0ff' : '#0969da') + '"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fv(totalAbonos) + '</strong></td><td></td><td></td></tr>' : '',
+    // Filas de totales: 7 celdas (antes 6) y cada total alineado BAJO SU columna —
+    // los intereses en INTERES (3a) y el capital en ABONO A CAPITAL (4a). Antes todos
+    // caian en la 4a celda, que en el layout viejo era la de "Cuota".
+    loan.modalidad === 'Intereses' ? function(){var intPagados=cuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.interesPeriodo;},0);return intPagados>0?'<tr class="total-row"><td></td><td style="text-align:left">INTERESES PAGADOS</td><td><strong>'+fvT(intPagados)+'</strong></td><td></td><td></td><td></td><td></td></tr>':'';}() : loan.modalidad === 'Capital + Intereses' ? function(){var capPagado=cuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+Math.max(0,p.cuotaTotal-p.interesPeriodo);},0);return capPagado>0?'<tr class="total-row"><td></td><td style="text-align:left">CAPITAL PAGADO</td><td></td><td><strong>'+fvT(capPagado)+'</strong></td><td></td><td></td><td></td></tr>':'';}() : '',
+    totalAbonos > 0 ? '<tr class="total-row" style="background:' + (dark ? '#131d2e' : '#ddf4ff') + ' !important;color:' + (dark ? '#79c0ff' : '#0969da') + '"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fvT(totalAbonos) + '</strong></td><td></td><td></td><td></td></tr>' : '',
     '</table>',
     loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este prestamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuaran hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '',
     function(){
@@ -1733,6 +1766,14 @@ function App(){
       'El modal de abono tiene un nuevo check "Generar recibo de abono" para decidir si quieres el PDF o no, igual que ya existia al registrar un pago.',
       'El recibo de abono ahora incluye, entre el impacto y el cronograma, el valor exacto para liquidar la deuda hoy: "¿Quieres liquidar la deuda hoy?". Se calcula igual que el modal "Liquidar deuda" (capital pendiente + intereses en mora - abonos parciales en curso, sin los intereses futuros del cronograma), asi que las dos cifras siempre coinciden.',
       'El recibo de abono se descarga con el monto en el nombre del archivo (ej. "AB David Pichott - $560.000") en vez de un consecutivo, para que sea mas facil de encontrar.'
+    ],
+    '1.18.0': [
+      'Todos los cronogramas de la app y de los PDF usan ahora las MISMAS columnas y los mismos nombres: # / Vence / Interes / Abono a capital / Valor cuota / Saldo / Estado. Antes cada pantalla usaba terminos distintos ("Fecha" o "Vence", "Capital" o "Abono a capital", "Deuda" o "Saldo") y costaba comparar un documento con otro.',
+      'El Cronograma de Pagos en PDF ahora desglosa cuanto de cada cuota es interes y cuanto es abono a capital. Antes solo mostraba el valor total de la cuota.',
+      'La columna "Saldo" muestra el saldo que queda DESPUES de pagar cada cuota, igual que en el Recibo de Abono. Antes la columna "Deuda" de la app mostraba el saldo ANTES de la cuota, lo que hacia que los numeros parecieran corridos un renglon frente al PDF y al recibo. Los valores no cambiaron: cambia cual de los dos saldos se muestra.',
+      'Los abonos a capital aparecen ahora intercalados en la fecha en que se hicieron, dentro del cronograma de la app (en Cartera y en el perfil del deudor), con su propia fila azul marcada como "Abono". Antes se listaban aparte al final y no se veia en que punto del cronograma habian entrado.',
+      'Corregido: en los prestamos sin intereses la cuota mostraba "$0" de abono a capital pese a que el saldo quedaba en cero. Ahora muestra el capital real, y en toda cuota se cumple que Interes + Abono a capital = Valor cuota.',
+      'Corregido: en prestamos en dolares el desglose podia descuadrar un centavo (por ejemplo 363,25 + 96,74 = 459,99 en una cuota de 460,00). Ahora la suma es exacta.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -2832,73 +2873,75 @@ function CarteraView(props){
             h('button',{onClick:function(){setExp(isExp?null:loan.id);},style:{marginTop:8,background:'none',border:'none',cursor:'pointer',color:'var(--green)',fontSize:12,fontWeight:600,display:'flex',alignItems:'center',gap:4,padding:0}},
               isExp?'Ocultar cronograma':'Ver cronograma')),
           isExp&&function(){
-            // v1.9.0 — Cronograma unificado con DebtorModal: muestra Capital + Interes + Deuda corrida (consideran abonos)
+            // Cronograma unificado con DebtorModal, el Recibo de Abono y el PDF:
+            // # / Vence / Interes / Abono a capital / Valor cuota / Saldo / Estado
             var cuotasReg=lp.filter(function(p){return p.id.indexOf('-ab-')===-1;}).filter(function(p){return loan.modalidad!=='Intereses'||p.estadoPago!=='Pendiente';});
             var abonos=lp.filter(function(p){return p.id.indexOf('-ab-')!==-1;});
             var esUSD=loan.moneda==='USD';
-            var origCOP=esUSD?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
             var cronoItems=cuotasReg.slice().sort(function(a,b){return a.cuotaN-b.cuotaN;});
-            // Mapa de abonos: cuanto se aplico DESPUES de cada cuotaN (basado en fechaRecaudo)
-            var abonoMap={};
-            abonos.filter(function(p){return p.estadoPago==='Pagado';}).forEach(function(ab){
-              var afterCuota=0;
-              for(var k=0;k<cronoItems.length;k++){
-                if(cronoItems[k].fechaPago<=ab.fechaRecaudo||cronoItems[k].estadoPago==='Pagado'){afterCuota=cronoItems[k].cuotaN;}
-              }
-              if(!abonoMap[afterCuota])abonoMap[afterCuota]=0;
-              abonoMap[afterCuota]+=ab.abonoCapital;
+            // Linea de tiempo unica: cuotas + abonos intercalados por fecha, con la MISMA regla
+            // de orden que generateCronogramaPDF (fechaPago y, a igualdad, cuotaN) para que la
+            // app y el PDF muestren siempre la misma secuencia.
+            var timeline=cronoItems.concat(abonos).sort(function(a,b){
+              var c=String(a.fechaPago).localeCompare(String(b.fechaPago));
+              return c!==0?c:a.cuotaN-b.cuotaN;
             });
-            // Construir filas con deuda corrida
-            var rows=[];var runSaldo=origCOP;
-            for(var ki=0;ki<cronoItems.length;ki++){
-              var ci=cronoItems[ki];
-              if(ki>0){
-                var prev=cronoItems[ki-1];
-                runSaldo=runSaldo-prev.abonoCapital;
-                if(abonoMap[prev.cuotaN])runSaldo-=abonoMap[prev.cuotaN];
-              }
-              rows.push({p:ci,deuda:Math.max(0,runSaldo)});
-            }
+            // La columna SALDO lee p.saldoFinal (saldo de CIERRE persistido por el backend),
+            // unificada con el Recibo de Abono y el cronograma PDF. Sustituye a la antigua
+            // "Deuda", que era un acumulador local del saldo de APERTURA: mostraba el saldo
+            // ANTES de cada cuota (corrido un renglon respecto del resto de documentos) y
+            // derivaba hasta 1 peso por recalcular en vez de leer el dato persistido.
             var cronoCols='32px 1fr 1fr 1fr 1fr 1fr 60px';
             return h('div',{style:{borderTop:'1px solid var(--bg3)'}},
               h('div',{style:{padding:'8px 10px'}},
                 h('div',{style:{borderRadius:8,overflow:'hidden',border:'1px solid var(--border)'}},
                   h('div',{style:{display:'grid',gridTemplateColumns:cronoCols,background:'var(--bg4)',padding:'6px 8px',fontSize:10,fontWeight:700,color:'var(--text3)',gap:4}},
                     h('span',null,'#'),
-                    h('span',null,'Fecha'),
-                    h('span',{style:{textAlign:'right'}},'Capital'),
+                    h('span',null,'Vence'),
                     h('span',{style:{textAlign:'right'}},'Interes'),
-                    h('span',{style:{textAlign:'right'}},'Deuda'),
-                    h('span',{style:{textAlign:'right'}},'Cuota'),
+                    h('span',{style:{textAlign:'right'}},'Abono a capital'),
+                    h('span',{style:{textAlign:'right'}},'Valor cuota'),
+                    h('span',{style:{textAlign:'right'}},'Saldo'),
                     h('span',{style:{textAlign:'center'}},'Estado')),
-                  rows.map(function(row,idx){
-                    var p=row.p;
+                  timeline.map(function(p,idx){
+                    // Fila de ABONO intercalada (regla canonica '-ab-'), espejo de la del PDF:
+                    // sin numero de cuota ni interes, el monto en ABONO A CAPITAL y VALOR CUOTA,
+                    // y el saldo que quedo inmediatamente despues del abono.
+                    if(p.id.indexOf('-ab-')!==-1){
+                      return h('div',{key:p.id,style:{display:'grid',gridTemplateColumns:cronoCols,padding:'5px 8px',fontSize:11,gap:4,borderTop:'1px solid var(--blue-bd)',background:'var(--blue-bg)'}},
+                        h('span',{style:{color:'var(--blue)',fontWeight:600}},'-'),
+                        h('span',{style:{color:'var(--blue)',fontStyle:'italic'}},fmtD(p.fechaPago),
+                          p.observaciones&&h('div',{style:{fontSize:9,color:'var(--text3)',fontStyle:'italic'}},p.observaciones)),
+                        h('span',{style:{textAlign:'right',color:'var(--text3)'}},'—'),
+                        h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.abonoCapital),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.abonoCapital,loan.trmAcordada))),
+                        h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.cuotaTotal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,loan.trmAcordada))),
+                        h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.saldoFinal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.saldoFinal,loan.trmAcordada))),
+                        h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:'var(--blue-bd)',color:'var(--blue)',fontWeight:600}},'Abono')));
+                    }
                     var stColor=p.estadoPago==='Pagado'?'var(--green)':p.estadoPago==='En Mora'?'var(--red)':'var(--yellow)';
                     var stBg=p.estadoPago==='Pagado'?'var(--green-bg)':p.estadoPago==='En Mora'?'var(--red-bg)':'var(--yellow-bg)';
                     var hasPartial=(p.partialPaid||0)>0&&p.estadoPago!=='Pagado';
+                    // Capital reconciliado (= Valor cuota - Interes), no p.abonoCapital crudo:
+                    // en modalidad Prestamo el backend lo persiste en 0 (Bug #2) y la fila
+                    // mostraria "0 + 0 = cuota". Ver misma doctrina en generateCronogramaPDF.
+                    var capRec=Math.max(0,p.cuotaTotal-p.interesPeriodo);
+                    // La sub-linea USD se reconcilia en centavos de dolar: convertir el capital
+                    // en COP por separado descuadra 1 centavo (363.25 + 96.74 = 459.99 != 460.00).
+                    var _trm=loan.trmAcordada||1;
+                    var capRecUSD=esUSD?Math.max(0,(Math.round(p.cuotaTotal/_trm*100)-Math.round(p.interesPeriodo/_trm*100))/100):0;
                     return h('div',{key:p.id,style:{display:'grid',gridTemplateColumns:cronoCols,padding:'5px 8px',fontSize:11,gap:4,borderTop:'1px solid var(--border)',background:idx%2===0?'transparent':'var(--bg3)'}},
                       h('span',{style:{color:'var(--text3)',fontWeight:600}},p.cuotaN),
                       h('span',{style:{color:'var(--text2)'}},fmtD(p.fechaPago)),
-                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(p.abonoCapital),esUSD&&p.abonoCapital>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.abonoCapital,loan.trmAcordada))),
                       h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(p.interesPeriodo),esUSD&&p.interesPeriodo>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.interesPeriodo,loan.trmAcordada))),
-                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(row.deuda),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(row.deuda,loan.trmAcordada))),
+                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(capRec),esUSD&&capRec>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},fmtUSD(capRecUSD))),
                       h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.cuotaTotal),hasPartial&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:600}},'-'+fmt(p.partialPaid)),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,loan.trmAcordada))),
+                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.saldoFinal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.saldoFinal,loan.trmAcordada))),
                       h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:stBg,color:stColor,fontWeight:600}},p.estadoPago==='Pagado'?'Pagado':p.estadoPago==='En Mora'?'Mora':hasPartial?'Parc.':'Pend.')));
                   }))),
-              abonos.length>0&&h('div',{style:{borderTop:'2px solid var(--blue-bd)',padding:'10px 12px',background:'rgba(88,166,255,.04)'}},
-                h('div',{style:{fontSize:11,fontWeight:600,color:'var(--blue)',marginBottom:8,display:'flex',alignItems:'center',gap:6}},
-                  h(Ico,{name:'dollar',size:13,color:'var(--blue)'}),'HISTORIAL DE ABONOS A CAPITAL'),
-                abonos.map(function(ab,i){
-                  return h('div',{key:ab.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderTop:i>0?'1px solid rgba(88,166,255,.12)':'none'}},
-                    h('div',null,
-                      h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},fmtD(ab.fechaRecaudo||ab.fechaPago)),
-                      ab.observaciones&&h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},ab.observaciones)),
-                    h('div',{style:{textAlign:'right'}},
-                      h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--blue)'}},fmt(ab.abonoCapital),
-                        loan.moneda==='USD'&&h('span',{style:{fontSize:10,fontWeight:400,marginLeft:6}},copToUsd(ab.abonoCapital,loan.trmAcordada))),
-                      h('div',{className:'mono',style:{fontSize:10,color:'var(--text3)'}},'Saldo: '+fmt(ab.saldoFinal),
-                        loan.moneda==='USD'&&h('span',{style:{marginLeft:4}},copToUsd(ab.saldoFinal,loan.trmAcordada)))));
-                })),
+              // El bloque "HISTORIAL DE ABONOS A CAPITAL" que iba aqui se retiro: con los abonos
+              // ya intercalados en la linea de tiempo, repetirlos abajo mostraba cada movimiento
+              // dos veces. Su unico dato exclusivo (observaciones) viaja ahora como sub-linea de
+              // la fila del abono, asi que no se pierde informacion.
               loan.estado==='Activo'&&function(){
                 var esUSD=loan.moneda==='USD';
                 var regsPag=cuotasReg.filter(function(p){return p.estadoPago==='Pagado';});
@@ -3560,57 +3603,57 @@ function DebtorModal(props){
             })(),
             cronoLoan===l.id&&function(){
               var cronoItems=regulares.filter(function(p){return l.modalidad!=='Intereses'||p.estadoPago!=='Pendiente';}).slice().sort(function(a,b){return a.cuotaN-b.cuotaN;});
-              var saldoRun=origCOP;
-              // Calcular saldo corrido considerando abonos
-              var abonoMap={};
-              abonosList.filter(function(p){return p.estadoPago==='Pagado';}).forEach(function(ab){
-                var afterCuota=0;
-                for(var k=0;k<cronoItems.length;k++){
-                  if(cronoItems[k].fechaPago<=ab.fechaRecaudo||cronoItems[k].estadoPago==='Pagado'){afterCuota=cronoItems[k].cuotaN;}
-                }
-                if(!abonoMap[afterCuota])abonoMap[afterCuota]=0;
-                abonoMap[afterCuota]+=ab.abonoCapital;
+              // Linea de tiempo unica: cuotas + abonos intercalados por fecha, con la MISMA regla
+              // de orden que generateCronogramaPDF. Gemela de la de CarteraView.
+              var timeline=cronoItems.concat(abonosList).sort(function(a,b){
+                var c=String(a.fechaPago).localeCompare(String(b.fechaPago));
+                return c!==0?c:a.cuotaN-b.cuotaN;
               });
-              var rows=[];var runSaldo=origCOP;
-              for(var k=0;k<cronoItems.length;k++){
-                var ci=cronoItems[k];
-                if(k>0){
-                  var prev=cronoItems[k-1];
-                  runSaldo=runSaldo-prev.abonoCapital;
-                  if(abonoMap[prev.cuotaN])runSaldo-=abonoMap[prev.cuotaN];
-                }
-                rows.push({p:ci,deuda:Math.max(0,runSaldo)});
-              }
+              // La columna SALDO lee p.saldoFinal (saldo de CIERRE persistido por el backend),
+              // unificada con el Recibo de Abono y el cronograma PDF. Sustituye a la antigua
+              // "Deuda", que era un acumulador local del saldo de APERTURA (corrido un renglon
+              // respecto del resto de documentos). Gemela de la tabla de CarteraView.
               var cronoCols='32px 1fr 1fr 1fr 1fr 1fr 60px';
               return h('div',{style:{marginTop:6,borderRadius:8,overflow:'hidden',border:'1px solid var(--border)'}},
                 h('div',{style:{display:'grid',gridTemplateColumns:cronoCols,background:'var(--bg4)',padding:'6px 8px',fontSize:10,fontWeight:700,color:'var(--text3)',gap:4}},
                   h('span',null,'#'),
-                  h('span',null,'Fecha'),
-                  h('span',{style:{textAlign:'right'}},'Capital'),
+                  h('span',null,'Vence'),
                   h('span',{style:{textAlign:'right'}},'Interes'),
-                  h('span',{style:{textAlign:'right'}},'Deuda'),
-                  h('span',{style:{textAlign:'right'}},'Cuota'),
+                  h('span',{style:{textAlign:'right'}},'Abono a capital'),
+                  h('span',{style:{textAlign:'right'}},'Valor cuota'),
+                  h('span',{style:{textAlign:'right'}},'Saldo'),
                   h('span',{style:{textAlign:'center'}},'Estado')),
-                rows.map(function(row,idx){
-                  var p=row.p;var stColor=p.estadoPago==='Pagado'?'var(--green)':p.estadoPago==='En Mora'?'var(--red)':'var(--yellow)';
+                timeline.map(function(p,idx){
+                  // Fila de ABONO intercalada; espejo de la del PDF y de la de CarteraView.
+                  if(p.id.indexOf('-ab-')!==-1){
+                    return h('div',{key:p.id,style:{display:'grid',gridTemplateColumns:cronoCols,padding:'5px 8px',fontSize:11,gap:4,borderTop:'1px solid var(--blue-bd)',background:'var(--blue-bg)'}},
+                      h('span',{style:{color:'var(--blue)',fontWeight:600}},'-'),
+                      h('span',{style:{color:'var(--blue)',fontStyle:'italic'}},fmtD(p.fechaPago),
+                        p.observaciones&&h('div',{style:{fontSize:9,color:'var(--text3)',fontStyle:'italic'}},p.observaciones)),
+                      h('span',{style:{textAlign:'right',color:'var(--text3)'}},'—'),
+                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.abonoCapital),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.abonoCapital,l.trmAcordada))),
+                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.cuotaTotal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,l.trmAcordada))),
+                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.saldoFinal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.saldoFinal,l.trmAcordada))),
+                      h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:'var(--blue-bd)',color:'var(--blue)',fontWeight:600}},'Abono')));
+                  }
+                  var stColor=p.estadoPago==='Pagado'?'var(--green)':p.estadoPago==='En Mora'?'var(--red)':'var(--yellow)';
                   var stBg=p.estadoPago==='Pagado'?'var(--green-bg)':p.estadoPago==='En Mora'?'var(--red-bg)':'var(--yellow-bg)';
                   var hasPartial=(p.partialPaid||0)>0&&p.estadoPago!=='Pagado';
+                  // Capital reconciliado (= Valor cuota - Interes); ver nota en CarteraView.
+                  var capRec=Math.max(0,p.cuotaTotal-p.interesPeriodo);
+                  var _trm=l.trmAcordada||1;
+                  var capRecUSD=esUSD?Math.max(0,(Math.round(p.cuotaTotal/_trm*100)-Math.round(p.interesPeriodo/_trm*100))/100):0;
                   return h('div',{key:p.id,style:{display:'grid',gridTemplateColumns:cronoCols,padding:'5px 8px',fontSize:11,gap:4,borderTop:'1px solid var(--border)',background:idx%2===0?'transparent':'var(--bg3)'}},
                     h('span',{style:{color:'var(--text3)',fontWeight:600}},p.cuotaN),
                     h('span',{style:{color:'var(--text2)'}},fmtD(p.fechaPago)),
-                    h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(p.abonoCapital),esUSD&&p.abonoCapital>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.abonoCapital,l.trmAcordada))),
                     h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(p.interesPeriodo),esUSD&&p.interesPeriodo>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.interesPeriodo,l.trmAcordada))),
-                    h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(row.deuda),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(row.deuda,l.trmAcordada))),
+                    h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(capRec),esUSD&&capRec>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},fmtUSD(capRecUSD))),
                     h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.cuotaTotal),hasPartial&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:600}},'-'+fmt(p.partialPaid)),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,l.trmAcordada))),
+                    h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.saldoFinal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.saldoFinal,l.trmAcordada))),
                     h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:stBg,color:stColor,fontWeight:600}},p.estadoPago==='Pagado'?'Pagado':p.estadoPago==='En Mora'?'Mora':hasPartial?'Parc.':'Pend.')));
-                }),
-                abonosList.length>0&&h('div',{style:{borderTop:'2px solid var(--blue-bd)',padding:'6px 8px',background:'rgba(88,166,255,.06)'}},
-                  h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',marginBottom:4}},'ABONOS A CAPITAL'),
-                  abonosList.filter(function(p){return p.estadoPago==='Pagado';}).map(function(ab){
-                    return h('div',{key:ab.id,style:{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:11}},
-                      h('span',{style:{color:'var(--text2)'}},fmtD(ab.fechaRecaudo||ab.fechaPago)),
-                      h('span',{className:'mono',style:{color:'var(--blue)',fontWeight:600}},fmt(ab.abonoCapital),esUSD&&h('div',{style:{fontSize:9}},copToUsd(ab.abonoCapital,l.trmAcordada))));
-                  })));
+                }));
+              // El bloque "ABONOS A CAPITAL" que iba aqui se retiro: los abonos ya aparecen
+              // intercalados en la linea de tiempo y repetirlos abajo los mostraba dos veces.
             }(),
             l.modalidad==='Intereses'?h('div',{style:{marginTop:8,display:'flex',alignItems:'center',gap:6}},
               h('span',{style:{fontSize:10,color:'var(--text3)'}},pagadas+' cuotas pagadas'),
@@ -4185,7 +4228,7 @@ function CalcView(props){
       showCrono&&h('div',{style:{marginTop:10,borderTop:'1px solid var(--green-bd)',paddingTop:10,overflowX:'auto'}},
         h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
           h('thead',null,h('tr',{style:{background:'rgba(63,185,80,.1)'}},
-            ['#','Interes','Capital','Cuota','Saldo'].map(function(hd){
+            ['#','Interes','Abono a capital','Valor cuota','Saldo'].map(function(hd){
               return h('th',{key:hd,style:{padding:'6px 8px',textAlign:hd==='#'?'center':'right',fontWeight:600,color:'var(--text2)',whiteSpace:'nowrap'}},hd);}))),
           h('tbody',null,sim.rows.map(function(r){
             var t=+trmCalc||1;
@@ -5059,7 +5102,7 @@ function LoanModal(props){
       showCronoLoan&&preview.rows&&preview.rows.length>0&&h('div',{style:{marginTop:10,borderTop:'1px solid var(--green-bd)',paddingTop:10,overflowX:'auto'}},
         h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
           h('thead',null,h('tr',{style:{background:'rgba(63,185,80,.1)'}},
-            ['#','Interes','Capital','Cuota','Saldo'].map(function(hd){
+            ['#','Interes','Abono a capital','Valor cuota','Saldo'].map(function(hd){
               return h('th',{key:hd,style:{padding:'6px 8px',textAlign:hd==='#'?'center':'right',fontWeight:600,color:'var(--text2)',whiteSpace:'nowrap'}},hd);}))),
           h('tbody',null,preview.rows.map(function(r){
             var t=trmEfectiva||1;
