@@ -143,6 +143,27 @@ var API = {
   del:  function(url)   { return fetch(url,{method:'DELETE'}).then(handleRes).catch(function(e){handleApiError(e);return null;}); }
 };
 
+// ── Guarda anti doble-submit (Bug #29) ───────────────────────────────────────
+// Ejecuta `fn` solo si no hay otra operacion en vuelo y libera SIEMPRE la bandera:
+// al resolver, al rechazar, si `fn` no devuelve promesa (rutas que ceden el control a
+// otro modal, como el pre-flight de mora) o si lanza de forma sincrona.
+//
+// La liberacion va en el .then y NO en un .catch a proposito: los helpers de API
+// (API.get/post/put/del) atrapan el error y RESUELVEN null, nunca rechazan, asi que un
+// .catch jamas correria y el boton quedaria bloqueado para siempre. El manejador de
+// rechazo se conserva por si esos helpers dejaran de atrapar en el futuro.
+//
+// Implementacion unica y compartida: los endpoints de escritura NO son idempotentes, y
+// cinco copias de esta logica serian cinco sitios donde equivocarse.
+function _submitGuard(sending,setSending,fn){
+  if(sending) return;
+  setSending(true);
+  var p;
+  try{ p=fn(); }catch(e){ setSending(false); throw e; }
+  if(p&&typeof p.then==='function') p.then(function(){setSending(false);},function(){setSending(false);});
+  else setSending(false);
+}
+
 function pmt(r,n,pv){ return r===0?pv/n:pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1); }
 function fmt(n)  { return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n||0); }
 function fmtUSD(n){ return 'USD $'+new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0); }
@@ -1774,6 +1795,12 @@ function App(){
       'Los abonos a capital aparecen ahora intercalados en la fecha en que se hicieron, dentro del cronograma de la app (en Cartera y en el perfil del deudor), con su propia fila azul marcada como "Abono". Antes se listaban aparte al final y no se veia en que punto del cronograma habian entrado.',
       'Corregido: en los prestamos sin intereses la cuota mostraba "$0" de abono a capital pese a que el saldo quedaba en cero. Ahora muestra el capital real, y en toda cuota se cumple que Interes + Abono a capital = Valor cuota.',
       'Corregido: en prestamos en dolares el desglose podia descuadrar un centavo (por ejemplo 363,25 + 96,74 = 459,99 en una cuota de 460,00). Ahora la suma es exacta.'
+    ],
+    '1.18.1': [
+      'Blindaje contra el doble clic en TODAS las pantallas que guardan algo. En 1.17.1 se corrigio el abono, que llego a registrarse dos veces; ahora la misma proteccion cubre registrar un pago, reestructurar cuotas, cambiar la fecha de pago, liquidar una deuda, el aviso de cuotas proximas a vencer, y crear deudas o registrar movimientos en Mis Deudas. Mientras se guarda, el boton se bloquea y avisa que esta procesando.',
+      'Corregido un error que podia mostrar "Pago registrado" aunque el pago NO se hubiera guardado: si fallaba la conexion, la pantalla se cerraba igual y anunciaba exito. Ahora, si algo falla, la ventana se queda abierta con el error a la vista.',
+      'El boton de reestructurar se desbloqueaba a los 5 segundos aunque la operacion siguiera en curso. Ahora espera a que termine de verdad.',
+      'Si una operacion falla o se cancela, el boton vuelve a habilitarse solo: ya no se queda bloqueado obligandote a cerrar y reabrir la ventana.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -1954,14 +1981,20 @@ function App(){
     });
   },[reload]);
 
+  // v1.18.1 — se devuelve la promesa para que PayModal pueda liberar su guarda anti
+  // doble-submit. Sin el `return`, el modal recibe undefined y la guarda quedaria colgada.
   var markPay=useCallback(function(id,status,fecha,obs,copRecibido,usdRecibido){
     fecha=fecha||null; obs=obs||''; copRecibido=copRecibido||0; usdRecibido=usdRecibido||0;
-    API.put('/api/payments/'+id,{estadoPago:status,fechaRecaudo:status==='Pagado'?(fecha||nowStr()):null,observaciones:obs,montoCOPRecibido:copRecibido,montoUSDRecibido:usdRecibido})
-      .then(function(r){if(!r)return;return reload();}).then(function(){setPayModal(null);showToast(status==='Pagado'?'Pago registrado':status==='En Mora'?'Marcado en mora':'Estado actualizado');});
+    return API.put('/api/payments/'+id,{estadoPago:status,fechaRecaudo:status==='Pagado'?(fecha||nowStr()):null,observaciones:obs,montoCOPRecibido:copRecibido,montoUSDRecibido:usdRecibido})
+      .then(function(r){if(!r)return null;return reload().then(function(){return r;});})
+      // v1.18.1: faltaba el guard `if(!r)`. Ante un fallo de API (API.put atrapa el error y
+      // resuelve null) este .then corria igual: cerraba el modal y anunciaba "Pago registrado"
+      // pese a que la escritura NO se habia hecho. markPartial ya lo tenia bien.
+      .then(function(r){if(!r)return;setPayModal(null);showToast(status==='Pagado'?'Pago registrado':status==='En Mora'?'Marcado en mora':'Estado actualizado');});
   },[reload]);
 
   var markPartial=useCallback(function(id,monto,fecha,obs,usdRecibido){
-    API.post('/api/payments/'+id+'/partial',{monto:monto,fecha:fecha||nowStr(),observaciones:obs||'',montoUSD:usdRecibido||0})
+    return API.post('/api/payments/'+id+'/partial',{monto:monto,fecha:fecha||nowStr(),observaciones:obs||'',montoUSD:usdRecibido||0})
       .then(function(r){if(!r)return;return reload().then(function(){return r;});})
       .then(function(r){if(!r)return;setPayModal(null);showToast(r.completa?'Pago completado':'Pago parcial registrado ($'+(r.restante||0).toLocaleString('es-CO')+' restante)');});
   },[reload]);
@@ -2038,20 +2071,25 @@ function App(){
     var loanObj=loans.find(function(l){return l.id===loanId;});
     setPreflightDlg({
       cuotas:enRiesgo,loan:loanObj,
-      onMarkMora:function(){_marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);_doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);});},
-      onContinue:function(){setPreflightDlg(null);_doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);},
+      // v1.18.1: se devuelve la promesa para que PreflightMoraModal libere su guarda.
+      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);});},
+      onContinue:function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);},
       onCancel:function(){setPreflightDlg(null);}
     });
   },[reload,abonoModal,pays,loans]);
   var reestructurarPrestamo=useCallback(function(loanId,mode,valor){
     var fromDeudor=restructureModal&&restructureModal.fromDeudor;
     var enRiesgo=_cuotasEnRiesgo(pays,loanId);
-    if(enRiesgo.length===0){_doReestructurar(loanId,mode,valor,fromDeudor);return;}
+    // v1.18.1: se devuelve la promesa para que RestructureModal libere su guarda (mismo
+    // patron que registrarAbono). En la rama de pre-flight se devuelve undefined a proposito:
+    // el modal libera de inmediato porque el control pasa al PreflightMoraModal.
+    if(enRiesgo.length===0){return _doReestructurar(loanId,mode,valor,fromDeudor);}
     var loanObj=loans.find(function(l){return l.id===loanId;});
     setPreflightDlg({
       cuotas:enRiesgo,loan:loanObj,
-      onMarkMora:function(){_marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);_doReestructurar(loanId,mode,valor,fromDeudor);});},
-      onContinue:function(){setPreflightDlg(null);_doReestructurar(loanId,mode,valor,fromDeudor);},
+      // v1.18.1: se devuelve la promesa para que PreflightMoraModal libere su guarda.
+      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doReestructurar(loanId,mode,valor,fromDeudor);});},
+      onContinue:function(){setPreflightDlg(null);return _doReestructurar(loanId,mode,valor,fromDeudor);},
       onCancel:function(){setPreflightDlg(null);}
     });
   },[reload,restructureModal,pays,loans]);
@@ -2330,7 +2368,13 @@ function App(){
     debtHistory&&h(DebtHistoryModal,{debt:debtHistory,onClose:function(){setDebtHistory(null);}}),
     debtDelete&&h(DeleteDebtModal,{debt:debtDelete,onConfirm:function(){var id=debtDelete.id;setDebtDelete(null);deleteDebt(id);},onClose:function(){setDebtDelete(null);}}),
     abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);}}),
-    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onReestructurar:function(l){var dRef=debtorModal;setDebtorModal(null);setRestructureModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');registrarAbono(loanId,monto,nowStr(),obs,0,true);setDebtorModal(null);},onReload:reload}),
+    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onReestructurar:function(l){var dRef=debtorModal;setDebtorModal(null);setRestructureModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');
+      // v1.18.1: se devuelve la promesa para que el modal de liquidacion libere su guarda.
+      // Hasta ahora la unica proteccion era accidental: setDebtorModal(null) desmontaba el
+      // modal en el mismo click, y el backend rechazaba el 2o intento porque el saldo ya
+      // era 0. Ninguna de las dos es una garantia — la primera se cae con cualquier refactor
+      // que mantenga el modal montado, y la segunda no aplica a una liquidacion parcial.
+      var _p=registrarAbono(loanId,monto,nowStr(),obs,0,true);setDebtorModal(null);return _p;},onReload:reload}),
     restructureModal&&h(RestructureModal,{loan:restructureModal.loan||restructureModal,pays:pays,onSave:reestructurarPrestamo,onClose:function(){if(restructureModal.fromDeudor){setDebtorModal(restructureModal.fromDeudor);} setRestructureModal(null);}}),
     preflightDlg&&h(PreflightMoraModal,{cuotas:preflightDlg.cuotas,loan:preflightDlg.loan,onMarkMora:preflightDlg.onMarkMora,onContinue:preflightDlg.onContinue,onCancel:preflightDlg.onCancel}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
@@ -3118,6 +3162,8 @@ function DebtorModal(props){
   var cl=useState(null); var confirmLiq=cl[0]; var setConfirmLiq=cl[1];
   var ipm=useState(false); var incluyeProxMes=ipm[0]; var setIncluyeProxMes=ipm[1];
   var cf=useState(null); var cambioFecha=cf[0]; var setCambioFecha=cf[1];
+  var cfs=useState(false); var cfSending=cfs[0]; var setCfSending=cfs[1];   // v1.18.1: guarda anti doble-submit del cambio de fecha
+  var lqs=useState(false); var liqSending=lqs[0]; var setLiqSending=lqs[1]; // v1.18.1: guarda anti doble-submit de la liquidacion
   var ceu=useState(null); var comprasExp=ceu[0]; var setComprasExp=ceu[1];
   // Pagos de este deudor (por nombre, a traves de sus prestamos)
   var deudorPays=pays.filter(function(p){
@@ -3170,7 +3216,7 @@ function DebtorModal(props){
           h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--red)'}},fmt(totalPagar)),
           cEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:500}},copToUsd(totalPagar,cLoan.trmAcordada)))),
       h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcaran como pagadas y el prestamo se cerrara.'),
-      h('button',{onClick:function(){onLiquidar(confirmLiq.loan.id,confirmLiq.saldo,intExtra);setConfirmLiq(null);setIncluyeProxMes(false);},className:'btn-primary',style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',color:'var(--red)',marginBottom:6}},'Confirmar liquidacion'),
+      h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){var _p=onLiquidar(confirmLiq.loan.id,confirmLiq.saldo,intExtra);setConfirmLiq(null);setIncluyeProxMes(false);return _p;});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidacion'),
       h('button',{onClick:function(){setConfirmLiq(null);setIncluyeProxMes(false);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
   }
   if(cambioFecha){
@@ -3287,17 +3333,27 @@ function DebtorModal(props){
         h('div',{style:{textAlign:'right'}},
           h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--green)'}},fmt(primeraCuotaTotal)),
           cfEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(primeraCuotaTotal,cfLoan.trmAcordada)))),
+      // v1.18.1 — GUARDA ANTI DOBLE-SUBMIT. El endpoint no es idempotente: con el payload
+      // identico el backend rechaza el 2o intento, pero el input de dia (arriba) sigue
+      // editable mientras el POST viaja, asi que un usuario impaciente puede cambiar el dia
+      // y reconfirmar; ese 2o request SI pasa el filtro y rueda `fechaBaseCronograma` un mes
+      // extra, reescribiendo la cuota transitoria con un prorrateo inflado.
       h('button',{onClick:function(){
+        if(cfSending) return;
         if(!validNuevo){_showError('Ingresa un dia valido (1-31, distinto al actual)');return;}
+        setCfSending(true);
         API.post('/api/loans/'+cfLoan.id+'/cambiar-dia-pago',{
           nuevoDia:nuevoDia
         }).then(function(r){
+          // API.post nunca rechaza (atrapa y resuelve null), asi que TODAS las salidas
+          // pasan por aqui: liberamos siempre antes de decidir que hacer.
+          setCfSending(false);
           if(!r)return;
           if(r.error){_showError(r.error);return;}
           setCambioFecha(Object.assign({},cambioFecha,{step:'success',resultado:r}));
           if(onReload)onReload();
-        });
-      },disabled:!validNuevo,className:'btn-primary',style:{background:validNuevo?'var(--blue-bg)':'var(--bg3)',border:'1px solid '+(validNuevo?'var(--blue-bd)':'var(--border)'),color:validNuevo?'var(--blue)':'var(--text3)',marginBottom:6,cursor:validNuevo?'pointer':'not-allowed'}},'Confirmar cambio'),
+        },function(){setCfSending(false);});
+      },disabled:!validNuevo||cfSending,className:'btn-primary',style:{background:(validNuevo&&!cfSending)?'var(--blue-bg)':'var(--bg3)',border:'1px solid '+((validNuevo&&!cfSending)?'var(--blue-bd)':'var(--border)'),color:(validNuevo&&!cfSending)?'var(--blue)':'var(--text3)',marginBottom:6,cursor:(validNuevo&&!cfSending)?'pointer':'not-allowed'}},cfSending?'Procesando...':'Confirmar cambio'),
       h('button',{onClick:function(){setCambioFecha(null);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
   }
   return h(Modal,{onClose:onClose,wide:true,tall:true},
@@ -4261,6 +4317,7 @@ function PayModal(props){
   var s6=useState('completo'); var tipoPago=s6[0]; var setTipoPago=s6[1];
   var s7=useState(''); var montoParcial=s7[0]; var setMontoParcial=s7[1];
   var s8=useState(''); var parcialUSD=s8[0]; var setParcialUSD=s8[1];
+  var s9=useState(false); var sending=s9[0]; var setSending=s9[1];   // v1.18.1: guarda anti doble-submit
   var so=ST[pay.estadoPago]||{bg:'var(--bg3)',color:'var(--text2)',icon:'?'};
   var esUSD=loan&&loan.moneda==='USD';
   // Abono real = id con '-ab-' (regla canonica). NO usar la heuristica interes===0 && capital>0:
@@ -4277,22 +4334,31 @@ function PayModal(props){
         esUSD&&h('span',{style:{marginLeft:6}},copToUsd(pay.saldoFinal,loan.trmAcordada))),
       pay.observaciones&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:8,fontStyle:'italic'}},pay.observaciones)));
 
+  // v1.18.1 — GUARDA ANTI DOBLE-SUBMIT (misma doctrina del Bug #29 en AbonoModal). Aqui el
+  // riesgo es mayor: PUT /api/payments/:id y POST /partial no son idempotentes, y un pago
+  // duplicado contamina montoCOPRecibido, el ledger `recibos` y con ello los KPI de Cobros
+  // del Mes y Ganancias. Se libera al resolver la promesa; ante un fallo de API la promesa
+  // RESUELVE (API.put/post atrapan el error y devuelven null), nunca rechaza, por eso el
+  // release va en el .then y no en un .catch.
+  function _run(fn){ _submitGuard(sending,setSending,fn); }
   function submitParcial(){
+    if(sending) return;
     var m=+montoParcial||0;
     if(m<=0){_showError('Ingresa el monto del pago parcial');return;}
     if(m>restante){_showError('El monto supera el saldo pendiente ('+fmt(restante)+')');return;}
     if(genRecibo&&loan){generateRecibo(pay,loan,m,+parcialUSD||0,allPays,{yaAbonadoPrev:yaPagado,fechaRecaudo:fecha});}
-    onPartial(pay.id,m,fecha,obs,+parcialUSD||0);
+    _run(function(){return onPartial(pay.id,m,fecha,obs,+parcialUSD||0);});
   }
   function submitCompleto(){
+    if(sending) return;
     if(esUSD&&(!copRec||+copRec<=0)){_showError('Ingresa el monto COP recibido para prestamos en USD');return;}
     if(yaPagado>0){
       // Habia pagos parciales: el recibo es "Pago final" que completa la cuota
       if(genRecibo){generateRecibo(pay,loan,restante,+usdRec||0,allPays,{yaAbonadoPrev:yaPagado,fechaRecaudo:fecha});}
-      onPartial(pay.id,restante,fecha,obs,+usdRec||0);
+      _run(function(){return onPartial(pay.id,restante,fecha,obs,+usdRec||0);});
     } else {
       if(genRecibo){generateRecibo(pay,loan,+copRec||pay.cuotaTotal,+usdRec||0,allPays,{fechaRecaudo:fecha});}
-      onMark(pay.id,'Pagado',fecha,obs,+copRec||pay.cuotaTotal,+usdRec||0);
+      _run(function(){return onMark(pay.id,'Pagado',fecha,obs,+copRec||pay.cuotaTotal,+usdRec||0);});
     }
   }
 
@@ -4336,11 +4402,14 @@ function PayModal(props){
     pay.estadoPago!=='Pagado'&&h('label',{style:{display:'flex',alignItems:'center',gap:8,marginTop:14,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
       h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--green)',cursor:'pointer'}}),
       'Generar recibo de pago'),
+    // Los 4 botones escriben en BD y comparten la MISMA guarda: mientras una operacion esta
+    // en vuelo ninguno acepta clicks (evita tanto el doble submit como disparar dos cambios
+    // de estado contradictorios sobre la misma cuota).
     h('div',{style:{display:'flex',gap:8,marginTop:14}},
-      pay.estadoPago!=='Pagado'&&tipoPago==='completo'&&h(ABtn,{color:'var(--green2)',onClick:submitCompleto,icon:'check', label:yaPagado>0?'Completar':'Pagado'}),
-      pay.estadoPago!=='Pagado'&&tipoPago==='parcial' &&h(ABtn,{color:'var(--yellow)', onClick:submitParcial, icon:'check', label:'Registrar parcial'}),
-      pay.estadoPago!=='En Mora'   &&h(ABtn,{color:'#b91c1c',     onClick:function(){onMark(pay.id,'En Mora',  null, obs,0,0);},         icon:'alert', label:'En Mora'}),
-      pay.estadoPago!=='Pendiente' &&h(ABtn,{color:'var(--bg4)',   onClick:function(){onMark(pay.id,'Pendiente',null, obs,0,0);},         icon:'clock', label:'Pendiente'})));
+      pay.estadoPago!=='Pagado'&&tipoPago==='completo'&&h(ABtn,{color:'var(--green2)',disabled:sending,onClick:submitCompleto,icon:'check', label:sending?'Registrando...':(yaPagado>0?'Completar':'Pagado')}),
+      pay.estadoPago!=='Pagado'&&tipoPago==='parcial' &&h(ABtn,{color:'var(--yellow)', disabled:sending,onClick:submitParcial, icon:'check', label:sending?'Registrando...':'Registrar parcial'}),
+      pay.estadoPago!=='En Mora'   &&h(ABtn,{color:'#b91c1c',     disabled:sending,onClick:function(){_run(function(){return onMark(pay.id,'En Mora',  null, obs,0,0);});}, icon:'alert', label:sending?'...':'En Mora'}),
+      pay.estadoPago!=='Pendiente' &&h(ABtn,{color:'var(--bg4)',   disabled:sending,onClick:function(){_run(function(){return onMark(pay.id,'Pendiente',null, obs,0,0);});}, icon:'clock', label:sending?'...':'Pendiente'})));
 }
 
 // ── PreflightMoraModal (v1.9.0) ───────────────────────────────────────────────
@@ -4365,6 +4434,11 @@ function PreflightMoraModal(props){
   var cuotas=props.cuotas||[],loan=props.loan,onMarkMora=props.onMarkMora,onContinue=props.onContinue,onCancel=props.onCancel;
   var esUSD=loan&&loan.moneda==='USD';
   var hoy=new Date(nowStr()+'T12:00:00').getTime();
+  // v1.18.1 — Guarda anti doble-submit. Este modal es el eslabon que faltaba del Bug #29:
+  // intercepta los flujos de abono y reestructuracion, y sus dos botones disparan escrituras
+  // (N x PUT /payments/:id en "Marcar en Mora", y el POST de abono/reestructurar en ambos).
+  // Sin guarda, un doble clic aqui reintroducia exactamente el bug que se cerro en AbonoModal.
+  var pfs=useState(false); var pfSending=pfs[0]; var setPfSending=pfs[1];
   return h(Modal,{onClose:onCancel},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4,display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'alert',size:18,color:'var(--yellow)',sw:2.4}),
@@ -4384,14 +4458,15 @@ function PreflightMoraModal(props){
             h('div',{style:{color:'var(--green)',fontWeight:600}},fmt(p.cuotaTotal)),
             esUSD&&h('div',{style:{fontSize:10,color:'var(--blue)'}},copToUsd(p.cuotaTotal,loan.trmAcordada))));
       })),
-    h('button',{onClick:onMarkMora,className:'btn-primary',style:{width:'100%',marginBottom:8,background:'var(--yellow-bg)',border:'1px solid var(--yellow)',color:'var(--yellow)',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
-      h(Ico,{name:'alert',size:14,color:'var(--yellow)'}),' Marcar en Mora primero (recomendado)'),
+    h('button',{onClick:function(){_submitGuard(pfSending,setPfSending,function(){return onMarkMora();});},disabled:pfSending,className:'btn-primary',style:{width:'100%',marginBottom:8,background:pfSending?'var(--bg3)':'var(--yellow-bg)',border:'1px solid '+(pfSending?'var(--border)':'var(--yellow)'),color:pfSending?'var(--text3)':'var(--yellow)',cursor:pfSending?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+      h(Ico,{name:'alert',size:14,color:pfSending?'var(--text3)':'var(--yellow)'}),pfSending?' Procesando...':' Marcar en Mora primero (recomendado)'),
     h('div',{style:{fontSize:10,color:'var(--text3)',textAlign:'center',marginBottom:10,padding:'0 8px'}},
       'Las cuotas se preservan como deuda independiente. Podras cobrarlas desde Pagos.'),
-    h('button',{onClick:onContinue,style:{width:'100%',padding:13,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:12,color:'var(--text2)',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:8}},
-      'Continuar sin marcar'),
+    h('button',{onClick:function(){_submitGuard(pfSending,setPfSending,function(){return onContinue();});},disabled:pfSending,style:{width:'100%',padding:13,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:12,color:'var(--text2)',fontSize:13,fontWeight:600,cursor:pfSending?'not-allowed':'pointer',opacity:pfSending?.6:1,fontFamily:'inherit',marginBottom:8}},
+      pfSending?'Procesando...':'Continuar sin marcar'),
     h('div',{style:{fontSize:10,color:'var(--text3)',textAlign:'center',marginBottom:10,padding:'0 8px'}},
       'Las cuotas se absorberan en el nuevo cronograma.'),
+    // Cancelar no escribe: se deja siempre habilitado para no atrapar al usuario si algo se cuelga.
     h('button',{onClick:onCancel,style:{width:'100%',padding:11,background:'transparent',border:'1px solid var(--border2)',borderRadius:12,color:'var(--text3)',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},
       'Cancelar'));
 }
@@ -4475,11 +4550,10 @@ function AbonoModal(props){
     var valor=null;
     if(mode==='modificarPlazo') valor=parseInt(nuevoPlazo,10);
     else if(mode==='fijarCuota') valor=cuotaFijaEfectivaCOP; // siempre en COP (auto-conv de USD)
-    setSending(true);
-    var p=onSave(loan.id,+monto,fecha,obs,+montoUSD||0,false,mode,valor,genRecibo);
-    // Se libera al resolver (error o preflight). En exito el modal ya se desmonto.
-    if(p&&typeof p.then==='function') p.then(function(){setSending(false);},function(){setSending(false);});
-    else setSending(false);
+    // v1.18.1: se delega en el helper compartido _submitGuard (misma semantica que tenia
+    // aqui inline). Se libera al resolver, al rechazar o si onSave no devuelve promesa
+    // (rama de pre-flight); en exito el modal ya se desmonto.
+    _submitGuard(sending,setSending,function(){return onSave(loan.id,+monto,fecha,obs,+montoUSD||0,false,mode,valor,genRecibo);});
   }
   // Auto-calcular COP cuando llenan USD
   function onUSDChange(e){
@@ -4677,9 +4751,12 @@ function RestructureModal(props){
     if(recalcMode==='modificarPlazo') valor=parseInt(nuevoPlazo,10);
     else if(recalcMode==='fijarCuota') valor=cuotaFijaEfectivaCOP;
     if(!valor||valor<=0){_showError('Completa el valor');return;}
-    setIsSubmitting(true);
-    onSave(loan.id,recalcMode,valor);
-    setTimeout(function(){setIsSubmitting(false);},5000);
+    // v1.18.1 — la liberacion se ata a la PROMESA, no a un setTimeout de 5s. El timer era
+    // una guarda con fecha de caducidad: si el POST tardaba mas de 5 segundos el boton se
+    // rehabilitaba con la peticion aun en vuelo y el doble submit volvia a ser posible.
+    // Si onSave devuelve undefined (rama de pre-flight de mora) se libera de inmediato,
+    // porque el control pasa al PreflightMoraModal y este modal ya no decide nada.
+    _submitGuard(isSubmitting,setIsSubmitting,function(){return onSave(loan.id,recalcMode,valor);});
   }
   return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4,display:'flex',alignItems:'center',gap:8}},
@@ -5343,8 +5420,11 @@ function DebtModal(props){
   var s3=useState(''); var interes=s3[0]; var setInteres=s3[1];
   var s4=useState(editing?(debt.concepto||''):''); var concepto=s4[0]; var setConcepto=s4[1];
   var s5=useState(editing?((debt.fecha_creacion||'').slice(0,10)||nowStr()):nowStr()); var fecha=s5[0]; var setFecha=s5[1];
+  var s6=useState(false); var sending=s6[0]; var setSending=s6[1];   // v1.18.1: guarda anti doble-submit
 
   function submit(){
+    // v1.18.1 — POST /api/debts no es idempotente: un doble clic creaba DOS deudas identicas.
+    if(sending) return;
     var tit=titulo.trim();
     var acr=acreedor.trim();
     var m=Math.round(+monto||0);
@@ -5356,7 +5436,7 @@ function DebtModal(props){
     var conceptoFinal=[interes.trim(),concepto.trim()].filter(Boolean).join(' - ');
     var payload={titulo:tit,acreedor:acr,monto_original:m,concepto:conceptoFinal,fecha_creacion:fecha};
     if(editing) payload.id=debt.id; // -> el handler hace PUT en vez de POST
-    onSave(payload);
+    _submitGuard(sending,setSending,function(){return onSave(payload);});
   }
 
   // QA6: sugerencias de acreedores existentes. Oculto si el input esta vacio o si coincide exacto.
@@ -5386,7 +5466,7 @@ function DebtModal(props){
     (interes.trim()&&concepto.trim())?h('div',{style:{fontSize:11,color:'var(--text3)',fontStyle:'italic'}},'Se guardara como: "'+[interes.trim(),concepto.trim()].filter(Boolean).join(' - ')+'"'):null,
     (editing&&!lockMonto)?h('div',{style:{fontSize:11,color:'var(--text3)'}},'El saldo pendiente se recalcula automaticamente (monto - lo ya pagado).'):null,
     h('div',{style:{display:'flex',gap:8,marginTop:8}},
-      h(ABtn,{color:'var(--green2)',onClick:submit,icon:'check',label:editing?'Guardar cambios':'Crear deuda'})));
+      h(ABtn,{color:'var(--green2)',disabled:sending,onClick:submit,icon:'check',label:sending?'Guardando...':(editing?'Guardar cambios':'Crear deuda')})));
 }
 
 function DebtPayModal(props){
@@ -5396,6 +5476,7 @@ function DebtPayModal(props){
   var s1=useState(nowStr()); var fecha=s1[0]; var setFecha=s1[1];
   var s2=useState(''); var monto=s2[0]; var setMonto=s2[1];
   var s3=useState(''); var notas=s3[0]; var setNotas=s3[1];
+  var s4=useState(false); var sending=s4[0]; var setSending=s4[1];   // v1.18.1: guarda anti doble-submit
   var m=Math.round(+monto||0);
   var esCargo=tipo==='cargo';
   var excede=!esCargo&&m>saldo;            // QA5: solo el abono tiene tope; el cargo no
@@ -5403,9 +5484,14 @@ function DebtPayModal(props){
   var nuevoSaldo=esCargo?(saldo+m):(saldo-m);
 
   function submit(){
+    // v1.18.1 — GEMELO EXACTO del Bug #29 en "Mis Deudas": POST /api/debts/:id/pay inserta
+    // una fila nueva en el ledger `pagos_deudas` por cada request (genId() propio, sin clave
+    // de idempotencia) y el saldo se RECALCULA desde ese ledger. Un doble clic duplicaba el
+    // movimiento y dejaba el saldo mal de verdad, no solo la vista.
+    if(sending) return;
     if(m<=0){_showError('Ingresa el monto del movimiento');return;}
     if(excede){_showError('El abono supera el saldo pendiente ('+fmt(saldo)+')');return;}
-    onSave(debt.id,{monto_pagado:m,fecha_pago:fecha,notas:notas.trim(),tipo:tipo});
+    _submitGuard(sending,setSending,function(){return onSave(debt.id,{monto_pagado:m,fecha_pago:fecha,notas:notas.trim(),tipo:tipo});});
   }
   function tipoBtn(val,label,activeColor){
     var on=tipo===val;
@@ -5432,7 +5518,7 @@ function DebtPayModal(props){
         excede?('Supera el saldo por '+fmt(m-saldo)):(esCargo?('La deuda subiria a '+fmt(nuevoSaldo)):(m>=saldo?'Con este abono la deuda quedaria SALDADA':'Quedaria pendiente: '+fmt(saldo-m)))):null),
     h(Fld,{label:'Notas (opcional)'},h('input',{value:notas,onChange:function(e){setNotas(e.target.value);},placeholder:'Detalles del movimiento...',className:'inp'})),
     h('div',{style:{display:'flex',gap:8,marginTop:8}},
-      h(ABtn,{color:valido?(esCargo?'#b91c1c':'var(--green2)'):'var(--bg4)',onClick:valido?submit:function(){},icon:'check',label:esCargo?'Registrar cargo':'Registrar abono'})));
+      h(ABtn,{color:valido?(esCargo?'#b91c1c':'var(--green2)'):'var(--bg4)',disabled:sending,onClick:valido?submit:function(){},icon:'check',label:sending?'Registrando...':(esCargo?'Registrar cargo':'Registrar abono')})));
 }
 
 // Historial de pagos de una deuda. Consume GET /api/debts/:id (incluye su ledger pagos_deudas).
@@ -5690,7 +5776,12 @@ function Modal(props){
       h('div',{style:{overflowY:'auto',padding:'12px 20px 24px',display:'flex',flexDirection:'column',gap:12,flex:1}},children)));
 }
 function Fld(props){return h('div',{style:{marginTop:6}},h('div',{style:{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:5}},props.label),props.children);}
-function ABtn(props){return h('button',{onClick:props.onClick,style:{flex:1,background:props.color,color:'white',border:'none',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},h(Ico,{name:props.icon,size:15,color:'white',sw:2.2}),props.label);}
+// v1.18.1 — prop opcional `disabled` (para las guardas anti doble-submit). Sin ella el
+// componente se comporta exactamente igual que antes, asi que los usos existentes no cambian.
+function ABtn(props){
+  var dis=!!props.disabled;
+  return h('button',{onClick:dis?undefined:props.onClick,disabled:dis,style:{flex:1,background:dis?'var(--bg3)':props.color,color:dis?'var(--text3)':'white',border:'none',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:dis?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6,opacity:dis?.75:1}},h(Ico,{name:props.icon,size:15,color:dis?'var(--text3)':'white',sw:2.2}),props.label);
+}
 function ConfirmModal(props){
   var title=props.title||'Confirmar';var msg=props.message||'';var detail=props.detail;
   var onOk=props.onConfirm;var onNo=props.onCancel;var okLabel=props.okLabel||'Aceptar';var okColor=props.okColor||'var(--green2)';
