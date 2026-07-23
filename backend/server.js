@@ -880,7 +880,7 @@ module.exports = function createApp(dbPath) {
   // escritura. Si algo falla, se retorna 400 sin tocar la BD. Las escrituras se aplican
   // dentro de una transaccion SQLite (all-or-nothing).
   app.post('/api/loans/:id/abono', (req, res) => {
-    const { monto, fecha, observaciones, montoUSD, liquidar, recalcMode, recalcValor } = req.body;
+    const { monto, fecha, observaciones, montoUSD, liquidar, recalcMode, recalcValor, intExtra } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
 
@@ -900,10 +900,29 @@ module.exports = function createApp(dbPath) {
       (p.estadoPago === 'En Mora' && !esSingleCuota)
     ).reduce((s, p) => s + p.abonoCapital, 0);
     const saldoReal = Math.max(0, originalCOP - todoCapPagado);
+    // ── CAPITAL PENDIENTE PARA LIQUIDACION (regla de negocio v1.19.0) ──
+    // NO resta el capital de las cuotas En Mora: siguen debiendose, el cliente las paga HOY al
+    // liquidar. Es distinto de saldoReal, que SI resta el capital En Mora para el RECALCULO
+    // (Bug #21, deuda independiente amortizada aparte). Solo cuenta Pagadas (incluye abonos '-ab-').
+    // Identidad: capitalPendienteLiq = saldoReal + capitalEnMora (para C+I); en Prestamo/Pago Unico
+    // (esSingleCuota) coinciden porque su mora no aporta a todoCapPagado.
+    const capPagadasSolo = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const capitalPendienteLiq = Math.max(0, originalCOP - capPagadasSolo);
     const montoNum = +monto || 0;
+    const intExtraNum = Math.max(0, Math.round(+intExtra || 0)); // interes del proximo mes al liquidar (checkbox)
     if (montoNum <= 0) return res.status(400).json({ error: 'El monto del abono debe ser mayor a 0' });
-    const nuevoSaldo = Math.round(saldoReal - montoNum);
-    if (nuevoSaldo < 0) return res.status(400).json({ error: 'El abono supera el saldo actual' });
+    // Validacion bifurcada: al LIQUIDAR se acepta cubrir todo el capital pendiente (incluida la mora),
+    // por eso se valida contra capitalPendienteLiq y NO contra saldoReal (que rebotaba el cobro de un
+    // C+I con mora — showstopper). En un abono normal se mantiene la validacion contra saldoReal.
+    if (liquidar) {
+      if (montoNum > capitalPendienteLiq + 1) {
+        return res.status(400).json({ error: 'El monto supera el capital pendiente ($' + capitalPendienteLiq.toLocaleString('es-CO') + ')' });
+      }
+    } else if (Math.round(saldoReal - montoNum) < 0) {
+      return res.status(400).json({ error: 'El abono supera el saldo actual' });
+    }
+    // En liquidacion el prestamo se salda por completo -> nuevoSaldo 0 (no hay recalculo de pendientes).
+    const nuevoSaldo = liquidar ? 0 : Math.round(saldoReal - montoNum);
 
     // Un registro de abono se identifica por la regla canonica: id con '-ab-'.
     const regularConsumed = allPays.filter(p =>
@@ -993,32 +1012,47 @@ module.exports = function createApp(dbPath) {
         });
       }
 
-      // Registrar el abono como cuota especial
-      insPayment.run({
-        id: abonoId,
-        prestamoId: req.params.id,
-        nombreCliente: loan.nombre,
-        cuotaN: maxExistingN + 1,
-        fechaPago: fechaAbono,
-        saldoInicial: saldoReal,
-        interesPeriodo: 0,
-        abonoCapital: Math.round(montoNum),
-        cuotaTotal: Math.round(montoNum),
-        saldoFinal: Math.max(0, nuevoSaldo),
-        estadoPago: 'Pagado',
-        fechaRecaudo: fechaAbono,
-        observaciones: observaciones || 'Abono a capital',
-        montoCOPRecibido: Math.round(montoNum),
-        montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0,
-        partialPaid: 0,
-        extraConsolidado: 0
-      });
-      db.prepare("UPDATE payments SET paidAt = datetime('now','localtime') WHERE id = ?").run(abonoId);
+      // Registrar el abono como cuota especial.
+      // v1.19.0 — al LIQUIDAR el abono captura SOLO el capital pendiente NO en mora (= saldoReal):
+      // el capital de las cuotas En Mora ya queda contabilizado al marcarlas Pagadas abajo. Sin esto
+      // el capital se contaria DOBLE (abono por el total + cuotas mora con su propio capital) y
+      // "capital recuperado" superaria el monto prestado. En single-cuota (Prestamo/Pago Unico)
+      // saldoReal == montoNum, asi que no cambia. El interes del proximo mes (intExtra, opcional) se
+      // registra como interesPeriodo del abono para que cuente como ingreso real.
+      const abonoCapReg = liquidar ? Math.round(saldoReal) : Math.round(montoNum);
+      const abonoInt = liquidar ? intExtraNum : 0;
+      // En liquidacion con saldoReal 0 y sin interes extra (todo el capital estaba en la mora) no hay
+      // nada que registrar en un abono aparte -> se omite la fila (las cuotas mora ya lo capturan).
+      const crearAbono = !liquidar || abonoCapReg > 0 || abonoInt > 0;
+      if (crearAbono) {
+        insPayment.run({
+          id: abonoId,
+          prestamoId: req.params.id,
+          nombreCliente: loan.nombre,
+          cuotaN: maxExistingN + 1,
+          fechaPago: fechaAbono,
+          saldoInicial: saldoReal,
+          interesPeriodo: abonoInt,
+          abonoCapital: abonoCapReg,
+          cuotaTotal: abonoCapReg + abonoInt,
+          saldoFinal: Math.max(0, nuevoSaldo),
+          estadoPago: 'Pagado',
+          fechaRecaudo: fechaAbono,
+          observaciones: observaciones || 'Abono a capital',
+          montoCOPRecibido: abonoCapReg + abonoInt,
+          montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0,
+          partialPaid: 0,
+          extraConsolidado: 0
+        });
+        db.prepare("UPDATE payments SET paidAt = datetime('now','localtime') WHERE id = ?").run(abonoId);
+      }
 
       if (nuevoSaldo <= 0) {
         // Capital saldado
         if (liquidar) {
-          db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ?, paidAt = datetime('now','localtime') WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaAbono, req.params.id);
+          // Las cuotas En Mora se saldan: Pagado + montoCOPRecibido = su cuotaTotal (capital + interes
+          // de esa cuota), asi el efectivo recibido cuadra y el interes de mora cuenta como cobrado.
+          db.prepare("UPDATE payments SET estadoPago = 'Pagado', fechaRecaudo = ?, montoCOPRecibido = cuotaTotal, paidAt = datetime('now','localtime') WHERE prestamoId = ? AND estadoPago = 'En Mora'").run(fechaAbono, req.params.id);
           db.prepare("UPDATE loans SET montoCOP = 0, estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ?").run(req.params.id);
         } else {
           const moraRestante = db.prepare("SELECT COUNT(*) as c FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora'").get(req.params.id);

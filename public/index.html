@@ -207,6 +207,51 @@ function cobrosDe(p){
   return [];
 }
 function fmtD(s) { return s?new Date(s+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'-'; }
+
+// ── Cálculo CENTRALIZADO de la liquidación (v1.19.0) ──────────────────────────
+// UNA sola fuente de verdad para el "Valor de liquidación": el modal, las tarjetas del
+// perfil/Cartera y los PDFs (cronograma + recibo de abono) llaman a este helper, así no
+// pueden divergir. Regla de negocio:
+//   Total = Capital pendiente + Intereses en mora − abonos parciales en curso (+ interés
+//           del próximo mes si el checkbox está activo)
+//   Capital pendiente = originalCOP − Σ abonoCapital de cuotas Pagadas (incluye abonos '-ab-').
+//     Las cuotas EN MORA **no** restan capital: siguen debiéndose y se pagan al liquidar.
+// Devuelve todo el desglose (incl. el valor por mes de los intereses) para renderizarlo.
+function computeLiquidacion(loan, loanPays, opts){
+  opts = opts || {};
+  var esUSD = loan.moneda === 'USD';
+  var origCOP = esUSD ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
+  var pays = (loanPays||[]).filter(function(p){ return String(p.prestamoId) === String(loan.id); });
+  var regs = pays.filter(function(p){ return p.id.indexOf('-ab-') === -1; });
+  var capPagadas = pays.filter(function(p){ return p.estadoPago === 'Pagado'; })
+    .reduce(function(s,p){ return s + p.abonoCapital; }, 0);
+  var capitalPendiente = Math.max(0, origCOP - capPagadas);
+  var moraRows = regs.filter(function(p){ return p.estadoPago === 'En Mora'; });
+  var moraCount = moraRows.length;
+  var intMora = moraRows.reduce(function(s,p){ return s + p.interesPeriodo; }, 0);
+  var moraInts = moraRows.map(function(p){ return Math.round(p.interesPeriodo); });
+  var moraUniforme = moraCount > 0 && moraInts.every(function(v){ return v === moraInts[0]; });
+  // valor por mes de los intereses en mora: exacto si todas las cuotas son iguales (Intereses o
+  // C+I de 1 cuota); si varían (C+I multi-mora) se muestra el promedio, marcado como tal.
+  var moraValorMes = moraCount > 0 ? (moraUniforme ? moraInts[0] : Math.round(intMora / moraCount)) : 0;
+  var partialPend = regs.filter(function(p){ return p.estadoPago !== 'Pagado'; })
+    .reduce(function(s,p){ return s + (p.partialPaid || 0); }, 0);
+  var aplicaInteres = loan.modalidad !== 'Prestamo' && loan.modalidad !== 'Pago Unico' && (+loan.tasaMensual || 0) > 0;
+  var intProxMes = aplicaInteres ? Math.round(capitalPendiente * (+loan.tasaMensual || 0) / 100) : 0;
+  var incluye = !!opts.incluyeProxMes && aplicaInteres;
+  var intExtra = incluye ? intProxMes : 0;
+  var total = Math.max(0, capitalPendiente + intMora - partialPend + intExtra);
+  return {
+    esUSD: esUSD, trm: loan.trmAcordada, tasaMensual: +loan.tasaMensual || 0,
+    capitalPendiente: capitalPendiente,
+    intMora: intMora, moraCount: moraCount, moraUniforme: moraUniforme, moraValorMes: moraValorMes,
+    partialPend: partialPend,
+    aplicaInteres: aplicaInteres, intProxMes: intProxMes,
+    incluyeProxMes: incluye, intExtra: intExtra,
+    total: total
+  };
+}
+
 // ── Input numérico con formato automático (1.000.000) ──
 function fmtNumInput(v){
   if(!v&&v!==0)return '';
@@ -399,20 +444,20 @@ function generateCronogramaPDF(loan, payments, darkMode) {
     '</table>',
     loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este prestamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuaran hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '',
     function(){
-      var intMora = cuotas.filter(function(p){return p.estadoPago==='En Mora';}).reduce(function(s,p){return s+p.interesPeriodo;},0);
-      var originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
-      var todoCapPagado = allCuotas.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
-      var saldoAct = Math.max(0, originalCOP - todoCapPagado);
-      var partialPendPDF = allCuotas.filter(function(p){return p.id.indexOf('-ab-')===-1&&p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
-      var liquidacion = Math.max(0, saldoAct + intMora - partialPendPDF);
-      if(saldoAct <= 0) return '';
+      // v1.19.0 — valor de liquidacion desde el helper centralizado (misma cifra que el modal).
+      var L = computeLiquidacion(loan, payments, {});
+      if(L.capitalPendiente <= 0) return '';
+      var mesTxt = fv(L.moraValorMes) + '/mes' + (L.moraUniforme ? '' : ' prom.');
+      var detalle = 'Capital ' + fv(L.capitalPendiente) +
+        (L.intMora > 0 ? ' + mora ' + fv(L.intMora) + ' (' + L.moraCount + ' cuota' + (L.moraCount>1?'s':'') + ' a ' + mesTxt + ')' : '') +
+        (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '');
       var bg = dark ? '#2b2005' : '#fff8c5';
       var bd = dark ? '#3d2e08' : '#d4a72c';
       var cl = dark ? '#d29922' : '#7a5900';
-      return '<div style="margin-top:14px;padding:12px 16px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;display:flex;justify-content:space-between;align-items:center">' +
+      return '<div style="margin-top:14px;padding:12px 16px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:12px">' +
         '<div><div style="font-size:10px;font-weight:700;color:'+cl+';text-transform:uppercase;letter-spacing:1px">Valor de liquidacion</div>' +
-        '<div style="font-size:10px;color:'+cl+';margin-top:2px">Capital' + (intMora > 0 ? ' + intereses en mora' : '') + (partialPendPDF > 0 ? ' - abonos parciales' : '') + '</div></div>' +
-        '<div style="font-size:20px;font-weight:700;color:'+cl+'">' + fv(liquidacion) + '</div></div>';
+        '<div style="font-size:10px;color:'+cl+';margin-top:2px">' + detalle + '</div></div>' +
+        '<div style="font-size:20px;font-weight:700;color:'+cl+';white-space:nowrap">' + fv(L.total) + '</div></div>';
     }(),
     '</div>',
     '<div class="footer">',
@@ -533,7 +578,7 @@ function generateReportePrestamosPDF(loans, pays, darkMode) {
       var dias = diasAtraso(p.fechaPago);
       var usdMora = r.esUSD ? ' &middot; <span class="usd-i">' + copToUsd(p.cuotaTotal, r.trm) + '</span>' : '';
       return '<tr class="mora-sub"><td colspan="8"><div class="mora-detalle">' +
-        '<span>&#8627; Cuota #' + p.cuotaN + ' &middot; vence ' + fmtD(p.fechaPago) + ' &middot; ' + dias + ' dia' + (dias === 1 ? '' : 's') + ' de atraso</span>' +
+        '<span>&#8627; Cuota #' + p.cuotaN + ' &middot; vencio el ' + fmtD(p.fechaPago) + ' &middot; ' + dias + ' dia' + (dias === 1 ? '' : 's') + ' de atraso</span>' +
         '<span><strong>' + fmt(p.cuotaTotal) + '</strong>' + usdMora + '</span></div></td></tr>';
     }).join('');
     // Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha)
@@ -1000,14 +1045,14 @@ function generateReciboAbono(loan, allPays, opts) {
   var ini = properCase(String(loan.nombre || '')).replace(/\s+/g, '').slice(0, 2);
   var abCode = 'AB-' + ini + '-' + String(loan.id || '').slice(-3) + '-' + String(nAbonos || 1).padStart(2, '0');
 
-  // VALOR DE LIQUIDACION HOY — replica EXACTA de la formula del modal "Liquidar deuda"
-  // (index.html:3492 -> Math.max(0, saldo + intMora - partialPend)) para que el recibo
-  // nunca muestre una cifra distinta a la que ve el usuario en la app.
-  var moraReg = lp.filter(function(p){ return p.id.indexOf('-ab-') === -1 && p.estadoPago === 'En Mora'; });
-  var intMora = moraReg.reduce(function(s, p){ return s + p.interesPeriodo; }, 0);
-  var partialPend = lp.filter(function(p){ return p.id.indexOf('-ab-') === -1 && p.estadoPago !== 'Pagado'; })
-                      .reduce(function(s, p){ return s + (p.partialPaid || 0); }, 0);
-  var liquidacion = Math.max(0, saldoDespues + intMora - partialPend);
+  // VALOR DE LIQUIDACION HOY — desde el helper centralizado computeLiquidacion (v1.19.0), la
+  // MISMA fuente de verdad que el modal "Liquidar deuda", la tarjeta y el cronograma PDF, para
+  // que el recibo nunca muestre una cifra distinta a la que ve el usuario en la app.
+  var _L = computeLiquidacion(loan, lp, {});
+  var intMora = _L.intMora;
+  var partialPend = _L.partialPend;
+  var liquidacion = _L.total;
+  var moraMesTxt = money(_L.moraValorMes) + '/mes' + (_L.moraUniforme ? '' : ' prom.');
 
   var C = dark ? {
     bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
@@ -1059,8 +1104,9 @@ function generateReciboAbono(loan, allPays, opts) {
   // en el Resumen (es decir, cuando hay mora o parciales en curso que lo modifican).
   var liqHTML = '';
   if (!esPazYSalvo && (esCapInt || liquidacion !== saldoDespues)) {
-    var liqDet = 'Capital pendiente' + (intMora > 0 ? ' + intereses en mora' : '') +
-      (partialPend > 0 ? ' &minus; abonos parciales en curso' : '') + ', sin los intereses futuros del cronograma.';
+    var liqDet = 'Capital ' + money(_L.capitalPendiente) +
+      (intMora > 0 ? ' + mora ' + money(intMora) + ' (' + _L.moraCount + ' cuota' + (_L.moraCount>1?'s':'') + ' a ' + moraMesTxt + ')' : '') +
+      (partialPend > 0 ? ' &minus; parciales ' + money(partialPend) : '') + ', sin los intereses futuros del cronograma.';
     liqHTML = '<div class="ab-liq"><div><div class="ab-liq-q">&iquest;Quieres liquidar la deuda hoy?</div>' +
       '<div class="ab-liq-s">' + liqDet + '</div></div>' +
       '<div class="ab-liq-v">' + money(liquidacion) + '</div></div>';
@@ -1804,6 +1850,11 @@ function App(){
     ],
     '1.18.2': [
       'Corregido de raiz un saldo fantasma en los prestamos sin intereses (modalidad "Prestamo"): algunos aparecian con saldo pendiente aunque ya estuvieran totalmente pagados. La app ahora guarda correctamente el capital de estos prestamos y sanea automaticamente los que ya existian, sin que tengas que hacer nada.'
+    ],
+    '1.19.0': [
+      'Corregido un error critico que impedia LIQUIDAR un prestamo de Capital + Intereses que tuviera cuotas en mora: el sistema rebotaba el cobro con "El abono supera el saldo actual" aunque el cliente estuviera pagando exactamente lo que debia. Ahora la liquidacion se acepta correctamente y el prestamo se cierra.',
+      'El modal "Liquidar deuda" ahora muestra el desglose completo y transparente: capital pendiente, intereses atrasados (con el numero de cuotas y su valor por mes), el interes adicional opcional del proximo mes, y el total a liquidar. Ese mismo valor aparece identico en el cronograma PDF y en el recibo de abono — todo sale de un unico calculo central, asi que nunca hay dos cifras distintas.',
+      'Reporte de Prestamos Activos (PDF): las cuotas en mora ahora dicen "vencio el [fecha]" en vez de "vence el [fecha]", ya que esa fecha ya paso.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -2024,10 +2075,12 @@ function App(){
     return {saldo:Math.max(0,orig-capPag),cuota:pend.length?pend[0].cuotaTotal:0,cuotas:pend.length,
             intereses:pend.reduce(function(s,p){return s+p.interesPeriodo;},0),plazo:l.plazoMeses};
   }
-  function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo){
+  function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra){
     var fromDeudor=abonoModal&&abonoModal.fromDeudor;
     var pre=_snapshotAbono(loanId);
-    return API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar,recalcMode:recalcMode||null,recalcValor:recalcValor||null})
+    // v1.19.0 — intExtra (interes del proximo mes al liquidar, si el checkbox esta activo) viaja al
+    // backend para registrarse como ingreso real; el backend lo ignora (0) fuera de la liquidacion.
+    return API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar,recalcMode:recalcMode||null,recalcValor:recalcValor||null,intExtra:intExtra||0})
       .then(function(r){
         if(!r)return;
         if(r.error){showToast(r.error,'error');return;}
@@ -2066,17 +2119,17 @@ function App(){
     });
     return Promise.all(promises);
   }
-  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo){
+  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra){
     var needsPreflight=(recalcMode==='modificarPlazo'||recalcMode==='fijarCuota');
     var enRiesgo=needsPreflight?_cuotasEnRiesgo(pays,loanId):[];
     // v1.17.1: se devuelve la promesa para que AbonoModal libere su guarda anti doble-submit
-    if(enRiesgo.length===0){return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);}
+    if(enRiesgo.length===0){return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra);}
     var loanObj=loans.find(function(l){return l.id===loanId;});
     setPreflightDlg({
       cuotas:enRiesgo,loan:loanObj,
       // v1.18.1: se devuelve la promesa para que PreflightMoraModal libere su guarda.
-      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);});},
-      onContinue:function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo);},
+      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra);});},
+      onContinue:function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra);},
       onCancel:function(){setPreflightDlg(null);}
     });
   },[reload,abonoModal,pays,loans]);
@@ -2377,7 +2430,7 @@ function App(){
       // modal en el mismo click, y el backend rechazaba el 2o intento porque el saldo ya
       // era 0. Ninguna de las dos es una garantia — la primera se cae con cualquier refactor
       // que mantenga el modal montado, y la segunda no aplica a una liquidacion parcial.
-      var _p=registrarAbono(loanId,monto,nowStr(),obs,0,true);setDebtorModal(null);return _p;},onReload:reload}),
+      var _p=registrarAbono(loanId,monto,nowStr(),obs,0,true,null,null,undefined,intExtra);setDebtorModal(null);return _p;},onReload:reload}),
     restructureModal&&h(RestructureModal,{loan:restructureModal.loan||restructureModal,pays:pays,onSave:reestructurarPrestamo,onClose:function(){if(restructureModal.fromDeudor){setDebtorModal(restructureModal.fromDeudor);} setRestructureModal(null);}}),
     preflightDlg&&h(PreflightMoraModal,{cuotas:preflightDlg.cuotas,loan:preflightDlg.loan,onMarkMora:preflightDlg.onMarkMora,onContinue:preflightDlg.onContinue,onCancel:preflightDlg.onCancel}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
@@ -3185,11 +3238,11 @@ function DebtorModal(props){
   if(confirmLiq) {
     var cLoan=confirmLiq.loan;
     var cEsUSD=cLoan.moneda==='USD';
-    // v1.10.0: Pago Unico no tiene tasa periodica — excluir igual que Prestamo
-    var aplicaInteres=cLoan.modalidad!=='Prestamo'&&cLoan.modalidad!=='Pago Unico'&&(+cLoan.tasaMensual||0)>0;
-    var intProxMes=aplicaInteres?Math.round(confirmLiq.saldo*(+cLoan.tasaMensual||0)/100):0;
-    var intExtra=incluyeProxMes&&aplicaInteres?intProxMes:0;
-    var totalPagar=Math.max(0,confirmLiq.saldo+confirmLiq.intMora-(confirmLiq.partialPend||0)+intExtra);
+    // v1.19.0 — TODO el desglose viene del helper centralizado computeLiquidacion (misma fuente
+    // de verdad que la tarjeta, el cronograma PDF y el recibo de abono -> no pueden divergir).
+    var L=computeLiquidacion(cLoan,pays,{incluyeProxMes:incluyeProxMes});
+    var aplicaInteres=L.aplicaInteres;
+    var mesTxt=fmt(L.moraValorMes)+'/mes'+(L.moraUniforme?'':' prom.');
     function rowLine(label,sublabel,monto,color,opaque){
       return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'10px 0',borderTop:'1px solid var(--bg3)',opacity:opaque?.45:1,transition:'opacity .2s'}},
         h('div',{style:{flex:1,paddingRight:8}},
@@ -3204,22 +3257,22 @@ function DebtorModal(props){
         h(Ico,{name:'dollar',size:16,color:'var(--red)',sw:2.4}),'Liquidar deuda'),
       h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},cLoan.nombre+' • '+cLoan.modalidad+(aplicaInteres?' • '+cLoan.tasaMensual+'% mensual':'')),
       h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',border:'1px solid var(--border)',marginBottom:12}},
-        rowLine('Capital pendiente','Saldo de la deuda',confirmLiq.saldo,'var(--text)'),
-        confirmLiq.intMora>0&&rowLine('Intereses en mora','Cuotas vencidas',confirmLiq.intMora,'var(--yellow)'),
-        (confirmLiq.partialPend||0)>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(confirmLiq.partialPend),'var(--blue)'),
-        aplicaInteres&&rowLine('Intereses del proximo mes',cLoan.tasaMensual+'% sobre el saldo de capital',intProxMes,incluyeProxMes?'var(--yellow)':'var(--text3)',!incluyeProxMes)),
+        rowLine('Capital pendiente','Saldo de la deuda',L.capitalPendiente,'var(--text)'),
+        L.moraCount>0&&rowLine('Intereses atrasados',L.moraCount+' cuota'+(L.moraCount>1?'s':'')+' a '+mesTxt,L.intMora,'var(--yellow)'),
+        L.partialPend>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(L.partialPend),'var(--blue)'),
+        L.incluyeProxMes&&rowLine('Interes adicional','1 mes a '+fmt(L.intProxMes)+'/mes ('+cLoan.tasaMensual+'% sobre el capital)',L.intProxMes,'var(--yellow)')),
       aplicaInteres&&h('label',{style:{display:'flex',alignItems:'center',gap:10,background:'var(--bg3)',border:'1px solid '+(incluyeProxMes?'var(--yellow)':'var(--border)'),borderRadius:10,padding:'10px 12px',marginBottom:12,cursor:'pointer',transition:'border-color .2s'}},
         h('input',{type:'checkbox',checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},style:{width:16,height:16,accentColor:'var(--yellow)',cursor:'pointer',margin:0}}),
-        h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Incluir intereses del proximo mes?')),
+        h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Incluir 1 mes de interes adicional? (+'+fmt(L.intProxMes)+')')),
       h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}},
         h('div',null,
-          h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,letterSpacing:.5}},'TOTAL A PAGAR'),
+          h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,letterSpacing:.5}},'TOTAL A LIQUIDAR'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'Lo que debe entregarte el deudor')),
         h('div',{style:{textAlign:'right'}},
-          h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--red)'}},fmt(totalPagar)),
-          cEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:500}},copToUsd(totalPagar,cLoan.trmAcordada)))),
+          h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--red)'}},fmt(L.total)),
+          cEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:500}},copToUsd(L.total,cLoan.trmAcordada)))),
       h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcaran como pagadas y el prestamo se cerrara.'),
-      h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){var _p=onLiquidar(confirmLiq.loan.id,confirmLiq.saldo,intExtra);setConfirmLiq(null);setIncluyeProxMes(false);return _p;});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidacion'),
+      h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){var _p=onLiquidar(confirmLiq.loan.id,L.capitalPendiente,L.intExtra);setConfirmLiq(null);setIncluyeProxMes(false);return _p;});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidacion'),
       h('button',{onClick:function(){setConfirmLiq(null);setIncluyeProxMes(false);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
   }
   if(cambioFecha){
@@ -3622,8 +3675,7 @@ function DebtorModal(props){
               var canReestructurar=isActive&&l.modalidad==='Capital + Intereses'&&onReestructurar;
               // v1.10.0: Pago Unico no tiene dia de pago periodico — excluir igual que Prestamo
               var canCambiarFecha=isActive&&l.modalidad!=='Prestamo'&&l.modalidad!=='Pago Unico';
-              var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0);
-              var liqVal=Math.max(0,saldo+imora-partialPend);
+              var imora=enMora.reduce(function(s,p){return s+p.interesPeriodo;},0); // usado por Cambiar fecha
               var labelStyle={fontSize:9,fontWeight:700,color:'var(--text3)',letterSpacing:1.2,textTransform:'uppercase',marginBottom:6};
               var btnBase={width:'100%',padding:'10px 12px',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontFamily:'inherit',transition:'all .15s'};
               var btnPrimary=Object.assign({},btnBase,{background:'var(--green2)',border:'1px solid var(--green2)',color:'#fff'});
@@ -3637,7 +3689,7 @@ function DebtorModal(props){
                   h('div',{style:labelStyle},'Cobrar'),
                   h('button',{onClick:function(e){e.stopPropagation();onAbono(l);},style:btnPrimary},
                     h(Ico,{name:'dollar',size:15,color:'#fff',sw:2.2}),'Registrar abono'),
-                  h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l,saldo:saldo,intMora:imora,liquidacion:liqVal,partialPend:partialPend});},style:Object.assign({},btnSecondary,{marginTop:6})},
+                  h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l});},style:Object.assign({},btnSecondary,{marginTop:6})},
                     h(Ico,{name:'check',size:15,color:'var(--green)',sw:2.4}),'Liquidar deuda')));
               }
               // Tier 2: AJUSTAR CRONOGRAMA
@@ -4503,7 +4555,7 @@ function AbonoModal(props){
   var todoCapPagado=loanPays.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
   var saldoActual=Math.max(0,originalCOP-todoCapPagado);
   var intMora=loanPays.filter(function(p){return p.estadoPago==='En Mora'&&p.id.indexOf('-ab-')===-1;}).reduce(function(s,p){return s+p.interesPeriodo;},0);
-  var liquidacion=saldoActual+intMora;
+  var liquidacion=computeLiquidacion(loan,loanPays,{}).total; // v1.19.0: helper centralizado
   var saldoTras=saldoActual-(+monto||0);
   var saldoUSDTras=esUSD?saldoTras/loan.trmAcordada:0;
   // Cuotas regulares ya consumidas (pagadas + en mora, excluyendo abonos)
