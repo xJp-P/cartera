@@ -143,6 +143,29 @@ module.exports = function createApp(dbPath) {
   // Se limpia al saldar el prestamo o al hacer un abono con otra opcion (Mantener/Modificar plazo).
   try { db.exec("ALTER TABLE loans ADD COLUMN cuotaFijaPactada REAL DEFAULT 0"); } catch(_){}
 
+  // ── Migración v1.18.2 (Bug #30): normalizar abonoCapital en modalidad 'Prestamo' ──
+  // Historicamente buildSchedule escribia abonoCapital=0 en la cuota unica de un Prestamo (0% interes),
+  // asi que la formula canonica de saldo (origCOP - Σ abonoCapital de Pagadas) no contaba el capital
+  // cobrado -> prestamos ya saldados arrastraban un saldo fantasma. Ahora se persiste el capital real.
+  // Esta migracion sanea los datos historicos.
+  // IDEMPOTENTE Y AUTO-LIMITADA: solo toca filas cuyo abonoCapital difiere de (cuotaTotal - interesPeriodo),
+  // es decir las escritas con 0. Excluye abonos (-ab-) y las cuotas En Mora ya normalizadas por el
+  // housekeeping (cuyo abonoCapital ya == cuotaTotal, con interesPeriodo=0). Correr N veces = correr 1.
+  // No requiere flag: el propio WHERE garantiza que una 2a pasada no encuentre nada.
+  try {
+    db.exec(`
+      UPDATE payments
+         SET abonoCapital = cuotaTotal - interesPeriodo
+       WHERE id IN (
+         SELECT p.id FROM payments p
+           JOIN loans l ON l.id = p.prestamoId
+          WHERE l.modalidad = 'Prestamo'
+            AND p.id NOT LIKE '%-ab-%'
+            AND p.abonoCapital <> p.cuotaTotal - p.interesPeriodo
+       )
+    `);
+  } catch(_){}
+
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_log (
@@ -252,16 +275,20 @@ module.exports = function createApp(dbPath) {
     const cuotaFija = pmt(r, totalCuotas, montoCOP);
     const rows = [];
 
-    // Prestamo sin intereses: 1 cuota por el capital total (interesPeriodo=0, abonoCapital=0).
-    // Los abonos a capital se identifican por la regla canonica id.indexOf('-ab-') !== -1
-    // (NO por interesPeriodo===0 && abonoCapital>0, que confundiria esta cuota unica).
+    // Prestamo sin intereses: 1 cuota por el capital total (interesPeriodo=0, abonoCapital=capital).
+    // v1.18.2 (Bug #30): abonoCapital persiste el CAPITAL (= cuotaTotal, ya que interes=0), NO 0.
+    // El 0 historico era defensa contra la heuristica fragil 'interesPeriodo===0 && abonoCapital>0'
+    // que confundia esta cuota con un abono; esa heuristica se erradico en v1.14.0 (Bug #28) y hoy
+    // los abonos se identifican SOLO por id.indexOf('-ab-'). Con el 0, la formula canonica de saldo
+    // (origCOP - Σ abonoCapital de Pagadas) no contaba el capital cobrado -> saldo fantasma en
+    // prestamos ya saldados. Ahora es byte-identico a lo que 'Pago Unico' persiste con ganancia 0.
     if (modalidad === 'Prestamo') {
       var fechaCuota = loan.fechaDevolucion || getPayDate(baseCron, 1, diaPago, freq);
       rows.push({
         id: `${id}-1`, prestamoId: id, nombreCliente: nombre, cuotaN: 1,
         fechaPago: fechaCuota,
         saldoInicial: Math.round(montoCOP), interesPeriodo: 0,
-        abonoCapital: 0, cuotaTotal: Math.round(montoCOP),
+        abonoCapital: Math.round(montoCOP), cuotaTotal: Math.round(montoCOP),
         saldoFinal: 0, estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: '',
         montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0, extraConsolidado: 0
       });
@@ -402,12 +429,16 @@ module.exports = function createApp(dbPath) {
 
   // ── Corregir cuotas en mora de Prestamo: cuotaTotal debe = saldo actual (montoCOP) ──
   // Solo para Prestamo (sin intereses, 1 cuota de capital). NO para Intereses (cuota = interés mensual fijo).
+  // v1.18.2 (Bug #30): tambien abonoCapital = montoCOP, simetrico con el housekeeping de /recalculate
+  // (L~518) y de /abono (L~955). Antes solo tocaba cuotaTotal/saldoFinal -> dejaba abonoCapital=0 en
+  // la cuota En Mora, y al pagarse (PUT /payments no recalcula abonoCapital) el capital no contaba.
   const fixPrestamos = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Prestamo'").all();
   fixPrestamos.forEach(fl => {
-    db.prepare(`UPDATE payments SET cuotaTotal = ?, saldoFinal = 0
+    const nsFix = Math.round(fl.montoCOP);
+    db.prepare(`UPDATE payments SET saldoInicial = ?, abonoCapital = ?, cuotaTotal = ?, saldoFinal = 0
       WHERE prestamoId = ? AND estadoPago = 'En Mora'
       AND id NOT LIKE '%-ab-%'`)
-      .run(fl.montoCOP, fl.id);
+      .run(nsFix, nsFix, nsFix, fl.id);
   });
 
   // ── API: Recalcular cronogramas ───────────────────────────────────────────

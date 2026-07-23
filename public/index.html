@@ -1801,6 +1801,9 @@ function App(){
       'Corregido un error que podia mostrar "Pago registrado" aunque el pago NO se hubiera guardado: si fallaba la conexion, la pantalla se cerraba igual y anunciaba exito. Ahora, si algo falla, la ventana se queda abierta con el error a la vista.',
       'El boton de reestructurar se desbloqueaba a los 5 segundos aunque la operacion siguiera en curso. Ahora espera a que termine de verdad.',
       'Si una operacion falla o se cancela, el boton vuelve a habilitarse solo: ya no se queda bloqueado obligandote a cerrar y reabrir la ventana.'
+    ],
+    '1.18.2': [
+      'Corregido de raiz un saldo fantasma en los prestamos sin intereses (modalidad "Prestamo"): algunos aparecian con saldo pendiente aunque ya estuvieran totalmente pagados. La app ahora guarda correctamente el capital de estos prestamos y sanea automaticamente los que ya existian, sin que tengas que hacer nada.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
