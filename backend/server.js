@@ -880,7 +880,7 @@ module.exports = function createApp(dbPath) {
   // escritura. Si algo falla, se retorna 400 sin tocar la BD. Las escrituras se aplican
   // dentro de una transaccion SQLite (all-or-nothing).
   app.post('/api/loans/:id/abono', (req, res) => {
-    const { monto, fecha, observaciones, montoUSD, liquidar, recalcMode, recalcValor, intExtra } = req.body;
+    const { monto, fecha, observaciones, montoUSD, liquidar, recalcMode, recalcValor, intExtra, montoCOPRecibido } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
 
@@ -910,6 +910,12 @@ module.exports = function createApp(dbPath) {
     const capitalPendienteLiq = Math.max(0, originalCOP - capPagadasSolo);
     const montoNum = +monto || 0;
     const intExtraNum = Math.max(0, Math.round(+intExtra || 0)); // interes del proximo mes al liquidar (checkbox)
+    // v2.0.0 — CAJA REAL del abono. En prestamos USD el capital se descuenta a la TRM PACTADA
+    // (monto = montoUSD x trmAcordada), pero los COP que entran por caja dependen de la TRM del
+    // dia. Sin este dato el desfase cambiario de un abono era invisible: montoCOPRecibido se
+    // derivaba del propio capital y siempre cuadraba a la fuerza. Opcional: si no llega (prestamos
+    // COP y la ruta de liquidacion) se conserva el comportamiento anterior.
+    const copRecibidoNum = Math.max(0, Math.round(+montoCOPRecibido || 0));
     if (montoNum <= 0) return res.status(400).json({ error: 'El monto del abono debe ser mayor a 0' });
     // Validacion bifurcada: al LIQUIDAR se acepta cubrir todo el capital pendiente (incluida la mora),
     // por eso se valida contra capitalPendienteLiq y NO contra saldoReal (que rebotaba el cobro de un
@@ -919,7 +925,17 @@ module.exports = function createApp(dbPath) {
         return res.status(400).json({ error: 'El monto supera el capital pendiente ($' + capitalPendienteLiq.toLocaleString('es-CO') + ')' });
       }
     } else if (Math.round(saldoReal - montoNum) < 0) {
-      return res.status(400).json({ error: 'El abono supera el saldo actual' });
+      // v2.0.0 — defense-in-depth. El AbonoModal ya topa el monto en saldoAbonable (espejo exacto
+      // de saldoReal), asi que esta rama solo se alcanza saltandose el frontend. El mensaje explica
+      // POR QUE el tope es menor que el capital total y a que herramienta acudir, en vez del
+      // criptico "El abono supera el saldo actual".
+      const capMoraMsg = Math.max(0, capitalPendienteLiq - saldoReal);
+      return res.status(400).json({
+        error: 'El abono supera el capital amortizable ($' + Math.round(saldoReal).toLocaleString('es-CO') + ').' +
+          (capMoraMsg > 0
+            ? ' Los $' + Math.round(capMoraMsg).toLocaleString('es-CO') + ' restantes son capital de cuotas En Mora: se cobran liquidando la deuda o pagando esas cuotas desde la seccion Pagos.'
+            : '')
+      });
     }
     // En liquidacion el prestamo se salda por completo -> nuevoSaldo 0 (no hay recalculo de pendientes).
     const nuevoSaldo = liquidar ? 0 : Math.round(saldoReal - montoNum);
@@ -1039,7 +1055,9 @@ module.exports = function createApp(dbPath) {
           estadoPago: 'Pagado',
           fechaRecaudo: fechaAbono,
           observaciones: observaciones || 'Abono a capital',
-          montoCOPRecibido: abonoCapReg + abonoInt,
+          // v2.0.0 — caja real si el frontend la envia (USD: COP efectivamente recibidos, que
+          // difieren del capital a TRM pactada); si no, el valor derivado de siempre.
+          montoCOPRecibido: copRecibidoNum > 0 ? copRecibidoNum : (abonoCapReg + abonoInt),
           montoUSDRecibido: montoUSD ? Math.round(montoUSD * 100) / 100 : 0,
           partialPaid: 0,
           extraConsolidado: 0

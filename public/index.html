@@ -1314,6 +1314,9 @@ function App(){
   var s10=useState(''); var fMonth=s10[0]; var setFMonth=s10[1];
   var s11=useState(null); var abonoModal=s11[0]; var setAbonoModal=s11[1];
   var s12=useState(null); var debtorModal=s12[0]; var setDebtorModal=s12[1];
+  // v2.0.0 — modal de liquidacion ELEVADO desde DebtorModal a nivel App: ahora es un modal
+  // hermano de AbonoModal, invocable desde el perfil del deudor Y desde el CTA de AbonoModal.
+  var s13=useState(null); var liquidarModal=s13[0]; var setLiquidarModal=s13[1];
   var s13=useState(false); var menuOpen=s13[0]; var setMenuOpen=s13[1];
   var s14=useState(null); var calcData=s14[0]; var setCalcData=s14[1];
   var s15=useState(null); var toast=s15[0]; var setToast=s15[1];
@@ -1855,6 +1858,13 @@ function App(){
       'Corregido un error critico que impedia LIQUIDAR un prestamo de Capital + Intereses que tuviera cuotas en mora: el sistema rebotaba el cobro con "El abono supera el saldo actual" aunque el cliente estuviera pagando exactamente lo que debia. Ahora la liquidacion se acepta correctamente y el prestamo se cierra.',
       'El modal "Liquidar deuda" ahora muestra el desglose completo y transparente: capital pendiente, intereses atrasados (con el numero de cuotas y su valor por mes), el interes adicional opcional del proximo mes, y el total a liquidar. Ese mismo valor aparece identico en el cronograma PDF y en el recibo de abono — todo sale de un unico calculo central, asi que nunca hay dos cifras distintas.',
       'Reporte de Prestamos Activos (PDF): las cuotas en mora ahora dicen "vencio el [fecha]" en vez de "vence el [fecha]", ya que esa fecha ya paso.'
+    ],
+    '2.0.0': [
+      'Los abonos a capital ya no rebotan cuando el prestamo tiene cuotas en mora. Antes, si intentabas abonar un monto que incluia el capital retenido en esas cuotas, el sistema lo rechazaba con un error confuso aunque el cliente estuviera entregando exactamente lo que debia. Ahora el modal te muestra por separado cuanto es "abonable a capital" y cuanto esta retenido en mora, y topa el abono en la cifra correcta.',
+      'Nuevo boton "Liquidar deuda" dentro del abono: si el dinero que recibiste supera el capital abonable porque alcanza tambien para cuotas en mora, el modal te explica por que y te lleva de un clic a la liquidacion, que si cobra capital + intereses atrasados de una sola vez.',
+      'La liquidacion ahora se puede abrir desde cualquier parte de la app (antes solo existia dentro del perfil del deudor).',
+      'Abonos en dolares con doble entrada: ahora registras por separado los USD del abono (que definen cuanto capital se descuenta, a la TRM pactada) y los COP que realmente recibiste. La app calcula en vivo la TRM implicita y te muestra en verde o rojo la ganancia o perdida por el movimiento del dolar. Antes esa diferencia cambiaria no quedaba registrada en ninguna parte.',
+      'Mensajes de error mas claros al abonar: te dicen cual es el maximo, por que lo es, y a que herramienta acudir para cobrar el resto.'
     ]
   };
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
@@ -2075,12 +2085,15 @@ function App(){
     return {saldo:Math.max(0,orig-capPag),cuota:pend.length?pend[0].cuotaTotal:0,cuotas:pend.length,
             intereses:pend.reduce(function(s,p){return s+p.interesPeriodo;},0),plazo:l.plazoMeses};
   }
-  function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra){
+  function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido){
     var fromDeudor=abonoModal&&abonoModal.fromDeudor;
     var pre=_snapshotAbono(loanId);
     // v1.19.0 — intExtra (interes del proximo mes al liquidar, si el checkbox esta activo) viaja al
     // backend para registrarse como ingreso real; el backend lo ignora (0) fuera de la liquidacion.
-    return API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar,recalcMode:recalcMode||null,recalcValor:recalcValor||null,intExtra:intExtra||0})
+    // v2.0.0 — montoCOPRecibido = CAJA REAL del abono (solo prestamos USD). NO toca el capital
+    // (que va en `monto`, a TRM pactada): el backend lo persiste en la fila del abono para que el
+    // desfase cambiario quede registrado. Si es 0 el backend conserva el valor derivado de antes.
+    return API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar,recalcMode:recalcMode||null,recalcValor:recalcValor||null,intExtra:intExtra||0,montoCOPRecibido:copRecibido||0})
       .then(function(r){
         if(!r)return;
         if(r.error){showToast(r.error,'error');return;}
@@ -2119,17 +2132,17 @@ function App(){
     });
     return Promise.all(promises);
   }
-  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra){
+  var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido){
     var needsPreflight=(recalcMode==='modificarPlazo'||recalcMode==='fijarCuota');
     var enRiesgo=needsPreflight?_cuotasEnRiesgo(pays,loanId):[];
     // v1.17.1: se devuelve la promesa para que AbonoModal libere su guarda anti doble-submit
-    if(enRiesgo.length===0){return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra);}
+    if(enRiesgo.length===0){return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido);}
     var loanObj=loans.find(function(l){return l.id===loanId;});
     setPreflightDlg({
       cuotas:enRiesgo,loan:loanObj,
       // v1.18.1: se devuelve la promesa para que PreflightMoraModal libere su guarda.
-      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra);});},
-      onContinue:function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra);},
+      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido);});},
+      onContinue:function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido);},
       onCancel:function(){setPreflightDlg(null);}
     });
   },[reload,abonoModal,pays,loans]);
@@ -2423,14 +2436,29 @@ function App(){
     debtPayModal&&h(DebtPayModal,{debt:debtPayModal,onSave:payDebt,onClose:function(){setDebtPayModal(null);}}),
     debtHistory&&h(DebtHistoryModal,{debt:debtHistory,onClose:function(){setDebtHistory(null);}}),
     debtDelete&&h(DeleteDebtModal,{debt:debtDelete,onConfirm:function(){var id=debtDelete.id;setDebtDelete(null);deleteDebt(id);},onClose:function(){setDebtDelete(null);}}),
-    abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);}}),
-    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onReestructurar:function(l){var dRef=debtorModal;setDebtorModal(null);setRestructureModal({loan:l,fromDeudor:dRef});},onLiquidar:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');
+    abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);},
+      // v2.0.0 — CTA "Liquidar deuda" del AbonoModal (cuando el abono excede el capital
+      // amortizable por haber capital atrapado en cuotas En Mora). Cierra el abono y abre el
+      // modal de liquidacion CONSERVANDO fromDeudor, para que Cancelar devuelva al perfil.
+      // No se reutiliza onClose a proposito: ese re-abriria DebtorModal encima.
+      onRequestLiquidar:function(l){var fd=abonoModal&&abonoModal.fromDeudor;setAbonoModal(null);setLiquidarModal({loan:l,fromDeudor:fd});}}),
+    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onReestructurar:function(l){var dRef=debtorModal;setDebtorModal(null);setRestructureModal({loan:l,fromDeudor:dRef});},
+      // v2.0.0 — el modal de liquidacion se elevo a App; aqui solo se DISPARA, con el mismo
+      // patron fromDeudor de onAbono/onReestructurar (Cancelar devuelve al perfil).
+      onRequestLiquidar:function(l){var dRef=debtorModal;setDebtorModal(null);setLiquidarModal({loan:l,fromDeudor:dRef});},onReload:reload}),
+    // v2.0.0 — LiquidarModal a nivel App (antes vivia DENTRO de DebtorModal, por eso era
+    // inalcanzable desde AbonoModal). La logica de confirmacion es la MISMA de v1.19.0:
+    // registrarAbono(...,liquidar=true,...) con el mismo obs y el mismo intExtra.
+    liquidarModal&&h(LiquidarModal,{loan:liquidarModal.loan,pays:pays,
+      onClose:function(){if(liquidarModal.fromDeudor){setDebtorModal(liquidarModal.fromDeudor);} setLiquidarModal(null);},
+      onConfirm:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');
       // v1.18.1: se devuelve la promesa para que el modal de liquidacion libere su guarda.
       // Hasta ahora la unica proteccion era accidental: setDebtorModal(null) desmontaba el
       // modal en el mismo click, y el backend rechazaba el 2o intento porque el saldo ya
       // era 0. Ninguna de las dos es una garantia — la primera se cae con cualquier refactor
       // que mantenga el modal montado, y la segunda no aplica a una liquidacion parcial.
-      var _p=registrarAbono(loanId,monto,nowStr(),obs,0,true,null,null,undefined,intExtra);setDebtorModal(null);return _p;},onReload:reload}),
+      // Tras liquidar NO se re-abre el perfil (comportamiento identico a v1.19.0).
+      var _p=registrarAbono(loanId,monto,nowStr(),obs,0,true,null,null,undefined,intExtra);setLiquidarModal(null);setDebtorModal(null);return _p;}}),
     restructureModal&&h(RestructureModal,{loan:restructureModal.loan||restructureModal,pays:pays,onSave:reestructurarPrestamo,onClose:function(){if(restructureModal.fromDeudor){setDebtorModal(restructureModal.fromDeudor);} setRestructureModal(null);}}),
     preflightDlg&&h(PreflightMoraModal,{cuotas:preflightDlg.cuotas,loan:preflightDlg.loan,onMarkMora:preflightDlg.onMarkMora,onContinue:preflightDlg.onContinue,onCancel:preflightDlg.onCancel}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
@@ -3212,14 +3240,14 @@ function DeudoresView(props){
 
 // ── DebtorModal ───────────────────────────────────────────────────────────────
 function DebtorModal(props){
-  var d=props.deudor,pays=props.pays,loans=props.loans,onClose=props.onClose,onNewLoan=props.onNewLoan,onAbono=props.onAbono,onLiquidar=props.onLiquidar,onReload=props.onReload,onReestructurar=props.onReestructurar;
+  var d=props.deudor,pays=props.pays,loans=props.loans,onClose=props.onClose,onNewLoan=props.onNewLoan,onAbono=props.onAbono,onRequestLiquidar=props.onRequestLiquidar,onReload=props.onReload,onReestructurar=props.onReestructurar;
   var ex=useState(null); var expLoan=ex[0]; var setExpLoan=ex[1];
   var cr=useState(null); var cronoLoan=cr[0]; var setCronoLoan=cr[1];
-  var cl=useState(null); var confirmLiq=cl[0]; var setConfirmLiq=cl[1];
-  var ipm=useState(false); var incluyeProxMes=ipm[0]; var setIncluyeProxMes=ipm[1];
+  // v2.0.0 — confirmLiq / incluyeProxMes / liqSending se movieron al componente LiquidarModal
+  // (nivel App) para que el CTA de AbonoModal tambien pueda invocar la liquidacion. Aqui solo
+  // queda el disparador: onRequestLiquidar(l).
   var cf=useState(null); var cambioFecha=cf[0]; var setCambioFecha=cf[1];
   var cfs=useState(false); var cfSending=cfs[0]; var setCfSending=cfs[1];   // v1.18.1: guarda anti doble-submit del cambio de fecha
-  var lqs=useState(false); var liqSending=lqs[0]; var setLiqSending=lqs[1]; // v1.18.1: guarda anti doble-submit de la liquidacion
   var ceu=useState(null); var comprasExp=ceu[0]; var setComprasExp=ceu[1];
   // Pagos de este deudor (por nombre, a traves de sus prestamos)
   var deudorPays=pays.filter(function(p){
@@ -3235,46 +3263,6 @@ function DebtorModal(props){
   // Cuotas en mora de este deudor (con detalle)
   var cuotasMora=deudorPays.filter(function(p){return p.estadoPago==='En Mora';})
     .sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago);});
-  if(confirmLiq) {
-    var cLoan=confirmLiq.loan;
-    var cEsUSD=cLoan.moneda==='USD';
-    // v1.19.0 — TODO el desglose viene del helper centralizado computeLiquidacion (misma fuente
-    // de verdad que la tarjeta, el cronograma PDF y el recibo de abono -> no pueden divergir).
-    var L=computeLiquidacion(cLoan,pays,{incluyeProxMes:incluyeProxMes});
-    var aplicaInteres=L.aplicaInteres;
-    var mesTxt=fmt(L.moraValorMes)+'/mes'+(L.moraUniforme?'':' prom.');
-    function rowLine(label,sublabel,monto,color,opaque){
-      return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'10px 0',borderTop:'1px solid var(--bg3)',opacity:opaque?.45:1,transition:'opacity .2s'}},
-        h('div',{style:{flex:1,paddingRight:8}},
-          h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},label),
-          sublabel&&h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},sublabel)),
-        h('div',{style:{textAlign:'right'}},
-          h('div',{className:'mono',style:{fontSize:13,fontWeight:600,color:color||'var(--text)'}},fmt(monto)),
-          cEsUSD&&monto>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',fontWeight:400}},copToUsd(monto,cLoan.trmAcordada))));
-    }
-    return h(Modal,{onClose:function(){setConfirmLiq(null);setIncluyeProxMes(false);}},
-      h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
-        h(Ico,{name:'dollar',size:16,color:'var(--red)',sw:2.4}),'Liquidar deuda'),
-      h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},cLoan.nombre+' • '+cLoan.modalidad+(aplicaInteres?' • '+cLoan.tasaMensual+'% mensual':'')),
-      h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',border:'1px solid var(--border)',marginBottom:12}},
-        rowLine('Capital pendiente','Saldo de la deuda',L.capitalPendiente,'var(--text)'),
-        L.moraCount>0&&rowLine('Intereses atrasados',L.moraCount+' cuota'+(L.moraCount>1?'s':'')+' a '+mesTxt,L.intMora,'var(--yellow)'),
-        L.partialPend>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(L.partialPend),'var(--blue)'),
-        L.incluyeProxMes&&rowLine('Interes adicional','1 mes a '+fmt(L.intProxMes)+'/mes ('+cLoan.tasaMensual+'% sobre el capital)',L.intProxMes,'var(--yellow)')),
-      aplicaInteres&&h('label',{style:{display:'flex',alignItems:'center',gap:10,background:'var(--bg3)',border:'1px solid '+(incluyeProxMes?'var(--yellow)':'var(--border)'),borderRadius:10,padding:'10px 12px',marginBottom:12,cursor:'pointer',transition:'border-color .2s'}},
-        h('input',{type:'checkbox',checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},style:{width:16,height:16,accentColor:'var(--yellow)',cursor:'pointer',margin:0}}),
-        h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Incluir 1 mes de interes adicional? (+'+fmt(L.intProxMes)+')')),
-      h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}},
-        h('div',null,
-          h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,letterSpacing:.5}},'TOTAL A LIQUIDAR'),
-          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'Lo que debe entregarte el deudor')),
-        h('div',{style:{textAlign:'right'}},
-          h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--red)'}},fmt(L.total)),
-          cEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:500}},copToUsd(L.total,cLoan.trmAcordada)))),
-      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcaran como pagadas y el prestamo se cerrara.'),
-      h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){var _p=onLiquidar(confirmLiq.loan.id,L.capitalPendiente,L.intExtra);setConfirmLiq(null);setIncluyeProxMes(false);return _p;});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidacion'),
-      h('button',{onClick:function(){setConfirmLiq(null);setIncluyeProxMes(false);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
-  }
   if(cambioFecha){
     var cfLoan=cambioFecha.loan;
     var cfEsUSD=cfLoan.moneda==='USD';
@@ -3689,7 +3677,7 @@ function DebtorModal(props){
                   h('div',{style:labelStyle},'Cobrar'),
                   h('button',{onClick:function(e){e.stopPropagation();onAbono(l);},style:btnPrimary},
                     h(Ico,{name:'dollar',size:15,color:'#fff',sw:2.2}),'Registrar abono'),
-                  h('button',{onClick:function(e){e.stopPropagation();setConfirmLiq({loan:l});},style:Object.assign({},btnSecondary,{marginTop:6})},
+                  h('button',{onClick:function(e){e.stopPropagation();onRequestLiquidar(l);},style:Object.assign({},btnSecondary,{marginTop:6})},
                     h(Ico,{name:'check',size:15,color:'var(--green)',sw:2.4}),'Liquidar deuda')));
               }
               // Tier 2: AJUSTAR CRONOGRAMA
@@ -4534,13 +4522,14 @@ function _tasaPeriodo(tasaMensual,frecuencia){if(frecuencia==='Semanal')return t
 function _nper(r,pmtVal,pv){var int1=pv*r;if(pmtVal<=int1)return null;return Math.log(pmtVal/(pmtVal-int1))/Math.log(1+r);}
 
 function AbonoModal(props){
-  var loan=props.loan,allPays=props.pays||[],onSave=props.onSave,onClose=props.onClose;
+  var loan=props.loan,allPays=props.pays||[],onSave=props.onSave,onClose=props.onClose,onRequestLiquidar=props.onRequestLiquidar;
   var esUSD=loan.moneda==='USD';
   var esCapInt=loan.modalidad==='Capital + Intereses';
   var s1=useState(''); var monto=s1[0]; var setMonto=s1[1];
   var s2=useState(nowStr()); var fecha=s2[0]; var setFecha=s2[1];
   var s3=useState(''); var obs=s3[0]; var setObs=s3[1];
   var s4=useState(''); var montoUSD=s4[0]; var setMontoUSD=s4[1];
+  var s4b=useState(''); var copRecibido=s4b[0]; var setCopRecibido=s4b[1];       // v2.0.0: COP realmente recibidos (solo USD)
   var sRec=useState(true); var genRecibo=sRec[0]; var setGenRecibo=sRec[1];      // v1.17.1: PDF opcional
   var sSend=useState(false); var sending=sSend[0]; var setSending=sSend[1];      // v1.17.1: guarda anti doble-submit
   // Opciones de recalculo (solo para Capital + Intereses)
@@ -4555,9 +4544,50 @@ function AbonoModal(props){
   var todoCapPagado=loanPays.filter(function(p){return p.estadoPago==='Pagado';}).reduce(function(s,p){return s+p.abonoCapital;},0);
   var saldoActual=Math.max(0,originalCOP-todoCapPagado);
   var intMora=loanPays.filter(function(p){return p.estadoPago==='En Mora'&&p.id.indexOf('-ab-')===-1;}).reduce(function(s,p){return s+p.interesPeriodo;},0);
+  // ── v2.0.0 — TECHO REAL DEL ABONO: espejo EXACTO de saldoReal del backend (server.js:894-902) ──
+  // saldoActual (identico al capitalPendienteLiq del backend) es TODO el capital que se debe:
+  // el del cronograma futuro MAS el atrapado en cuotas En Mora. Pero un abono normal (no
+  // liquidacion) solo puede tocar el capital FUTURO: el backend valida contra saldoReal, que SI
+  // resta el capital En Mora (deuda independiente amortizada aparte, Bug #21). Sin este espejo el
+  // modal aceptaba montos en la ventana (saldoReal, capitalPendienteLiq] que el backend rechazaba
+  // con 400 "El abono supera el saldo actual" — el usuario pagaba justo lo que la pantalla decia.
+  // Prestamo / Pago Unico (esSingleCuota) NO restan su mora: alli abonoCapital ES el saldo vivo.
+  var esSingleCuota=loan.modalidad==='Prestamo'||loan.modalidad==='Pago Unico';
+  var moraRows=loanPays.filter(function(p){return p.estadoPago==='En Mora';}); // sin filtro '-ab-': espejo de server.js:900
+  var moraCap=moraRows.reduce(function(s,p){return s+p.abonoCapital;},0);
+  var moraCount=moraRows.filter(function(p){return p.id.indexOf('-ab-')===-1;}).length;
+  var saldoAbonable=esSingleCuota?Math.max(0,originalCOP-todoCapPagado):Math.max(0,originalCOP-todoCapPagado-moraCap);
+  var capEnMora=Math.max(0,saldoActual-saldoAbonable); // capital que solo se cobra liquidando o pagando esas cuotas
   var liquidacion=computeLiquidacion(loan,loanPays,{}).total; // v1.19.0: helper centralizado
-  var saldoTras=saldoActual-(+monto||0);
+  // ── v2.0.0 — DOBLE ENTRADA OBLIGATORIA EN PRESTAMOS USD ──────────────────────────────
+  // La deuda esta denominada en DOLARES y el ledger la lleva en COP a la TRM PACTADA
+  // (originalCOP = montoOrigen x trmAcordada). Por eso el CAPITAL que se descuenta lo manda el
+  // campo USD:  montoCapCOP = montoUSD x trmAcordada.
+  // Los COP realmente recibidos NO tocan el capital (dependen de la TRM del dia): son la caja
+  // real y sirven para medir el efecto TRM. Usar los COP de caja como capital descontaria de
+  // MENOS cuando la TRM baja y dejaria capital fantasma vivo pese a que el cliente ya entrego
+  // todos los dolares pactados (misma doctrina del pago bimonetario, Bug #23).
+  var copRecNum=Math.round(+copRecibido||0);
+  // Techo expresado en dolares. Como el usuario teclea USD con 2 decimales, redondear
+  // (usd x trm) casi nunca da EXACTAMENTE saldoAbonable: sobrarian unos pesos de capital
+  // fantasma que impedirian dejar el capital futuro en cero. Si el USD tecleado ES el techo
+  // (tolerancia de medio centavo, misma doctrina que completaUSD en /partial), el capital se
+  // ancla al techo exacto. Por encima de esa tolerancia NO se ancla, para que excedeAbonable
+  // siga disparando el CTA de liquidacion en vez de capar el monto en silencio.
+  var techoUSD=(esUSD&&+loan.trmAcordada>0)?Math.round(saldoAbonable/(+loan.trmAcordada)*100)/100:0;
+  var cubreTechoUSD=esUSD&&(+montoUSD>0)&&Math.abs((+montoUSD)-techoUSD)<0.005;
+  var montoCapCOP=esUSD
+    ?(cubreTechoUSD?saldoAbonable:Math.round((+montoUSD||0)*(+loan.trmAcordada||0)))
+    :Math.round(+monto||0);
+  var trmImplicita=(esUSD&&(+montoUSD||0)>0&&copRecNum>0)?Math.round(copRecNum/(+montoUSD)):0;
+  var efectoTRM=(esUSD&&copRecNum>0&&montoCapCOP>0)?copRecNum-montoCapCOP:0;
+  // El backend recalcula desde (saldoReal - monto) -> el preview debe partir de saldoAbonable.
+  var saldoTras=saldoAbonable-montoCapCOP;
   var saldoUSDTras=esUSD?saldoTras/loan.trmAcordada:0;
+  // Monto que supera el techo real pero sigue dentro del capital total: no es un error del
+  // usuario, es dinero que corresponde a la LIQUIDACION -> se ofrece el CTA en vez de un 400.
+  var excedeAbonable=montoCapCOP>saldoAbonable;
+  var ctaLiquidar=excedeAbonable&&capEnMora>0;
   // Cuotas regulares ya consumidas (pagadas + en mora, excluyendo abonos)
   var regulares=loanPays.filter(function(p){return p.id.indexOf('-ab-')===-1;});
   var regularConsumed=regulares.filter(function(p){return p.estadoPago==='Pagado'||p.estadoPago==='En Mora';}).length;
@@ -4565,7 +4595,7 @@ function AbonoModal(props){
   var cuotasRestantesActuales=Math.max(1,plazoOriginal-regularConsumed);
   // Preview en vivo de la opcion seleccionada
   var preview=function(){
-    if(!esCapInt||!monto||+monto<=0||saldoTras<=0) return null;
+    if(!esCapInt||montoCapCOP<=0||saldoTras<=0) return null;
     var r=_tasaPeriodo((+loan.tasaMensual||0)/100,loan.frecuencia||'Mensual');
     var interesPrimerPeriodo=Math.round(saldoTras*r);
     if(recalcMode==='mantener'){
@@ -4598,8 +4628,22 @@ function AbonoModal(props){
     // dos POST /abono con ~60 ms de diferencia y el backend, que es atomico pero NO idempotente,
     // aplicaba el abono DOS VECES (bug detectado en produccion el 18-jul-2026).
     if(sending) return;
-    if(!monto||+monto<=0){_showError('Ingresa un monto valido');return;}
-    if(+monto>saldoActual){_showError('El abono maximo es '+fmt(saldoActual)+' (solo capital). Los intereses en mora se cobran por separado.');return;}
+    // v2.0.0 — USD exige DOS entradas: los dolares definen el capital, los COP la caja real.
+    if(esUSD){
+      if(!(+montoUSD>0)){_showError('Ingresa el monto del abono en USD (define el capital que se descuenta)');return;}
+      if(!(copRecNum>0)){_showError('Ingresa los COP realmente recibidos (miden el efecto de la TRM)');return;}
+    } else if(!monto||+monto<=0){_showError('Ingresa un monto valido');return;}
+    // v2.0.0 — el techo es saldoAbonable (capital del cronograma futuro), NO saldoActual.
+    // Defense-in-depth: el boton ya se deshabilita, pero si algo fallara el submit tampoco
+    // debe enviar un monto que el backend rechazaria con 400.
+    if(montoCapCOP>saldoAbonable){
+      var _techo=esUSD?copToUsd(saldoAbonable,loan.trmAcordada):fmt(saldoAbonable);
+      var _mora=esUSD?copToUsd(capEnMora,loan.trmAcordada):fmt(capEnMora);
+      _showError(capEnMora>0
+        ?'El abono maximo a capital es '+_techo+'. Los '+_mora+' restantes estan en '+moraCount+' cuota'+(moraCount!==1?'s':'')+' en mora: se cobran liquidando la deuda o pagando esas cuotas.'
+        :'El abono maximo es '+_techo+' (solo capital). Los intereses en mora se cobran por separado.');
+      return;
+    }
     if(esCapInt&&preview&&preview.error){_showError(preview.error);return;}
     var mode=esCapInt?recalcMode:null;
     var valor=null;
@@ -4608,14 +4652,23 @@ function AbonoModal(props){
     // v1.18.1: se delega en el helper compartido _submitGuard (misma semantica que tenia
     // aqui inline). Se libera al resolver, al rechazar o si onSave no devuelve promesa
     // (rama de pre-flight); en exito el modal ya se desmonto.
-    _submitGuard(sending,setSending,function(){return onSave(loan.id,+monto,fecha,obs,+montoUSD||0,false,mode,valor,genRecibo);});
+    // v2.0.0 — se envia el CAPITAL en COP a TRM pactada (montoCapCOP) y, aparte, la caja real
+    // (copRecNum) para que el backend registre el desfase cambiario sin tocar el capital.
+    _submitGuard(sending,setSending,function(){return onSave(loan.id,montoCapCOP,fecha,obs,+montoUSD||0,false,mode,valor,genRecibo,undefined,esUSD?copRecNum:0);});
   }
-  // Auto-calcular COP cuando llenan USD
-  function onUSDChange(e){
-    var val=e.target.value;
-    setMontoUSD(val);
-    if(val&&+val>0&&loan.trmAcordada){setMonto(String(Math.round(+val*loan.trmAcordada)));}
-  }
+  // v2.0.0 — el boton se apaga cuando el monto excede el capital amortizable (alli la accion
+  // correcta es el CTA de liquidacion, no forzar un POST que el backend va a rechazar) y, en
+  // prestamos USD, mientras falte cualquiera de las dos entradas obligatorias.
+  var faltanCamposUSD=esUSD&&(!(+montoUSD>0)||!(copRecNum>0));
+  var btnOff=(esCapInt&&preview&&!!preview.error)||excedeAbonable||faltanCamposUSD||sending;
+  // El rojo se reserva para "el prestamo quedaria SALDADO". Cubrir todo el capital amortizable
+  // dejando mora viva es un estado NORMAL, no una alarma -> ambar.
+  var lineaSaldoTras=montoCapCOP>0&&!excedeAbonable&&h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:saldoTras<=0?(capEnMora>0?'var(--yellow)':'var(--red)'):'var(--text2)'}},
+    saldoTras<=0
+      ?(capEnMora>0
+          ?'Cubre todo el capital amortizable ('+(moraCount===1?'queda 1 cuota':'quedan '+moraCount+' cuotas')+' en mora)'
+          :'El prestamo quedaria SALDADO')
+      :'Saldo tras abono: '+fmt(saldoTras)+(esUSD?' ('+copToUsd(saldoTras,loan.trmAcordada)+')':''));
   return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},'Abono a Capital'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'13px 14px',marginBottom:16,border:'1px solid var(--border)'}},
@@ -4623,6 +4676,11 @@ function AbonoModal(props){
       h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},loan.modalidad),
       h('div',{className:'mono',style:{fontWeight:700,fontSize:18,color:'var(--green)',marginTop:6}},'Saldo actual: '+fmt(saldoActual),
         esUSD&&h('span',{style:{fontSize:13,fontWeight:600,color:'var(--blue)',marginLeft:8}},copToUsd(saldoActual,loan.trmAcordada))),
+      // v2.0.0 — cuando hay capital atrapado en mora, "Saldo actual" (capital total) y el techo
+      // del abono NO coinciden: se desglosa para que el numero del tope no parezca arbitrario.
+      capEnMora>0&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4}},
+        'Abonable a capital: ',h('span',{className:'mono',style:{fontWeight:700,color:'var(--text2)'}},fmt(saldoAbonable)),
+        '  •  en mora: ',h('span',{className:'mono',style:{fontWeight:700,color:'var(--yellow)'}},fmt(capEnMora))),
       intMora>0&&h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',marginTop:4}},'Valor de liquidacion: '+fmt(liquidacion)+(esUSD?' '+copToUsd(liquidacion,loan.trmAcordada):''),
         h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:'var(--font)',marginTop:1}},'(incluye intereses en mora)'))),
     function(){
@@ -4675,17 +4733,51 @@ function AbonoModal(props){
             p.t2);
         }));
     }(),
-    esUSD&&h('div',{style:{borderRadius:12,padding:'10px 12px',marginBottom:4,border:'1px solid var(--border)',background:'var(--bg3)'}},
-      h(Fld,{label:'USD del abono (opcional)'},
-        h('input',{type:'text',inputMode:'decimal',value:montoUSD,onChange:function(e){onUSDChange({target:{value:parseDecimalInput(e.target.value)}});},placeholder:'Ej: 6.50',className:'inp'}),
-        montoUSD>0&&h('div',{style:{fontSize:10,marginTop:3,color:'var(--text3)'}},'Auto-calcula COP con TRM $'+fmtN(loan.trmAcordada)))),
-    h('div',{style:{background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
-      h(Fld,{label:'Monto del abono (COP) *'},
-        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
-      monto>0&&h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:saldoTras<=0?'var(--red)':'var(--text2)'}},
-        saldoTras<=0?'El prestamo quedaria SALDADO':'Saldo tras abono: '+fmt(saldoTras)+(esUSD?' ('+copToUsd(saldoTras,loan.trmAcordada)+')':'')))),
+    // ── v2.0.0 — ENTRADA DEL ABONO ───────────────────────────────────────────────────
+    // USD: DOBLE ENTRADA OBLIGATORIA. Los dolares definen el capital (a TRM pactada) y los COP
+    // la caja real del dia; su diferencia es el efecto TRM, que antes era imposible de registrar
+    // porque el unico campo (COP) hacia las dos veces. COP: campo unico de siempre.
+    esUSD
+      ?h('div',{style:{background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+        h(Fld,{label:'Monto del abono (USD) *'},
+          h('input',{type:'text',inputMode:'decimal',value:montoUSD,onChange:function(e){setMontoUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 250.00',className:'inp',style:{border:'1px solid var(--green)'}}),
+          h('div',{style:{fontSize:11,marginTop:3,color:'var(--text3)'}},
+            (+montoUSD>0)
+              ?'Descuenta '+fmt(montoCapCOP)+' de capital (TRM pactada $'+fmtN(loan.trmAcordada)+')'
+              :'Define el capital que se descuenta. Maximo '+copToUsd(saldoAbonable,loan.trmAcordada))),
+        h(Fld,{label:'COP realmente recibidos *'},
+          h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRecibido),onChange:function(e){setCopRecibido(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
+          h('div',{style:{fontSize:11,marginTop:3,color:'var(--text3)'}},'Caja real del dia. No altera el capital: mide el efecto de la TRM.')),
+        trmImplicita>0&&h('div',{style:{fontSize:11,marginTop:7,paddingTop:7,borderTop:'1px solid var(--bg3)',color:efectoTRM<0?'var(--red)':'var(--green)'}},
+          'TRM implicita $'+fmtN(trmImplicita)+' vs pactada $'+fmtN(loan.trmAcordada)+'  →  efecto TRM '+(efectoTRM>=0?'+':'-')+fmt(Math.abs(efectoTRM))),
+        lineaSaldoTras)
+      :h('div',{style:{background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+        h(Fld,{label:'Monto del abono (COP) *'},
+          h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
+          lineaSaldoTras)),
+    // ── v2.0.0 — CTA "Liquidar deuda" ────────────────────────────────────────────
+    // El monto excede el capital amortizable porque hay capital atrapado en cuotas En Mora.
+    // Antes este monto viajaba al backend y rebotaba con un 400 criptico ("El abono supera el
+    // saldo actual") aunque el usuario pagara justo lo que la pantalla decia que debia. Ahora
+    // se explica el porque y se ofrece la herramienta correcta: la liquidacion, que SI cobra
+    // capital futuro + capital en mora + intereses de mora en un solo movimiento.
+    ctaLiquidar&&h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:12,padding:'12px 13px',marginTop:8,marginBottom:4}},
+      h('div',{style:{fontSize:10,fontWeight:700,color:'var(--yellow)',letterSpacing:.5,marginBottom:7,display:'flex',alignItems:'center',gap:5}},
+        h(Ico,{name:'alert',size:11,color:'var(--yellow)',sw:2.4}),'ESE MONTO SUPERA EL ABONO A CAPITAL'),
+      h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.55}},
+        'Un abono solo reduce el capital del cronograma futuro, que hoy es ',
+        h('span',{style:{fontWeight:700,color:'var(--text)'}},fmt(saldoAbonable)),
+        '. Los ',
+        h('span',{style:{fontWeight:700,color:'var(--text)'}},fmt(capEnMora)),
+        ' restantes estan en ',
+        h('span',{style:{fontWeight:700,color:'var(--text)'}},moraCount+' cuota'+(moraCount!==1?'s':'')+' en mora'),
+        ', que se cobran aparte junto con sus intereses.'),
+      h('div',{style:{fontSize:11,color:'var(--text3)',lineHeight:1.5,marginTop:7}},
+        'Para cobrar todo de una vez usa la liquidacion (capital + intereses en mora):'),
+      onRequestLiquidar&&h('button',{onClick:function(){onRequestLiquidar(loan);},style:{width:'100%',marginTop:9,padding:'10px 12px',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontFamily:'inherit',background:'transparent',border:'1px solid var(--yellow)',color:'var(--yellow)',transition:'all .15s'}},
+        h(Ico,{name:'dollar',size:14,color:'var(--yellow)',sw:2.4}),'Liquidar deuda ('+(esUSD?copToUsd(liquidacion,loan.trmAcordada):fmt(liquidacion))+')')),
     // ── OPCIONES DE RECALCULO (solo Capital + Intereses y con monto válido) ──
-    esCapInt&&+monto>0&&saldoTras>0&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px',marginTop:4,marginBottom:4}},
+    esCapInt&&montoCapCOP>0&&saldoTras>0&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px',marginTop:4,marginBottom:4}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:8,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'calc',size:11,color:'var(--blue)'}),' OPCIONES DE RECALCULO'),
       // Radio: Mantener plazo
@@ -4745,7 +4837,59 @@ function AbonoModal(props){
     h('label',{style:{display:'flex',alignItems:'center',gap:8,marginTop:14,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
       h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--blue)',cursor:'pointer'}}),
       'Generar recibo de abono'),
-    h('button',{onClick:submit,disabled:(esCapInt&&preview&&!!preview.error)||sending,className:'btn-primary',style:{marginTop:8,background:((esCapInt&&preview&&preview.error)||sending)?'var(--bg3)':'var(--blue-bg)',border:'1px solid '+(((esCapInt&&preview&&preview.error)||sending)?'var(--border)':'var(--blue)'),color:((esCapInt&&preview&&preview.error)||sending)?'var(--text3)':'var(--blue)',cursor:((esCapInt&&preview&&preview.error)||sending)?'not-allowed':'pointer'}},sending?'Registrando...':'Registrar abono'));
+    h('button',{onClick:submit,disabled:btnOff,className:'btn-primary',style:{marginTop:8,background:btnOff?'var(--bg3)':'var(--blue-bg)',border:'1px solid '+(btnOff?'var(--border)':'var(--blue)'),color:btnOff?'var(--text3)':'var(--blue)',cursor:btnOff?'not-allowed':'pointer'}},sending?'Registrando...':'Registrar abono'));
+}
+
+// ── LiquidarModal (v2.0.0) ────────────────────────────────────────────────────
+// ELEVADO desde DebtorModal a nivel App. Antes su estado (confirmLiq) vivia dentro
+// de DebtorModal, asi que era inalcanzable desde AbonoModal (componente hermano; y
+// cuando AbonoModal esta abierto, DebtorModal esta desmontado). Al subirlo:
+//   - AbonoModal puede ofrecer el CTA "Liquidar deuda" cuando el abono excede el
+//     capital amortizable por tener capital atrapado en cuotas En Mora (v2.0.0).
+//   - Queda disponible para invocarse desde cualquier vista (p.ej. Cartera) a futuro.
+// La UI y el calculo son IDENTICOS a v1.19.0: todo el desglose sale del helper
+// centralizado computeLiquidacion (unica fuente de verdad del valor de liquidacion).
+function LiquidarModal(props){
+  var cLoan=props.loan,pays=props.pays||[],onConfirm=props.onConfirm,onClose=props.onClose;
+  var ipm=useState(false); var incluyeProxMes=ipm[0]; var setIncluyeProxMes=ipm[1];
+  var lqs=useState(false); var liqSending=lqs[0]; var setLiqSending=lqs[1]; // v1.18.1: guarda anti doble-submit
+  var cEsUSD=cLoan.moneda==='USD';
+  // v1.19.0 — TODO el desglose viene del helper centralizado computeLiquidacion (misma fuente
+  // de verdad que la tarjeta, el cronograma PDF y el recibo de abono -> no pueden divergir).
+  var L=computeLiquidacion(cLoan,pays,{incluyeProxMes:incluyeProxMes});
+  var aplicaInteres=L.aplicaInteres;
+  var mesTxt=fmt(L.moraValorMes)+'/mes'+(L.moraUniforme?'':' prom.');
+  function rowLine(label,sublabel,monto,color,opaque){
+    return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'10px 0',borderTop:'1px solid var(--bg3)',opacity:opaque?.45:1,transition:'opacity .2s'}},
+      h('div',{style:{flex:1,paddingRight:8}},
+        h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},label),
+        sublabel&&h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},sublabel)),
+      h('div',{style:{textAlign:'right'}},
+        h('div',{className:'mono',style:{fontSize:13,fontWeight:600,color:color||'var(--text)'}},fmt(monto)),
+        cEsUSD&&monto>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',fontWeight:400}},copToUsd(monto,cLoan.trmAcordada))));
+  }
+  return h(Modal,{onClose:onClose},
+    h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
+      h(Ico,{name:'dollar',size:16,color:'var(--red)',sw:2.4}),'Liquidar deuda'),
+    h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},cLoan.nombre+' • '+cLoan.modalidad+(aplicaInteres?' • '+cLoan.tasaMensual+'% mensual':'')),
+    h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',border:'1px solid var(--border)',marginBottom:12}},
+      rowLine('Capital pendiente','Saldo de la deuda',L.capitalPendiente,'var(--text)'),
+      L.moraCount>0&&rowLine('Intereses atrasados',L.moraCount+' cuota'+(L.moraCount>1?'s':'')+' a '+mesTxt,L.intMora,'var(--yellow)'),
+      L.partialPend>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(L.partialPend),'var(--blue)'),
+      L.incluyeProxMes&&rowLine('Interes adicional','1 mes a '+fmt(L.intProxMes)+'/mes ('+cLoan.tasaMensual+'% sobre el capital)',L.intProxMes,'var(--yellow)')),
+    aplicaInteres&&h('label',{style:{display:'flex',alignItems:'center',gap:10,background:'var(--bg3)',border:'1px solid '+(incluyeProxMes?'var(--yellow)':'var(--border)'),borderRadius:10,padding:'10px 12px',marginBottom:12,cursor:'pointer',transition:'border-color .2s'}},
+      h('input',{type:'checkbox',checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},style:{width:16,height:16,accentColor:'var(--yellow)',cursor:'pointer',margin:0}}),
+      h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Incluir 1 mes de interes adicional? (+'+fmt(L.intProxMes)+')')),
+    h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      h('div',null,
+        h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,letterSpacing:.5}},'TOTAL A LIQUIDAR'),
+        h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'Lo que debe entregarte el deudor')),
+      h('div',{style:{textAlign:'right'}},
+        h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--red)'}},fmt(L.total)),
+        cEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:500}},copToUsd(L.total,cLoan.trmAcordada)))),
+    h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcaran como pagadas y el prestamo se cerrara.'),
+    h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){return onConfirm(cLoan.id,L.capitalPendiente,L.intExtra);});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidacion'),
+    h('button',{onClick:onClose,className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
 }
 
 // ── RestructureModal (v1.9.0) ─────────────────────────────────────────────────
