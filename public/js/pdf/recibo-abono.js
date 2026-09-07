@@ -90,9 +90,47 @@ export function generateReciboAbono(loan, allPays, opts) {
   };
   // En prestamos USD el dolar es la moneda protagonista (misma doctrina que el Recibo de Cobro)
   function money(cop){ return esUSD ? copToUsd(cop, trm) : fmt(cop); }
+  // Unidades ENTERAS de la moneda visible (centavos en USD, pesos en COP). Hacen falta para
+  // sumar sin que el redondeo de cada rubro por separado deje un centavo suelto entre el
+  // desglose y el titular: `round(a/t) + round(b/t)` no es `round((a+b)/t)`. Mismo par que
+  // usa el Recibo de Cobro, y misma doctrina que las columnas del cronograma (Bug #31).
+  function uni(cop){ return esUSD ? Math.round((cop || 0) / trm * 100) : Math.round(cop || 0); }
+  function fmtUni(u){ return esUSD ? fmtUSD((u || 0) / 100) : fmt(u || 0); }
   var montoTxt = esUSD ? ((+opts.montoUSD > 0) ? fmtUSD(+opts.montoUSD) : copToUsd(monto, trm)) : fmt(monto);
+
+  // ── LIQUIDACION: el titular declara la CAJA, no el capital ─────────────────────────────────────
+  // Al liquidar, el deudor entrega capital + los intereses de las cuotas En Mora (+ el mes en
+  // curso si se pacto). El backend reparte esa plata en DOS sitios --la fila `-ab-` se queda
+  // con el capital NO en mora y cada cuota vencida cobra el suyo al marcarse Pagada, para no
+  // contar el capital dos veces (Bug #35)-- asi que `opts.monto`, que es el `capitalPendiente`
+  // que envia `LiquidarModal`, no es ni la caja ni ninguna fila persistida. Hasta v2.9.8 el
+  // hero imprimia justo eso: en una liquidacion real declaro 1.358.096 sobre 1.473.036
+  // efectivamente recibidos, callando los 114.940 de mora que el cliente SI pago.
+  //
+  // `pre.liq` es el MISMO objeto de `computeLiquidacion` que vio el modal antes de cobrar, asi
+  // que este papel y el Estado de Liquidacion no pueden declarar cifras distintas: es la misma
+  // doctrina de "valor de liquidacion, un solo helper" que ya rige en las otras 5 superficies.
+  var liq = pre.liq || null;
+  // El mes en curso se persiste como `interesPeriodo` del abono, o sea que es caja. NO viene
+  // dentro de `liq.total` (se computo con opts vacias) sino del parametro, que es lo que el
+  // usuario efectivamente decidio cobrar.
+  var intExtraPag = Math.round(+opts.intExtra || 0);
+  var totalRecibido = (opts.liquidar && liq) ? Math.max(0, Math.round(liq.total || 0) + intExtraPag) : monto;
+  // El gate es literal: el desglose se dibuja si y solo si hay algo que explicar. Una
+  // liquidacion de capital pelado tiene total == monto, y dibujarlo imprimiria la misma cifra
+  // dos veces -- el defecto que el rediseno de 2.9.7 vino a eliminar. Un Paz y Salvo que sale
+  // de un abono normal (sin `liquidar`) tampoco entra: no es una liquidacion y su titular
+  // sigue siendo, con razon, "Abono recibido a capital".
+  var esLiquidacion = esPazYSalvo && !!opts.liquidar && !!liq && totalRecibido !== monto;
+  var heroRotulo = esLiquidacion ? 'Total recibido' : 'Abono recibido a capital';
+  var heroTxt    = esLiquidacion ? fmtUni(uni(totalRecibido)) : montoTxt;
+  var heroChip   = esLiquidacion ? 'Recibido el ' : 'Aplicado el ';
   function row(l, v){ return '<div class="ab-row"><span class="ab-lab">' + l + '</span><span class="ab-val">' + v + '</span></div>'; }
   function rowTot(l, v){ return '<div class="ab-row ab-row-tot"><span class="ab-lab">' + l + '</span><span class="ab-val">' + v + '</span></div>'; }
+  function dsgRow(t, s, v, col){
+    return '<div class="ab-d"><div><div class="t">' + t + '</div><div class="s">' + s + '</div></div>' +
+      '<div class="v"' + (col ? ' style="color:' + col + '"' : '') + '>' + v + '</div></div>';
+  }
   function card(label, oldTxt, newTxt, delta){
     return '<div class="ab-card"><div class="ab-cl">' + label + '</div>' +
       (oldTxt ? '<div class="ab-old">' + oldTxt + '</div>' : '') +
@@ -165,9 +203,55 @@ export function generateReciboAbono(loan, allPays, opts) {
       '</td><td class="r">' + money(tCap) + '</td><td class="r">' + money(tCuo) + '</td><td class="r">&mdash;</td></tr></table>';
   }
 
+  // ── Bloque "Como se aplico tu pago" (solo liquidacion con intereses) ──────────────────
+  // Espejo del desglose del Estado de Liquidacion: mismo orden, mismos rotulos y las mismas
+  // sub-lineas, redactadas en pasado. Los dos papeles de la misma operacion --el que se manda
+  // ANTES de cobrar y el que se entrega DESPUES-- se leen uno junto al otro y cuadran renglon
+  // a renglon. Ese emparejamiento es la razon de ser del bloque; no es decoracion.
+  var dsgHTML = '';
+  if (esLiquidacion) {
+    // El CAPITAL absorbe el residuo del redondeo, no los intereses: es lo que hace el resto
+    // del proyecto (capital = obligacion - interes) y deja las filas sumando EXACTAMENTE el
+    // titular. Que un desglose no cuadre con su propio total es justo el defecto que este
+    // documento viene a corregir, asi que no puede reintroducirse por un centavo.
+    var uMora  = uni(liq.intMora);
+    var uExtra = uni(intExtraPag);
+    var uPart  = uni(liq.partialPend);
+    var uCap   = uni(totalRecibido) - uMora - uExtra + uPart;
+    var uOrig  = uni(originalCOP);
+    var filasD = dsgRow('Aplicado a capital',
+      fmtUni(uOrig) + ' prestados &minus; ' + fmtUni(Math.max(0, uOrig - uCap)) + ' ya amortizados',
+      fmtUni(uCap), '');
+    if (uMora > 0) {
+      filasD += dsgRow('Intereses atrasados cubiertos',
+        liq.moraCount + ' cuota' + (liq.moraCount > 1 ? 's' : '') +
+        ' vencida' + (liq.moraCount > 1 ? 's' : '') + ' &nbsp;&middot;&nbsp; ' +
+        fmtUni(uni(liq.moraValorMes)) + ' por mes' + (liq.moraUniforme ? '' : ' (promedio)'),
+        fmtUni(uMora), C.amber);
+    }
+    if (uPart > 0) {
+      filasD += dsgRow('Abonos parciales ya recibidos', 'Se descontaron del total',
+        '&minus; ' + fmtUni(uPart), C.blue);
+    }
+    if (uExtra > 0) {
+      filasD += dsgRow('Interes del mes en curso',
+        (+loan.tasaMensual || 0) + '% sobre el capital pendiente &nbsp;&middot;&nbsp; pactado con el deudor',
+        fmtUni(uExtra), C.amber);
+    }
+    dsgHTML = '<div class="ab-st">Como se aplico tu pago</div><div class="ab-dsg">' + filasD + '</div>';
+  }
+
   // ── Bloque RESUMEN (Paz y Salvo + variante corta) ──
   var resumenHTML = '';
-  if (esPazYSalvo || cortoSinCrono) {
+  if (esLiquidacion) {
+    // El desglose de arriba ya conto la historia del dinero. "Saldo anterior" y "Abono
+    // aplicado" imprimirian por tercera vez la misma cifra de capital y, peor, volverian a
+    // insinuar que el capital fue todo lo que entro -- que es exactamente el defecto.
+    resumenHTML = '<div class="ab-st">Resumen</div><div class="ab-panel">' +
+      row('Modalidad', esc(loan.modalidad)) +
+      row('Monto original del prestamo', esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) +
+      rowTot('Nuevo saldo pendiente', money(saldoDespues)) + '</div>';
+  } else if (esPazYSalvo || cortoSinCrono) {
     resumenHTML = '<div class="ab-st">Resumen</div><div class="ab-panel">' +
       row('Modalidad', esc(loan.modalidad)) +
       row('Monto original del prestamo', esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) +
@@ -177,7 +261,8 @@ export function generateReciboAbono(loan, allPays, opts) {
   }
 
   var pazHTML = esPazYSalvo
-    ? '<div class="ab-paz"><div class="ab-paz-t">PAZ Y SALVO</div><div class="ab-paz-s">Con este abono queda <b>cancelada la totalidad</b> del prestamo. No queda saldo pendiente.</div></div>'
+    ? '<div class="ab-paz"><div class="ab-paz-t">PAZ Y SALVO</div><div class="ab-paz-s">Con este ' +
+      (esLiquidacion ? 'pago' : 'abono') + ' queda <b>cancelada la totalidad</b> del prestamo. No queda saldo pendiente.</div></div>'
     : '';
   var notaHTML = (!esPazYSalvo && esCapInt)
     ? '<div class="ab-nota"><b>Recalculo aplicado:</b> ' + (
@@ -232,7 +317,14 @@ export function generateReciboAbono(loan, allPays, opts) {
     '.ab-t tr.tot td{background:' + C.greenBg + ';font-weight:700;color:' + C.green + ';border-color:' + C.greenBd + '}',
     '.ab-paz{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.greenBg + ';border:2px solid ' + C.greenBd + ';border-radius:14px}',
     '.ab-paz-t{font-size:20px;font-weight:700;letter-spacing:2px;color:' + C.green + '}',
-    '.ab-paz-s{font-size:12px;color:' + C.text + ';margin-top:5px}',
+    '.ab-paz-s{font-size:12px;color:' + C.text + ';margin-top:5px}' + (esLiquidacion
+      ? '.ab-dsg{background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:10px;padding:2px 14px;margin-top:4px}' +
+        '.ab-d{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid ' + C.rowbd + '}' +
+        '.ab-d:last-child{border-bottom:none}' +
+        '.ab-d .t{font-size:12.5px;font-weight:700}' +
+        '.ab-d .s{font-size:10px;color:' + C.muted + ';margin-top:2px}' +
+        '.ab-d .v{font-size:15px;font-weight:700;white-space:nowrap}'
+      : ''),
     '.ab-liq{margin-top:10px;padding:11px 14px;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + ';border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:12px}',
     '.ab-liq-q{font-size:12.5px;font-weight:700;color:' + C.blue + '}',
     '.ab-liq-s{font-size:10px;color:' + C.muted + ';margin-top:2px;line-height:1.35}',
@@ -247,13 +339,15 @@ export function generateReciboAbono(loan, allPays, opts) {
     '<svg width="34" height="34" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
     '<div><div class="ab-wm">Cartera</div><div class="ab-sub">Gestion de cartera de credito</div></div></div>',
     '<div class="ab-meta"><div class="ab-type">' + titulo + '</div><div class="ab-num">' + abCode + '</div><div class="ab-date">Emision: ' + fechaEmision + '</div></div></div>',
-    '<div class="ab-st">Abono realizado por</div>',
+    '<div class="ab-st">' + (esLiquidacion ? 'Liquidacion pagada por' : 'Abono realizado por') + '</div>',
     '<div class="ab-name">' + esc(loan.nombre) + '</div>',
     (deudorMeta ? '<div class="ab-cc">' + deudorMeta + '</div>' : ''),
-    '<div class="ab-total"><div class="ab-tl">Abono recibido a capital</div>',
-    '<div class="ab-ta">' + montoTxt + '</div>',
-    '<div><span class="ab-chip">Aplicado el ' + fmtD(opts.fecha || nowStr()) + '</span></div></div>',
-    pazHTML,
+    '<div class="ab-total"><div class="ab-tl">' + heroRotulo + '</div>',
+    '<div class="ab-ta">' + heroTxt + '</div>',
+    '<div><span class="ab-chip">' + heroChip + fmtD(opts.fecha || nowStr()) + '</span></div></div>',
+    // Concatenado, NO un elemento propio del array: un elemento vacio deja igual su separador
+    // y ese byte movia los golden de documentos que no habian cambiado (leccion de v2.9.8).
+    pazHTML + dsgHTML,
     resumenHTML,
     impactoHTML,
     liqHTML,

@@ -1486,6 +1486,31 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
     srvJ.close();
   }
 
+  // -- K. El Paz y Salvo de una liquidacion recibe el desglose ---------------------------
+  // `pdf-render` cubre el DOCUMENTO, pero el `opts` se lo arma el propio arnes: no ve el cable
+  // que lo alimenta en la app. `_snapshotAbono` y `_doAbono` viven DENTRO de `App` y no son
+  // importables, que es justo el punto ciego por el que paso el Bug #63 — una tarjeta
+  // desaparecio del PDF en silencio porque el dato llegaba `undefined`, sin excepcion y sin
+  // nada roto a la vista. Verificado: desenhebrar `liq` deja `pdf-render` en VERDE.
+  //
+  // Es un aserto ESTRUCTURAL y no pretende ser otra cosa: no prueba que la cifra sea correcta
+  // —de eso se encargan los tres casos de `pdf-render`— sino que la cifra VIAJA.
+  {
+    const appSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+    const i = appSrc.indexOf('function _snapshotAbono(');
+    const j = appSrc.indexOf('function _doAbono(', i);
+    const snap = (i >= 0 && j > i) ? appSrc.slice(i, j) : '';
+    R.check('K se localiza _snapshotAbono en el fuente de app.js', snap.length > 0,
+      'i=' + i + ' j=' + j + ' (si se renombro la funcion, actualizar este aserto)');
+    R.check('K el snapshot pide el desglose de la liquidacion al helper centralizado',
+      /liq\s*:\s*computeLiquidacion\(/.test(snap),
+      'sin `liq:computeLiquidacion(...)` el recibo solo recibe el capital y titula con el');
+    const llamada = (appSrc.match(/generateReciboAbono\(fl,\s*fp,\s*\{[^}]*\}/) || [''])[0];
+    R.check('K el recibo recibe snapshot, flag de liquidacion e interes del mes',
+      /pre\s*:\s*pre/.test(llamada) && /liquidar\s*:/.test(llamada) && /intExtra\s*:/.test(llamada),
+      llamada || 'no se encontro la llamada a generateReciboAbono en _doAbono');
+  }
+
   srv.close();
   process.exit(R.finalizar());
 })().catch(e => {

@@ -30,7 +30,7 @@ import { h, useState, useEffect, useMemo, useCallback, createRoot } from './core
 import { API, setErrorHandler } from './core/api.js';
 import { fmt, fmtD } from './core/format.js';
 import { properCase, nowStr, addDays, payMatchesQuery } from './core/ui.js';
-import { cobrosDe, imputarCobros, saldoConCaja, pendCuota } from './core/dominio.js';
+import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion } from './core/dominio.js';
 import { Ico } from './componentes/iconos.js';
 import { generateCronogramaPDF } from './pdf/cronograma.js';
 import { generateReciboCorte } from './pdf/recibo-corte.js';
@@ -458,9 +458,14 @@ function App(){
     // (lleva ademas los intereses de esas cuotas). Es el `totalAntes` de `proyeccionCobro`.
     var porPagarPre=lp.filter(function(p){return !esAbono(p)&&(p.estadoPago==='Pendiente'||p.estadoPago==='En Mora');})
                       .reduce(function(s,p){return s+pendCuota(p);},0);
+    // `liq` es el MISMO objeto que `LiquidarModal` acaba de mostrar en pantalla: se pide al
+    // helper centralizado sobre el estado PREVIO, que es el que el modal tenia a la vista.
+    // Sin esto el Paz y Salvo solo recibia `monto` (= capital pendiente) y titulaba con el,
+    // callando los intereses de mora que el deudor SI pago (ver la ficha del Recibo de Abono).
+    // Se computa siempre, no solo al liquidar: es barato y el generador decide si lo usa.
     return {saldo:Math.max(0,orig-capPag),saldoCaja:saldoConCaja(l,lp),cuota:pend.length?pend[0].cuotaTotal:0,cuotas:pend.length,
             intereses:pend.reduce(function(s,p){return s+p.interesPeriodo;},0),plazo:l.plazoMeses,
-            totalPorPagar:porPagarPre};
+            totalPorPagar:porPagarPre,liq:computeLiquidacion(l,lp,{})};
   }
   function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido){
     var fromDeudor=abonoModal&&abonoModal.fromDeudor;
@@ -485,7 +490,9 @@ function App(){
             var fl=((fresh&&fresh[0])||loans).find(function(x){return x.id===loanId;});
             var fp=(fresh&&fresh[1])||pays;
             // genRecibo!==false: la liquidacion (que no pasa el flag) mantiene el Paz y Salvo por defecto
-            if(fl&&genRecibo!==false) generateReciboAbono(fl,fp,{monto:monto,montoUSD:montoUSD,fecha:fecha,observaciones:obs,pre:pre,recalcMode:recalcMode,liquidar:!!liquidar});
+            // `intExtra` (el mes en curso del checkbox) se persiste como `interesPeriodo` del
+            // abono, asi que es caja real: sin el, el hero de la liquidacion se quedaria corto.
+            if(fl&&genRecibo!==false) generateReciboAbono(fl,fp,{monto:monto,montoUSD:montoUSD,fecha:fecha,observaciones:obs,pre:pre,recalcMode:recalcMode,liquidar:!!liquidar,intExtra:intExtra||0});
           }catch(e){}
         });
       });

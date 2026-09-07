@@ -1,0 +1,60 @@
+{
+  "version": 2,
+  "caso": "abono-liquidacion-sin-intereses",
+  "generador": "generateReciboAbono",
+  "tema": "light",
+  "entradaHash": "df9e8e87e0e08a41a0cd51170d01e497c1d23150",
+  "estructura": {
+    "docTitle": "Paz y Salvo",
+    "h1": [],
+    "cabeceras": [],
+    "etiquetas": [
+      "Paz y Salvo",
+      "Abono realizado por",
+      "Abono recibido a capital",
+      "PAZ Y SALVO",
+      "Resumen",
+      "Modalidad",
+      "Monto original del prestamo",
+      "Saldo anterior",
+      "Abono aplicado",
+      "Nuevo saldo pendiente"
+    ]
+  },
+  "valores": {
+    "bytes": 6339,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 5,
+    "hashMontos": "65d295272f216fb91000a8c3d67dddf9ccc62d48",
+    "hashFname": "f23766d697ef28e15cdacfec4fdf4f3b4ec0457a",
+    "hashTexto": "c3f155e0f72126861f6e85fe9aeb522176f4188f",
+    "clases": [
+      "ab-brand",
+      "ab-cc",
+      "ab-chip",
+      "ab-date",
+      "ab-foot",
+      "ab-head",
+      "ab-lab",
+      "ab-meta",
+      "ab-name",
+      "ab-num",
+      "ab-panel",
+      "ab-paz",
+      "ab-paz-s",
+      "ab-paz-t",
+      "ab-row",
+      "ab-row ab-row-tot",
+      "ab-st",
+      "ab-sub",
+      "ab-ta",
+      "ab-tl",
+      "ab-total",
+      "ab-type",
+      "ab-val",
+      "ab-wm"
+    ]
+  }
+}

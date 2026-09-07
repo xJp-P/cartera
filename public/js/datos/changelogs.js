@@ -663,5 +663,9 @@ export const CHANGELOGS = {
   '2.9.8': [
     'La cuota que ya tiene dinero adentro ahora lo dice en su propia fila, tanto en la app como en la propuesta: "esta cuota quedaria con X abonado, a pagar Y". Antes el encabezado anunciaba una cifra y la fila de esa misma fecha mostraba otra, sin nada que las uniera.',
     'Y como la tabla ya explica la resta, el titular dejo de repetirla en los dos documentos: queda solo el monto y la fecha. En el recibo lo explican sus columnas "Ya abonado" y "A pagar"; en la propuesta, la sub-linea de la fila.'
+  ],
+  '2.9.9': [
+    'El Paz y Salvo de una liquidacion ya declara el TOTAL RECIBIDO. Antes encabezaba solo con el capital, asi que un cierre que incluia intereses atrasados imprimia menos dinero del que realmente habia entrado a caja.',
+    'Y ahora explica el reparto: cuanto fue a capital, cuanto a los intereses atrasados y, si se cobro, cuanto al interes del mes en curso. Las cifras salen de la misma fuente que el Estado de Liquidacion, asi que los dos papeles de un mismo cierre cuadran renglon a renglon.'
   ]
 };

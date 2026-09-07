@@ -203,6 +203,24 @@ function snapshotPrevio(loan, arrPays, monto) {
   };
 }
 
+// Arma el `opts` de una LIQUIDACION: el Paz y Salvo que sale tras confirmar "Liquidar deuda".
+// Lo que lo separa de un abono normal son `liquidar:true` y `pre.liq` — el MISMO objeto de
+// `computeLiquidacion` que `LiquidarModal` tenia en pantalla al cobrar. Sin el, el generador
+// solo recibe `monto` (= capital pendiente) y titula con eso, callando los intereses de mora
+// que el deudor SI pago. El `intExtra` va aparte porque es una decision del momento del cobro
+// (el checkbox del mes en curso), no un dato del estado previo.
+function optsLiquidacion(loan, arrPays, intExtra) {
+  const liq = S.computeLiquidacion(loan, arrPays, {});
+  return {
+    monto: liq.capitalPendiente, fecha: '2026-07-31', liquidar: true, intExtra: intExtra || 0,
+    pre: Object.assign(snapshotPrevio(loan, arrPays, liq.capitalPendiente), { liq }),
+  };
+}
+
+// El prestamo tal como lo recibe el generador DESPUES del POST: la ruta `liquidar` deja
+// `estado='Finalizado'`, y es eso lo que dispara la variante Paz y Salvo.
+const finalizado = loan => Object.assign({}, loan, { estado: 'Finalizado' });
+
 // Arma el argumento `cobro` del Recibo de Cobro usando el planificador REAL. Se cobra toda
 // la mora mas una parte del capital amortizable, que es el caso que obliga al documento a
 // explicar los dos tipos de movimiento. En USD la caja se aparta a proposito de la
@@ -672,6 +690,58 @@ const CASOS = [
       monto: 400000, fecha: '2026-07-30', recalcMode: 'fijarCuota',
       pre: snapshotPrevio(L(LOAN_PARCIAL), paysParcial, 400000) }),
     contiene: ['Nueva cuota fija', 'ya abonado', 'TOTAL A PAGAR'] },
+
+  // -- El Paz y Salvo de una LIQUIDACION declara la CAJA, no el capital --------------------
+  // El defecto salio de produccion: un cierre por $1.473.036 se imprimio como "ABONO RECIBIDO
+  // A CAPITAL $1.358.096", callando los $114.940 de mora que el cliente si pago. El capital
+  // que envia `LiquidarModal` no es la caja NI ninguna fila persistida — el backend lo parte
+  // entre la fila `-ab-` y las cuotas vencidas para no contarlo dos veces (Bug #35)—, asi que
+  // titular con el era describir un movimiento que no existe.
+  { nombre: 'abono-liquidacion-con-mora', gen: 'generateReciboAbono', tema: 'light', celdas: null,
+    entrada: () => ({ loanId: '1773656070840', liquidar: true, intExtra: 40000, tema: 'light' }),
+    ejecutar: () => S.generateReciboAbono(finalizado(L('1773656070840')), pays,
+      optsLiquidacion(L('1773656070840'), pays, 40000)),
+    // Capital 400.000 + mora 40.000 + mes en curso 40.000 = 480.000 de caja. La cifra va
+    // literal: es el aserto que se pone rojo si el hero vuelve a declarar solo el capital.
+    contiene: ['Total recibido', '480.000', 'Liquidacion pagada por', 'Como se aplico tu pago',
+               'ab-dsg', 'Aplicado a capital', 'Intereses atrasados cubiertos',
+               'Interes del mes en curso', 'PAZ Y SALVO'],
+    // Lo que el titular dejo de decir. 'Saldo anterior' y 'Abono aplicado' son las dos filas
+    // del Resumen viejo, que imprimian por tercera vez la misma cifra de capital y volvian a
+    // insinuar que el capital fue todo lo que entro.
+    noContiene: ['Abono recibido a capital', 'Saldo anterior', 'Abono aplicado'] },
+
+  // El mismo documento en USD y en oscuro, parado SOBRE el borde de redondeo. En dolares cada
+  // rubro se redondea por su cuenta y `round(a/t)+round(b/t)` no es `round((a+b)/t)`: sin
+  // reconciliar, el desglose imprime 1.326,89 + 105,24 + 105,23 = 1.537,36 bajo un titular de
+  // 1.537,37. Un centavo, pero es un desglose que no cuadra con su propio total — exactamente
+  // el defecto que este documento viene a corregir. El capital absorbe el residuo (1.326,90),
+  // igual que en las columnas del cronograma.
+  //
+  // El `intExtra` va cuatro pesos por debajo del que mandaria el checkbox (387.374 = 7,931%
+  // del capital): con el valor exacto las cifras cuadran por casualidad y el caso no probaria
+  // nada. Es el mismo recurso de `cobro-hero-un-solo-pago`, que arma en memoria un estado que
+  // el fixture no tiene.
+  { nombre: 'abono-liquidacion-usd-oscuro', gen: 'generateReciboAbono', tema: 'dark', celdas: null,
+    entrada: () => ({ loanId: '1782151590658w66y', liquidar: true, intExtra: 387370, tema: 'dark' }),
+    ejecutar: () => S.generateReciboAbono(finalizado(L('1782151590658w66y')), pays,
+      optsLiquidacion(L('1782151590658w66y'), pays, 387370)),
+    contiene: ['Total recibido', 'USD $1,537.37', 'USD $1,326.90', 'USD $105.24', 'USD $105.23',
+               'Como se aplico tu pago', 'Intereses atrasados cubiertos',
+               'Interes del mes en curso', '#0d1117'],
+    // 1.326,89 es lo que imprimiria el capital sin reconciliar: es el aserto que se pone rojo
+    // si alguien vuelve a formatear cada rubro por separado.
+    noContiene: ['Abono recibido a capital', 'USD $1,326.89'] },
+
+  // ANTI-TRIVIAL de los dos anteriores: sin intereses el total ES el capital, asi que el
+  // desglose NO se dibuja y el titular vuelve a ser el de un abono. Es lo que impide
+  // "arreglar" los de arriba imprimiendo el bloque siempre: quitar el gate pone rojo este.
+  { nombre: 'abono-liquidacion-sin-intereses', gen: 'generateReciboAbono', tema: 'light', celdas: null,
+    entrada: () => ({ loanId: '1782872189716p6cz', liquidar: true, intExtra: 0, tema: 'light' }),
+    ejecutar: () => S.generateReciboAbono(finalizado(L('1782872189716p6cz')), pays,
+      optsLiquidacion(L('1782872189716p6cz'), pays, 0)),
+    contiene: ['PAZ Y SALVO', 'Abono recibido a capital', 'Saldo anterior'],
+    noContiene: ['Total recibido', 'Como se aplico tu pago', 'ab-dsg'] },
 
   // ── generateEstadoLiquidacion — desglose + respaldo, con y sin el mes opcional ────────
   // `hasta` se pasa SIEMPRE fijo: el valor de liquidacion depende del dia, asi que sin
