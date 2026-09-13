@@ -6,7 +6,8 @@
 // Sin Context API y sin store: eso seria rediseno, no refactor.
 
 import { Ico } from '../componentes/iconos.js';
-import { imputarCobros, saldoConCaja, esDiario, progresoCapital, estadoDiario } from '../core/dominio.js';
+import { GananciaBimonetaria, notaCOPGanancia } from '../componentes/GananciaBimonetaria.js';
+import { imputarCobros, saldoConCaja, esDiario, progresoCapital, estadoDiario, gananciaDePrestamo } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD, fmtN, fmtUSD } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { freqLabel, nowStr } from '../core/ui.js';
@@ -224,12 +225,15 @@ export function CarteraView(props){
                 var capRecHoy=Math.round(impC.capital);
                 var gananciaTRM=Math.round(impC.ajuste);
                 var totalRecibidoCOP=Math.round(impC.cobrado); // caja real == capital+interes+ajuste
-                var gananciaTotalCOP=intCobrados+gananciaTRM;
+                // GANANCIA (3.0.0): regla del PO, gemela del perfil del deudor. Prestamo conserva el
+                // RESULTADO TOTAL de caja (interes + efecto TRM) con su signo.
+                var gpAct=gananciaDePrestamo(loan, cuotasReg.concat(abonos));
+                var esPrestAct=loan.modalidad==='Prestamo';
+                var gananciaTotalCOP=esPrestAct?(intCobrados+gananciaTRM):gpAct.cop;
                 var efectoTRMUSD=esUSD&&trm>0?(regsPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
                 var capitalUSD=esUSD&&trm>0?capRecHoy/trm:0;
                 var intUSD=esUSD&&trm>0?intCobrados/trm:0;
                 var totalRecibidoUSD=capitalUSD+intUSD+efectoTRMUSD;
-                var gananciaTotalUSD=intUSD+efectoTRMUSD;
                 function rowItem(label,value,valColor,subUSD,opts){
                   opts=opts||{};
                   var bt=opts.topBorder===false?'none':(opts.accentTop?'2px solid var(--green)':'1px solid var(--bg3)');
@@ -246,9 +250,14 @@ export function CarteraView(props){
                     h(Ico,{name:'dollar',size:13,color:'var(--green)',sw:2.4}),'RECAUDADO A LA FECHA'),
                   rowItem('TOTAL RECIBIDO',fmt(totalRecibidoCOP),'var(--text)',esUSD?fmtUSD(totalRecibidoUSD):null,{master:true,topBorder:false}),
                   rowItem('CAPITAL RECUPERADO',fmt(capRecHoy),'var(--text)',esUSD?copToUsd(capRecHoy,trm):null),
-                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?copToUsd(intCobrados,trm):null),
+                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?fmtUSD(gpAct.usd):null),
                   esUSD&&rowItem('EFECTO TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',null,{note:gananciaTRM>0?'TRM subio al cobrar':gananciaTRM<0?'TRM bajo al cobrar':'Sin efecto cambiario'}),
-                  esUSD&&rowItem(loan.modalidad==='Prestamo'?'RESULTADO TOTAL':'GANANCIA TOTAL',(gananciaTotalCOP<0?'-':'+')+fmt(Math.abs(gananciaTotalCOP)),gananciaTotalCOP<0?'var(--red)':gananciaTotalCOP>0?'var(--green)':'var(--text2)',(gananciaTotalUSD<0?'-':'+')+fmtUSD(Math.abs(gananciaTotalUSD)),{accentTop:true,strong:true}));
+                  // Las DOS realidades de la ganancia, lado a lado (regla bimonetaria del PO).
+                  esUSD&&h('div',{style:{paddingTop:10,marginTop:3,borderTop:'2px solid var(--green)'}},
+                    h(GananciaBimonetaria,{titulo:esPrestAct?'RESULTADO TOTAL':'GANANCIA TOTAL',
+                      colorTitulo:gananciaTotalCOP<0?'var(--red)':'var(--text3)', usd:gpAct.usd, cop:gananciaTotalCOP,
+                      notaUSD:esPrestAct?'Sin interes pactado':'Intereses pagados en dolares',
+                      notaCOP:notaCOPGanancia(gpAct, esPrestAct, gananciaTRM)})));
               }(),
               loan.estado!=='Activo'&&function(){
                 var esCanc=loan.estado==='Cancelado';
@@ -272,7 +281,12 @@ export function CarteraView(props){
                 // Flujo de caja COP: TOTAL RECIBIDO = capital recuperado + intereses cobrados +/- efecto TRM
                 // (derivado: la suma SIEMPRE cuadra con las filas mostradas, aun en datos sin montoCOPRecibido).
                 var totalRecibidoCOP=capRecuperado+intCobrados+gananciaTRM;
-                var gananciaTotalCOP=intCobrados+gananciaTRM; // utilidad = total recibido - capital
+                // GANANCIA (3.0.0): regla del PO. Ya NO es "total recibido - capital": esa resta sigue
+                // siendo la identidad de CAJA de las filas de arriba; la ganancia limita la perdida
+                // cambiaria al interes de cada cuota. Prestamo conserva el RESULTADO TOTAL de caja.
+                var gpCer=gananciaDePrestamo(loan, cuotasReg.concat(abonos));
+                var esPrestCer=loan.modalidad==='Prestamo';
+                var gananciaTotalCOP=esPrestCer?(intCobrados+gananciaTRM):gpCer.cop;
                 // Columna USD (Bug #25): capital/intereses contractuales + efecto TRM en USD (residual ~0:
                 // los dolares llegan completos, la perdida es solo de pesos). TOTAL USD = USD realmente recibido.
                 var trm=loan.trmAcordada;
@@ -280,7 +294,6 @@ export function CarteraView(props){
                 var capitalUSD=esUSD&&trm>0?capRecuperado/trm:0;
                 var intUSD=esUSD&&trm>0?intCobrados/trm:0;
                 var totalRecibidoUSD=capitalUSD+intUSD+efectoTRMUSD;
-                var gananciaTotalUSD=intUSD+efectoTRMUSD;
                 var cuotasPagCnt=regsPag.length;
                 var denomCuotas=loan.modalidad==='Intereses'?'∞':(loan.plazoMeses||cuotasReg.length||'-');
                 var acento=esCanc?'var(--red)':'var(--green)';
@@ -302,10 +315,14 @@ export function CarteraView(props){
                   rowItem('TOTAL RECIBIDO',fmt(totalRecibidoCOP),'var(--text)',esUSD?fmtUSD(totalRecibidoUSD):null,{master:true,topBorder:false}),
                   // Desglose que compone el total
                   rowItem(esCanc?'CAPITAL RECUPERADO':'CAPITAL PRESTADO',fmt(capRecuperado),'var(--text)',esUSD?copToUsd(capRecuperado,trm):null),
-                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?copToUsd(intCobrados,trm):null),
+                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?fmtUSD(gpCer.usd):null),
                   esUSD&&rowItem('EFECTO TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',null,{note:gananciaTRM>0?'TRM subio al cobrar':gananciaTRM<0?'TRM bajo al cobrar':'Sin efecto cambiario'}),
                   // Subtotal de utilidad (solo USD; en COP la ganancia = intereses, seria redundante)
-                  esUSD&&rowItem(loan.modalidad==='Prestamo'?'RESULTADO TOTAL':'GANANCIA TOTAL',(gananciaTotalCOP<0?'-':'+')+fmt(Math.abs(gananciaTotalCOP)),gananciaTotalCOP<0?'var(--red)':gananciaTotalCOP>0?'var(--green)':'var(--text2)',(gananciaTotalUSD<0?'-':'+')+fmtUSD(Math.abs(gananciaTotalUSD)),{accentTop:true,strong:true}),
+                  esUSD&&h('div',{style:{paddingTop:10,marginTop:3,marginBottom:4,borderTop:'2px solid '+acento}},
+                    h(GananciaBimonetaria,{titulo:esPrestCer?'RESULTADO TOTAL':'GANANCIA TOTAL',
+                      colorTitulo:gananciaTotalCOP<0?'var(--red)':'var(--text3)', usd:gpCer.usd, cop:gananciaTotalCOP,
+                      notaUSD:esPrestCer?'Sin interes pactado':'Intereses pagados en dolares',
+                      notaCOP:notaCOPGanancia(gpCer, esPrestCer, gananciaTRM)})),
                   rowItem('CUOTAS PAGADAS',cuotasPagCnt+(loan.modalidad==='Intereses'?'':'/'+denomCuotas)),
                   // Misma correccion que en el perfil del deudor: el azul es del dolar
                   // (lo pinta `subUSD` por su cuenta), no del peso.

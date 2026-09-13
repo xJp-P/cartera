@@ -6,8 +6,9 @@
 // Sin Context API y sin store: eso seria rediseno, no refactor.
 
 import { Ico } from '../componentes/iconos.js';
-import { imputarCobros, esDiario, progresoCapital, gananciaDe } from '../core/dominio.js';
-import { copToUsd, fmt, fmtD, fmtN, fmtUSD } from '../core/format.js';
+import { GananciaBimonetaria, notaCOPGanancia } from '../componentes/GananciaBimonetaria.js';
+import { imputarCobros, esDiario, progresoCapital, gananciaDePrestamo } from '../core/dominio.js';
+import { copToUsd, fmt, fmtD, fmtN } from '../core/format.js';
 import { h, useMemo, useState } from '../core/react.js';
 import { esAbono } from '../core/ids.js';
 
@@ -30,7 +31,8 @@ export function PortfolioView(props){
       // `gananciaDe` sobre TODAS las filas del prestamo: el mismo helper del tablero, asi que la
       // suma de estas tarjetas es el valor de la tarjeta "Ganancias" del Inicio. Ver su ficha en
       // dominio.js: interes cobrado menos perdida cambiaria, con piso en cero por fila.
-      var ganancia=lp.reduce(function(s,p){return s+gananciaDe(p,esUSD).total;},0);
+      var gpLoan=gananciaDePrestamo(loan, lp);
+      var ganancia=gpLoan.cop;
       // EFECTO TRM de un Prestamo USD (0% de interes). Por la regla NO es ganancia —sin
       // interes, una perdida cambiaria aporta cero—, pero la tarjeta lo rotula aparte como
       // "Efecto TRM" (Bug #25) y es la unica cifra que lo muestra, con su signo. Se conserva la
@@ -39,18 +41,10 @@ export function PortfolioView(props){
         return s+((p.montoCOPRecibido&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo)):0);
       },0):0;
 
-      // ── GANANCIA EN USD REAL (Bug #23 / v1.12.6): el USD efectivamente recibido como utilidad,
-      // NO copToUsd(gananciaCOP) que reconvierte por TRM y recontaria la perdida/ganancia cambiaria.
-      // Por cuota pagada: USD recibido - capital en USD (abonoCapital a TRM acordada).
-      // Fallback (sin montoUSDRecibido): interes contractual en USD = interesPeriodo / trmAcordada.
-      var gananciaUSD=esUSD?regularesPaid.reduce(function(s,p){
-        var trm=loan.trmAcordada>0?loan.trmAcordada:1;
-        // Capital en USD robusto para las 4 modalidades: cuotaTotal-interesPeriodo
-        // (en Prestamo abonoCapital se guarda en 0, no sirve como base).
-        var capUSD=(p.cuotaTotal-p.interesPeriodo)/trm;
-        if(p.montoUSDRecibido&&p.montoUSDRecibido>0) return s+(p.montoUSDRecibido-capUSD);
-        return s+(p.interesPeriodo/trm);
-      },0):0;
+      // ── GANANCIA EN USD: dolares NATIVOS recibidos (regla bimonetaria del PO, Bug #25a) ──
+      // No es la cifra en pesos convertida: la TRM castiga solo los pesos. Sale del mismo helper, que
+      // ademas ya ve los parciales en vuelo y el interes de una liquidacion.
+      var gananciaUSD=gpLoan.usd;
 
       // ── CAPITAL RECUPERADO: via imputacion (Fase 3) ──────────────────────────
       // Incluye el capital que ya cubrio un pago parcial en curso, ademas del de las cuotas
@@ -96,7 +90,7 @@ export function PortfolioView(props){
       // paidAt (timestamp real v1.11.1) > fechaRecaudo > fechaPago; fallback fechaInicio.
       var fechaFin=paid.reduce(function(mx,p){var d=p.paidAt||p.fechaRecaudo||p.fechaPago||'';return d>mx?d:mx;},'')||loan.fechaInicio;
 
-      return {loan:loan,ganancia:Math.round(ganancia),efectoTRM:Math.round(efectoTRM),capRec:Math.round(capRec),saldo:saldo,
+      return {loan:loan,gp:gpLoan,ganancia:Math.round(ganancia),efectoTRM:Math.round(efectoTRM),capRec:Math.round(capRec),saldo:saldo,
         cuotasPaid:cuotasPaid,cuotasTotal:cuotasTotal,enMora:enMora,capitalAbonos:Math.round(capitalAbonos),
         pctMonto:pctMonto,parcialesPend:Math.round(parcialesPend),fechaFin:fechaFin,gananciaUSD:gananciaUSD};
     }).sort(function(a,b){
@@ -183,17 +177,20 @@ export function PortfolioView(props){
           h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:10}},
             'Capital: '+(esUSD?'USD $'+fmtN(l.montoOrigen)+' ('+fmt(Math.round(l.montoOrigen*l.trmAcordada))+')':fmt(Math.round(l.montoOrigen)))),
           h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}},
-            h('div',null,
-              // En un Prestamo USD la cifra de la tarjeta es el EFECTO TRM (con signo), no la
-              // ganancia: por la regla del PO su ganancia es siempre cero y mostrarla borraria
-              // justo lo que ese rotulo existe para decir.
-              (function(){ var vTRM=(esUSD&&l.modalidad==='Prestamo'), v=vTRM?m.efectoTRM:m.ganancia;
-                return h('div',null,
-                  h('div',{style:{fontSize:11,color:v<0?'var(--red)':'var(--green)',fontWeight:600}},vTRM?'Efecto TRM':'Ganancia obtenida'),
-                  h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:v<0?'var(--red)':'var(--green)'}},fmt(v)),
-                  esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},fmtUSD(m.gananciaUSD)),
-                  vTRM&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},v<0?'Sin interes · TRM bajo al cobrar':v>0?'Sin interes · TRM subio al cobrar':'Sin interes · sin variacion TRM'));
-              })()),
+            // En USD la ganancia ocupa las DOS columnas: lo recibido en dolares y lo consolidado en
+            // pesos lado a lado (regla bimonetaria del PO). En un Prestamo USD la cifra en pesos es el
+            // EFECTO TRM de caja, con su signo: por la regla su ganancia es cero y el rotulo existe
+            // para mostrar ese efecto. En COP no hay nada que desdoblar.
+            esUSD?(function(){ var vTRM=l.modalidad==='Prestamo', v=vTRM?m.efectoTRM:m.ganancia;
+                return h(GananciaBimonetaria,{style:{gridColumn:'1/3'},
+                  titulo:vTRM?'Efecto TRM':'Ganancia obtenida', colorTitulo:v<0?'var(--red)':'var(--green)',
+                  usd:m.gananciaUSD, cop:v,
+                  notaUSD:vTRM?'Sin interes pactado':'Intereses pagados en dolares',
+                  notaCOP:notaCOPGanancia(m.gp, vTRM, m.efectoTRM)});
+              })()
+            : h('div',null,
+                h('div',{style:{fontSize:11,color:m.ganancia<0?'var(--red)':'var(--green)',fontWeight:600}},'Ganancia obtenida'),
+                h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:m.ganancia<0?'var(--red)':'var(--green)'}},fmt(m.ganancia))),
             h('div',null,
               h('div',{style:{fontSize:11,color:saldoColor,fontWeight:600}},esCancelado?(esCondonadoViejo?'Intereses condonados':'Perdida total'):'Saldo pendiente'),
               h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:saldoColor}},l.estado==='Activo'?fmt(m.saldo):esCancelado?'-'+fmt(perdidaTotal):'Saldado'),

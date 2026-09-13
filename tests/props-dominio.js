@@ -93,7 +93,7 @@ function main() {
                       // comprobacion de equivalencia no pueda "pasar" por no encontrarlos.
                       'devengoDiario', 'estadoDiario', 'esDiario', 'progresoCapital',
                       // Ganancia real (regla del PO, 2026-09-13): tablero y Rendimiento.
-                      'gananciaDe'];
+                      'gananciaDe', 'gananciaDePrestamo'];
   const faltantes = [];
   NECESARIOS.forEach(function (n) {
     if (typeof simbolos[n] === 'function') H[n] = simbolos[n];
@@ -1315,6 +1315,83 @@ function main() {
       partialPaid: 147755, montoCOPRecibido: 123446, fechaRecaudo: null,
       recibos: '[{"fecha":"2026-09-04","cop":123446}]' }), true);
     R.eq('construido (produccion): parcial en vuelo reconoce interes neto de su perdida', gh.total, 18372);
+
+    // ── gananciaDePrestamo: la version por prestamo (Rendimiento, perfil del deudor, Cartera) ──
+    // La tarjeta del Inicio suma `gananciaDe` fila a fila; Rendimiento suma esta funcion prestamo a
+    // prestamo. Si las dos sumas no coinciden al peso, las dos pantallas se contradicen.
+    const vPrest = [];
+    let sumaPrest = 0, sumaFilas = 0, nConPiso = 0, nUSD = 0, nRestituidos = 0;
+    pays.forEach(function (p) { sumaFilas += H.gananciaDe(p, esUSDDe(p)).total; });
+    loans.forEach(function (l) {
+      const gp = H.gananciaDePrestamo(l, pays);
+      const suyas = paysDe(l);
+      const esperado = suyas.reduce(function (a, p) { return a + H.gananciaDe(p, l.moneda === 'USD').total; }, 0);
+      const bruta = suyas.reduce(function (a, p) { const g = H.gananciaDe(p, l.moneda === 'USD'); return a + g.interes + g.perdida; }, 0);
+      sumaPrest += gp.cop;
+      if (gp.cop !== Math.round(esperado)) vPrest.push({ id: l.id, cop: gp.cop, filas: Math.round(esperado) });
+      if (gp.cop < 0) vPrest.push({ id: l.id, negativa: gp.cop });
+      if (l.moneda === 'USD') {
+        nUSD++;
+        // DOLARES NATIVOS (regla bimonetaria del PO): cuota saldada con USD registrado -> USD recibido
+        // menos capital en USD (formula de v1.12.8); el resto -> interes imputado a la TRM pactada.
+        const trm = l.trmAcordada;
+        const usd = Math.round(suyas.reduce(function (a, p) {
+          if (p.estadoPago === 'Pagado' && !esAbono(p) && (p.montoUSDRecibido || 0) > 0)
+            return a + (p.montoUSDRecibido - (p.cuotaTotal - p.interesPeriodo) / trm);
+          return a + H.imputarCobros(p).totales.interes / trm;
+        }, 0) * 100) / 100;
+        if (gp.usd !== usd) vPrest.push({ id: l.id, usd: gp.usd, esperadoUSD: usd });
+        // RESTITUCION del Bug #25a: sin parciales en vuelo ni interes en abonos, los dolares son
+        // EXACTAMENTE los que mostraba Rendimiento en v1.12.8 (solo cuotas Pagadas).
+        const sinExtras = suyas.every(function (p) {
+          return (p.estadoPago === 'Pagado' && !esAbono(p)) || H.imputarCobros(p).totales.interes === 0; });
+        if (sinExtras) {
+          nRestituidos++;
+          const v1128 = Math.round(suyas.filter(function (p) { return p.estadoPago === 'Pagado' && !esAbono(p); })
+            .reduce(function (a, p) { const cap = (p.cuotaTotal - p.interesPeriodo) / trm;
+              return a + ((p.montoUSDRecibido > 0) ? (p.montoUSDRecibido - cap) : (p.interesPeriodo / trm)); }, 0) * 100) / 100;
+          if (gp.usd !== v1128) vPrest.push({ id: l.id, usd: gp.usd, v1_12_8: v1128 });
+        }
+      } else if (gp.usd !== 0) vPrest.push({ id: l.id, usdEnCOP: gp.usd });
+      if (gp.pisoAplicado !== (gp.cop !== Math.round(bruta))) vPrest.push({ id: l.id, piso: gp.pisoAplicado, cop: gp.cop, bruta: Math.round(bruta) });
+      if (gp.pisoAplicado) nConPiso++;
+    });
+    R.check('gananciaDePrestamo: pesos = suma de sus filas (nunca negativa); dolares NATIVOS, sin TRM; identicos a v1.12.8 donde aplica',
+      vPrest.length === 0, muestra(vPrest));
+    R.check('cobertura: hay prestamos USD donde comprobar la restitucion exacta de v1.12.8', nRestituidos > 0, `n=${nRestituidos}`);
+    R.eq('la suma de las ganancias por prestamo (Rendimiento) es EXACTAMENTE la tarjeta del Inicio',
+      Math.round(sumaPrest), Math.round(sumaFilas));
+    R.check('cobertura: hay prestamos USD sobre los que comprobar la conversion', nUSD > 0, `n=${nUSD}`);
+    // `pisoAplicado` es lo que enciende la nota "la perdida solo descuenta hasta los intereses"
+    // en perfil y Cartera. El fixture no tiene ningun prestamo donde actue, asi que se construye.
+    const prestPiso = { id: 'syn', moneda: 'USD', trmAcordada: 3681, modalidad: 'Capital + Intereses' };
+    const gPiso = H.gananciaDePrestamo(prestPiso, [
+      fila({ id: 'syn-1', recibos: '[{"fecha":"2026-09-01","cop":470000}]' }),        // gana 70.000
+      fila({ id: 'syn-ab-9', interesPeriodo: 0, abonoCapital: 1324645, cuotaTotal: 1324645,
+             montoCOPRecibido: 1106710, fechaRecaudo: '2026-09-04' }) ]);             // pierde 217.935 -> 0
+    R.eq('construido: el piso de un abono no le quita la ganancia a la otra cuota del prestamo', gPiso.cop, 70000);
+    R.check('construido: y el prestamo marca pisoAplicado (enciende la nota en pantalla)',
+      gPiso.pisoAplicado === true && gPiso.bruta === 70000 - 217935, JSON.stringify(gPiso));
+    // Los dolares NO heredan el piso de los pesos: la cuota sin USD registrado aporta su interes a la
+    // TRM pactada y el abono con perdida aporta cero dolares de ganancia (no hay interes en el).
+    R.eq('construido: los dolares no heredan la perdida ni el piso de los pesos', gPiso.usd, Math.round(100000 / 3681 * 100) / 100);
+
+    // EL CASO QUE DEFINIO LA REGLA (cifras reales): Pago Unico USD 300, ganancia pactada USD 50, TRM
+    // pactada 3.598. El cliente entrego USD 350 completos, pero la TRM bajo y en pesos entraron
+    // $1.192.347. En dolares se gano lo pactado; en pesos, la perdida por TRM se come parte.
+    const prestPU = { id: 'pu', moneda: 'USD', trmAcordada: 3598, modalidad: 'Pago Unico' };
+    const gPU = H.gananciaDePrestamo(prestPU, [ fila({ id: 'pu-1', prestamoId: 'pu', interesPeriodo: 179900,
+      abonoCapital: 1079400, cuotaTotal: 1259300, montoUSDRecibido: 350, montoCOPRecibido: 1192347, fechaRecaudo: '2026-06-01' }) ]);
+    R.eq('construido (regla bimonetaria): recibido en USD = los USD 50 pactados, intactos', gPU.usd, 50);
+    R.eq('construido (regla bimonetaria): consolidado en COP = interes menos la perdida por TRM', gPU.cop, 179900 - 66953);
+    // Y el parcial en vuelo del interes adelantado: los dolares que cubrieron interes (sobre el capital
+    // reducido, 42.681 / 3.681), no los USD 40,14 enteros: el resto de ese pago fue capital.
+    const prestK = { id: 'k', moneda: 'USD', trmAcordada: 3681, modalidad: 'Capital + Intereses' };
+    const gK = H.gananciaDePrestamo(prestK, [ fila({ id: 'k-4', prestamoId: 'k', estadoPago: 'Pendiente', interesPeriodo: 42681,
+      abonoCapital: 538157, cuotaTotal: 580838, partialPaid: 147755, montoCOPRecibido: 123446, montoUSDRecibido: 40.14,
+      fechaRecaudo: null, recibos: '[{"fecha":"2026-09-04","cop":123446}]' }) ]);
+    R.eq('construido (produccion): parcial en vuelo -> USD del interes que cubrio', gK.usd, Math.round(42681 / 3681 * 100) / 100);
+    R.eq('construido (produccion): y en COP ese interes neto de la perdida de ese pago', gK.cop, 18372);
   }
 
   db.close();

@@ -7,10 +7,11 @@
 
 import { FlujoCajaPanel } from '../componentes/FlujoCajaPanel.js';
 import { Modal } from '../componentes/base.js';
+import { GananciaBimonetaria, notaCOPGanancia } from '../componentes/GananciaBimonetaria.js';
 import { Ico } from '../componentes/iconos.js';
 import { API, showError } from '../core/api.js';
 import { _pmt } from '../core/calculo.js';
-import { computeLiquidacion, imputarCobros, pendCuota, esDiario, progresoCapital, estadoDiario, saldoConCaja } from '../core/dominio.js';
+import { computeLiquidacion, imputarCobros, pendCuota, esDiario, progresoCapital, estadoDiario, saldoConCaja, gananciaDePrestamo } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD, fmtN, fmtUSD } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { freqLabel, nowStr } from '../core/ui.js';
@@ -323,7 +324,12 @@ export function DebtorModal(props){
             var recCapHoy=Math.round(impLoan.capital);   // capital recuperado (incluye parciales)
             var recIntHoy=Math.round(impLoan.interes);   // intereses cobrados (incluye parciales)
             var recTRMHoy=Math.round(impLoan.ajuste);    // efecto cambiario, ya aislado por la imputacion
-            var recGanHoy=recIntHoy+recTRMHoy;           // ganancia = interes + efecto TRM
+            // GANANCIA (3.0.0): regla del PO via `gananciaDePrestamo`. En un Prestamo (0%) la fila
+            // se rotula "Resultado total" y conserva la resta de caja interes + efecto TRM: por la
+            // regla su ganancia es cero, y el rotulo existe para mostrar ese resultado con su signo.
+            var gpHoy=gananciaDePrestamo(l, lp);
+            var esPrestHoy=l.modalidad==='Prestamo';
+            var recGanHoy=esPrestHoy?(recIntHoy+recTRMHoy):gpHoy.cop;
             // TOTAL = caja real. Por construccion == capital + interes + ajuste, asi que las filas
             // SUMAN el total y ademas coincide con el total del panel de Flujo de Caja.
             var recTotalHoy=Math.round(impLoan.cobrado);
@@ -333,7 +339,6 @@ export function DebtorModal(props){
             var efectoTRMUSDHoy=esUSD&&trm>0?(recRegPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+recAboPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
             var recCapUSD=esUSD&&trm>0?recCapHoy/trm:0;
             var recTotalUSD=recCapUSD+(esUSD&&trm>0?recIntHoy/trm:0)+efectoTRMUSDHoy;
-            var ganTotUSDHoy=recTotalUSD-recCapUSD; // = interes USD + efecto TRM USD (real, Bug #25)
             // Helper row: label izquierda, valor derecha. divider=true \u2192 linea entre filas internas.
             function row(label,value,sub,opts){
               opts=opts||{};
@@ -382,15 +387,18 @@ export function DebtorModal(props){
                 row('Intereses cobrados',
                   h('div',null,
                     h('div',{className:'mono',style:{fontSize:13,color:recIntHoy>0?'var(--green)':'var(--text3)',fontWeight:500}},(recIntHoy>0?'+':'')+fmt(recIntHoy)),
-                    esUSD&&recIntHoy>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(recIntHoy,l.trmAcordada)))),
-                esUSD&&row(recTRMHoy<0?'Perdida por TRM':'Ganancia por TRM',
+                    esUSD&&recIntHoy>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},fmtUSD(gpHoy.usd)))),
+                // "Efecto TRM" y no "Ganancia por TRM": una subida de TRM no suma a la ganancia (regla
+                // del PO), asi que llamarla ganancia contradeciria la fila de abajo.
+                esUSD&&row('Efecto TRM',
                   h('div',{className:'mono',style:{fontSize:13,color:recTRMHoy>0?'var(--green)':recTRMHoy<0?'var(--red)':'var(--text3)',fontWeight:500}},(recTRMHoy>0?'+':recTRMHoy<0?'-':'')+fmt(Math.abs(recTRMHoy))),
                   recTRMHoy===0?'Sin datos de TRM al cobro':recTRMHoy>0?'TRM subio al cobrar':'TRM bajo al cobrar'),
-                esUSD&&row(l.modalidad==='Prestamo'?'Resultado total':'Ganancia total',
-                  h('div',null,
-                    h('div',{className:'mono',style:{fontSize:14,color:recGanHoy<0?'var(--red)':'var(--green)',fontWeight:600}},(recGanHoy<0?'-':'+')+fmt(Math.abs(recGanHoy))),
-                    h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',fontWeight:400}},(ganTotUSDHoy<0?'-':'+')+fmtUSD(Math.abs(ganTotUSDHoy)))),
-                  null,{strong:true}),
+                // Las DOS realidades de la ganancia, lado a lado (regla bimonetaria del PO).
+                esUSD&&h('div',{style:{padding:'9px 0 4px',borderTop:'1px solid var(--bg3)'}},
+                  h(GananciaBimonetaria,{titulo:esPrestHoy?'Resultado total':'Ganancia total',
+                    colorTitulo:recGanHoy<0?'var(--red)':'var(--text2)', usd:gpHoy.usd, cop:recGanHoy,
+                    notaUSD:esPrestHoy?'Sin interes pactado':'Intereses pagados en dolares',
+                    notaCOP:notaCOPGanancia(gpHoy, esPrestHoy, recTRMHoy)})),
                 capAbonos>0&&row('Abonos a capital recibidos',
                   h('div',null,
                     // El azul esta RESERVADO al dolar en todo el bloque: es lo que
@@ -458,8 +466,10 @@ export function DebtorModal(props){
                       row('Cobrado hasta hoy',
                         h('div',null,
                           h('div',{className:'mono',style:{fontSize:13,color:'var(--green)',fontWeight:500}},'+'+fmt(recIntHoy)),
-                          esUSD&&recIntHoy>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(recIntHoy,l.trmAcordada))),
-                        'Ganancia acumulada por intereses',{first:true,key:'proy-cob'}),
+                          esUSD&&recIntHoy>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},fmtUSD(gpHoy.usd))),
+                        // Es INTERES cobrado, no ganancia: en USD la ganancia descuenta la perdida
+                        // cambiaria (ver "Ganancia total" arriba) y esta barra mide otra cosa.
+                        'Intereses cobrados hasta hoy',{first:true,key:'proy-cob'}),
                       row('Renta mensual',
                         h('div',null,
                           h('div',{className:'mono',style:{fontSize:13,color:'var(--text)',fontWeight:500}},'+'+fmt(rentaMensual)),
@@ -494,7 +504,7 @@ export function DebtorModal(props){
                     row('Cobrado',
                       h('div',null,
                         h('div',{className:'mono',style:{fontSize:13,color:'var(--green)',fontWeight:500}},'+'+fmt(recIntHoy)),
-                        esUSD&&recIntHoy>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(recIntHoy,l.trmAcordada))),
+                        esUSD&&recIntHoy>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},fmtUSD(gpHoy.usd))),
                       null,{key:'proy-cob'}),
                     gananciaEsperada>recIntHoy&&row('Pendiente por cobrar',
                       h('div',null,
@@ -688,10 +698,14 @@ export function DebtorModal(props){
         var gananciaTRMRegHist=esUSD?regulares.filter(function(p){return p.estadoPago==='Pagado'&&p.montoCOPRecibido&&p.montoCOPRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-p.cuotaTotal);},0):0;
         var gananciaTRMAbHist=esUSD?lPays.filter(function(p){return esAbono(p)&&p.estadoPago==='Pagado'&&p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-(p.montoUSDRecibido*l.trmAcordada));},0):0;
         var gananciaTRMHist=Math.round(gananciaTRMRegHist+gananciaTRMAbHist);
-        var gananciaTotalHist=Math.round(intPagados+gananciaTRMHist);
+        // GANANCIA (3.0.0): regla del PO. En Prestamo USD el encabezado se rotula EFECTO TRM y
+        // conserva la resta de caja, con su signo (por la regla, su ganancia es cero).
+        var gpHist=gananciaDePrestamo(l, lPays);
+        var esPrestHist=l.modalidad==='Prestamo';
+        var gananciaTotalHist=esPrestHist?Math.round(intPagados+gananciaTRMHist):gpHist.cop;
         var bandaColor=esCancelado?'var(--red)':'var(--green)';
         // KPI del header: para USD usa ganancia total (incluye TRM); para COP solo intereses
-        var kpiValor=esCancelado?totalPerdido:(esUSD?gananciaTotalHist:Math.round(intPagados));
+        var kpiValor=esCancelado?totalPerdido:((esUSD&&esPrestHist)?gananciaTotalHist:gpHist.cop);
         var kpiColor=esCancelado?'var(--red)':(esUSD&&gananciaTotalHist<0?'var(--red)':'var(--green)');
         var kpiLabel=esCancelado?'PERDIDA':((esUSD&&l.modalidad==='Prestamo')?'EFECTO TRM':'GANANCIA');
         var origCOP=esUSD?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen);
@@ -716,6 +730,9 @@ export function DebtorModal(props){
               h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},fmtD(l.fechaInicio)+(fechaFin?' \u2192 '+fmtD(fechaFin):'')+' \u2022 '+(l.modalidad==='Intereses'?'\u221E':totalCuotas+' cuotas'))),
             h('div',{style:{textAlign:'right',flexShrink:0}},
               h('div',{className:'mono',style:{fontSize:16,fontWeight:700,color:kpiColor,whiteSpace:'nowrap'}},(esCancelado||kpiValor<0?'-':'+')+fmt(Math.abs(kpiValor))),
+              // En USD la ganancia se lee en sus dos monedas tambien en el encabezado: los dolares
+              // nativos no son la cifra en pesos convertida.
+              (esUSD&&!esCancelado&&!esPrestHist)&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',whiteSpace:'nowrap'}},'+'+fmtUSD(gpHist.usd)),
               h('div',{style:{fontSize:9,color:kpiColor,fontWeight:600,letterSpacing:.5}},kpiLabel))),
           isExp&&h('div',{style:{borderTop:'1px solid var(--border)',padding:'12px',background:'var(--bg)'}},
             h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 12px',marginBottom:10}},
@@ -724,9 +741,11 @@ export function DebtorModal(props){
                 h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--text)'}},esUSD?'USD $'+fmtN(l.montoOrigen):fmt(origCOP)),
                 esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--text3)'}},fmt(origCOP)+' (TRM $'+fmtN(l.trmAcordada)+')')),
               h('div',null,
-                h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},esUSD?'GANANCIA INTERES':'GANANCIA OBTENIDA'),
-                h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--green)'}},fmt(intPagados)),
-                esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(intPagados,l.trmAcordada))),
+                // En USD esta celda es INTERES bruto (la ganancia, ya con la perdida cambiaria, va en el
+                // desglose de abajo); en COP interes y ganancia coinciden y sale del helper.
+                h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},esUSD?'INTERESES COBRADOS':'GANANCIA OBTENIDA'),
+                h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--green)'}},fmt(esUSD?intPagados:gpHist.cop)),
+                esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},esPrestHist?copToUsd(intPagados,l.trmAcordada):fmtUSD(gpHist.usd))),
               esCancelado&&h('div',null,
                 h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},'CAPITAL DEBIENDO'),
                 h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--red)'}},fmt(capPerd)),
@@ -757,7 +776,6 @@ export function DebtorModal(props){
               var capUSD=trm>0?capRecH/trm:0;
               var intUSD=trm>0?intPagados/trm:0;
               var totRecUSD=capUSD+intUSD+efectoTRMUSD; // = USD realmente recibido
-              var ganTotUSD=intUSD+efectoTRMUSD;
               var esPrestamo=l.modalidad==='Prestamo';
               function drow(label,value,valColor,subUSD,opts){
                 opts=opts||{};
@@ -774,9 +792,13 @@ export function DebtorModal(props){
                   h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' DESGLOSE DE CAJA (USD)'),
                 drow('TOTAL RECIBIDO',fmt(totRecCOP),'var(--text)',fmtUSD(totRecUSD),{master:true,topBorder:false}),
                 drow(esCancelado?'Capital recuperado':'Capital prestado',fmt(capRecH),'var(--text2)',copToUsd(capRecH,trm)),
-                drow('Intereses cobrados',(intPagados>0?'+':'')+fmt(intPagados),intPagados>0?'var(--green)':'var(--text2)',intPagados>0?copToUsd(intPagados,trm):null),
+                drow('Intereses cobrados',(intPagados>0?'+':'')+fmt(intPagados),intPagados>0?'var(--green)':'var(--text2)',intPagados>0?fmtUSD(gpHist.usd):null),
                 drow('Efecto TRM',(gananciaTRMHist>0?'+':gananciaTRMHist<0?'-':'')+fmt(Math.abs(gananciaTRMHist)),gananciaTRMHist>0?'var(--green)':gananciaTRMHist<0?'var(--red)':'var(--text3)',null,{note:gananciaTRMHist===0?'Sin datos de TRM al cobro':gananciaTRMHist>0?'TRM subio al cobrar':'TRM bajo al cobrar'}),
-                drow(esPrestamo?'RESULTADO TOTAL':'GANANCIA TOTAL',(gananciaTotalHist<0?'-':'+')+fmt(Math.abs(gananciaTotalHist)),gananciaTotalHist>=0?'var(--green)':'var(--red)',(ganTotUSD<0?'-':'+')+fmtUSD(Math.abs(ganTotUSD)),{accentTop:true}));
+                h('div',{style:{paddingTop:8,marginTop:3,borderTop:'1px solid var(--blue-bd)'}},
+                  h(GananciaBimonetaria,{compacto:true, titulo:esPrestamo?'RESULTADO TOTAL':'GANANCIA TOTAL',
+                    colorTitulo:'var(--blue)', usd:gpHist.usd, cop:gananciaTotalHist,
+                    notaUSD:esPrestamo?'Sin interes pactado':'Intereses pagados en dolares',
+                    notaCOP:notaCOPGanancia(gpHist, esPrestamo, gananciaTRMHist)})));
             })(),
             esCancelado&&h('div',{style:{padding:'10px 12px',background:'var(--bg3)',borderRadius:8,borderLeft:'3px solid var(--red)',marginBottom:capAbonos>0?8:0,display:'flex',justifyContent:'space-between',alignItems:'center'}},
               h('div',null,

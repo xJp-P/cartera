@@ -183,7 +183,50 @@ export function gananciaDe(pay, esUSD){
     reconocida=g;
     return ev;
   });
-  return {total:reconocida, eventos:eventos};
+  // `interes` y `perdida` (sin piso) van aparte para que una pantalla pueda explicar por que
+  // la ganancia no es la resta que muestra en sus propias filas cuando el piso actuo.
+  return {total:reconocida, interes:cumInt, perdida:cumPerdida, eventos:eventos};
+}
+
+// Ganancia en DOLARES de una fila: los dolares NATIVOS que entraron como ganancia.
+// REGLA DEL PO (cuentas bimonetarias): el cliente paga lo pactado; si pago USD 50 de interes, la
+// ganancia en dolares ES USD 50. La TRM castiga SOLO la ganancia en pesos (`gananciaDe`), nunca
+// esta. Ratifica la doctrina de v1.12.8 (Bug #25a) y la extiende a las filas que aquella no veia:
+//   - cuota saldada con dolares registrados: dolares recibidos menos el capital en dolares — la
+//     formula de v1.12.8 tal cual, asi que las cifras historicas quedan identicas;
+//   - cuota saldada sin dolares registrados, parcial en vuelo y abono: el interes que cubrieron,
+//     a la TRM pactada. En un parcial la obligacion YA esta valuada a esa TRM (Bug #50), asi que
+//     interes/trm SON los dolares que cubrieron interes; en un abono es el interes del mes de una
+//     liquidacion (cero en un abono normal).
+function gananciaUSDDe(pay, trm){
+  if(!(trm>0)) return 0;
+  if(pay.estadoPago==='Pagado'&&!esAbono(pay)&&(+pay.montoUSDRecibido||0)>0){
+    return (+pay.montoUSDRecibido)-((pay.cuotaTotal||0)-(pay.interesPeriodo||0))/trm;
+  }
+  return imputarCobros(pay).totales.interes/trm;
+}
+
+// Ganancia real de un PRESTAMO completo, en sus dos realidades. La consumen las cinco
+// superficies que la muestran (tarjeta de Rendimiento, "Ganancia total" del perfil del deudor
+// y de Cartera, historial de creditos cerrados) para que ninguna vuelva a tener su formula.
+//   - `cop` = consolidado en pesos, con la perdida por TRM (piso en cero por cuota);
+//   - `usd` = recibido en dolares, NATIVO: sin TRM (ver `gananciaUSDDe`);
+//   - `interes` y `bruta` (= interes + perdida sin piso) le permiten a la pantalla explicar por
+//     que los pesos no son los dolares convertidos.
+export function gananciaDePrestamo(loan, loanPays){
+  var vacio={cop:0, usd:0, interes:0, bruta:0, pisoAplicado:false};
+  if(!loan) return vacio;
+  var esUSD=loan.moneda==='USD';
+  var trm=+loan.trmAcordada||0;
+  var lp=(loanPays||[]).filter(function(p){ return String(p.prestamoId)===String(loan.id); });
+  var cop=0, bruta=0, interes=0, usd=0;
+  lp.forEach(function(p){
+    var g=gananciaDe(p, esUSD);
+    cop+=g.total; bruta+=g.interes+g.perdida; interes+=g.interes;
+    if(esUSD) usd+=gananciaUSDDe(p, trm);
+  });
+  return {cop:Math.round(cop), usd:(esUSD&&trm>0)?Math.round(usd*100)/100:0, interes:Math.round(interes),
+          bruta:Math.round(bruta), pisoAplicado:Math.round(cop)!==Math.round(bruta)};
 }
 
 // SALDO CON CAJA APLICADA (Fase 3) — la cifra que se MUESTRA, en pantalla y en los PDFs.

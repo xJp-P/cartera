@@ -667,5 +667,11 @@ export const CHANGELOGS = {
   '2.9.9': [
     'El Paz y Salvo de una liquidacion ya declara el TOTAL RECIBIDO. Antes encabezaba solo con el capital, asi que un cierre que incluia intereses atrasados imprimia menos dinero del que realmente habia entrado a caja.',
     'Y ahora explica el reparto: cuanto fue a capital, cuanto a los intereses atrasados y, si se cobro, cuanto al interes del mes en curso. Las cifras salen de la misma fuente que el Estado de Liquidacion, asi que los dos papeles de un mismo cierre cuadran renglon a renglon.'
+  ],
+  '3.0.0': [
+    'Los pagos parciales ya no pierden lo recibido cuando el cronograma se recalcula. Un abono a capital podia borrar los pesos y dolares que una cuota ya habia recibido, y al pagar exactamente lo que indicaba el recibo la cuota quedaba abierta por unos pesos.',
+    'El interes del mes que se cobra por adelantado se calcula sobre el capital que queda despues del abono del mismo cobro. El recibo, la propuesta y los registros declaran ahora la misma cifra de interes, y el "Total que se puede cobrar hoy" ya lo tiene en cuenta.',
+    'Una sola formula de ganancia en toda la app: Inicio, Rendimiento, perfil del deudor y Cartera muestran la misma cifra, y ahora cuenta tambien el interes cobrado en pagos parciales y abonos.',
+    'En los creditos en dolares la ganancia se lee en sus dos monedas, lado a lado: lo recibido en USD, intacto (si el cliente pago USD 50 de interes, son USD 50), y lo consolidado en pesos, que si descuenta la perdida por TRM de los intereses de cada cuota sin dejar la ganancia en negativo. En los prestamos sin interes, la cifra en pesos sigue mostrando el efecto TRM con su signo.'
   ]
 };
