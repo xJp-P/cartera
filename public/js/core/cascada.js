@@ -35,11 +35,16 @@
 // para eso, y el abono recibe SOLO el remanente.
 
 import { esAbono } from './ids.js';
+import { _tasaPeriodo } from './calculo.js';
 
 // Suma con redondeo a peso entero (doctrina de enteros de v2.2.0, Bug #43).
 function r0(n){ return Math.round(n||0); }
 // Redondeo a centavo de dolar.
 function r2(n){ return Math.round((n||0)*100)/100; }
+// Centavo de dolar HACIA ABAJO. Solo lo usa el paso del interes del mes: garantiza que
+// `round(usd * trm)` no supere el interes en pesos, asi que TODO lo que ese paso cobra es
+// interes y el papel no puede declarar como interes unos pesos que la base imputa a capital.
+function piso2(n){ return Math.floor((n||0)*100+1e-9)/100; }
 
 // ── Contexto economico del credito, en la MISMA base que valida el backend ────
 // Espejo de la FASE 1 de POST /api/loans/:id/abono. Si esto y el backend
@@ -89,8 +94,14 @@ export function contextoCascada(loan, allPays){
     var yaPag=r0(proximaCuota.partialPaid||0);
     interesMesPend=Math.max(0, intTot-Math.min(yaPag, intTot));
   }
+  // En Capital + Intereses e Intereses el interes de cada cuota es `saldo * tasa`, y el abono
+  // REGENERA las cuotas Pendientes sobre el saldo nuevo: el interes del periodo baja con el
+  // capital. En Prestamo (0%) y Pago Unico (ganancia fija pactada) no depende del capital.
+  var interesRecalculable=loan.modalidad==='Capital + Intereses'||loan.modalidad==='Intereses';
   return {
     lp:lp, esUSD:esUSD, trm:trm, originalCOP:originalCOP, esSingleCuota:esSingleCuota,
+    interesRecalculable:interesRecalculable,
+    tasaPeriodo:_tasaPeriodo((+loan.tasaMensual||0)/100, loan.frecuencia||'Mensual'),
     capPagadas:capPagadas, moraCap:moraCap, saldoAbonable:saldoAbonable,
     moraCuotas:moraCuotas, regularConsumed:regularConsumed,
     proximaCuota:proximaCuota, interesMesPend:interesMesPend,
@@ -200,22 +211,71 @@ export function planCascada(loan, allPays, entrada, opts){
   //
   // Va DESPUES de la mora y ANTES del abono: el orden que pidio el negocio, y el
   // unico coherente con el art. 1653 (todo el interes exigible antes que el capital).
+  //
+  // ── EL INTERES SE LIQUIDA SOBRE EL CAPITAL QUE DEJA EL ABONO (regla del PO) ──
+  // Si el mismo cobro trae abono a capital, el backend REGENERA la proxima cuota sobre el
+  // saldo reducido y su interes baja. Cobrar aqui el interes de HOY dejaba el papel y la
+  // base contradiciendose: medido en produccion, el recibo declaro 147.739 de "interes del
+  // mes", la cuota renacio con 42.681, e `imputarCobros` mando los 105.074 de diferencia a
+  // capital — y encima esos 105.074 NO bajaban la base del interes, porque un parcial no
+  // re-amortiza. Ahora el paso cobra el interes de la cuota REGENERADA.
+  //
+  // Hay dependencia circular —el interes depende del abono y el abono de lo que el
+  // interes deja libre— y se resuelve como punto fijo: I = interes(saldo - abono(R - I)).
+  // Converge en 2-3 vueltas porque cada una arrastra solo la tasa del periodo (~8%). Si el
+  // redondeo lo deja oscilando entre dos valores se toma el MENOR: con el menor el paso es
+  // interes puro y queda, a lo sumo, un peso de interes pendiente en la cuota; con el mayor
+  // ese peso se imputaria a capital y el papel volveria a decir otra cosa que la base.
+  // Sin abono (no alcanza, o no hay techo) la cuota no se regenera y su interes es el de hoy.
+  var capPagDespues=ctx.capPagadas+moraPagadaCap;
+  var capMoraDespues=ctx.esSingleCuota?0:Math.max(0, ctx.moraCap-moraPagadaCap);
+  var saldoAbonableDespues=Math.max(0, ctx.originalCOP-capPagDespues-capMoraDespues);
+  var techoU=esUSD?aUSD(saldoAbonableDespues):saldoAbonableDespues;
+  // Espejo del PASO B de abajo, con su mismo anclaje: el abono en COP que quedaria.
+  var abonoCOPPara=function(restU){
+    if(!(restU>EPS)||!(techoU>0)) return 0;
+    var ab=Math.min(restU, techoU);
+    var cubre=(techoU-ab)<=EPS;
+    if(cubre) ab=techoU;
+    return esUSD?(cubre?saldoAbonableDespues:aCOP(ab)):ab;
+  };
+  // Lo que toma el paso para cubrir un interes (en COP) dado, en la unidad de trabajo.
+  var tomaDelPaso=function(intCOP){
+    var u=esUSD?piso2(intCOP/trm):intCOP;
+    var ap=Math.min(restante, u);
+    if((u-ap)<=EPS) ap=u;
+    return ap;
+  };
+  var yaPagProx=ctx.proximaCuota?r0(ctx.proximaCuota.partialPaid||0):0;
+  var interesPendSobre=function(saldoCOP){
+    var I=r0(Math.max(0, saldoCOP)*ctx.tasaPeriodo);
+    return Math.max(0, I-Math.min(yaPagProx, I));
+  };
   if(incluirInteresMes&&ctx.proximaCuota&&ctx.interesMesPend>0&&restante>EPS){
     var intMesCOP=ctx.interesMesPend;
-    var intMesU=esUSD?aUSD(intMesCOP):intMesCOP;
-    var apMes=Math.min(restante, intMesU);
-    var cubreMes=(intMesU-apMes)<=EPS;
-    if(cubreMes) apMes=intMesU;
+    if(ctx.interesRecalculable&&techoU>0){
+      var vistos={};
+      for(var it=0;it<25;it++){
+        var aboC=abonoCOPPara(r2(restante-tomaDelPaso(intMesCOP)));
+        var sig=aboC>0?interesPendSobre(saldoAbonableDespues-aboC):ctx.interesMesPend;
+        if(sig===intMesCOP) break;
+        if(vistos[sig]){ intMesCOP=Math.min(intMesCOP, sig); break; }
+        vistos[intMesCOP]=true;
+        intMesCOP=sig;
+      }
+    }
+    var apMes=intMesCOP>0?tomaDelPaso(intMesCOP):0;
     // NO se ancla al peso del interes. El anclaje solo es legitimo donde el backend
     // va a forzar `partialPaid = cuotaTotal` (rama `completaUSD` de /partial), y este
     // paso NUNCA completa la cuota: solo cubre su interes. El backend valua la
     // obligacion como `round(montoUSD * trm)`, asi que el plan declara EXACTAMENTE
-    // esa formula sobre el mismo input. Medido en una prueba real con anclaje: el
-    // plan prometia 147.739 y el backend extinguia 147.755 — 16 pesos de deriva
-    // entre lo que el recibo afirmaba y lo que quedaba en la base.
+    // esa formula sobre el mismo input. Y el dolar va redondeado HACIA ABAJO (`piso2`):
+    // redondeado al centavo mas cercano se pasaba del interes —medido: 147.739 de
+    // interes, 147.755 extinguidos— y esos 16 pesos terminaban imputados a capital.
     var apMesCOP=esUSD?aCOP(apMes):apMes;
     var pendProxCOP=Math.max(0, r0(ctx.proximaCuota.cuotaTotal)-r0(ctx.proximaCuota.partialPaid||0));
-    pasos.push({
+    // Con capital saldado por el abono no hay periodo que liquidar: el interes es cero.
+    if(apMes>0) pasos.push({
       tipo:'partial', esInteresMes:true,
       payId:ctx.proximaCuota.id, cuotaN:ctx.proximaCuota.cuotaN, fechaPago:ctx.proximaCuota.fechaPago,
       obligacionCOP:apMesCOP, obligacionUSD:esUSD?apMes:0,
@@ -227,17 +287,14 @@ export function planCascada(loan, allPays, entrada, opts){
   }
 
   // ── Techo del abono DESPUES del paso A ─────────────────────────────────────
+  // (calculado arriba, antes del paso A2, porque el interes del mes lo necesita).
   // En Capital + Intereses e Intereses el techo es INVARIANTE: saldar una cuota En
   // Mora solo mueve su capital del bucket "mora" al bucket "pagadas", y el backend
   // resta los dos. En Prestamo / Pago Unico la mora NO se resta, asi que ahi si
   // baja. Se recalcula en vez de asumirlo para que las cuatro modalidades salgan
   // por el mismo camino.
-  var capPagDespues=ctx.capPagadas+moraPagadaCap;
-  var capMoraDespues=ctx.esSingleCuota?0:Math.max(0, ctx.moraCap-moraPagadaCap);
-  var saldoAbonableDespues=Math.max(0, ctx.originalCOP-capPagDespues-capMoraDespues);
 
   // ── PASO B — remanente al abono extraordinario a capital ───────────────────
-  var techoU=esUSD?aUSD(saldoAbonableDespues):saldoAbonableDespues;
   if(restante>EPS&&techoU>0){
     var abo=Math.min(restante, techoU);
     var cubreTecho=(techoU-abo)<=EPS;
@@ -332,7 +389,13 @@ export function cobrableTotal(loan, allPays){
   // `interesMes` NO entra en `total`: es OPCIONAL (depende de un checkbox), asi que
   // sumarlo al techo por defecto anunciaria como cobrable algo que el usuario todavia
   // no decidio cobrar. El modal lo suma cuando el check esta activo.
-  return { mora:mora, abonable:techo, total:mora+techo, interesMes:ctx.interesMesPend, ctx:ctx };
+  // Con la regla del capital reducido, pagar TODO el capital deja el periodo sin interes:
+  // lo maximo cobrable es mora + capital, y sumar el interes de hoy anunciaria un techo que
+  // el plan rechazaria como sobrante. Solo suma donde el interes no depende del capital, o
+  // donde no hay abono posible y la cuota no se regenera.
+  var interesMesSumaTecho=!ctx.interesRecalculable||techo<=0;
+  return { mora:mora, abonable:techo, total:mora+techo, interesMes:ctx.interesMesPend,
+           interesMesSumaTecho:interesMesSumaTecho, ctx:ctx };
 }
 
 // ── PROYECCION DE LO QUE QUEDARIA POR PAGAR ──────────────────────────────────

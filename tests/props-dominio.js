@@ -91,7 +91,9 @@ function main() {
                       'esAbono', 'esCorte', 'esCuotaRegular',
                       // Espejo del motor de devengo (Etapa 4). Se exigen aqui para que la
                       // comprobacion de equivalencia no pueda "pasar" por no encontrarlos.
-                      'devengoDiario', 'estadoDiario', 'esDiario', 'progresoCapital'];
+                      'devengoDiario', 'estadoDiario', 'esDiario', 'progresoCapital',
+                      // Ganancia real (regla del PO, 2026-09-13): tablero y Rendimiento.
+                      'gananciaDe'];
   const faltantes = [];
   NECESARIOS.forEach(function (n) {
     if (typeof simbolos[n] === 'function') H[n] = simbolos[n];
@@ -1217,6 +1219,102 @@ function main() {
       R.check('cobertura: hay interes devengado que perder (si no, el aserto es vacio)',
         dev.interesPendiente > 0, `devengado=${dev.interesPendiente}`);
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 9. gananciaDe — la GANANCIA REAL (regla del PO, 2026-09-13)
+  // Una fila gana  max(0, interes cobrado + perdida cambiaria). La perdida se descuenta del
+  // interes de ESA fila; si se lo come, la fila aporta cero y no resta al mes. Una subida de
+  // TRM no suma (la formula del PO nombra solo el efecto negativo). En COP no hay efecto.
+  // ══════════════════════════════════════════════════════════════════════════
+  R.seccion('9. gananciaDe(pay, esUSD) — ganancia real: interes menos perdida cambiaria, piso 0');
+  {
+    const esUSDDe = function (p) { const l = byLoan[String(p.prestamoId)]; return !!(l && l.moneda === 'USD'); };
+    const viol = { negativa: [], suma: [], cop: [], usd: [], generaliza: [] };
+    let nPerdidaUSD = 0, nParcialVivo = 0, nAbonoPerdida = 0, nPiso = 0, nComparadas = 0;
+    pays.forEach(function (p) {
+      const usd = esUSDDe(p);
+      const g = H.gananciaDe(p, usd);
+      const imp = H.imputarCobros(p);
+      const perdida = usd ? imp.eventos.reduce(function (a, e) { return a + (e.ajuste < 0 ? e.ajuste : 0); }, 0) : 0;
+      const sumaEv = g.eventos.reduce(function (a, e) { return a + e.ganancia; }, 0);
+      if (g.total < 0) viol.negativa.push({ id: p.id, total: g.total });
+      if (sumaEv !== g.total) viol.suma.push({ id: p.id, total: g.total, sumaEventos: sumaEv });
+      if (!usd && g.total !== imp.totales.interes) viol.cop.push({ id: p.id, total: g.total, interes: imp.totales.interes });
+      if (usd && g.total !== Math.max(0, imp.totales.interes + perdida))
+        viol.usd.push({ id: p.id, total: g.total, interes: imp.totales.interes, perdida: perdida });
+      if (perdida < 0) nPerdidaUSD++;
+      if (usd && imp.totales.interes + perdida < 0) nPiso++;
+      if (esAbono(p) && perdida < 0) nAbonoPerdida++;
+      if (p.estadoPago !== 'Pagado' && imp.eventos.length) nParcialVivo++;
+      // GENERALIZACION: en una cuota regular Pagada, fuera del piso, vale lo mismo que la
+      // formula que reemplaza (`montoCOPRecibido - capital` en USD, `interesPeriodo` en COP).
+      if (p.estadoPago === 'Pagado' && !esAbono(p) && !(usd && imp.totales.interes + perdida < 0)) {
+        nComparadas++;
+        const viejo = (usd && p.montoCOPRecibido > 0) ? (p.montoCOPRecibido - (p.cuotaTotal - p.interesPeriodo)) : p.interesPeriodo;
+        if (Math.abs(Math.round(viejo) - g.total) > TOL_IDENTIDAD)
+          viol.generaliza.push({ id: p.id, usd: usd, viejo: Math.round(viejo), nuevo: g.total });
+      }
+    });
+    R.check('ninguna fila aporta ganancia NEGATIVA (la perdida no resta mas que el interes de su fila)',
+      viol.negativa.length === 0, muestra(viol.negativa));
+    R.check('los eventos de cada fila suman EXACTAMENTE su ganancia (tarjeta == suma del grafico)',
+      viol.suma.length === 0, muestra(viol.suma));
+    R.check('en COP la ganancia es el interes imputado, sin efecto cambiario',
+      viol.cop.length === 0, muestra(viol.cop));
+    R.check('en USD la ganancia es max(0, interes + perdida cambiaria), fila a fila',
+      viol.usd.length === 0, muestra(viol.usd));
+    R.check(`generaliza la formula anterior: identica en las ${nComparadas} cuotas Pagadas fuera del piso`,
+      viol.generaliza.length === 0, muestra(viol.generaliza));
+    R.check('cobertura: el fixture tiene filas USD con perdida cambiaria', nPerdidaUSD > 0, `n=${nPerdidaUSD}`);
+    // El fixture es ANTERIOR a las operaciones que destaparon el defecto: no trae abonos USD con
+    // perdida ni parciales en vuelo (medido al escribir esta seccion: cero de cada uno).
+    // Exigirlos aqui daria rojo sin motivo, y no exigirlos dejaria esas dos ramas probadas en
+    // vacio. Por eso sus testigos van CONSTRUIDOS abajo, con las cifras exactas de produccion.
+
+    // ── Casos CONSTRUIDOS: el piso y el reconocimiento por evento no tienen testigo seguro ──
+    const fila = function (o) {
+      return Object.assign({ id: 'syn-1', prestamoId: 'syn', estadoPago: 'Pagado', interesPeriodo: 100000,
+        abonoCapital: 400000, cuotaTotal: 500000, partialPaid: 0, montoCOPRecibido: 0,
+        fechaRecaudo: '2026-09-01', recibos: '[]' }, o);
+    };
+    // (a) la perdida es menor que el interes: la ganancia es el interes neto de la perdida.
+    const ga = H.gananciaDe(fila({ recibos: '[{"fecha":"2026-09-01","cop":470000}]' }), true);
+    R.eq('construido: perdida menor que el interes -> interes - perdida', ga.total, 70000);
+    // (b) la perdida se come el interes: la fila aporta CERO, no -20.000.
+    const gb = H.gananciaDe(fila({ recibos: '[{"fecha":"2026-09-01","cop":380000}]' }), true);
+    R.eq('construido: perdida mayor que el interes -> la fila aporta cero (no resta)', gb.total, 0);
+    // (c) la misma caja en un credito COP no tiene efecto cambiario: gana el interes entero.
+    const gc = H.gananciaDe(fila({ recibos: '[{"fecha":"2026-09-01","cop":500000}]' }), false);
+    R.eq('construido: en COP la ganancia es el interes, sin tocar', gc.total, 100000);
+    // (d) cuota pagada en dos meses: el primer pago reconoce el interes que cubrio; el pago
+    // final trae la perdida de toda la cuota (imputarCobros la ancla al ultimo evento) y
+    // devuelve lo reconocido, pero la FILA nunca baja de cero.
+    const gd = H.gananciaDe(fila({ recibos: '[{"fecha":"2026-09-01","cop":90000},{"fecha":"2026-10-01","cop":300000}]' }), true);
+    R.eq('construido: 1er evento reconoce el interes que cubrio', gd.eventos[0].ganancia, 90000);
+    R.eq('construido: el evento final devuelve lo reconocido cuando la perdida lo supera', gd.eventos[1].ganancia, -90000);
+    R.eq('construido: y la fila queda en cero, nunca negativa', gd.total, 0);
+    // (e) una LIQUIDACION con el mes en curso guarda ese interes en la fila `-ab-`. Antes
+    // Ganancias excluia los abonos enteros y ese interes no aparecia nunca.
+    const ge = H.gananciaDe(fila({ id: 'syn-ab-1', interesPeriodo: 50000, abonoCapital: 1000000,
+      cuotaTotal: 1050000, montoCOPRecibido: 1050000, fechaRecaudo: '2026-09-07' }), false);
+    R.eq('construido: el interes del mes cobrado en una liquidacion (fila -ab-) SI cuenta', ge.total, 50000);
+    // (f) una subida de TRM no suma: la formula del PO nombra solo el efecto negativo.
+    const gf = H.gananciaDe(fila({ recibos: '[{"fecha":"2026-09-01","cop":560000}]' }), true);
+    R.eq('construido: una ganancia cambiaria no suma a Ganancias', gf.total, 100000);
+    // (g) el ABONO USD que destapo el defecto (cifras reales, 2026-09-04): $1.106.710 de caja por
+    // $1.324.645 de capital. Sin interes, su perdida de $217.935 aporta cero: no hay interes que
+    // descontar y la regla no deja que reste al mes.
+    const gg = H.gananciaDe(fila({ id: 'syn-ab-2', interesPeriodo: 0, abonoCapital: 1324645, cuotaTotal: 1324645,
+      montoCOPRecibido: 1106710, fechaRecaudo: '2026-09-04' }), true);
+    R.eq('construido (produccion): abono USD con perdida cambiaria -> cero, no resta', gg.total, 0);
+    // (h) el PARCIAL EN VUELO del interes adelantado (cifras reales): $123.446 de caja, obligacion
+    // $147.755, cuota regenerada con interes $42.681. Antes era invisible hasta cerrar la cuota;
+    // ahora reconoce el interes que cubrio menos la perdida de ese pago: 42.681 - 24.309.
+    const gh = H.gananciaDe(fila({ estadoPago: 'Pendiente', interesPeriodo: 42681, abonoCapital: 538157, cuotaTotal: 580838,
+      partialPaid: 147755, montoCOPRecibido: 123446, fechaRecaudo: null,
+      recibos: '[{"fecha":"2026-09-04","cop":123446}]' }), true);
+    R.eq('construido (produccion): parcial en vuelo reconoce interes neto de su perdida', gh.total, 18372);
   }
 
   db.close();

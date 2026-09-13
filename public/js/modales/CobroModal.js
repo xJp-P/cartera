@@ -297,13 +297,19 @@ export function CobroModal(props){
     // ── Estado actual del credito ──
     h('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 12px',marginTop:4}},
       linea('Cuotas vencidas por cobrar', cob.mora>0?fmtUni(cobMoraU):'—', cob.mora>0?'var(--red)':'var(--text3)'),
-      cob.interesMes>0&&linea('Interes del mes en curso', fmtUni(uni(cob.interesMes)), 'var(--text3)'),
+      // Rotulo PROPIO, distinto del rubro del desglose: esta cifra es el interes de la cuota
+      // TAL COMO ESTA HOY, y el desglose muestra el que se cobra, que con abono se liquida
+      // sobre el capital reducido y es menor. Con el mismo rotulo el modal mostraba dos
+      // montos distintos bajo el mismo nombre.
+      cob.interesMes>0&&linea('Interes pendiente de la cuota en curso', fmtUni(uni(cob.interesMes)), 'var(--text3)'),
       linea('Capital amortizable', fmtUni(cobAbonableU), 'var(--text2)'),
       h('div',{style:{height:1,background:'var(--border)',margin:'5px 0'}}),
       // El interes del mes suma al techo SOLO si el usuario lo activo: es opcional, y
       // anunciarlo siempre inflaria lo cobrable con algo que todavia no decidio cobrar.
+      // Y ni asi cuando se liquida sobre el capital reducido: saldar todo el capital deja
+      // el periodo en cero, asi que el techo real es mora + capital (ver cobrableTotal).
       linea('Total que se puede cobrar hoy',
-        fmtUni(cobMoraU+cobAbonableU+(incMes?uni(cob.interesMes):0)), 'var(--text)', true)),
+        fmtUni(cobMoraU+cobAbonableU+((incMes&&cob.interesMesSumaTecho)?uni(cob.interesMes):0)), 'var(--text)', true)),
 
     // ── Entrada ──
     esUSD
@@ -342,8 +348,12 @@ export function CobroModal(props){
         h('span',null,
           h('span',{style:{fontSize:12,fontWeight:700,color:'var(--blue)'}},'Incluir intereses del mes actual'),
           h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:2,lineHeight:1.5}},
-            'Cobra por adelantado el interes del periodo en curso (',fmtUni(uni(cob.interesMes)),
-            ') antes de abonar a capital.'))),
+            // Con abono, el interes que se cobra es el de la cuota REGENERADA, no el de hoy:
+            // el rotulo muestra la cifra del plan para no prometer una distinta de la del recibo.
+            'Cobra por adelantado el interes del periodo en curso (',
+            fmtUni(uni((plan&&plan.totales.interesMes>0)?plan.totales.interesMes:cob.interesMes)),
+            ') antes de abonar a capital',
+            cob.ctx.interesRecalculable?'. Si hay abono, se liquida sobre el capital que quede.':'.'))),
       cob.mora>0&&h('label',{style:{display:'flex',alignItems:'flex-start',gap:9,cursor:'pointer',
         background:omitMora?'var(--yellow-bg)':'transparent',
         border:'1px solid '+(omitMora?'var(--yellow-bd)':'var(--border)'),borderRadius:10,padding:'9px 11px'}},

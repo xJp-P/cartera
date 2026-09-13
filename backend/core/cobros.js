@@ -27,7 +27,17 @@ function snapshotCobros(filas) {
       map[p.cuotaN] = {
         partialPaid: p.partialPaid || 0,
         observaciones: p.observaciones || '',
-        recibos: p.recibos || '[]'
+        recibos: p.recibos || '[]',
+        // Los ACUMULADORES de lo recibido. Desde v2.6.1 (Bug #50) `/partial` suma aqui la caja
+        // en pesos y los dolares de cada parcial, y los dos deciden cosas: `montoUSDRecibido`
+        // alimenta `completaUSD` (si el USD ya entregado cubre la cuota, cierra) y
+        // `montoCOPRecibido` es la caja con la que Ganancias mide el efecto cambiario. Este
+        // snapshot es de v2.3.0, anterior a ese sprint, y no los guardaba: medido en
+        // produccion, un abono con recalculo borro USD 40,14 y $123.446 de una cuota, y al
+        // pagar exactamente lo que decian sus papeles la cuota quedaba abierta con $13 de
+        // deuda fantasma.
+        montoCOPRecibido: p.montoCOPRecibido || 0,
+        montoUSDRecibido: p.montoUSDRecibido || 0
       };
     }
   });
@@ -39,6 +49,8 @@ function restaurarCobros(schedule, map) {
     if (!s) return;
     p.partialPaid = s.partialPaid;
     p.recibos = s.recibos;
+    p.montoCOPRecibido = s.montoCOPRecibido;
+    p.montoUSDRecibido = s.montoUSDRecibido;
     if (s.observaciones) p.observaciones = s.observaciones;
   });
 }

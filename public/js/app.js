@@ -30,7 +30,7 @@ import { h, useState, useEffect, useMemo, useCallback, createRoot } from './core
 import { API, setErrorHandler } from './core/api.js';
 import { fmt, fmtD } from './core/format.js';
 import { properCase, nowStr, addDays, payMatchesQuery } from './core/ui.js';
-import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion } from './core/dominio.js';
+import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe } from './core/dominio.js';
 import { Ico } from './componentes/iconos.js';
 import { generateCronogramaPDF } from './pdf/cronograma.js';
 import { generateReciboCorte } from './pdf/recibo-corte.js';
@@ -712,19 +712,14 @@ function App(){
         && p.fechaRecaudo
         && p.fechaRecaudo.startsWith(thisM);
     });
-    // Ganancia real (historica, todos los estados): para USD usa montoCOPRecibido - capital robusto
-    // (cuotaTotal - interesPeriodo), no abonoCapital (que se persiste en 0 en modalidad Prestamo y
-    // contaria el capital como ganancia fantasma — Bug #25). Para COP usa interesPeriodo. Excluye abonos.
-    // Misma definicion que loanMetrics.ganancia en PortfolioView -> ambas vistas cuadran.
+    // Ganancia real historica: `gananciaDe` (regla del PO, 2026-09-13), sobre TODAS las filas
+    // — cuotas saldadas, parciales en vuelo y abonos—, porque el interes cobrado vive en las tres.
+    // Es el MISMO helper del grafico mensual (DashView) y de Rendimiento, asi que el valor de la
+    // tarjeta es la suma exacta de los puntos del grafico y de las ganancias por prestamo.
     var loanCurrency={};loans.forEach(function(l){loanCurrency[l.id]=l.moneda;});
-    var totalInteresesRecibidos=pays.filter(function(p){return p.estadoPago==='Pagado'&&!esAbono(p);})
-      .reduce(function(s,p){
-        var esUSD=loanCurrency[p.prestamoId]==='USD';
-        if(esUSD&&p.montoCOPRecibido&&p.montoCOPRecibido>0){
-          return s+(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo));
-        }
-        return s+p.interesPeriodo;
-      },0);
+    var totalInteresesRecibidos=pays.reduce(function(s,p){
+      return s+gananciaDe(p, loanCurrency[p.prestamoId]==='USD').total;
+    },0);
     // Saldo real pendiente por préstamo activo (capital - capital recuperado)
     // KPI "Saldo Pendiente" del Inicio. Fase 3: capital vivo = original - CAPITAL IMPUTADO.
     // Antes restaba el parcial COMPLETO, mezclando interes dentro de una cifra de capital y

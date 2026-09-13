@@ -7,7 +7,7 @@
 
 import { SparklineChart } from '../componentes/SparklineChart.js';
 import { Ico } from '../componentes/iconos.js';
-import { cobrosDe, imputarCobros, pendCuota, esDiario, estadoDiario } from '../core/dominio.js';
+import { cobrosDe, imputarCobros, pendCuota, esDiario, estadoDiario, gananciaDe } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD, fmtN, fmtUSD } from '../core/format.js';
 import { h, useMemo, useState } from '../core/react.js';
 import { nowStr } from '../core/ui.js';
@@ -90,16 +90,18 @@ export function DashView(props){
     if(c!==0) return c;
     return String(b.pay.paidAt||'').localeCompare(String(a.pay.paidAt||'')); // hora real (v1.11.1)
   });
-  // Sparkline "Ganancias": ganancia recibida por mes (ultimos 12 meses), agrupada por fechaRecaudo.
-  // Misma definicion de ganancia que el KPI total: USD -> montoCOPRecibido - (cuotaTotal - interesPeriodo); COP -> interesPeriodo. Excluye abonos.
+  // Sparkline "Ganancias": ganancia real por mes (ultimos 12 meses). Cada peso cae en el mes
+  // del EVENTO de caja que lo trajo, no en el `fechaRecaudo` de la fila: una cuota pagada en dos
+  // meses reconoce en cada uno lo que cada pago cubrio. Mismo helper que el valor de la tarjeta
+  // (`gananciaDe`), asi que la suma de los doce puntos cuadra con el historico por construccion.
   var sparkGanancias=useMemo(function(){
     var moneda={};loans.forEach(function(l){moneda[l.id]=l.moneda;});
     var byMonth={};
     pays.forEach(function(p){
-      if(p.estadoPago!=='Pagado'||!p.fechaRecaudo||esAbono(p)) return;
-      var ym=p.fechaRecaudo.slice(0,7);
-      var g=(moneda[p.prestamoId]==='USD'&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo)):p.interesPeriodo;
-      byMonth[ym]=(byMonth[ym]||0)+g;
+      gananciaDe(p, moneda[p.prestamoId]==='USD').eventos.forEach(function(e){
+        var ym=String(e.fecha).slice(0,7);
+        byMonth[ym]=(byMonth[ym]||0)+e.ganancia;
+      });
     });
     var base=new Date(nowStr()+'T12:00:00'),vals=[],labs=[],tips=[];
     for(var i=11;i>=0;i--){

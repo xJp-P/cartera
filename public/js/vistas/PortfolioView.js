@@ -6,7 +6,7 @@
 // Sin Context API y sin store: eso seria rediseno, no refactor.
 
 import { Ico } from '../componentes/iconos.js';
-import { imputarCobros, esDiario, progresoCapital } from '../core/dominio.js';
+import { imputarCobros, esDiario, progresoCapital, gananciaDe } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD, fmtN, fmtUSD } from '../core/format.js';
 import { h, useMemo, useState } from '../core/react.js';
 import { esAbono } from '../core/ids.js';
@@ -26,23 +26,18 @@ export function PortfolioView(props){
       var regularesPaid=paid.filter(function(p){return !esAbono(p);});
       var abonosPaid=paid.filter(function(p){return esAbono(p);});
 
-      // ── GANANCIA REAL: COP recibido menos capital amortizado ──
-      // Para COP: equivale a interesPeriodo (no hay TRM en juego).
-      // Para USD: si el usuario registro montoCOPRecibido al cobrar, se usa eso
-      // (incluye ganancia cambiaria por subida de TRM). Si no, fallback a interesPeriodo.
-      var ganancia;
-      if(esUSD){
-        ganancia=regularesPaid.reduce(function(s,p){
-          if(p.montoCOPRecibido&&p.montoCOPRecibido>0){
-            // Capital robusto: cuotaTotal-interesPeriodo (en Prestamo abonoCapital=0,
-            // de lo contrario el COP recibido se contaria entero como ganancia fantasma).
-            return s+(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo));
-          }
-          return s+p.interesPeriodo;
-        },0);
-      } else {
-        ganancia=paid.reduce(function(s,p){return s+p.interesPeriodo;},0);
-      }
+      // ── GANANCIA REAL (regla del PO, 2026-09-13) ──
+      // `gananciaDe` sobre TODAS las filas del prestamo: el mismo helper del tablero, asi que la
+      // suma de estas tarjetas es el valor de la tarjeta "Ganancias" del Inicio. Ver su ficha en
+      // dominio.js: interes cobrado menos perdida cambiaria, con piso en cero por fila.
+      var ganancia=lp.reduce(function(s,p){return s+gananciaDe(p,esUSD).total;},0);
+      // EFECTO TRM de un Prestamo USD (0% de interes). Por la regla NO es ganancia —sin
+      // interes, una perdida cambiaria aporta cero—, pero la tarjeta lo rotula aparte como
+      // "Efecto TRM" (Bug #25) y es la unica cifra que lo muestra, con su signo. Se conserva la
+      // formula de siempre, `caja - capital`, que en una cuota sin interes ES el efecto.
+      var efectoTRM=(esUSD&&loan.modalidad==='Prestamo')?regularesPaid.reduce(function(s,p){
+        return s+((p.montoCOPRecibido&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo)):0);
+      },0):0;
 
       // ── GANANCIA EN USD REAL (Bug #23 / v1.12.6): el USD efectivamente recibido como utilidad,
       // NO copToUsd(gananciaCOP) que reconvierte por TRM y recontaria la perdida/ganancia cambiaria.
@@ -101,7 +96,7 @@ export function PortfolioView(props){
       // paidAt (timestamp real v1.11.1) > fechaRecaudo > fechaPago; fallback fechaInicio.
       var fechaFin=paid.reduce(function(mx,p){var d=p.paidAt||p.fechaRecaudo||p.fechaPago||'';return d>mx?d:mx;},'')||loan.fechaInicio;
 
-      return {loan:loan,ganancia:Math.round(ganancia),capRec:Math.round(capRec),saldo:saldo,
+      return {loan:loan,ganancia:Math.round(ganancia),efectoTRM:Math.round(efectoTRM),capRec:Math.round(capRec),saldo:saldo,
         cuotasPaid:cuotasPaid,cuotasTotal:cuotasTotal,enMora:enMora,capitalAbonos:Math.round(capitalAbonos),
         pctMonto:pctMonto,parcialesPend:Math.round(parcialesPend),fechaFin:fechaFin,gananciaUSD:gananciaUSD};
     }).sort(function(a,b){
@@ -189,10 +184,16 @@ export function PortfolioView(props){
             'Capital: '+(esUSD?'USD $'+fmtN(l.montoOrigen)+' ('+fmt(Math.round(l.montoOrigen*l.trmAcordada))+')':fmt(Math.round(l.montoOrigen)))),
           h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}},
             h('div',null,
-              h('div',{style:{fontSize:11,color:m.ganancia<0?'var(--red)':'var(--green)',fontWeight:600}},(esUSD&&l.modalidad==='Prestamo')?'Efecto TRM':'Ganancia obtenida'),
-              h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:m.ganancia<0?'var(--red)':'var(--green)'}},fmt(m.ganancia)),
-              esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},fmtUSD(m.gananciaUSD)),
-              (esUSD&&l.modalidad==='Prestamo')&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},m.ganancia<0?'Sin interes · TRM bajo al cobrar':m.ganancia>0?'Sin interes · TRM subio al cobrar':'Sin interes · sin variacion TRM')),
+              // En un Prestamo USD la cifra de la tarjeta es el EFECTO TRM (con signo), no la
+              // ganancia: por la regla del PO su ganancia es siempre cero y mostrarla borraria
+              // justo lo que ese rotulo existe para decir.
+              (function(){ var vTRM=(esUSD&&l.modalidad==='Prestamo'), v=vTRM?m.efectoTRM:m.ganancia;
+                return h('div',null,
+                  h('div',{style:{fontSize:11,color:v<0?'var(--red)':'var(--green)',fontWeight:600}},vTRM?'Efecto TRM':'Ganancia obtenida'),
+                  h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:v<0?'var(--red)':'var(--green)'}},fmt(v)),
+                  esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},fmtUSD(m.gananciaUSD)),
+                  vTRM&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},v<0?'Sin interes · TRM bajo al cobrar':v>0?'Sin interes · TRM subio al cobrar':'Sin interes · sin variacion TRM'));
+              })()),
             h('div',null,
               h('div',{style:{fontSize:11,color:saldoColor,fontWeight:600}},esCancelado?(esCondonadoViejo?'Intereses condonados':'Perdida total'):'Saldo pendiente'),
               h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:saldoColor}},l.estado==='Activo'?fmt(m.saldo):esCancelado?'-'+fmt(perdidaTotal):'Saldado'),
@@ -217,7 +218,9 @@ export function PortfolioView(props){
             m.parcialesPend>0&&h('div',{style:{gridColumn:'1/3',marginTop:2}},
               h('div',{style:{fontSize:11,color:'var(--blue)',fontWeight:600}},'Abonos parciales recibidos'),
               h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--blue)'}},fmt(m.parcialesPend)),
-              h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},'Pendiente de completar cuota para reconocer ganancia'))),
+              // Desde la regla del PO (2026-09-13) el interes que un parcial ya cubrio SI cuenta en
+              // la ganancia: decir "pendiente de completar cuota" seria falso.
+              h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},'La parte que cubrio intereses ya suma a la ganancia'))),
           l.modalidad==='Intereses'?h('div',{style:{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--text3)'}},
             h('span',null,m.cuotasPaid+' cuotas pagadas'),
             h('span',{style:{color:'var(--blue)'}},'\u221E')):h('div',{style:{display:'flex',alignItems:'center',gap:8}},

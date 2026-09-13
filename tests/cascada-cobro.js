@@ -99,7 +99,7 @@ function cargarCascada() {
   vm.runInContext(orden.join('\n'), ctx);
   const api = vm.runInContext(
     '({planCascada,cobrableTotal,contextoCascada,proyeccionCobro,filasPreview,previewRecalculo,' +
-    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota})', ctx);
+    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros})', ctx);
   api.pdfs = pdfs;
   return api;
 }
@@ -177,7 +177,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
 
 (async function main() {
   const { planCascada, cobrableTotal, proyeccionCobro, filasPreview, previewRecalculo, _pmt, _tasaPeriodo,
-          generateReciboCobro, generatePropuestaAbono, saldoConCaja, pdfs } = cargarCascada();
+          generateReciboCobro, generatePropuestaAbono, saldoConCaja, imputarCobros, pdfs } = cargarCascada();
   // La seccion J necesita el mismo buzon de PDFs con otro nombre, porque comparte
   // scope con la G y alli `pdfs` ya esta en uso.
   const pdfsCascada = pdfs;
@@ -1239,6 +1239,35 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         : { obligacionCOP: totalCOP, cajaCOP: totalCOP, obligacionUSD: 0 };
       const plan = planCascada(loan, paysI, entrada, { incluirInteresMes: true });
       const pasoMes = plan.pasos.filter(p => p.esInteresMes)[0];
+
+      // PROPIEDAD PURA, antes de tocar el servidor: sobre 41 TRM pactadas distintas, el paso del
+      // interes nunca declara MAS pesos que el interes de la cuota regenerada, y lo cubre a menos de
+      // un centavo de dolar. Hace falta barrer TRMs: con UNA sola, el dolar del interes puede caer
+      // por casualidad del lado bueno del redondeo y un `round` en vez de `piso` pasaria verde
+      // (verificado: con el fixture solo, esa regresion no salia roja).
+      if (esUSD) {
+        const rI = _tasaPeriodo((+loan.tasaMensual || 0) / 100, loan.frecuencia || 'Mensual');
+        let excede = [], noCubre = [], conPaso = 0;
+        for (let k = -20; k <= 20; k++) {
+          const trmK = loan.trmAcordada + k * 7;
+          const loanK = Object.assign({}, loan, { trmAcordada: trmK });
+          const entK = { obligacionUSD: Math.round(totalCOP / trmK * 100) / 100, cajaCOP: Math.round(totalCOP * 0.95), obligacionCOP: 0 };
+          const pK = planCascada(loanK, paysI, entK, { incluirInteresMes: true });
+          const mK = pK.pasos.filter(p => p.esInteresMes)[0];
+          if (!mK || !pK.pasos.some(p => p.tipo === 'abono')) continue;
+          conPaso++;
+          const yaK = Math.round(mK && paysI.filter(p => p.id === mK.payId)[0].partialPaid || 0);
+          const intK = Math.round(pK.saldoTrasCascada * rI);
+          const pendK = Math.max(0, intK - Math.min(yaK, intK));
+          if (mK.obligacionCOP > pendK) excede.push('trm ' + trmK + ': ' + mK.obligacionCOP + ' > ' + pendK);
+          if (pendK - mK.obligacionCOP > Math.ceil(trmK / 100)) noCubre.push('trm ' + trmK + ': ' + mK.obligacionCOP + ' vs ' + pendK);
+        }
+        R.check('I (propiedad, 41 TRM) ANTI-VACIO: el barrido produjo pasos del interes con abono', conPaso >= 30, 'con paso: ' + conPaso);
+        R.check('I (propiedad, 41 TRM) el paso NUNCA declara mas interes del que la cuota regenerada tiene',
+          excede.length === 0, excede.slice(0, 5).join(' | '));
+        R.check('I (propiedad, 41 TRM) y lo cubre a menos de un centavo de dolar',
+          noCubre.length === 0, noCubre.slice(0, 5).join(' | '));
+      }
       R.check('I ANTI-VACIO: el plan produjo el paso del interes del mes y un abono',
         plan.ok && !!pasoMes && plan.pasos.some(p => p.tipo === 'abono'),
         JSON.stringify(plan.pasos.map(p => p.esInteresMes ? 'mes' : p.tipo)) + ' ' + (plan.error || ''));
@@ -1250,7 +1279,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           R.check('I ANTI-TRIVIAL: el credito es USD, donde la valuacion puede divergir',
             true, 'trm=' + loan.trmAcordada);
         }
-        const antes = conDbI(d => d.prepare('SELECT partialPaid FROM payments WHERE id=?').get(pasoMes.payId));
+        const antes = conDbI(d => d.prepare('SELECT partialPaid, montoCOPRecibido, montoUSDRecibido FROM payments WHERE id=?').get(pasoMes.payId));
         const est = await ejecutarPlan(loan.id, plan, hoy, 'test interes del mes', PORT_I);
         R.check('I la cadena se aplico completa', est.ok, est.error || '');
         const despues = conDbI(d => d.prepare('SELECT partialPaid, interesPeriodo, cuotaTotal FROM payments WHERE id=?').get(pasoMes.payId));
@@ -1264,14 +1293,63 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           R.eq('I en USD la obligacion es round(usd * TRM), la formula del backend',
             Math.round(pasoMes.obligacionCOP),
             Math.round(pasoMes.obligacionUSD * loan.trmAcordada));
-          // Y no se aleja del interes real mas de lo que un centavo de dolar permite.
-          R.check('I y no se aparta del interes pendiente mas de un centavo de dolar',
-            Math.abs(Math.round(pasoMes.obligacionCOP) - Math.round(cob.interesMes)) <= Math.ceil(loan.trmAcordada / 100) + 1,
-            'plan=' + Math.round(pasoMes.obligacionCOP) + ' interes=' + Math.round(cob.interesMes));
-        } else {
-          R.eq('I en COP la obligacion es exactamente el interes pendiente',
-            Math.round(pasoMes.obligacionCOP), Math.round(cob.interesMes));
         }
+        // ── REGLA DEL PO (2026-09-13): el interes se liquida sobre el CAPITAL REDUCIDO ──
+        // Hasta aqui el aserto comparaba contra el interes de HOY (`cob.interesMes`). Con un
+        // abono en el mismo cobro esa cifra ya no es la que queda en la base: el backend
+        // regenera la cuota sobre el saldo nuevo y su interes baja. Medido en produccion:
+        // el recibo declaro 147.739 y la cuota renacio con 42.681. Lo que se exige ahora es
+        // que el PAPEL diga lo que la BASE guarda.
+        const intRegen = Math.max(0, Math.round(despues.interesPeriodo) -
+          Math.min(Math.round(antes.partialPaid || 0), Math.round(despues.interesPeriodo)));
+        R.check('I ANTI-TRIVIAL: el abono bajo el interes de la cuota (si no, no prueba la regla)',
+          intRegen < Math.round(cob.interesMes),
+          'hoy=' + Math.round(cob.interesMes) + ' regenerada=' + intRegen);
+        // Nunca MAS que el interes de la cuota regenerada: lo que excediera se imputaria a
+        // capital y el recibo volveria a llamar interes a plata que la base trata como capital.
+        R.check('I el paso no cobra mas interes del que la cuota regenerada tiene',
+          Math.round(pasoMes.obligacionCOP) <= intRegen,
+          'plan=' + Math.round(pasoMes.obligacionCOP) + ' interes regenerado=' + intRegen);
+        // Y en USD queda a menos de un centavo de dolar (redondeo hacia abajo); en COP, exacto.
+        R.check('I el paso cubre el interes de la cuota regenerada (COP exacto, USD a un centavo)',
+          intRegen - Math.round(pasoMes.obligacionCOP) <= (esUSD ? Math.ceil(loan.trmAcordada / 100) : 0),
+          'plan=' + Math.round(pasoMes.obligacionCOP) + ' interes regenerado=' + intRegen);
+        // El papel y la base: `imputarCobros` sobre la fila ya persistida reconoce como
+        // INTERES exactamente lo que el recibo declara para ese paso, y nada como capital.
+        const filaTras = conDbI(d => d.prepare('SELECT * FROM payments WHERE id=?').get(pasoMes.payId));
+        const impTras = imputarCobros(filaTras).totales;
+        R.eq('I la base imputa como interes lo que el recibo declara como interes del mes',
+          impTras.interes, Math.round(pasoMes.obligacionCOP) + Math.min(Math.round(antes.partialPaid || 0), Math.round(despues.interesPeriodo)));
+        R.eq('I y no manda nada de ese pago a capital',
+          impTras.capital, Math.max(0, Math.round(antes.partialPaid || 0) - Math.round(despues.interesPeriodo)));
+
+        // ── EL INCIDENTE DE PRODUCCION (2026-09-13) ─────────────────────────────────
+        // El parcial del interes se aplica PRIMERO y el abono DESPUES regenera esa misma
+        // cuota. `restaurarCobros` devolvia `partialPaid` y el ledger, pero NO los
+        // acumuladores `montoCOPRecibido` / `montoUSDRecibido` que `/partial` escribe desde
+        // v2.6.1. Medido en produccion: se borraron USD 40,14 y $123.446, y al pagar exactamente
+        // lo que decian los papeles la cuota quedaba abierta con $13 de deuda fantasma, porque
+        // `completaUSD` ya no veia los dolares entregados antes. Verificado: sin el arreglo de
+        // `cobros.js` los tres asertos de abajo salen en rojo.
+        R.eq('I el abono que regenero la cuota conserva la caja ya recibida (montoCOPRecibido)',
+          Math.round(filaTras.montoCOPRecibido || 0), Math.round((antes.montoCOPRecibido || 0) + (pasoMes.cajaCOP || 0)));
+        if (esUSD) {
+          R.eq('I ... y los dolares ya recibidos (montoUSDRecibido)',
+            Math.round((filaTras.montoUSDRecibido || 0) * 100),
+            Math.round(((antes.montoUSDRecibido || 0) + (pasoMes.obligacionUSD || 0)) * 100));
+        }
+        // Pagar lo que el recibo y la franja anuncian (`money(pendCuota(p))`: una sola
+        // conversion del faltante en pesos) tiene que CERRAR la cuota, sin residuo.
+        const faltaCOP = Math.round(filaTras.cuotaTotal) - Math.round(filaTras.partialPaid);
+        const usdFalta = esUSD ? Math.round(faltaCOP / loan.trmAcordada * 100) / 100 : 0;
+        const rCierre = await pedir('POST', '/api/payments/' + pasoMes.payId + '/partial',
+          esUSD ? { monto: Math.round(usdFalta * loan.trmAcordada * 0.95), montoUSD: usdFalta, fecha: hoy, observaciones: 'test cierre' }
+                : { monto: faltaCOP, fecha: hoy, observaciones: 'test cierre' }, PORT_I);
+        const filaCerrada = conDbI(d => d.prepare('SELECT estadoPago, partialPaid, cuotaTotal FROM payments WHERE id=?').get(pasoMes.payId));
+        R.check('I pagar lo que dicen los papeles CIERRA la cuota, sin deuda fantasma',
+          rCierre.status === 200 && filaCerrada.estadoPago === 'Pagado' &&
+          Math.round(filaCerrada.partialPaid) === Math.round(filaCerrada.cuotaTotal),
+          'HTTP ' + rCierre.status + ' ' + JSON.stringify(rCierre.json) + ' | fila ' + JSON.stringify(filaCerrada));
       }
     }
     srvI.close();

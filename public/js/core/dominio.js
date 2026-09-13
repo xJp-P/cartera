@@ -142,6 +142,50 @@ export function imputarCobros(pay){
   return {eventos:out,totales:{cobrado:cobrado,interes:ti,capital:tc,ajuste:ta},
           sinLedger:sinLedger,saldada:saldada};
 }
+// ── GANANCIA REAL de una fila (regla del PO, 2026-09-13) ──────────────────────
+// UNA sola definicion para el valor de la tarjeta "Ganancias", su grafico mensual y la
+// "Ganancia obtenida" de Rendimiento, que hasta aqui eran tres copias de una formula que:
+//   - solo veia cuotas `Pagado` y NO abonos: el interes cobrado por un parcial en vuelo
+//     (medido: $42.681 en septiembre) y el de una liquidacion con el mes en curso eran
+//     invisibles hasta que la cuota cerrara, y entonces caian enteros en ese mes;
+//   - aplicaba el efecto cambiario de forma inconsistente: dentro de una cuota regular USD si
+//     (`montoCOPRecibido - capital`), en abonos y parciales no (medido: -$242.244 en sept.).
+//
+// REGLA DEL PO. La ganancia de un pago es  max(0, intereses cobrados + perdida cambiaria):
+//   - la PERDIDA cambiaria se descuenta del interes de ESA fila, nunca del resto del mes;
+//   - si se come todo el interes, la fila aporta cero —"los intereses se perdieron"— y no
+//     resta al consolidado. Es lo que distingue esto de una contabilidad de caja pura.
+//   - la formula nombra solo el efecto NEGATIVO, y asi se implementa: una subida de TRM no
+//     suma. Medido sobre la cartera real al definir la regla: el efecto positivo acumulado
+//     en toda la historia era +1 peso (redondeo), asi que la lectura no cambia ninguna cifra.
+//   - en COP no hay efecto cambiario: el `ajuste` de una fila COP es residuo de redondeo
+//     legacy del Bug #43 y no se toca.
+//
+// El interes y la perdida salen de `imputarCobros`, que ya reparte cada evento de caja en
+// interes -> capital -> ajuste; asi un parcial en vuelo cuenta el interes que REALMENTE cubrio.
+//
+// El piso se aplica sobre el ACUMULADO de la fila, evento a evento, y cada evento reconoce el
+// incremento. Tres propiedades por construccion:
+//   1. la suma de los eventos es exactamente max(0, interes + perdida) de la fila entera;
+//   2. la suma de todos los meses del grafico es exactamente el valor de la tarjeta;
+//   3. en la fila de un solo pago —casi todas— el evento vale lo mismo que la fila.
+// Unico caso en que un evento reconoce un monto negativo: el pago final de una cuota en
+// cuotas trae una perdida que se come interes ya reconocido en un pago anterior. Aun asi la
+// fila jamas baja de cero: la perdida nunca sale del interes de esa misma cuota.
+export function gananciaDe(pay, esUSD){
+  var imp=imputarCobros(pay);
+  var cumInt=0, cumPerdida=0, reconocida=0;
+  var eventos=imp.eventos.map(function(e){
+    cumInt+=e.interes;
+    if(esUSD&&e.ajuste<0) cumPerdida+=e.ajuste;
+    var g=Math.max(0, cumInt+cumPerdida);
+    var ev={fecha:e.fecha, ganancia:g-reconocida};
+    reconocida=g;
+    return ev;
+  });
+  return {total:reconocida, eventos:eventos};
+}
+
 // SALDO CON CAJA APLICADA (Fase 3) — la cifra que se MUESTRA, en pantalla y en los PDFs.
 // = capital prestado - capital efectivamente cubierto (cuotas saldadas + abonos + la parte de
 // capital de los parciales en curso, segun la cascada de imputarCobros).
