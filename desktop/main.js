@@ -384,18 +384,9 @@ ipcMain.handle('get-platform', () => process.platform);
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 // ── Generar PDF con fondos (printBackground: true) ──────────────────────
+// El render vive en desktop/pdf.js: ahi esta por que la ventana oculta NO es offscreen.
 ipcMain.handle('print-pdf', async (_e, html, filename) => {
-  const { BrowserWindow: BW } = require('electron');
-  const win = new BW({ show: false, width: 800, height: 600, webPreferences: { offscreen: true } });
-  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-  const pdfBuf = await win.webContents.printToPDF({
-    printBackground: true,
-    preferCSSPageSize: true,
-    // Borde a borde (paperless): sin margenes de pagina del sistema; el inset
-    // seguro del contenido lo da el padding:2cm del body en @media print.
-    margins: { marginType: 'none' }
-  });
-  win.destroy();
+  const pdfBuf = await require('./pdf').htmlAPdf(html);
   const savePath = await dialog.showSaveDialog(mainWin, {
     title: 'Guardar PDF',
     defaultPath: path.join(app.getPath('documents'), (filename || 'documento') + '.pdf'),

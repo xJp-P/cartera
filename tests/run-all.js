@@ -35,6 +35,7 @@ const SUITES = [
   { nombre: 'motor-diario',  archivo: 'motor-diario.js',  desc: 'invariantes del devengo de interes diario (motor puro)' },
   { nombre: 'props-dominio', archivo: 'props-dominio.js', desc: 'invariantes de imputacion, saldos y flujo de caja' },
   { nombre: 'pdf-render',    archivo: 'pdf-render.js',    desc: 'estructura de los generadores de PDF (golden master)' },
+  { nombre: 'pdf-nativo',    archivo: 'pdf-nativo.js',    desc: 'HTML -> PDF en un proceso Electron real, sin ventanas offscreen (Bug #69)' },
   { nombre: 'e2e-api',       archivo: 'e2e-api.js',       desc: 'todos los endpoints contra el server.js real' },
   { nombre: 'cascada-cobro', archivo: 'cascada-cobro.js', desc: 'orquestador de cobro en cascada (mora -> abono) contra el server real' },
   { nombre: 'condonacion',   archivo: 'condonacion.js',   desc: 'condonar intereses: la obligacion baja sin mover un peso de caja' },

@@ -673,5 +673,8 @@ export const CHANGELOGS = {
     'El interes del mes que se cobra por adelantado se calcula sobre el capital que queda despues del abono del mismo cobro. El recibo, la propuesta y los registros declaran ahora la misma cifra de interes, y el "Total que se puede cobrar hoy" ya lo tiene en cuenta.',
     'Una sola formula de ganancia en toda la app: Inicio, Rendimiento, perfil del deudor y Cartera muestran la misma cifra, y ahora cuenta tambien el interes cobrado en pagos parciales y abonos.',
     'En los creditos en dolares la ganancia se lee en sus dos monedas, lado a lado: lo recibido en USD, intacto (si el cliente pago USD 50 de interes, son USD 50), y lo consolidado en pesos, que si descuenta la perdida por TRM de los intereses de cada cuota sin dejar la ganancia en negativo. En los prestamos sin interes, la cifra en pesos sigue mostrando el efecto TRM con su signo.'
+  ],
+  '3.0.1': [
+    'Se corrigio un cierre inesperado de la app en macOS 27 al generar cualquier documento en PDF: recibos, cronogramas, liquidaciones y reportes. El documento que se genera es el mismo de antes.'
   ]
 };

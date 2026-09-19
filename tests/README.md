@@ -61,6 +61,7 @@ ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron tests/e2e-api.js
 | `hooks-order.js` | Que ningún hook quede por debajo de un `return` condicional — **el Bug #40**, la pantalla negra de v2.1.0. |
 | `props-dominio.js` | Invariantes de `imputarCobros`, `cobrosDe`, `saldoConCaja`, `pendienteDeCuota`, `flujoCajaDe` y `computeLiquidacion` sobre las 157 cuotas reales. |
 | `pdf-render.js` | Que los 5 generadores de PDF sigan produciendo la misma estructura de documento. |
+| `pdf-nativo.js` | La capa nativa que convierte ese HTML en PDF (`desktop/pdf.js`), dentro de un proceso Electron real: PDF valido, tamano carta, ninguna ventana oculta huerfana, y ninguna ventana offscreen en `desktop/` (Bug #69, el cierre en macOS 27). |
 | `e2e-api.js` | Los 25 endpoints contra el `server.js` real, con *golden master* y round-trip de undo. |
 
 Y el andamiaje:
