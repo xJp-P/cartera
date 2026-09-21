@@ -676,5 +676,9 @@ export const CHANGELOGS = {
   ],
   '3.0.1': [
     'Se corrigio un cierre inesperado de la app en macOS 27 al generar cualquier documento en PDF: recibos, cronogramas, liquidaciones y reportes. El documento que se genera es el mismo de antes.'
+  ],
+  '3.1.0': [
+    'Antes de descargar el cronograma en PDF puedes decidir si su valor de liquidacion incluye el interes del mes en curso, con la misma casilla de Liquidar deuda. La cifra que se imprimira se ve en pantalla antes de descargar, y si incluye ese interes el PDF dice hasta que fecha es valida.',
+    'La pregunta solo aparece en los creditos que cobran interes, tanto desde el perfil del deudor como al crear un prestamo nuevo. En los prestamos sin interes y de pago unico el PDF sale directo, como siempre.'
   ]
 };

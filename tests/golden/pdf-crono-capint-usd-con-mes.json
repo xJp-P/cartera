@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "caso": "crono-capint-usd-con-mes",
+  "generador": "generateCronogramaPDF",
+  "tema": "dark",
+  "entradaHash": "349839e6fb35f6d770726607853fcd19d7ef8adf",
+  "estructura": {
+    "docTitle": "Cronograma de Pagos",
+    "h1": [
+      "Cronograma de Pagos"
+    ],
+    "cabeceras": [
+      "#",
+      "Vence",
+      "Interes",
+      "Abono a capital",
+      "Valor cuota",
+      "Saldo",
+      "Estado"
+    ],
+    "etiquetas": [
+      "Deudor",
+      "Nombre",
+      "Cedula / ID",
+      "Telefono",
+      "Prestamo",
+      "Monto prestado",
+      "Modalidad",
+      "Frecuencia",
+      "Tasa",
+      "Fecha inicio",
+      "Fecha de finalizacion",
+      "Cuotas",
+      "Cronograma"
+    ]
+  },
+  "valores": {
+    "bytes": 6460,
+    "nFilas": 7,
+    "nCeldas": 49,
+    "celdasPorTr": [
+      7,
+      7,
+      7,
+      7,
+      7,
+      7,
+      7
+    ],
+    "nMontos": 27,
+    "hashMontos": "84433da22c7320c26a1cebe7064a7e33b59fffa4",
+    "hashFname": "91d5990f68d40049e4a4dfc0bea442a6bbccf856",
+    "hashTexto": "4edda7d3b1c53b28f73a6de6398e7ece043b44a7",
+    "clases": [
+      "badge badge-mora",
+      "badge badge-pagado",
+      "badge badge-pendiente",
+      "footer",
+      "header",
+      "label",
+      "mora",
+      "pagado",
+      "pendiente",
+      "row",
+      "section",
+      "section-title",
+      "total-row",
+      "value"
+    ]
+  }
+}

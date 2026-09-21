@@ -12,6 +12,7 @@ import { copToUsd, fmt } from '../core/format.js';
 import { generateEstadoLiquidacion } from '../pdf/estado-liquidacion.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
+import { CheckInteresMes, etiquetaInteresMes } from '../componentes/CheckInteresMes.js';
 
 // ── LiquidarModal (v2.0.0) ────────────────────────────────────────────────────
 // ELEVADO desde DebtorModal a nivel App. Antes su estado (confirmLiq) vivia dentro
@@ -34,9 +35,8 @@ export function LiquidarModal(props){
   var L=computeLiquidacion(cLoan,pays,{incluyeProxMes:incluyeProxMes});
   var aplicaInteres=L.aplicaInteres;
   var mesTxt=fmt(L.moraValorMes)+'/mes'+(L.moraUniforme?'':' prom.');
-  // En un credito abierto el devengo ya corre al dia, asi que el mes opcional es un
-  // cobro HACIA ADELANTE; en los de cuotas es el mes en curso que aun no se facturo.
-  var lblExtra=L.esDiario?'Interes del proximo mes':'Interes del mes en curso';
+  // El rotulo del mes opcional depende de la modalidad (ver `etiquetaInteresMes`).
+  var lblExtra=etiquetaInteresMes(L);
   function rowLine(label,sublabel,monto,color,opaque){
     return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'10px 0',borderTop:'1px solid var(--bg3)',opacity:opaque?.45:1,transition:'opacity .2s'}},
       h('div',{style:{flex:1,paddingRight:8}},
@@ -58,19 +58,8 @@ export function LiquidarModal(props){
       L.esDiario&&L.interesDevengado>0&&rowLine('Interes acumulado',L.diasDevengados+' dia(s) a '+fmt(L.interesDia)+'/dia',L.interesDevengado,'var(--yellow)'),
       L.partialPend>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(L.partialPend),'var(--blue)'),
       L.incluyeProxMes&&rowLine(lblExtra,cLoan.tasaMensual+'% sobre el capital pendiente',L.intProxMes,'var(--yellow)')),
-    // El texto viejo ("¿Incluir 1 mes de interes adicional?") preguntaba sin dar contexto:
-    // no decia de donde sale ese mes ni cuando corresponde cobrarlo. Ahora dice QUE se
-    // cobra, POR QUE existe (se liquida a mitad de ciclo) y CUANDO activarlo.
-    aplicaInteres&&h('label',{style:{display:'flex',alignItems:'flex-start',gap:10,background:'var(--bg3)',border:'1px solid '+(incluyeProxMes?'var(--yellow)':'var(--border)'),borderRadius:10,padding:'11px 12px',marginBottom:12,cursor:'pointer',transition:'border-color .2s'}},
-      h('input',{type:'checkbox',checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},style:{width:16,height:16,accentColor:'var(--yellow)',cursor:'pointer',margin:'1px 0 0',flex:'none'}}),
-      h('span',{style:{flex:1}},
-        h('span',{style:{display:'flex',justifyContent:'space-between',gap:8}},
-          h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Cobrar el '+lblExtra.toLowerCase()),
-          h('span',{className:'mono',style:{fontSize:12,color:'var(--yellow)',whiteSpace:'nowrap'}},'+ '+fmt(L.intProxMes))),
-        h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
-          L.esDiario
-            ? 'El interes ya esta cobrado al dia de hoy. Activalo solo si pactaste cobrarle ademas el mes siguiente.'
-            : 'El credito se cierra antes del proximo vencimiento, asi que ese mes aun no se ha facturado. Activalo solo si lo pactaste con el deudor.'))),
+    // La casilla es compartida con CronogramaPdfModal (3.1.0): mismas palabras, misma cifra.
+    h(CheckInteresMes,{L:L,checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);}}),
     h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,
         h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,letterSpacing:.5}},'TOTAL A LIQUIDAR'),

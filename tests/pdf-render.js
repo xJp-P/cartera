@@ -397,7 +397,10 @@ const CASOS = [
   { nombre: 'crono-capint-cop-abono', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1776205975507jkph', tema: 'light', dark: false }),
     ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, false),
-    contiene: ['badge-abono', 'ABONOS', 'Capital + Intereses', 'Valor de liquidacion'] },
+    contiene: ['badge-abono', 'ABONOS', 'Capital + Intereses', 'Valor de liquidacion'],
+    // Sin la opcion (3.1.0) el pie sigue siendo el de siempre: ni el interes del mes ni una
+    // fecha de vigencia. Si alguno aparece, la opcion se filtro al camino por defecto.
+    noContiene: ['interes del mes en curso', 'Valido hasta', 'Valor calculado al'] },
 
   { nombre: 'crono-capint-usd-mora', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
     entrada: () => ({ loanId: '1782151590658w66y', tema: 'dark', dark: true }),
@@ -423,6 +426,25 @@ const CASOS = [
     entrada: () => ({ loanId: LOAN_PARCIAL, parcial: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateCronogramaPDF(L(LOAN_PARCIAL), paysParcial, false),
     contiene: ['badge-parcial', 'Abonado'] },
+
+  // ── 3.1.0 — el valor de liquidacion con el interes del mes en curso ──────────────────
+  // La misma decision que la casilla de Liquidar deuda, tomada en CronogramaPdfModal. Las
+  // cifras van literales: capital 2.885.494 + interes del mes 215.177 = 3.100.671, valido
+  // hasta la proxima cuota (14-ago, sale de las filas guardadas). Es el aserto que se pone
+  // rojo si la opcion deja de viajar hasta `computeLiquidacion`.
+  { nombre: 'crono-capint-cop-con-mes', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
+    entrada: () => ({ loanId: '1776205975507jkph', tema: 'light', dark: false, incluyeProxMes: true }),
+    ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, false, { incluyeProxMes: true }),
+    contiene: ['Valor de liquidacion', 'interes del mes en curso', '215.177', '3.100.671',
+               'Valido hasta el 14 de ago de 2026'],
+    noContiene: ['Valor calculado al'] },
+
+  // El mismo pie en dolares y en oscuro, sobre un credito CON mora: la linea del interes se
+  // suma DETRAS de la mora, y la vigencia es la de su propia proxima cuota (19-ago).
+  { nombre: 'crono-capint-usd-con-mes', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
+    entrada: () => ({ loanId: '1782151590658w66y', tema: 'dark', dark: true, incluyeProxMes: true }),
+    ejecutar: () => S.generateCronogramaPDF(L('1782151590658w66y'), pays, true, { incluyeProxMes: true }),
+    contiene: ['+ mora ', 'interes del mes en curso', 'USD $', 'Valido hasta el 19 de ago de 2026', '#0d1117'] },
 
   // ── generateReportePrestamosPDF — cartera completa, ambos temas ───────────────────────
   { nombre: 'reporte-activos-claro', gen: 'generateReportePrestamosPDF', tema: 'light', celdas: 8,
@@ -1070,6 +1092,136 @@ for (const caso of CASOS) {
                   '   (tras borrar tests/golden/pdf-' + caso.nombre + '.json)');
     }
   }
+}
+
+// ── 3.1.0 — CronogramaPdfModal: compuerta, modal real, coherencia y cable ────────────────
+// Los dos casos golden `crono-*-con-mes` fijan el DOCUMENTO. Esto fija lo que lo rodea:
+//   M1 la compuerta: el modal solo se abre donde la pregunta tiene respuesta.
+//   M2 el modal REAL: la casilla viaja hasta el PDF (sembrando su useState por posicion,
+//      el mismo metodo de la seccion H de cascada-cobro).
+//   M3 coherencia: para la misma decision, el cronograma y el Estado de Liquidacion
+//      imprimen el mismo total y la misma fecha de vigencia.
+//   M4 el cable: el perfil y el alta de prestamo abren el modal en vez del PDF directo.
+{
+  R.seccion('cronograma · valor de liquidacion con el interes del mes (3.1.0)');
+  const ID_M = '1776205975507jkph';
+  const lM = L(ID_M);
+  const liqSin = S.computeLiquidacion(lM, pays, {});
+  const liqCon = S.computeLiquidacion(lM, pays, { incluyeProxMes: true });
+  R.check('M ANTI-TRIVIAL: el interes del mes mueve el total (y solo por el interes)',
+          liqCon.intExtra > 0 && liqCon.total === liqSin.total + liqCon.intExtra,
+          JSON.stringify({ sin: liqSin.total, con: liqCon.total, extra: liqCon.intExtra }));
+
+  // M1 — compuerta. El fixture solo trae `Prestamo` finalizados, y ahi la compuerta diria que
+  // no por falta de capital, no por la modalidad: se reabren sus cuotas en memoria para que el
+  // "no" se deba a la regla que se quiere probar.
+  R.check('M1 un C+I activo con capital SI pregunta', S.preguntaInteresMes(lM, pays) === true);
+  const reabrir = (l) => pays.map(p => p.prestamoId === l.id
+    ? Object.assign({}, p, { estadoPago: 'Pendiente', partialPaid: 0 }) : p);
+  const prest = loans.find(l => l.modalidad === 'Prestamo');
+  const paysPrest = reabrir(prest);
+  R.check('M1 ANTI-TRIVIAL: el Prestamo reabierto tiene capital vivo',
+          S.computeLiquidacion(prest, paysPrest, {}).capitalPendiente > 0);
+  R.check('M1 un Prestamo con capital vivo NO pregunta (0% interes)', S.preguntaInteresMes(prest, paysPrest) === false);
+  const puVivo = loans.find(l => l.modalidad === 'Pago Unico' && l.estado === 'Activo');
+  R.check('M1 ANTI-TRIVIAL: hay un Pago Unico activo con capital',
+          !!puVivo && S.computeLiquidacion(puVivo, pays, {}).capitalPendiente > 0);
+  R.check('M1 un Pago Unico con capital NO pregunta (ganancia fija)', !!puVivo && S.preguntaInteresMes(puVivo, pays) === false);
+  const diario = loans.find(l => l.modalidad === 'Interes Diario');
+  R.check('M1 Interes Diario NO pregunta (su boton imprime el Estado de Cuenta)', !!diario && S.preguntaInteresMes(diario, pays) === false);
+  R.check('M1 un C+I con tasa 0 NO pregunta', S.preguntaInteresMes(Object.assign({}, lM, { tasaMensual: 0 }), pays) === false);
+  const ciCerrado = loans.find(l => l.modalidad === 'Capital + Intereses' && l.estado === 'Finalizado');
+  R.check('M1 un credito saldado NO pregunta (sin capital no hay liquidacion)', !!ciCerrado && S.preguntaInteresMes(ciCerrado, pays) === false);
+
+  // M2 — el componente REAL.
+  const useStateOrig = FE.sandbox.useState;
+  const sembrar = (vals) => {
+    let i = 0;
+    FE.sandbox.useState = (init) => {
+      const v = (i < vals.length && vals[i] !== undefined) ? vals[i] : (typeof init === 'function' ? init() : init);
+      i++;
+      return [v, () => {}];
+    };
+  };
+  const pintar = (n) => {
+    if (n === null || n === undefined || typeof n === 'boolean') return null;
+    if (typeof n === 'string' || typeof n === 'number') return String(n);
+    if (Array.isArray(n)) return n.map(pintar).filter(x => x !== null);
+    if (typeof n.type === 'function') return pintar(n.type(Object.assign({}, n.props, { children: n.children })));
+    return { tag: n.type, props: n.props, kids: (n.children || []).map(pintar).filter(x => x !== null) };
+  };
+  const textos = (n, out) => {
+    out = out || [];
+    if (typeof n === 'string') { out.push(n); return out; }
+    if (Array.isArray(n)) { n.forEach(x => textos(x, out)); return out; }
+    if (n && n.kids) n.kids.forEach(x => textos(x, out));
+    return out;
+  };
+  const nodos = (n, tag, out) => {
+    out = out || [];
+    if (Array.isArray(n)) { n.forEach(x => nodos(x, tag, out)); return out; }
+    if (n && n.kids) { if (n.tag === tag) out.push(n); n.kids.forEach(x => nodos(x, tag, out)); }
+    return out;
+  };
+  const usar = (marcada) => {
+    ponerTema('light');
+    sembrar([marcada, false]);           // orden de useState en el modal: [incluyeProxMes, busy]
+    let cierres = 0;
+    const arbol = pintar({ type: S.CronogramaPdfModal, props: { loan: lM, pays: pays, onClose: () => { cierres++; } }, children: [] });
+    const pantalla = textos(arbol).join(' ');
+    const casilla = nodos(arbol, 'input').filter(n => n.props && n.props.type === 'checkbox')[0];
+    const boton = nodos(arbol, 'button').filter(b => textos(b).join('').indexOf('Descargar PDF') !== -1)[0];
+    CAP.pdfs.length = 0;
+    if (boton) boton.props.onClick();
+    return { pantalla, casilla, boton, docs: CAP.pdfs.slice(), cierres: () => cierres };
+  };
+  let conMes, sinMes;
+  try { conMes = usar(true); sinMes = usar(false); }
+  finally { FE.sandbox.useState = useStateOrig; }
+
+  R.check('M2 el modal REAL se cargo y tiene su boton "Descargar PDF"', typeof S.CronogramaPdfModal === 'function' && !!conMes.boton);
+  R.check('M2 la casilla compartida aparece, marcada segun su estado',
+          !!conMes.casilla && conMes.casilla.props.checked === true && !!sinMes.casilla && sinMes.casilla.props.checked === false);
+  R.check('M2 la casilla usa el texto de Liquidar deuda', conMes.pantalla.indexOf('Cobrar el interes del mes en curso') !== -1);
+  R.check('M2 la pantalla muestra la cifra que va a imprimir (marcada)', conMes.pantalla.indexOf(S.fmt(liqCon.total)) !== -1, conMes.pantalla.slice(0, 400));
+  R.check('M2 la pantalla muestra la cifra que va a imprimir (desmarcada)', sinMes.pantalla.indexOf(S.fmt(liqSin.total)) !== -1, sinMes.pantalla.slice(0, 400));
+  R.check('M2 marcada: emite 1 PDF CON el interes del mes y su vigencia',
+          conMes.docs.length === 1 && conMes.docs[0].html.indexOf('interes del mes en curso') !== -1 &&
+          conMes.docs[0].html.indexOf('3.100.671') !== -1 && conMes.docs[0].html.indexOf('Valido hasta el 14 de ago de 2026') !== -1,
+          conMes.docs.length ? '' : 'no se emitio documento');
+  R.check('M2 desmarcada: emite 1 PDF SIN el interes del mes, con el total de siempre',
+          sinMes.docs.length === 1 && sinMes.docs[0].html.indexOf('interes del mes en curso') === -1 &&
+          sinMes.docs[0].html.indexOf('Valido hasta') === -1 && sinMes.docs[0].html.indexOf('2.885.494') !== -1);
+  R.check('M2 tras descargar, el modal se cierra (el perfil vuelve)', conMes.cierres() === 1 && sinMes.cierres() === 1);
+
+  // M3 — el cronograma y el Estado de Liquidacion, misma decision, mismas cifras.
+  CAP.pdfs.length = 0;
+  S.generateEstadoLiquidacion(lM, pays, '', { incluyeProxMes: true, hasta: S.nowStr() });
+  const estado = CAP.pdfs[0] ? CAP.pdfs[0].html : '';
+  const fechaVig = S.fmtD(S.proximoVencimiento(lM, pays, S.nowStr()));
+  const cronoCon = conMes.docs[0] ? conMes.docs[0].html : '';
+  R.check('M3 el Estado de Liquidacion imprime el mismo total que el cronograma',
+          estado.indexOf('3.100.671') !== -1 && cronoCon.indexOf('3.100.671') !== -1);
+  R.check('M3 y la misma fecha de vigencia (' + fechaVig + ')',
+          estado.indexOf(fechaVig) !== -1 && cronoCon.indexOf(fechaVig) !== -1);
+  CAP.pdfs.length = 0;
+  S.generateEstadoLiquidacion(lM, pays, '', { incluyeProxMes: false, hasta: S.nowStr() });
+  R.check('M3 ANTI-TRIVIAL: sin la opcion el Estado de Liquidacion NO imprime ese total',
+          !!CAP.pdfs[0] && CAP.pdfs[0].html.indexOf('3.100.671') === -1);
+
+  // M4 — el cable. El comportamiento del modal ya esta probado; esto fija que los DOS puntos de
+  // entrada lo abren (la leccion de la seccion K de cascada-cobro: un arnes que arma sus propios
+  // argumentos no ve si el cable real se corta).
+  const leer = (rel) => fs.readFileSync(path.join(REPO, 'public', 'js', rel), 'utf8');
+  const srcDebtor = leer('modales/DebtorModal.js'), srcApp = leer('app.js'), srcLiq = leer('modales/LiquidarModal.js');
+  R.check('M4 perfil: "Descargar PDF" pasa por la compuerta y abre el modal',
+          /else if\(preguntaInteresMes\(l,lp\)\) setCronoPdf\(l\.id\);/.test(srcDebtor) &&
+          /cronoPdfLoan&&h\(CronogramaPdfModal,/.test(srcDebtor));
+  R.check('M4 alta de prestamo: pasa por la compuerta y abre el modal',
+          /if\(pNuevo\.length&&preguntaInteresMes\(lNuevo,pNuevo\)\)\{\s*setCronoPdfModal\(/.test(srcApp) &&
+          /cronoPdfModal&&h\(CronogramaPdfModal,/.test(srcApp));
+  R.check('M4 Liquidar deuda usa la MISMA casilla (sin copia inline del texto)',
+          /h\(CheckInteresMes,/.test(srcLiq) && srcLiq.indexOf("'Cobrar el '") === -1);
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────

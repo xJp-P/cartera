@@ -30,7 +30,7 @@ import { h, useState, useEffect, useMemo, useCallback, createRoot } from './core
 import { API, setErrorHandler } from './core/api.js';
 import { fmt, fmtD } from './core/format.js';
 import { properCase, nowStr, addDays, payMatchesQuery } from './core/ui.js';
-import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe } from './core/dominio.js';
+import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe, preguntaInteresMes } from './core/dominio.js';
 import { Ico } from './componentes/iconos.js';
 import { generateCronogramaPDF } from './pdf/cronograma.js';
 import { generateReciboCorte } from './pdf/recibo-corte.js';
@@ -58,6 +58,7 @@ import { CobroModal } from './modales/CobroModal.js';
 import { CondonarModal } from './modales/CondonarModal.js';
 import { CorteModal } from './modales/CorteModal.js';
 import { LiquidarModal } from './modales/LiquidarModal.js';
+import { CronogramaPdfModal } from './modales/CronogramaPdfModal.js';
 import { RestructureModal } from './modales/RestructureModal.js';
 import { LoanModal } from './modales/LoanModal.js';
 import { DebtModal } from './modales/DebtModal.js';
@@ -105,6 +106,9 @@ function App(){
   var sCobro=useState(null); var cobroModal=sCobro[0]; var setCobroModal=sCobro[1];
   // Condonacion de intereses. NO es un cobro: modifica la obligacion sin mover caja.
   var sCond=useState(null); var condonarModal=sCond[0]; var setCondonarModal=sCond[1];
+  // 3.1.0 — cronograma de un prestamo RECIEN creado: antes de imprimirlo se decide si su valor
+  // de liquidacion incluye el interes del mes en curso (decision del PO: tambien aqui).
+  var sCronoPdf=useState(null); var cronoPdfModal=sCronoPdf[0]; var setCronoPdfModal=sCronoPdf[1];
   var s13=useState(false); var menuOpen=s13[0]; var setMenuOpen=s13[1];
   var s14=useState(null); var calcData=s14[0]; var setCalcData=s14[1];
   var s15=useState(null); var toast=s15[0]; var setToast=s15[1];
@@ -327,9 +331,20 @@ function App(){
     return p.then(function(r){
       if(!r)return;
       var savedLoan=r;
-      return reload().then(function(){
+      return reload().then(function(res){
         setLoanModal(null);showToast(isNew?'Prestamo creado':'Prestamo actualizado');
         if(isNew&&savedLoan&&savedLoan.id){
+          // 3.1.0 — si el credito puede cobrar el interes del mes, el modal del cronograma
+          // REEMPLAZA a la confirmacion de abajo: hace la misma pregunta ("¿generar el PDF?")
+          // y ademas la del interes. Encadenar los dos serian dos dialogos seguidos sobre la
+          // misma accion. Usa las cuotas que `reload()` acaba de traer; si no llegaron, se cae
+          // al camino de siempre, que las vuelve a pedir.
+          var lNuevo=((res&&res[0])||[]).filter(function(x){return x.id===savedLoan.id;})[0]||savedLoan;
+          var pNuevo=((res&&res[1])||[]).filter(function(p2){return p2.prestamoId===savedLoan.id;});
+          if(pNuevo.length&&preguntaInteresMes(lNuevo,pNuevo)){
+            setCronoPdfModal({loan:lNuevo,pays:pNuevo});
+            return;
+          }
           setConfirmDlg({title:'Cronograma PDF',message:'¿Deseas generar el cronograma de pagos en PDF para enviar al deudor?',okLabel:'Generar PDF',okColor:'var(--blue)',onConfirm:function(){
             setConfirmDlg(null);
             API.get('/api/payments').then(function(allPays){
@@ -996,6 +1011,12 @@ function App(){
     // v2.0.0 — LiquidarModal a nivel App (antes vivia DENTRO de DebtorModal, por eso era
     // inalcanzable desde AbonoModal). La logica de confirmacion es la MISMA de v1.19.0:
     // registrarAbono(...,liquidar=true,...) con el mismo obs y el mismo intExtra.
+    // 3.1.0 — el cronograma de un prestamo recien creado (ver doSaveLoan). Desde el perfil
+    // del deudor el mismo modal lo abre DebtorModal, sin pasar por aqui.
+    cronoPdfModal&&h(CronogramaPdfModal,{loan:cronoPdfModal.loan,pays:cronoPdfModal.pays,
+      titulo:'Cronograma PDF',okLabel:'Generar PDF',
+      mensaje:'¿Deseas generar el cronograma de pagos en PDF para enviar al deudor?',
+      onClose:function(){setCronoPdfModal(null);}}),
     liquidarModal&&h(LiquidarModal,{loan:liquidarModal.loan,pays:pays,datosPago:cfg.datos_pago,
       onClose:function(){if(liquidarModal.fromDeudor){setDebtorModal(liquidarModal.fromDeudor);} setLiquidarModal(null);},
       onConfirm:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');

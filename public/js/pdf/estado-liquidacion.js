@@ -29,8 +29,8 @@
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
-import { computeLiquidacion, imputarCobros, esDiario } from '../core/dominio.js';
-import { esAbono, esCorte, esCuotaRegular } from '../core/ids.js';
+import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento } from '../core/dominio.js';
+import { esAbono, esCorte } from '../core/ids.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
 function campoValido(v){
@@ -249,16 +249,9 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   // La fecha sale de las FILAS PERSISTIDAS del cronograma, nunca de `diaPago` ni de
   // un calculo de calendario: asi respeta sola cualquier prorroga o cambio de dia de
   // cobro (`fechaBaseCronograma`, /cambiar-dia-pago) hecho a ese credito en concreto.
-  var proxVenc = null;
-  if (!diario) {
-    var futuras = pays
-      .filter(function(p){
-        return esCuotaRegular(p) && p.estadoPago !== 'Pagado' && String(p.fechaPago) > String(hasta);
-      })
-      .map(function(p){ return String(p.fechaPago); })
-      .sort();
-    proxVenc = futuras.length ? futuras[0] : null;
-  }
+  // El calculo vive en `proximoVencimiento` (dominio.js) desde 3.1.0: el Cronograma
+  // imprime la misma fecha cuando incluye el interes del mes, y no puede anunciar otra.
+  var proxVenc = diario ? null : proximoVencimiento(loan, pays, hasta);
 
   var vigencia;
   if (L.capitalPendiente <= 0 && L.total <= 0) {

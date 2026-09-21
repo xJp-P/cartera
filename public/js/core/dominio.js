@@ -44,7 +44,7 @@
 // no tiene ledger (historico previo, abonos a capital, liquidaciones de mora) cae al FALLBACK: un
 // unico evento en fechaRecaudo por (montoCOPRecibido||cuotaTotal). metrics.recibido y sparkCobros
 // usan ESTA funcion -> el KPI y la suma del grafico cuadran por construccion, sin doble conteo.
-import { esAbono, esCorte } from './ids.js';
+import { esAbono, esCorte, esCuotaRegular } from './ids.js';
 
 export function cobrosDe(p){
   if(!p) return [];
@@ -514,6 +514,38 @@ export function computeLiquidacion(loan, loanPays, opts){
     diasDevengados: diasDevengados, interesDia: Math.round(interesDia),
     total: total
   };
+}
+
+// ── PROXIMO VENCIMIENTO de un credito de cuotas (3.1.0) ──────────────────────
+// Hasta cuando vale un valor de liquidacion que incluye el interes del mes en curso:
+// el deudor queda cubierto justo hasta la proxima cuota. Lo imprimen el Estado de
+// Liquidacion y el Cronograma; vivia dentro del primero y se mudo aqui para que los dos
+// papeles no puedan anunciar fechas distintas.
+// Sale de las FILAS PERSISTIDAS (la menor cuota regular sin pagar posterior a `hasta`),
+// nunca de `diaPago` ni de un calculo de calendario: asi respeta sola cualquier
+// prorroga o cambio de dia de cobro hecho a ese credito. `null` si no queda ninguna.
+export function proximoVencimiento(loan, loanPays, hasta) {
+  var futuras = (loanPays || [])
+    .filter(function (p) {
+      return String(p.prestamoId) === String(loan.id) && esCuotaRegular(p) &&
+        p.estadoPago !== 'Pagado' && String(p.fechaPago) > String(hasta);
+    })
+    .map(function (p) { return String(p.fechaPago); })
+    .sort();
+  return futuras.length ? futuras[0] : null;
+}
+
+// ── ¿Se pregunta por el interes del mes antes de imprimir el cronograma? (3.1.0) ──
+// El cronograma cierra con el valor de liquidacion, y ese valor puede incluir o no el
+// interes del mes en curso: la misma decision que la casilla de Liquidar deuda. Solo se
+// pregunta cuando la pregunta tiene respuesta: el credito puede cobrar ese interes (la
+// misma regla `aplicaInteres` que decide si esa casilla existe) y le queda capital. En
+// Prestamo, Pago Unico y tasa 0 el PDF sale directo, como siempre. Interes Diario queda
+// fuera: su boton imprime el Estado de Cuenta, no el cronograma.
+export function preguntaInteresMes(loan, loanPays) {
+  if (!loan || esDiario(loan)) return false;
+  var L = computeLiquidacion(loan, loanPays, {});
+  return !!L.aplicaInteres && L.capitalPendiente > 0;
 }
 
 // Saldo restante de una cuota considerando pagos parciales.

@@ -15,10 +15,15 @@
 // `computeLiquidacion`, que resta el parcial APARTE; migrarlo lo restaria dos veces.
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
-import { imputarCobros, computeLiquidacion } from '../core/dominio.js';
+import { imputarCobros, computeLiquidacion, proximoVencimiento } from '../core/dominio.js';
+import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 
-export function generateCronogramaPDF(loan, payments, darkMode) {
+// `opts.incluyeProxMes` (3.1.0): si el valor de liquidacion del pie incluye el interes del
+// mes en curso. Es la MISMA decision que la casilla de Liquidar deuda y la toma quien
+// imprime, en `CronogramaPdfModal`. Sin `opts` el documento sale byte a byte como antes.
+export function generateCronogramaPDF(loan, payments, darkMode, opts) {
+  opts = opts || {};
   var esUSD = loan && loan.moneda === 'USD';
   var trm = loan.trmAcordada || 1;
   var fv = esUSD ? function(cop) { return copToUsd(cop, trm); } : fmt;
@@ -177,18 +182,36 @@ export function generateCronogramaPDF(loan, payments, darkMode) {
     loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este prestamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuaran hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '',
     function(){
       // v1.19.0 — valor de liquidacion desde el helper centralizado (misma cifra que el modal).
-      var L = computeLiquidacion(loan, payments, {});
+      // 3.1.0 — con la opcion del interes del mes, la misma que ve `LiquidarModal`: para una
+      // misma decision, el cronograma y el Estado de Liquidacion imprimen el mismo total.
+      var L = computeLiquidacion(loan, payments, { incluyeProxMes: !!opts.incluyeProxMes });
       if(L.capitalPendiente <= 0) return '';
       var mesTxt = fv(L.moraValorMes) + '/mes' + (L.moraUniforme ? '' : ' prom.');
+      // El total se explica en su propia linea: si incluye el interes del mes, lo dice
+      // (un total que su desglose no explica fue el Bug #49).
       var detalle = 'Capital ' + fv(L.capitalPendiente) +
         (L.intMora > 0 ? ' + mora ' + fv(L.intMora) + ' (' + L.moraCount + ' cuota' + (L.moraCount>1?'s':'') + ' a ' + mesTxt + ')' : '') +
-        (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '');
+        (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '') +
+        (L.intExtra > 0 ? ' + interes del mes en curso ' + fv(L.intExtra) : '');
       var bg = dark ? '#2b2005' : '#fff8c5';
       var bd = dark ? '#3d2e08' : '#d4a72c';
       var cl = dark ? '#d29922' : '#7a5900';
+      // Vigencia SOLO cuando la cifra incluye el interes del mes: el deudor queda cubierto
+      // hasta la proxima cuota, y sin la fecha podria pagar semanas despues creyendose al
+      // dia. La fecha sale del mismo helper que usa el Estado de Liquidacion. Sin la opcion
+      // no se emite nada, y los cronogramas de siempre quedan byte a byte como estaban.
+      var vig = '';
+      if (L.incluyeProxMes) {
+        var hoy = nowStr();
+        var pv = proximoVencimiento(loan, payments, hoy);
+        vig = '<div style="font-size:10px;color:'+cl+';margin-top:4px"><b>' +
+          (pv ? 'Valido hasta el ' + fmtD(pv) + '.</b> Incluye el interes de este periodo; si el pago se hace despues, se generan nuevos intereses.'
+              : 'Valor calculado al ' + fmtD(hoy) + '.</b> Si el pago se hace mas adelante, solicita un valor actualizado.') +
+          '</div>';
+      }
       return '<div style="margin-top:14px;padding:12px 16px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:12px">' +
         '<div><div style="font-size:10px;font-weight:700;color:'+cl+';text-transform:uppercase;letter-spacing:1px">Valor de liquidacion</div>' +
-        '<div style="font-size:10px;color:'+cl+';margin-top:2px">' + detalle + '</div></div>' +
+        '<div style="font-size:10px;color:'+cl+';margin-top:2px">' + detalle + '</div>' + vig + '</div>' +
         '<div style="font-size:20px;font-weight:700;color:'+cl+';white-space:nowrap">' + fv(L.total) + '</div></div>';
     }(),
     '</div>',

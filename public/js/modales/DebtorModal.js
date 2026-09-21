@@ -11,7 +11,7 @@ import { GananciaBimonetaria, notaCOPGanancia } from '../componentes/GananciaBim
 import { Ico } from '../componentes/iconos.js';
 import { API, showError } from '../core/api.js';
 import { _pmt } from '../core/calculo.js';
-import { computeLiquidacion, imputarCobros, pendCuota, esDiario, progresoCapital, estadoDiario, saldoConCaja, gananciaDePrestamo } from '../core/dominio.js';
+import { computeLiquidacion, imputarCobros, pendCuota, esDiario, progresoCapital, estadoDiario, saldoConCaja, gananciaDePrestamo, preguntaInteresMes } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD, fmtN, fmtUSD } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { freqLabel, nowStr } from '../core/ui.js';
@@ -19,6 +19,7 @@ import { generateCronogramaPDF } from '../pdf/cronograma.js';
 import { generateEstadoCuentaDiario } from '../pdf/estado-cuenta.js';
 import { generateFacturaCobroDiario } from '../pdf/factura-cobro.js';
 import { esAbono } from '../core/ids.js';
+import { CronogramaPdfModal } from './CronogramaPdfModal.js';
 
 // ── DebtorModal ───────────────────────────────────────────────────────────────
 export function DebtorModal(props){
@@ -31,6 +32,9 @@ export function DebtorModal(props){
   var cf=useState(null); var cambioFecha=cf[0]; var setCambioFecha=cf[1];
   var cfs=useState(false); var cfSending=cfs[0]; var setCfSending=cfs[1];   // v1.18.1: guarda anti doble-submit del cambio de fecha
   var ceu=useState(null); var comprasExp=ceu[0]; var setComprasExp=ceu[1];
+  // 3.1.0 — id del prestamo cuyo cronograma PDF se esta por imprimir (ver CronogramaPdfModal).
+  // Junto a los demas hooks, por encima de cualquier return condicional (Bug #40).
+  var cpdf=useState(null); var cronoPdf=cpdf[0]; var setCronoPdf=cpdf[1];
   // Pagos de este deudor (por nombre, a traves de sus prestamos)
   var deudorPays=pays.filter(function(p){
     var loan=null;
@@ -62,6 +66,9 @@ export function DebtorModal(props){
   var totalSaldoVivo=activosDeudor.reduce(function(s,l){
     return s+saldoConCaja(l,pays.filter(function(p){return p.prestamoId===l.id;}));
   },0);
+  // 3.1.0 — prestamo cuyo cronograma se esta por imprimir; el modal se dibuja al final, ENCIMA
+  // del perfil (ver el return principal). Se lee fresco de los props.
+  var cronoPdfLoan=cronoPdf?loans.filter(function(l){return l.id===cronoPdf;})[0]:null;
   if(cambioFecha){
     var cfLoan=cambioFecha.loan;
     var cfEsUSD=cfLoan.moneda==='USD';
@@ -199,7 +206,7 @@ export function DebtorModal(props){
       },disabled:!validNuevo||cfSending,className:'btn-primary',style:{background:(validNuevo&&!cfSending)?'var(--blue-bg)':'var(--bg3)',border:'1px solid '+((validNuevo&&!cfSending)?'var(--blue-bd)':'var(--border)'),color:(validNuevo&&!cfSending)?'var(--blue)':'var(--text3)',marginBottom:6,cursor:(validNuevo&&!cfSending)?'pointer':'not-allowed'}},cfSending?'Procesando...':'Confirmar cambio'),
       h('button',{onClick:function(){setCambioFecha(null);},className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
   }
-  return h(Modal,{onClose:onClose,wide:true,tall:true},
+  var perfilModal=h(Modal,{onClose:onClose,wide:true,tall:true},
     h('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
       h('div',{style:{width:48,height:48,borderRadius:99,background:'var(--bg3)',border:'1px solid var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}},
         d.nombre.charAt(0).toUpperCase()),
@@ -588,6 +595,9 @@ export function DebtorModal(props){
                   // duplicarlo obligaria al usuario a elegir entre uno que no aplica.
                   l.estado==='Activo'&&h('button',{onClick:function(e){e.stopPropagation();
                       if(esDiario(l)) generateEstadoCuentaDiario(l,lp,{});
+                      // Si el credito puede cobrar el interes del mes, primero se decide si el
+                      // valor de liquidacion del PDF lo incluye; si no, sale directo como siempre.
+                      else if(preguntaInteresMes(l,lp)) setCronoPdf(l.id);
                       else generateCronogramaPDF(l,lp,document.documentElement.getAttribute('data-theme')==='dark');
                     },style:btnGhost},
                     h(Ico,{name:'download',size:13,color:'var(--text3)'}),esDiario(l)?'Estado de cuenta':'Descargar PDF'))));
@@ -813,4 +823,15 @@ export function DebtorModal(props){
             h(FlujoCajaPanel,{loan:l,pays:pays}))
         );
       })));
+  // 3.1.0 — el modal del cronograma se abre ENCIMA del perfil, no en su lugar: reemplazarlo
+  // (el patron de "Cambiar fecha") remontaba el perfil y lo devolvia al principio, lejos del
+  // boton "Descargar PDF", que vive al fondo del prestamo desplegado. El contenedor esta
+  // SIEMPRE, abierto o no el modal: si solo apareciera con el modal, React veria otra raiz
+  // y remontaria el perfil igual. Los dos modales son `position:fixed`, asi que el div no
+  // ocupa lugar; el segundo, por ir despues, se pinta encima.
+  return h('div',null,
+    perfilModal,
+    cronoPdfLoan&&h(CronogramaPdfModal,{loan:cronoPdfLoan,
+      pays:pays.filter(function(p){return p.prestamoId===cronoPdfLoan.id;}),
+      onClose:function(){setCronoPdf(null);}}));
 }
