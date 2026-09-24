@@ -184,15 +184,17 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
       // v1.19.0 — valor de liquidacion desde el helper centralizado (misma cifra que el modal).
       // 3.1.0 — con la opcion del interes del mes, la misma que ve `LiquidarModal`: para una
       // misma decision, el cronograma y el Estado de Liquidacion imprimen el mismo total.
-      var L = computeLiquidacion(loan, payments, { incluyeProxMes: !!opts.incluyeProxMes });
+      // 3.2.0 — con un periodo irregular en curso, los dias que eligio el administrador.
+      var L = computeLiquidacion(loan, payments, { incluyeProxMes: !!opts.incluyeProxMes, diasProxMes: opts.diasProxMes, hasta: nowStr() });
       if(L.capitalPendiente <= 0) return '';
       var mesTxt = fv(L.moraValorMes) + '/mes' + (L.moraUniforme ? '' : ' prom.');
       // El total se explica en su propia linea: si incluye el interes del mes, lo dice
       // (un total que su desglose no explica fue el Bug #49).
       var detalle = 'Capital ' + fv(L.capitalPendiente) +
         (L.intMora > 0 ? ' + mora ' + fv(L.intMora) + ' (' + L.moraCount + ' cuota' + (L.moraCount>1?'s':'') + ' a ' + mesTxt + ')' : '') +
+        (L.moraConsolidada > 0 ? ' + mora consolidada ' + fv(L.moraConsolidada) : '') +
         (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '') +
-        (L.intExtra > 0 ? ' + interes del mes en curso ' + fv(L.intExtra) : '');
+        (L.intExtra > 0 ? (L.periodoIrregular ? ' + interes de ' + L.diasCobrados + ' dias del periodo en curso ' : ' + interes del mes en curso ') + fv(L.intExtra) : '');
       var bg = dark ? '#2b2005' : '#fff8c5';
       var bd = dark ? '#3d2e08' : '#d4a72c';
       var cl = dark ? '#d29922' : '#7a5900';
@@ -203,9 +205,11 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
       var vig = '';
       if (L.incluyeProxMes) {
         var hoy = nowStr();
-        var pv = proximoVencimiento(loan, payments, hoy);
+        // 3.2.0 — en un periodo irregular, hasta donde cubren los dias cobrados.
+        var pv = L.periodoIrregular ? L.validoHasta : proximoVencimiento(loan, payments, hoy);
         vig = '<div style="font-size:10px;color:'+cl+';margin-top:4px"><b>' +
-          (pv ? 'Valido hasta el ' + fmtD(pv) + '.</b> Incluye el interes de este periodo; si el pago se hace despues, se generan nuevos intereses.'
+          (pv && L.periodoIrregular ? 'Valido hasta el ' + fmtD(pv) + '.</b> Incluye ' + L.diasCobrados + ' dias de interes de este periodo; si el pago se hace despues, se generan nuevos intereses.'
+          : pv ? 'Valido hasta el ' + fmtD(pv) + '.</b> Incluye el interes de este periodo; si el pago se hace despues, se generan nuevos intereses.'
               : 'Valor calculado al ' + fmtD(hoy) + '.</b> Si el pago se hace mas adelante, solicita un valor actualizado.') +
           '</div>';
       }

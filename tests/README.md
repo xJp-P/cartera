@@ -63,6 +63,7 @@ ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron tests/e2e-api.js
 | `pdf-render.js` | Que los 5 generadores de PDF sigan produciendo la misma estructura de documento. |
 | `pdf-nativo.js` | La capa nativa que convierte ese HTML en PDF (`desktop/pdf.js`), dentro de un proceso Electron real: PDF valido, tamano carta, ninguna ventana oculta huerfana, y ninguna ventana offscreen en `desktop/` (Bug #69, el cierre en macOS 27). |
 | `e2e-api.js` | Los 25 endpoints contra el `server.js` real, con *golden master* y round-trip de undo. |
+| `periodo-irregular.js` | La cuota transitoria (periodo irregular) derivada en el motor sobre el capital vivo: identica a la formula de siempre del cambio de dia, correcta inmediatamente despues de un abono y estable al reabrir la app; migracion exacta de las transitorias guardadas con el modelo viejo. Desde 3.2.0 tambien el primer pago elegido al crear (tiempos muertos de 1 a 400 dias, el formulario real), la liquidacion por dias variables durante ese periodo y la mora consolidada: cambiar el dia de cobro no puede mover el valor de liquidacion. |
 
 Y el andamiaje:
 

@@ -64,6 +64,7 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   // ── UNICA fuente del total (ver doctrina 1) ────────────────────────────────
   var L = computeLiquidacion(loan, allPays, {
     incluyeProxMes: !!opts.incluyeProxMes,
+    diasProxMes: opts.diasProxMes,     // 3.2.0: dias elegidos si el periodo en curso es irregular
     hasta: hasta
   });
 
@@ -123,11 +124,26 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
       ' &nbsp;&middot;&nbsp; ' + money(L.moraValorMes) + ' por mes' + (L.moraUniforme ? '' : ' (promedio)'),
       money(L.intMora), C.amber));
   }
+  // 3.2.0 (Fase 4) — la mora que el cambio de dia de cobro consolido dentro de la cuota
+  // transitoria. No tiene fila `En Mora` que la respalde (se borraron), pero se debe igual,
+  // asi que se cobra y se explica aparte en vez de desaparecer del total.
+  if (L.moraConsolidada > 0) {
+    desglose.push(dsg('Intereses atrasados consolidados',
+      'Vencidos antes del cambio de dia de cobro &nbsp;&middot;&nbsp; quedaron dentro de la cuota del ' +
+      fmtD(L.moraConsolidadaFecha),
+      money(L.moraConsolidada), C.amber));
+  }
   if (L.partialPend > 0) {
     desglose.push(dsg('Abonos parciales ya recibidos', 'Se descuentan del total',
       '&minus; ' + money(L.partialPend), C.blue));
   }
-  if (L.incluyeProxMes && L.intExtra > 0) {
+  if (L.incluyeProxMes && L.intExtra > 0 && L.periodoIrregular) {
+    // 3.2.0 — el periodo en curso no es un mes: se dice cuantos dias y de que periodo.
+    desglose.push(dsg('Interes del periodo en curso',
+      L.diasCobrados + ' de ' + L.diasPeriodo + ' dias (periodo del ' + fmtD(L.periodoDesde) + ' al ' + fmtD(L.periodoHasta) +
+      ') &nbsp;&middot;&nbsp; pactado con el deudor',
+      money(L.intExtra), C.amber));
+  } else if (L.incluyeProxMes && L.intExtra > 0) {
     desglose.push(dsg(diario ? 'Interes del proximo mes' : 'Interes del mes en curso',
       L.tasaMensual + '% sobre el capital pendiente &nbsp;&middot;&nbsp; pactado con el deudor',
       money(L.intExtra), C.amber));
@@ -260,6 +276,12 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     vigencia = '<b>Este valor es valido unicamente para el ' + fmtD(hasta) + '.</b> ' +
       'El credito genera intereses cada dia, asi que a partir del dia siguiente el monto a pagar cambia. ' +
       'Si el deudor liquida en otra fecha, solicita un documento actualizado.';
+  } else if (L.periodoIrregular && L.incluyeProxMes) {
+    // 3.2.0 — se cobran DIAS de un periodo irregular: el interes cubre hasta donde llegan
+    // esos dias (o solo hoy, si se cobraron menos de los ya corridos).
+    vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(L.validoHasta) + '.</b> ' +
+      'Incluye ' + L.diasCobrados + ' dias de interes del periodo en curso. ' +
+      'Si el pago se realiza despues, se generaran nuevos intereses.';
   } else if (proxVenc && L.incluyeProxMes) {
     vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(proxVenc) + '.</b> ' +
       'Incluye el interes de este periodo, de modo que el monto no cambia hasta esa fecha. ' +

@@ -169,6 +169,7 @@ export function generateReciboAbono(loan, allPays, opts) {
   if (!esPazYSalvo && (esCapInt || liquidacion !== saldoDespues)) {
     var liqDet = 'Capital ' + money(_L.capitalPendiente) +
       (intMora > 0 ? ' + mora ' + money(intMora) + ' (' + _L.moraCount + ' cuota' + (_L.moraCount>1?'s':'') + ' a ' + moraMesTxt + ')' : '') +
+      (_L.moraConsolidada > 0 ? ' + mora consolidada ' + money(_L.moraConsolidada) : '') +
       (partialPend > 0 ? ' &minus; parciales ' + money(partialPend) : '') + ', sin los intereses futuros del cronograma.';
     liqHTML = '<div class="ab-liq"><div><div class="ab-liq-q">&iquest;Quieres liquidar la deuda hoy?</div>' +
       '<div class="ab-liq-s">' + liqDet + '</div></div>' +
@@ -215,9 +216,12 @@ export function generateReciboAbono(loan, allPays, opts) {
     // titular. Que un desglose no cuadre con su propio total es justo el defecto que este
     // documento viene a corregir, asi que no puede reintroducirse por un centavo.
     var uMora  = uni(liq.intMora);
+    // 3.2.0 (Fase 4) — la mora consolidada viene DENTRO de `liq.total` (es deuda ya causada,
+    // no depende del checkbox), asi que hay que restarla aqui o el capital se la comeria.
+    var uMoraC = uni(liq.moraConsolidada || 0);
     var uExtra = uni(intExtraPag);
     var uPart  = uni(liq.partialPend);
-    var uCap   = uni(totalRecibido) - uMora - uExtra + uPart;
+    var uCap   = uni(totalRecibido) - uMora - uMoraC - uExtra + uPart;
     var uOrig  = uni(originalCOP);
     var filasD = dsgRow('Aplicado a capital',
       fmtUni(uOrig) + ' prestados &minus; ' + fmtUni(Math.max(0, uOrig - uCap)) + ' ya amortizados',
@@ -229,13 +233,22 @@ export function generateReciboAbono(loan, allPays, opts) {
         fmtUni(uni(liq.moraValorMes)) + ' por mes' + (liq.moraUniforme ? '' : ' (promedio)'),
         fmtUni(uMora), C.amber);
     }
+    if (uMoraC > 0) {
+      filasD += dsgRow('Intereses atrasados consolidados',
+        'Vencidos antes del cambio de dia de cobro &nbsp;&middot;&nbsp; estaban dentro de la cuota del ' +
+        fmtD(liq.moraConsolidadaFecha),
+        fmtUni(uMoraC), C.amber);
+    }
     if (uPart > 0) {
       filasD += dsgRow('Abonos parciales ya recibidos', 'Se descontaron del total',
         '&minus; ' + fmtUni(uPart), C.blue);
     }
     if (uExtra > 0) {
-      filasD += dsgRow('Interes del mes en curso',
-        (+loan.tasaMensual || 0) + '% sobre el capital pendiente &nbsp;&middot;&nbsp; pactado con el deudor',
+      // 3.2.0 — si el periodo era irregular, lo cobrado fueron DIAS de ese periodo, no un mes.
+      filasD += dsgRow(liq.periodoIrregular ? 'Interes del periodo en curso' : 'Interes del mes en curso',
+        liq.periodoIrregular
+          ? 'periodo del ' + fmtD(liq.periodoDesde) + ' al ' + fmtD(liq.periodoHasta) + ' &nbsp;&middot;&nbsp; pactado con el deudor'
+          : (+loan.tasaMensual || 0) + '% sobre el capital pendiente &nbsp;&middot;&nbsp; pactado con el deudor',
         fmtUni(uExtra), C.amber);
     }
     dsgHTML = '<div class="ab-st">Como se aplico tu pago</div><div class="ab-dsg">' + filasD + '</div>';

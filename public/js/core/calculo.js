@@ -13,6 +13,8 @@
 // la duplicacion es preexistente y unificarla es una decision de diseno aparte,
 // no un efecto colateral de mover archivos.
 
+import { diasEntre, esTransitoria, interesDeTramo, interesTransitoria } from './dominio.js';
+
 export function pmt(r,n,pv){ return r===0?pv/n:pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1); }
 // ── AbonoModal ────────────────────────────────────────────────────────────────
 // Helper: PMT (cuota fija de amortizacion francesa)
@@ -66,6 +68,73 @@ export function filasPreview(montoCOP, r, nFilas, soloIntereses, cuotaNominal){
     saldo=sf;
   }
   return rows;
+}
+
+// ── LA CUOTA TRANSITORIA en el preview (3.2.0, Fase 1) ───────────────────────
+// ESPEJO de `transitoriaDe` / `aplicarPeriodoIrregular` (backend/core/engine.js). Un
+// prestamo que paso por "Cambiar fecha" tiene una cuota de periodo irregular que cobra
+// sus DIAS REALES sobre el capital vivo, mas la mora consolidada en pesos. Desde 3.2.0
+// el motor la re-deriva cada vez que un abono regenera el cronograma, asi que el preview
+// del cobro tiene que hacer lo mismo: sin esto prometia esa cuota de mes completo y el
+// motor la persistia prorrateada (lo atrapa la seccion F de `cascada-cobro`).
+//
+// El capital de la cuota no se toca, igual que en el motor: solo cambia su interes.
+// (`esTransitoria` e `interesTransitoria` viven en dominio.js desde la Fase 3: la
+// liquidacion tambien las necesita, y dominio no puede importar de aqui sin un ciclo.)
+// `filas` son las de `filasPreview`, que arrancan en la cuota `startN` y parten de
+// `saldoInicial`. La fecha de la transitoria se toma de su fila persistida (un abono no la
+// mueve: sale de su `cuotaN`), buscada por su id determinista. Muta y devuelve `filas`.
+export function aplicarTransitoriaPreview(loan, filas, startN, saldoInicial, loanPays){
+  var n=+(loan&&loan.periodoIrregularN)||0;
+  if(!esTransitoria(loan, n)) return filas;
+  var i=n-startN;
+  if(i<0||!filas||i>=filas.length) return filas;
+  var persistida=(loanPays||[]).filter(function(p){ return String(p.id)===String(loan.id)+'-'+n; })[0];
+  if(!persistida||!persistida.fechaPago) return filas;
+  var f=filas[i];
+  var si=i===0?Math.round(saldoInicial):filas[i-1].saldo;
+  var nuevo=interesTransitoria(loan, si, persistida.fechaPago);
+  f.cuota=f.cuota+(nuevo-f.interes);
+  f.interes=nuevo;
+  return filas;
+}
+
+// ── PRIMER PAGO del formulario (3.2.0, Fase 2) ───────────────────────────────
+// ESPEJO de `getPayDate` (rama Mensual) y de `resolverPrimerPago` (backend/core/engine.js).
+// El backend es el que decide: esto solo alimenta lo que el formulario muestra mientras se
+// teclea. La prueba de paridad vive en `tests/periodo-irregular.js`.
+export function fechaPagoMensual(baseISO, cuotaN, diaPago){
+  var d=new Date(baseISO+'T12:00:00');
+  if(isNaN(d)) return '';
+  d.setDate(1);
+  d.setMonth(d.getMonth()+cuotaN);
+  d.setDate(Math.min(diaPago, new Date(d.getFullYear(), d.getMonth()+1, 0).getDate()));
+  return d.toISOString().split('T')[0];
+}
+// El primer pago REGULAR: el mismo dia del mes siguiente (acotado a fin de mes). Es el que la
+// app asumia siempre, y elegirlo deja el prestamo exactamente como antes.
+export function primerPagoRegular(fechaInicio){
+  if(!fechaInicio) return '';
+  return fechaPagoMensual(fechaInicio, 1, +String(fechaInicio).slice(8,10));
+}
+// El primer pago de un prestamo YA guardado, con su base y su dia de pago.
+export function primerPagoDe(loan){
+  if(!loan||!loan.fechaInicio) return '';
+  return fechaPagoMensual(loan.fechaBaseCronograma||loan.fechaInicio, 1, +loan.diaPago||+String(loan.fechaInicio).slice(8,10));
+}
+// Lo que el formulario necesita para ofrecer la decision: si el periodo es irregular, cuantos
+// dias tiene y cuanto cobraria la cuota 1 de interes en cada opcion. Mes completo = `saldo * tasa`
+// (lo que calcula el motor para una cuota normal); proporcional = dias reales / 30.
+export function infoPrimerPeriodo(montoCOP, tasaMensual, fechaInicio, primerPago){
+  var regular=primerPagoRegular(fechaInicio);
+  var irregular=!!primerPago&&!!regular&&primerPago!==regular&&primerPago>fechaInicio;
+  var dias=(fechaInicio&&primerPago)?diasEntre(fechaInicio, primerPago):0;
+  var saldo=Math.round(+montoCOP||0);
+  return {
+    regular:regular, irregular:irregular, dias:dias,
+    interesCompleto:Math.round(saldo*((+tasaMensual||0)/100)),
+    interesProporcional:interesDeTramo(saldo, tasaMensual, Math.max(1,dias))
+  };
 }
 
 // ── PREVIEW DEL RECALCULO TRAS UN ABONO ──────────────────────────────────────

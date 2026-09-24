@@ -26,6 +26,11 @@
 // "ADD COLUMN IF NOT EXISTS") y los UPDATE correctivos llevan un WHERE que
 // garantiza que una 2a pasada no encuentre nada.
 
+// El motor es puro (no toca BD), asi que depender de el desde aqui no crea ciclos. Lo usa
+// la migracion de la cuota transitoria: la regla de calculo tiene que ser la MISMA que
+// aplicara el motor al regenerar, o la conversion moveria cifras.
+const { transitoriaDe } = require('../core/engine');
+
 function aplicarEsquema(db) {
   db.exec(`
     PRAGMA foreign_keys = ON;
@@ -110,10 +115,10 @@ function aplicarEsquema(db) {
   try { db.exec("ALTER TABLE loans ADD COLUMN comprasUSD TEXT DEFAULT ''"); } catch(_){}
   // Extra consolidado en una cuota (prorrateo + mora del cambio-dia-pago) que debe preservarse al recalcular
   try { db.exec("ALTER TABLE payments ADD COLUMN extraConsolidado REAL DEFAULT 0"); } catch(_){}
-  // Extra pendiente del prorrateo a aplicar a la PROXIMA cuota regular del prestamo.
-  // Persiste en loans para sobrevivir cualquier regeneracion del cronograma (recalculate, edit, etc.).
-  // Se aplica a la primera cuota Pendiente cuyo cuotaN >= proximaCuotaExtraN.
-  // Se limpia automaticamente cuando esa cuota se paga.
+  // OBSOLETAS desde 3.2.0 (Fase 1): guardaban el MONTO de la cuota transitoria del cambio de dia,
+  // y un abono lo dejaba viejo. Las reemplazan las columnas `periodoIrregular*` de mas abajo; la
+  // unica lectura que queda es la migracion `migrarTransitoriasLegacy`, que las convierte y las
+  // deja en 0. Los ALTER se conservan porque SQLite no borra columnas y el esquema es aditivo.
   try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtra REAL DEFAULT 0"); } catch(_){}
   try { db.exec("ALTER TABLE loans ADD COLUMN proximaCuotaExtraN INTEGER DEFAULT 0"); } catch(_){}
   // Base del cronograma SOLO para el calculo de FECHAS (no toca fechaInicio, que es historico y lo
@@ -125,6 +130,15 @@ function aplicarEsquema(db) {
   // regenerarse usando buildScheduleFixedPMT en vez de buildSchedule.
   // Se limpia al saldar el prestamo o al hacer un abono con otra opcion (Mantener/Modificar plazo).
   try { db.exec("ALTER TABLE loans ADD COLUMN cuotaFijaPactada REAL DEFAULT 0"); } catch(_){}
+
+  // ── 3.2.0 (Fase 1): la cuota transitoria se guarda como DECISION, no como monto ──
+  // Reemplazan a `proximaCuotaExtra`/`proximaCuotaExtraN`, que guardaban el MONTO del ajuste
+  // calculado con el saldo del dia del cambio y quedaban viejos ante un abono. Ver
+  // `aplicarPeriodoIrregular` en core/engine.js. NULL -> el prestamo no tiene transitoria.
+  try { db.exec("ALTER TABLE loans ADD COLUMN periodoIrregularN INTEGER"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN periodoIrregularDesde TEXT"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN periodoIrregularMora REAL DEFAULT 0"); } catch(_){}
+  migrarTransitoriasLegacy(db);
 
   // ── Migración v1.18.2 (Bug #30): normalizar abonoCapital en modalidad 'Prestamo' ──
   // Historicamente buildSchedule escribia abonoCapital=0 en la cuota unica de un Prestamo (0% interes),
@@ -252,6 +266,58 @@ function aplicarEsquema(db) {
   // Enlace 1:1 entre la entrada del historial y su entrada de undo. Sin esta columna habria que
   // aparear por (tipo, mensaje, timestamp), que colisiona ante dos operaciones identicas.
   try { db.exec('ALTER TABLE activity_log ADD COLUMN undo_id TEXT'); } catch (_) {}
+}
+
+// ── Migracion de las transitorias guardadas con el modelo viejo (3.2.0, Fase 1) ──
+// Un prestamo que paso por "Cambiar fecha" antes de 3.2.0 tiene su transitoria como MONTO en
+// `proximaCuotaExtra`, que el motor ya no lee. Sin convertirla, la cuota perderia el prorrateo
+// en la siguiente regeneracion.
+//
+// Se reconstruye la DECISION desde las filas, con la misma regla que aplicara el motor:
+//   - N:     `proximaCuotaExtraN`.
+//   - desde: la ultima cuota regular Pagada ANTES de la transitoria, o `fechaInicio` si no hay
+//            ninguna. Es el `lastSettledDate` que uso /cambiar-dia-pago al crearla.
+//   - mora:  el interes que hoy lleva la fila menos el prorrateo de sus dias. La fila guarda
+//            `prorrateo + mora` por construccion, asi que lo que sobra es la mora consolidada.
+// Si el saldo de la fila no cambio desde el cambio de dia —el caso normal—, la conversion es
+// EXACTA: el motor vuelve a producir los mismos pesos. Si un abono ya la habia dejado vieja
+// (el defecto que esta fase corrige), la cifra actual se congela como mora: no empeora, y los
+// abonos siguientes ya recalculan el prorrateo. Medido antes de escribir esto: en produccion
+// ningun prestamo esta en ese estado.
+//
+// Idempotente: limpia `proximaCuotaExtra`, asi que una 2a pasada no encuentra nada. Nada de
+// esto se ejecuta sobre prestamos sin transitoria.
+function migrarTransitoriasLegacy(db) {
+  try {
+    const legacy = db.prepare(
+      'SELECT * FROM loans WHERE COALESCE(proximaCuotaExtra, 0) <> 0 AND periodoIrregularN IS NULL'
+    ).all();
+    if (legacy.length === 0) return;
+    const convertir = db.prepare('UPDATE loans SET periodoIrregularN = ?, periodoIrregularDesde = ?, periodoIrregularMora = ?, ' +
+      'proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?');
+    const soloLimpiar = db.prepare('UPDATE loans SET proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?');
+    const filaDe = db.prepare('SELECT * FROM payments WHERE id = ?');
+    const ultimaPagada = db.prepare("SELECT fechaPago FROM payments WHERE prestamoId = ? AND estadoPago = 'Pagado' " +
+      "AND id NOT LIKE '%-ab-%' AND id NOT LIKE '%-ct-%' AND fechaPago < ? ORDER BY fechaPago DESC LIMIT 1");
+    db.transaction(() => {
+      legacy.forEach(l => {
+        const n = +l.proximaCuotaExtraN || 0;
+        const fila = n ? filaDe.get(l.id + '-' + n) : null;
+        const cuotaPeriodica = l.modalidad === 'Intereses' || l.modalidad === 'Capital + Intereses';
+        // Sin fila a la que aplicarlo no hay nada que reproducir: el monto viejo tampoco se
+        // aplicaba en ninguna parte.
+        if (!fila || !cuotaPeriodica) { soloLimpiar.run(l.id); return; }
+        const previa = ultimaPagada.get(l.id, fila.fechaPago);
+        const desde = previa ? previa.fechaPago : l.fechaInicio;
+        const t = transitoriaDe({ tasaMensual: l.tasaMensual, periodoIrregularDesde: desde, periodoIrregularMora: 0 }, fila);
+        const mora = Math.max(0, Math.round(fila.interesPeriodo) - t.prorrateado);
+        convertir.run(n, desde, mora, l.id);
+      });
+    })();
+  } catch (e) {
+    // No se tumba el arranque: una app que no abre es peor. Pero no se calla.
+    console.error('[schema] no se pudo convertir las cuotas transitorias viejas:', e && e.message);
+  }
 }
 
 module.exports = { aplicarEsquema };

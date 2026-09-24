@@ -14,6 +14,7 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 // Motor financiero (puro, sin BD ni Express) — Etapa 2/A1 del refactor.
 const {
   getPayDate, tasaPeriodo, cuotasHastaHoy, buildSchedule, buildScheduleFixedPMT,
+  transitoriaDe, aplicarPeriodoIrregular, resolverPrimerPago,
   MODALIDAD_DIARIA, devengoDiario,
 } = require('./core/engine');
 
@@ -90,6 +91,7 @@ module.exports = function createApp(dbPath) {
     mutacionAtomica, hashSnapshot, snapshotScope, restoreScope, podarJournal,
     snapshotCobros, restaurarCobros, abortarSiHuerfanos, reHousekeepLoan,
     buildSchedule, buildScheduleFixedPMT, getPayDate, tasaPeriodo, cuotasHastaHoy,
+    transitoriaDe, aplicarPeriodoIrregular, resolverPrimerPago,
     MODALIDAD_DIARIA, devengoDiario,
     ClientError, genId, hoyStr,
   };

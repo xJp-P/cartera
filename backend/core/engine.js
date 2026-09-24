@@ -233,7 +233,10 @@ function buildSchedule(loan, startN, startSaldo, numCuotas) {
     });
     saldo = saldoFinal;
   }
-  return rows;
+  // La cuota de periodo irregular (si el prestamo tiene una) se deriva AQUI, sobre el capital
+  // vivo de esta generacion. Va despues del ajuste de la ultima cuota: si la transitoria fuera
+  // tambien la ultima, ese ajuste no puede deshacer el prorrateo.
+  return aplicarPeriodoIrregular(loan, rows);
 }
 
 /**
@@ -309,7 +312,9 @@ function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
     i++;
   }
   if (i >= MAX_ITER) throw new Error('Cuota demasiado baja: requiere mas de ' + MAX_ITER + ' cuotas para saldar.');
-  return rows;
+  // Tambien aqui: un abono o una reestructura con "fijar cuota" regenera la transitoria por
+  // este generador, no por `buildSchedule`.
+  return aplicarPeriodoIrregular(loan, rows);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -468,6 +473,135 @@ function devengoDiario(loan, cortes, hastaISO) {
   };
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PERIODO IRREGULAR — la cuota transitoria, derivada en el motor (3.2.0, Fase 1)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Una cuota cuyo periodo no es un mes calendario: hoy, la primera cuota despues de
+// "Cambiar fecha". Su interes se cobra por los DIAS REALES del periodo con la misma
+// formula del devengo diario (`interesDeTramo`: saldo * tasa/100 * dias / 30), mas la
+// mora que ese cambio consolido. En Capital + Intereses el capital de la cuota NO se
+// toca: solo cambia su interes (doctrina de v1.14.0), asi que la amortizacion sigue
+// intacta y `interes + capital == cuota` se sostiene por construccion.
+//
+// EL PRESTAMO GUARDA LA DECISION, NO EL MONTO:
+//   periodoIrregularN      cuotaN de la cuota transitoria
+//   periodoIrregularDesde  fecha desde la que corre su periodo
+//   periodoIrregularMora   mora consolidada, en pesos. Es deuda YA CAUSADA: no depende
+//                          del capital y no se recalcula nunca.
+// El motor deriva el interes cada vez que genera esa fila, sobre el capital vivo de
+// ESA generacion.
+//
+// Por que: hasta 3.1.0 se guardaba el MONTO del ajuste (`proximaCuotaExtra`), calculado
+// una sola vez con el saldo del dia del cambio. Un abono posterior regeneraba la cuota
+// sin el ajuste y el siguiente arranque de la app le sumaba el monto viejo. Medido con
+// el server real: 583.333 (35 dias sobre 10M) -> abono de 8M -> 100.000 -> al reabrir
+// la app 183.333, cuando lo correcto era 116.667. Guardado como monto NEGATIVO (un
+// periodo corto) el mismo camino llega a un interes negativo.
+//
+// Vive dentro de `buildSchedule` y `buildScheduleFixedPMT`, que son el sumidero comun
+// de las cinco rutas que regeneran cuotas: ninguna tiene que acordarse de aplicarlo.
+//
+// NO se limpia al pagar la cuota. Una vez Pagada o En Mora, la fila no se regenera y
+// estas columnas quedan inertes; si el pago se revierte a Pendiente, la transitoria
+// renace bien. (La columna vieja SI se limpiaba al pagar, y revertir la perdia.)
+
+// Cuanto vale la transitoria sobre UNA fila ya generada. Pura: la usan el motor, la
+// ruta de cambio de dia (para su respuesta) y la migracion de los datos viejos.
+function transitoriaDe(loan, row) {
+  const dias = Math.max(1, diasEntre(loan.periodoIrregularDesde, row.fechaPago));
+  const prorrateado = interesDeTramo(row.saldoInicial, loan.tasaMensual, dias);
+  const mora = Math.max(0, Math.round(+loan.periodoIrregularMora || 0));
+  const interes = prorrateado + mora;
+  // `ajuste` = lo que la transitoria cambia sobre la cuota de mes completo. Con signo:
+  // negativo en un periodo corto, positivo en uno largo o con mora consolidada.
+  return { dias, prorrateado, mora, interes, ajuste: interes - row.interesPeriodo };
+}
+
+// Aplica la transitoria a la fila que le toca, si esta generacion la incluye. Muta y
+// devuelve el mismo arreglo.
+function aplicarPeriodoIrregular(loan, rows) {
+  const n = +(loan && loan.periodoIrregularN) || 0;
+  if (!n || !loan.periodoIrregularDesde) return rows;
+  // Solo las modalidades de cuota periodica con interes. En Prestamo y Pago Unico no hay
+  // periodo que prorratear, y el credito abierto ya cobra por dias.
+  if (loan.modalidad !== 'Intereses' && loan.modalidad !== 'Capital + Intereses') return rows;
+  const row = rows.find(p => p.cuotaN === n);
+  if (!row) return rows;
+  const t = transitoriaDe(loan, row);
+  row.interesPeriodo = t.interes;
+  row.cuotaTotal = row.cuotaTotal + t.ajuste;
+  // `extraConsolidado` es la marca que ya leen el Recibo de Pago, la Factura de Cobro y el
+  // Reporte de Activos para rotular la cuota como transitoria. Mismo valor que antes.
+  row.extraConsolidado = t.ajuste;
+  row.observaciones = 'Cuota transitoria: interes de ' + t.dias + ' dias prorrateado'
+    + (t.mora > 0 ? ' + mora consolidada $' + t.mora.toLocaleString('es-CO') : '');
+  return rows;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PRIMER PAGO elegido al crear (3.2.0, Fase 2)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// El formulario deja elegir la FECHA del primer pago. Aqui se traduce a columnas que el
+// motor YA entiende, asi que ningun generador cambia:
+//   diaPago               dia del mes del primer pago: las cuotas siguientes caen ese dia
+//   fechaBaseCronograma   el mes ANTERIOR al primer pago, de modo que
+//                         getPayDate(base, 1, diaPago) === primerPago
+//   periodoIrregular*     si el periodo no es un mes calendario y se eligio 'proporcional',
+//                         la cuota 1 es la transitoria de la Fase 1: N=1, desde=fechaInicio.
+//                         Con 'completo' la cuota 1 cobra un mes, como hasta ahora.
+//
+// "Irregular" se decide por CALENDARIO, no por dias: el primer pago regular es el mismo dia
+// del mes siguiente (acotado a fin de mes). Si se midiera "dias != 30", la pregunta saltaria
+// en todo prestamo que arranca en enero, febrero o julio, que hoy se cobran como mes completo.
+//
+// SIN LIMITE SUPERIOR (regla del PO): un "tiempo muerto" de 3 meses cobra, en proporcional,
+// los ~92 dias en la cuota 1, con la misma formula de dias reales / 30.
+//
+// Si la fecha elegida ES la regular, el resultado es identico a no haber elegido nada
+// (diaPago = dia de inicio, sin base, sin transitoria): el prestamo queda byte a byte igual.
+const RE_FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+function fechaIsoValida(s) {
+  if (!RE_FECHA_ISO.test(String(s))) return false;
+  const d = new Date(s + 'T12:00:00');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === s;
+}
+function primerPagoRegular(fechaInicio) {
+  return getPayDate(fechaInicio, 1, +String(fechaInicio).slice(8, 10), 'Mensual');
+}
+function resolverPrimerPago(loan, primerPago, primerPeriodo) {
+  const modo = (primerPeriodo === undefined || primerPeriodo === null || primerPeriodo === '') ? 'proporcional' : primerPeriodo;
+  if (modo !== 'proporcional' && modo !== 'completo') {
+    throw new ClientError('Primer periodo invalido: "' + primerPeriodo + '". Debe ser "proporcional" o "completo".');
+  }
+  if (loan.modalidad !== 'Intereses' && loan.modalidad !== 'Capital + Intereses') {
+    throw new ClientError('La fecha del primer pago solo aplica a creditos de Intereses o Capital + Intereses (modalidad: ' + loan.modalidad + ').');
+  }
+  if ((loan.frecuencia || 'Mensual') !== 'Mensual') {
+    throw new ClientError('La fecha del primer pago solo aplica a la frecuencia Mensual.');
+  }
+  if (!fechaIsoValida(loan.fechaInicio)) throw new ClientError('Fecha de inicio invalida: "' + loan.fechaInicio + '".');
+  if (!fechaIsoValida(primerPago)) throw new ClientError('Fecha del primer pago invalida: "' + primerPago + '".');
+  if (primerPago <= loan.fechaInicio) throw new ClientError('El primer pago debe ser posterior a la fecha de inicio.');
+  const sinTransitoria = { periodoIrregularN: null, periodoIrregularDesde: null, periodoIrregularMora: 0 };
+  if (primerPago === primerPagoRegular(loan.fechaInicio)) {
+    return Object.assign({ irregular: false, diaPago: +loan.fechaInicio.slice(8, 10), fechaBaseCronograma: null }, sinTransitoria);
+  }
+  const b = new Date(primerPago + 'T12:00:00');
+  b.setDate(1);                       // evita el desborde de mes antes de restar
+  b.setMonth(b.getMonth() - 1);
+  const base = b.toISOString().split('T')[0];
+  const dia = +primerPago.slice(8, 10);
+  // Defensivo: la base tiene que reproducir la fecha elegida con el MISMO calculo del motor.
+  if (getPayDate(base, 1, dia, 'Mensual') !== primerPago) {
+    throw new ClientError('No se pudo fijar el primer pago en ' + primerPago + '.');
+  }
+  const proporcional = modo === 'proporcional' && (+loan.tasaMensual || 0) > 0;
+  return Object.assign({ irregular: true, diaPago: dia, fechaBaseCronograma: base },
+    proporcional ? { periodoIrregularN: 1, periodoIrregularDesde: loan.fechaInicio, periodoIrregularMora: 0 } : sinTransitoria);
+}
+
 // Suma dias a una fecha ISO y devuelve ISO. Solo la usa la variante
 // DIA_DEL_CORTE_A_BASE_VIEJA, pero vive aqui para no repetir el anclaje a mediodia.
 function sumarDias(iso, n) {
@@ -489,4 +623,8 @@ module.exports = {
   cuotasHastaHoy,
   buildSchedule,
   buildScheduleFixedPMT,
+  transitoriaDe,
+  aplicarPeriodoIrregular,
+  primerPagoRegular,
+  resolverPrimerPago,
 };

@@ -314,6 +314,7 @@ export function DebtorModal(props){
             // v1.19.0): esta tarjeta era la última superficie que aún recalculaba la fórmula inline.
             var _Lq=computeLiquidacion(l,lp,{});
             var intMoraTotal=_Lq.intMora;
+            var moraConsTotal=_Lq.moraConsolidada;   // 3.2.0 Fase 4: mora dentro de la transitoria
             var liquidacion=_Lq.total;
             var origCOPDisplay=esUSD?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen);
             // Parse comprasUSD una sola vez
@@ -445,7 +446,7 @@ export function DebtorModal(props){
                     h('div',{style:{fontSize:12,color:'var(--yellow)',fontWeight:500,display:'flex',alignItems:'center',gap:5}},
                       h(Ico,{name:'dollar',size:11,color:'var(--yellow)',sw:2.4}),
                       'Liquidacion total'),
-                    h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Capital'+(intMoraTotal>0?' + intereses en mora':'')+(partialPend>0?' - parciales':''))),
+                    h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Capital'+(intMoraTotal>0?' + intereses en mora':'')+(moraConsTotal>0?' + mora consolidada':'')+(partialPend>0?' - parciales':''))),
                   h('div',{style:{textAlign:'right'}},
                     h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',fontWeight:500}},fmt(liquidacion)),
                     esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(liquidacion,l.trmAcordada))))),

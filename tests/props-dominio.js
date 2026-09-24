@@ -880,7 +880,10 @@ function main() {
       // vive en ninguna fila En Mora, asi que `intMora` sale 0 y sin este sumando la
       // liquidacion regalaria la renta entera del producto. En las otras 4 modalidades
       // vale 0, de modo que la propiedad de siempre queda intacta.
-      const esperado = Math.max(0, a.capitalPendiente + a.intMora + a.interesDevengado - a.partialPend);
+      // `moraConsolidada` es el termino de la Fase 4: la mora que "Cambiar fecha" metio
+      // dentro de la cuota transitoria. No vive en ninguna fila En Mora --se borraron-- pero
+      // se debe igual, asi que entra en el total sin depender del checkbox.
+      const esperado = Math.max(0, a.capitalPendiente + a.intMora + a.moraConsolidada + a.interesDevengado - a.partialPend);
       if (a.total !== esperado) {
         formulaMal.push({ id: l.id, nombre: l.nombre, total: a.total, esperado,
                           cap: a.capitalPendiente, intMora: a.intMora,
@@ -905,7 +908,7 @@ function main() {
     console.log(`   activos evaluados: ${evaluados} | con cuotas en mora: ${conMora} | con interes de proximo mes aplicable: ${conProxMes}`);
 
     R.check(`el total nunca es negativo (${evaluados} activos)`, neg.length === 0, muestra(neg));
-    R.check('total === capitalPendiente + intMora + interesDevengado - partialPend (parciales restados UNA vez)',
+    R.check('total === capitalPendiente + intMora + moraConsolidada + interesDevengado - partialPend (parciales restados UNA vez)',
       formulaMal.length === 0, muestra(formulaMal));
     R.check('capitalPendiente = origCOP - capital de Pagadas (la mora no resta capital)',
       capMal.length === 0, muestra(capMal));
@@ -970,6 +973,30 @@ function main() {
         JSON.stringify({ aplica: t0.aplicaInteres, intProxMes: t0.intProxMes, intExtra: t0.intExtra }));
       R.eq('y el total con el checkbox activo no se mueve',
         t0.total, H.computeLiquidacion(sinTasa, lp, {}).total);
+
+      // (e) MORA CONSOLIDADA (3.2.0, Fase 4). Ningun prestamo del fixture la tiene viva --sus
+      // dos transitorias migradas traen mora 0 y sus filas estan En Mora--, asi que el termino
+      // `moraConsolidada` de la formula de arriba no lo ejercitaba ningun caso real: quitarlo
+      // dejaba esta seccion en VERDE EN VACIO (verificado inyectando la regresion). Se
+      // construye lo que deja `/cambiar-dia-pago`: una cuota Pendiente marcada como
+      // transitoria, cargando la mora de las cuotas vencidas que el endpoint borro.
+      const MORA_CONS = 191919;
+      const trans = Object.assign({}, reg, {
+        id: String(base.id) + '-9101', cuotaN: 9101, estadoPago: 'Pendiente', partialPaid: 0,
+      });
+      const conTrans = Object.assign({}, base, { modalidad: 'Intereses', periodoIrregularN: 9101,
+        periodoIrregularDesde: base.fechaInicio, periodoIrregularMora: MORA_CONS });
+      const lpT = lp.concat([trans]);
+      const sinMora = H.computeLiquidacion(Object.assign({}, conTrans, { periodoIrregularMora: 0 }), lpT, {});
+      const conMora = H.computeLiquidacion(conTrans, lpT, {});
+      R.eq('la mora consolidada de una transitoria Pendiente sube el total exactamente ese valor',
+        conMora.total - sinMora.total, MORA_CONS);
+      R.eq('y se expone aparte de intMora', conMora.moraConsolidada, MORA_CONS);
+      R.eq('fechada en la cuota que la lleva adentro', conMora.moraConsolidadaFecha, trans.fechaPago);
+      R.eq('con la transitoria En Mora NO se suma (su interesPeriodo ya la lleva)',
+        H.computeLiquidacion(conTrans, lp.concat([Object.assign({}, trans, { estadoPago: 'En Mora' })]), {}).moraConsolidada, 0);
+      R.eq('ni con la transitoria ya pagada (la columna no se limpia: queda inerte)',
+        H.computeLiquidacion(conTrans, lp.concat([Object.assign({}, trans, { estadoPago: 'Pagado' })]), {}).moraConsolidada, 0);
 
       // (d) Clamp de capitalPendiente. Sobre la cartera real el capital cobrado nunca supera
       // al prestado, asi que quitar el `Math.max(0, ...)` sobrevive: se fuerza encogiendo el

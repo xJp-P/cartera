@@ -485,12 +485,21 @@ function App(){
   function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido){
     var fromDeudor=abonoModal&&abonoModal.fromDeudor;
     var pre=_snapshotAbono(loanId);
+    // 3.2.0 (Fase 4) — la mora que "Cambiar fecha" consolido dentro de la cuota transitoria
+    // es deuda YA causada y vive en una cuota Pendiente que la liquidacion BORRA. El deudor
+    // la paga (esta en el TOTAL que vio en el modal), asi que tiene que quedar registrada:
+    // viaja como interes del abono, el mismo canal del mes en curso. Sale de `pre.liq`, el
+    // mismo objeto que usa el Paz y Salvo, para que papel y caja no puedan divergir.
+    // OJO: se suma SOLO en la peticion. Al recibo se le sigue pasando `intExtra` a secas,
+    // porque `pre.liq.total` YA lleva la mora dentro y sumarla otra vez inflaria el titular.
+    var moraCons=(liquidar&&pre.liq)?Math.max(0,Math.round(pre.liq.moraConsolidada||0)):0;
+    if(moraCons>0) obs=obs+' + intereses en mora consolidados: $'+moraCons.toLocaleString('es-CO');
     // v1.19.0 — intExtra (interes del proximo mes al liquidar, si el checkbox esta activo) viaja al
     // backend para registrarse como ingreso real; el backend lo ignora (0) fuera de la liquidacion.
     // v2.0.0 — montoCOPRecibido = CAJA REAL del abono (solo prestamos USD). NO toca el capital
     // (que va en `monto`, a TRM pactada): el backend lo persiste en la fila del abono para que el
     // desfase cambiario quede registrado. Si es 0 el backend conserva el valor derivado de antes.
-    return API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar,recalcMode:recalcMode||null,recalcValor:recalcValor||null,intExtra:intExtra||0,montoCOPRecibido:copRecibido||0})
+    return API.post('/api/loans/'+loanId+'/abono',{monto:monto,fecha:fecha,observaciones:obs,montoUSD:montoUSD||0,liquidar:!!liquidar,recalcMode:recalcMode||null,recalcValor:recalcValor||null,intExtra:(intExtra||0)+moraCons,montoCOPRecibido:copRecibido||0})
       .then(function(r){
         if(!r)return;
         if(r.error){showToast(r.error,'error');return;}

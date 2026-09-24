@@ -8,7 +8,7 @@
 import { Modal } from '../componentes/base.js';
 import { Ico } from '../componentes/iconos.js';
 import { computeLiquidacion } from '../core/dominio.js';
-import { copToUsd, fmt } from '../core/format.js';
+import { copToUsd, fmt, fmtD } from '../core/format.js';
 import { generateEstadoLiquidacion } from '../pdf/estado-liquidacion.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
@@ -29,10 +29,16 @@ export function LiquidarModal(props){
   var ipm=useState(false); var incluyeProxMes=ipm[0]; var setIncluyeProxMes=ipm[1];
   var lqs=useState(false); var liqSending=lqs[0]; var setLiqSending=lqs[1]; // v1.18.1: guarda anti doble-submit
   var pdf=useState(false); var pdfBusy=pdf[0]; var setPdfBusy=pdf[1];
+  // 3.2.0 — dias a cobrar cuando el periodo en curso es irregular. `null` = los que ya corrieron
+  // (el default lo decide `computeLiquidacion`, no la pantalla).
+  var dpm=useState(null); var diasProxMes=dpm[0]; var setDiasProxMes=dpm[1];
   var cEsUSD=cLoan.moneda==='USD';
+  // La fecha de la liquidacion es HOY, la misma que imprime el Estado de Liquidacion: con un
+  // periodo irregular los dias ya corridos dependen de ella.
+  var hoyLiq=nowStr();
   // v1.19.0 — TODO el desglose viene del helper centralizado computeLiquidacion (misma fuente
   // de verdad que la tarjeta, el cronograma PDF y el recibo de abono -> no pueden divergir).
-  var L=computeLiquidacion(cLoan,pays,{incluyeProxMes:incluyeProxMes});
+  var L=computeLiquidacion(cLoan,pays,{incluyeProxMes:incluyeProxMes,diasProxMes:diasProxMes,hasta:hoyLiq});
   var aplicaInteres=L.aplicaInteres;
   var mesTxt=fmt(L.moraValorMes)+'/mes'+(L.moraUniforme?'':' prom.');
   // El rotulo del mes opcional depende de la modalidad (ver `etiquetaInteresMes`).
@@ -53,13 +59,24 @@ export function LiquidarModal(props){
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',border:'1px solid var(--border)',marginBottom:12}},
       rowLine('Capital pendiente','Saldo de la deuda',L.capitalPendiente,'var(--text)'),
       L.moraCount>0&&rowLine('Intereses atrasados',L.moraCount+' cuota'+(L.moraCount>1?'s':'')+' a '+mesTxt,L.intMora,'var(--yellow)'),
+      // 3.2.0 (Fase 4) — atraso que "Cambiar fecha" metio DENTRO de la cuota transitoria.
+      // Va fuera de la casilla de abajo a proposito: no es un periodo por correr que se
+      // pacta, es deuda ya causada, asi que se cobra siempre.
+      L.moraConsolidada>0&&rowLine('Intereses atrasados consolidados',
+        'Vencidos antes del cambio de dia de cobro · quedaron dentro de la cuota del '+fmtD(L.moraConsolidadaFecha),
+        L.moraConsolidada,'var(--yellow)'),
       // Credito abierto: su interes NO vive en ninguna fila (se deriva del tiempo), asi
       // que sin esta linea el TOTAL incluia un devengo que el desglose no explicaba.
       L.esDiario&&L.interesDevengado>0&&rowLine('Interes acumulado',L.diasDevengados+' dia(s) a '+fmt(L.interesDia)+'/dia',L.interesDevengado,'var(--yellow)'),
       L.partialPend>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(L.partialPend),'var(--blue)'),
-      L.incluyeProxMes&&rowLine(lblExtra,cLoan.tasaMensual+'% sobre el capital pendiente',L.intProxMes,'var(--yellow)')),
+      L.incluyeProxMes&&rowLine(lblExtra,
+        L.periodoIrregular
+          ? L.diasCobrados+' de '+L.diasPeriodo+' dias del periodo · '+cLoan.tasaMensual+'% mensual sobre el capital pendiente'
+          : cLoan.tasaMensual+'% sobre el capital pendiente',
+        L.intProxMes,'var(--yellow)')),
     // La casilla es compartida con CronogramaPdfModal (3.1.0): mismas palabras, misma cifra.
-    h(CheckInteresMes,{L:L,checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);}}),
+    // Con un periodo irregular en curso trae el campo de dias (3.2.0).
+    h(CheckInteresMes,{L:L,checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},onDias:setDiasProxMes}),
     h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,
         h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,letterSpacing:.5}},'TOTAL A LIQUIDAR'),
@@ -75,7 +92,7 @@ export function LiquidarModal(props){
     h('button',{onClick:function(){
         if(pdfBusy) return;
         setPdfBusy(true);
-        try{ generateEstadoLiquidacion(cLoan,pays,datosPago,{incluyeProxMes:incluyeProxMes,hasta:nowStr()}); }
+        try{ generateEstadoLiquidacion(cLoan,pays,datosPago,{incluyeProxMes:incluyeProxMes,diasProxMes:diasProxMes,hasta:hoyLiq}); }
         finally{ setTimeout(function(){setPdfBusy(false);},600); }
       },disabled:pdfBusy,className:'btn-primary',style:{background:'transparent',border:'1px solid var(--border)',color:'var(--text2)',cursor:pdfBusy?'wait':'pointer',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'center',gap:8}},
       h(Ico,{name:'receipt',size:15,color:'var(--text3)',sw:2}),

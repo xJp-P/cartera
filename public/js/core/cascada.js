@@ -36,6 +36,7 @@
 
 import { esAbono } from './ids.js';
 import { _tasaPeriodo } from './calculo.js';
+import { esTransitoria, interesTransitoria } from './dominio.js';
 
 // Suma con redondeo a peso entero (doctrina de enteros de v2.2.0, Bug #43).
 function r0(n){ return Math.round(n||0); }
@@ -247,8 +248,15 @@ export function planCascada(loan, allPays, entrada, opts){
     return ap;
   };
   var yaPagProx=ctx.proximaCuota?r0(ctx.proximaCuota.partialPaid||0):0;
+  // Interes con el que el abono REGENERARA la proxima cuota. Si esa cuota es la transitoria
+  // de un cambio de dia, el motor la re-deriva con sus dias reales sobre el capital nuevo
+  // (3.2.0): el mes completo haria cobrar un interes que la cuota regenerada no tiene, y la
+  // diferencia terminaria imputada a capital (la clase del Bug #66).
+  var proxTransitoria=!!ctx.proximaCuota&&esTransitoria(loan, ctx.proximaCuota.cuotaN);
   var interesPendSobre=function(saldoCOP){
-    var I=r0(Math.max(0, saldoCOP)*ctx.tasaPeriodo);
+    var I=proxTransitoria
+      ? interesTransitoria(loan, r0(Math.max(0, saldoCOP)), ctx.proximaCuota.fechaPago)
+      : r0(Math.max(0, saldoCOP)*ctx.tasaPeriodo);
     return Math.max(0, I-Math.min(yaPagProx, I));
   };
   if(incluirInteresMes&&ctx.proximaCuota&&ctx.interesMesPend>0&&restante>EPS){

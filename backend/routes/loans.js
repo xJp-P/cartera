@@ -46,6 +46,7 @@ module.exports = function crearRutasLoans(ctx) {
     db, logAction, insPayment, runPayment, insertSchedule, mutacionAtomica,
     snapshotCobros, restaurarCobros, abortarSiHuerfanos,
     buildSchedule, buildScheduleFixedPMT, getPayDate, tasaPeriodo, cuotasHastaHoy,
+    transitoriaDe, aplicarPeriodoIrregular, resolverPrimerPago,
     MODALIDAD_DIARIA, devengoDiario,
     ClientError, hoyStr,
   } = ctx;
@@ -70,6 +71,32 @@ module.exports = function crearRutasLoans(ctx) {
     // v1.10.0: gananciaFija solo aplica para modalidad Pago Unico — forzar 0 en el resto
     if (loan.modalidad !== 'Pago Unico') loan.gananciaFija = 0;
     else loan.gananciaFija = Math.round(+loan.gananciaFija || 0);
+    // ── Primer pago y primer periodo (3.2.0, Fase 2) ──────────────────────────
+    // Las columnas del cronograma NUNCA se toman crudas del body: un body que trajera
+    // `periodoIrregularN` generaria una cuota prorrateada sin que nadie la hubiera decidido.
+    // Lo que el formulario manda es la DECISION —`primerPago` (fecha) y `primerPeriodo`
+    // ('proporcional' | 'completo')— y el backend la traduce con `resolverPrimerPago`, que
+    // tambien la valida (fecha real, posterior al inicio, solo Intereses / C+I mensual).
+    // Sin `primerPago` todo queda como siempre: primer pago un mes despues del inicio.
+    loan.fechaBaseCronograma = null;
+    loan.periodoIrregularN = null;
+    loan.periodoIrregularDesde = null;
+    loan.periodoIrregularMora = 0;
+    const pidePrimerPago = req.body.primerPago !== undefined && req.body.primerPago !== null && req.body.primerPago !== '';
+    let primerPeriodo = null;
+    if (pidePrimerPago) {
+      try {
+        primerPeriodo = resolverPrimerPago(loan, req.body.primerPago, req.body.primerPeriodo);
+      } catch (e) {
+        if (e instanceof ClientError) return res.status(400).json({ error: e.message });
+        throw e;
+      }
+      loan.diaPago = primerPeriodo.diaPago;
+      loan.fechaBaseCronograma = primerPeriodo.fechaBaseCronograma;
+      loan.periodoIrregularN = primerPeriodo.periodoIrregularN;
+      loan.periodoIrregularDesde = primerPeriodo.periodoIrregularDesde;
+      loan.periodoIrregularMora = primerPeriodo.periodoIrregularMora;
+    }
     // ── Interes Diario: sembrar el cache del devengo ──────────────────────────
     // El credito abierto nace SIN cortes, asi que el tramo abierto corre desde
     // `fechaInicio` y no hay interes arrastrado. Se guarda la FECHA, nunca NULL:
@@ -109,16 +136,24 @@ module.exports = function crearRutasLoans(ctx) {
       db.prepare(`
         INSERT INTO loans(id,nombre,cedula,telefono,moneda,montoOrigen,trmAcordada,montoCOP,
           tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia,fechaDevolucion,comprasUSD,gananciaFija,
-          fechaUltimoCorte,interesAcumuladoPend)
+          fechaUltimoCorte,interesAcumuladoPend,
+          fechaBaseCronograma,periodoIrregularN,periodoIrregularDesde,periodoIrregularMora)
         VALUES (@id,@nombre,@cedula,@telefono,@moneda,@montoOrigen,@trmAcordada,@montoCOP,
           @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia,@fechaDevolucion,@comprasUSD,@gananciaFija,
-          @fechaUltimoCorte,@interesAcumuladoPend)
+          @fechaUltimoCorte,@interesAcumuladoPend,
+          @fechaBaseCronograma,@periodoIrregularN,@periodoIrregularDesde,@periodoIrregularMora)
       `).run(loan);
       insertSchedule(schedule);
     })();
     var detalleLog = (loan.moneda === 'USD' ? 'USD $' + loan.montoOrigen : '$' + Math.round(loan.montoCOP).toLocaleString()) + ' (' + loan.modalidad + ')';
     if (loan.modalidad === 'Pago Unico' && loan.gananciaFija > 0) {
       detalleLog += ' [ganancia $' + Math.round(loan.gananciaFija).toLocaleString('es-CO') + ']';
+    }
+    // El primer periodo irregular queda en el historial: cambia cuanto cobra la cuota 1.
+    if (primerPeriodo && primerPeriodo.irregular && schedule.length > 0) {
+      detalleLog += ' [primer pago ' + schedule[0].fechaPago + (loan.periodoIrregularN
+        ? ', interes de ' + transitoriaDe(loan, schedule[0]).dias + ' dias'
+        : ', primer mes completo') + ']';
     }
     logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + detalleLog);
     res.status(201).json(loan);
@@ -141,6 +176,43 @@ module.exports = function crearRutasLoans(ctx) {
     // intactas (deuda historica/causada). Esto garantiza que un edit nunca afecta cuotas
     // ya pactadas con el deudor.
     const prev = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(loan.id);
+
+    // ── El CALENDARIO del prestamo (3.2.0, Fase 2) ────────────────────────────
+    // `diaPago`, `fechaBaseCronograma` y la cuota transitoria (`periodoIrregular*`) deciden
+    // CUANDO vence cada cuota y cuanto cobra la primera. Nunca se toman crudos del body:
+    //   - CON ACTIVIDAD (algo Pagado —cuota o abono—, algo En Mora, o mora consolidada por un
+    //     cambio de dia) quedan CONGELADOS en lo que dice la BD. El formulario los bloquea, y
+    //     esto es la defensa del otro lado. Arregla de paso un defecto previo: el formulario
+    //     mandaba siempre `diaPago` = dia de la fecha de inicio, asi que editar SOLO una nota de
+    //     un prestamo al que se le habia cambiado el dia devolvia todas sus cuotas pendientes
+    //     al dia original (medido: del 28 al 15, y la transitoria de 215.000 a 150.000).
+    //   - SIN ACTIVIDAD se recalculan desde la DECISION del formulario (`primerPago` +
+    //     `primerPeriodo`), con el mismo `resolverPrimerPago` del alta. Si la fecha de inicio
+    //     cambia, el periodo de la cuota 1 corre desde la nueva.
+    //   - Un body SIN `primerPago` (clientes de la API) conserva el comportamiento de siempre
+    //     para `diaPago`; la base y la transitoria se leen de la BD, y si la transitoria es la
+    //     del primer periodo, su "desde" sigue a la fecha de inicio.
+    const prevLoan = db.prepare('SELECT * FROM loans WHERE id = ?').get(loan.id) || {};
+    const conActividad = prev.some(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') ||
+      (+prevLoan.periodoIrregularMora || 0) > 0;
+    loan.fechaBaseCronograma = prevLoan.fechaBaseCronograma || null;
+    loan.periodoIrregularN = prevLoan.periodoIrregularN || null;
+    loan.periodoIrregularDesde = prevLoan.periodoIrregularDesde || null;
+    loan.periodoIrregularMora = prevLoan.periodoIrregularMora || 0;
+    const pidePrimerPago = req.body.primerPago !== undefined && req.body.primerPago !== null && req.body.primerPago !== '';
+    if (conActividad) {
+      if (prevLoan.diaPago !== undefined) loan.diaPago = prevLoan.diaPago;
+    } else if (pidePrimerPago) {
+      const pp = resolverPrimerPago(loan, req.body.primerPago, req.body.primerPeriodo);   // ClientError -> 4xx, BD intacta
+      loan.diaPago = pp.diaPago;
+      loan.fechaBaseCronograma = pp.fechaBaseCronograma;
+      loan.periodoIrregularN = pp.periodoIrregularN;
+      loan.periodoIrregularDesde = pp.periodoIrregularDesde;
+      loan.periodoIrregularMora = pp.periodoIrregularMora;
+    } else if (+loan.periodoIrregularN === 1 && loan.periodoIrregularDesde === prevLoan.fechaInicio &&
+               loan.fechaInicio && loan.fechaInicio !== prevLoan.fechaInicio) {
+      loan.periodoIrregularDesde = loan.fechaInicio;
+    }
     const prevAbonos = prev.filter(p => esAbono(p));
     const prevRegulares = prev.filter(p => !esAbono(p));
     const prevPagadasYMora = prevRegulares.filter(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora');
@@ -188,9 +260,8 @@ module.exports = function crearRutasLoans(ctx) {
       }
     }
 
-    // Aplicar extra del prorrateo + restaurar partialPaid
-    const extraLoanEdit = Math.round(+loan.proximaCuotaExtra || 0);
-    const extraNEdit = +loan.proximaCuotaExtraN || 0;
+    // Restaurar lo cobrado sobre las Pendientes. La cuota transitoria (si la hay) ya salio
+    // derivada del motor, con el calendario resuelto arriba.
     // Bug #44: si el cronograma nuevo NO incluye una cuota que llevaba dinero encima, el
     // parcial no tiene donde restaurarse y se perderia en silencio. Aqui es alcanzable
     // porque un edit puede ACORTAR `plazoMeses` o fijar una cuota mas alta, dejando fuera
@@ -198,14 +269,6 @@ module.exports = function crearRutasLoans(ctx) {
     // Estamos dentro de `mutacionAtomica` y en FASE 1: lanzar aqui da 4xx con la BD intacta.
     abortarSiHuerfanos(schedule, partialMapEdit);
     restaurarCobros(schedule, partialMapEdit);
-    schedule.forEach(p => {
-      if (extraLoanEdit !== 0 && p.cuotaN === extraNEdit) {
-        p.interesPeriodo = Math.round(p.interesPeriodo + extraLoanEdit);
-        p.cuotaTotal = Math.round(p.cuotaTotal + extraLoanEdit);
-        p.extraConsolidado = extraLoanEdit;
-        if (!p.observaciones) p.observaciones = 'Cuota transitoria por cambio de fecha de pago (' + (extraLoanEdit >= 0 ? '+$' : '-$') + Math.abs(extraLoanEdit).toLocaleString('es-CO') + ')';
-      }
-    });
 
     return {
       descripcion: 'Editaste prestamo de ' + loan.nombre,
@@ -215,7 +278,9 @@ module.exports = function crearRutasLoans(ctx) {
           UPDATE loans SET nombre=@nombre, cedula=@cedula, telefono=@telefono, moneda=@moneda,
             montoOrigen=@montoOrigen, trmAcordada=@trmAcordada, montoCOP=@montoCOP,
             tasaMensual=@tasaMensual, plazoMeses=@plazoMeses, modalidad=@modalidad,
-            fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion, comprasUSD=@comprasUSD, gananciaFija=@gananciaFija
+            fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion, comprasUSD=@comprasUSD, gananciaFija=@gananciaFija,
+            fechaBaseCronograma=@fechaBaseCronograma, periodoIrregularN=@periodoIrregularN,
+            periodoIrregularDesde=@periodoIrregularDesde, periodoIrregularMora=@periodoIrregularMora
           WHERE id=@id
         `).run(loan);
         // Borrar SOLO Pendientes — Pagadas, Mora y abonos quedan intactos
@@ -1005,14 +1070,11 @@ module.exports = function crearRutasLoans(ctx) {
       b.setMonth(b.getMonth() + 1);
       baseCron = b.toISOString().split('T')[0];
     }
-    const firstNewDate = getPayDate(baseCron, nextRegularN, nuevoDiaInt, freq);
-    const MS_DIA = 24 * 60 * 60 * 1000;
-    const rawDias = Math.round((new Date(firstNewDate + 'T12:00:00') - new Date(lastSettledDate + 'T12:00:00')) / MS_DIA);
-    const diasReales = Math.max(1, rawDias);
-    const interesProrrateado = Math.round(saldoActual * (loan.tasaMensual / 100) * diasReales / 30);
-
     // Regenerar cronograma con el nuevo dia y convertir la primera cuota en transitoria.
-    const loanConNuevoDia = Object.assign({}, loan, { diaPago: nuevoDiaInt, fechaBaseCronograma: baseCron });
+    // Se genera SIN la transitoria anterior (si la habia): este cambio la reemplaza, y la nueva
+    // se aplica abajo, cuando ya se sabe sobre que fila recae.
+    const sinTransitoria = { periodoIrregularN: null, periodoIrregularDesde: null, periodoIrregularMora: 0 };
+    const loanConNuevoDia = Object.assign({}, loan, { diaPago: nuevoDiaInt, fechaBaseCronograma: baseCron }, sinTransitoria);
     const indefinido = loan.modalidad === 'Intereses';
     const remaining = indefinido ? 3 : Math.max(1, (loan.plazoMeses || 12) - regularConsumed);
     let nuevasCuotas = buildSchedule(loanConNuevoDia, nextRegularN, saldoActual, remaining);
@@ -1047,21 +1109,22 @@ module.exports = function crearRutasLoans(ctx) {
     abortarSiHuerfanos(nuevasCuotas, cobrosPrevFecha);
     restaurarCobros(nuevasCuotas, cobrosPrevFecha);
 
-    let netAdj = 0;
-    if (nuevasCuotas.length > 0) {
-      const primera = nuevasCuotas[0];
-      const fullInt = primera.interesPeriodo;          // interes de mes completo que calculo buildSchedule
-      const deltaInt = fullInt - interesProrrateado;   // reduccion por periodo corto (negativo si el periodo es > 1 mes)
-      // Ajuste NETO con signo = (prorrateo + mora) - full. Se persiste para sobrevivir a /recalculate y PUT /loans.
-      netAdj = Math.round(moraConsolidada - deltaInt);
-      // interesPeriodo = interes prorrateado + mora; cuotaTotal baja el delta y suma la mora.
-      // abonoCapital y saldoFinal quedan INTACTOS -> amortizacion (Capital + Intereses) preservada.
-      primera.interesPeriodo = Math.round(interesProrrateado + moraConsolidada);
-      primera.cuotaTotal = Math.round(primera.cuotaTotal - deltaInt + moraConsolidada);
-      primera.extraConsolidado = netAdj;
-      primera.observaciones = 'Cuota transitoria: interes de ' + diasReales + ' dias prorrateado'
-        + (moraConsolidada > 0 ? ' + mora consolidada $' + moraConsolidada.toLocaleString('es-CO') : '');
-    }
+    // LA TRANSITORIA SE GUARDA COMO DECISION (3.2.0, Fase 1): la primera cuota que SI se va a
+    // insertar, desde que fecha corre su periodo y la mora que consolida. El interes lo deriva
+    // el motor (`aplicarPeriodoIrregular`) aqui y en cada regeneracion posterior, siempre sobre
+    // el capital vivo de ese momento. Antes se persistia el MONTO del ajuste, que un abono
+    // dejaba viejo. La formula es la misma de siempre: dias reales / 30 sobre el saldo, mas la
+    // mora aparte; el capital de la cuota no se toca.
+    const periodoNuevo = nuevasCuotas.length > 0
+      ? { periodoIrregularN: nuevasCuotas[0].cuotaN, periodoIrregularDesde: lastSettledDate, periodoIrregularMora: moraConsolidada }
+      : sinTransitoria;
+    const loanTransitoria = Object.assign({}, loanConNuevoDia, periodoNuevo);
+    // Se mide ANTES de aplicarla: `ajuste` compara contra la cuota de mes completo.
+    const tr = nuevasCuotas.length > 0 ? transitoriaDe(loanTransitoria, nuevasCuotas[0]) : null;
+    aplicarPeriodoIrregular(loanTransitoria, nuevasCuotas);
+    const diasReales = tr ? tr.dias : 0;
+    const interesProrrateado = tr ? tr.prorrateado : 0;
+    const netAdj = tr ? tr.ajuste : 0;
 
     // ── FASE 2: ESCRITURA — la ejecuta mutacionAtomica dentro de UNA transaccion.
     const logMsg = 'Cambiaste dia de pago de ' + loan.nombre + ' del ' + loan.diaPago + ' al ' + nuevoDiaInt
@@ -1090,10 +1153,12 @@ module.exports = function crearRutasLoans(ctx) {
         // Borrar Pendientes + En Mora regulares (preserva Pagadas y abonos '-ab-')
         db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND id NOT LIKE '%-ab-%'").run(req.params.id);
         db.prepare('UPDATE loans SET diaPago = ?, fechaBaseCronograma = ? WHERE id = ?').run(nuevoDiaInt, baseCron, req.params.id);
-        // Persistir el ajuste NETO con signo (proximaCuotaExtra) para reproducir la cuota transitoria
-        // al regenerar. /recalculate y PUT /loans aplican `+= extra` con guard `!== 0`.
-        db.prepare('UPDATE loans SET proximaCuotaExtra = ?, proximaCuotaExtraN = ? WHERE id = ?')
-          .run(netAdj, nuevasCuotas.length > 0 ? nuevasCuotas[0].cuotaN : 0, req.params.id);
+        // Persistir la DECISION de la transitoria (no su monto): las cinco rutas que regeneran
+        // cuotas la vuelven a derivar en el motor. `proximaCuotaExtra` se deja en 0: ya nadie la
+        // lee, y un valor viejo ahi solo confundiria.
+        db.prepare('UPDATE loans SET periodoIrregularN = ?, periodoIrregularDesde = ?, periodoIrregularMora = ?, ' +
+          'proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?')
+          .run(periodoNuevo.periodoIrregularN, periodoNuevo.periodoIrregularDesde, periodoNuevo.periodoIrregularMora, req.params.id);
         if (nuevasCuotas.length > 0) insertSchedule(nuevasCuotas);
       }
     };

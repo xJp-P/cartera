@@ -47,7 +47,7 @@ import { ABtn, Fld, Modal } from '../componentes/base.js';
 import { Ico } from '../componentes/iconos.js';
 import { cobrableTotal, planCascada, proyeccionCobro } from '../core/cascada.js';
 import { generatePropuestaAbono } from '../pdf/propuesta-abono.js';
-import { _tasaPeriodo, filasPreview, previewRecalculo } from '../core/calculo.js';
+import { _tasaPeriodo, aplicarTransitoriaPreview, filasPreview, previewRecalculo } from '../core/calculo.js';
 import { fmt, fmtD, fmtNumInput, fmtUSD, parseDecimalInput, parseIntInput, parseNum } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
@@ -182,6 +182,9 @@ export function CobroModal(props){
     var n=pv.nCuotas;
     var nominal=pv.cuota;
     var filas=filasPreview(saldo,r,n,false,nominal);
+    // Si una de estas cuotas es la transitoria de un cambio de dia, el motor la regenera
+    // con sus dias reales sobre el capital nuevo (3.2.0): el preview promete lo mismo.
+    aplicarTransitoriaPreview(loan,filas,ctx.regularConsumed+1,saldo,loanPays);
     var pend=loanPays.filter(function(p){ return !esAbono(p)&&p.estadoPago==='Pendiente'; })
       .sort(function(a,b){ return (a.cuotaN||0)-(b.cuotaN||0); });
     filas.forEach(function(f,i){

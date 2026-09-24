@@ -230,7 +230,9 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
         item('<span class="badge badge-pend">Pendiente</span>', 'El prestamo tiene mora, pero la fila principal proyecta la proxima cuota (aun no vence); lo vencido se detalla en las sub-filas rojas.') +
         item('<span class="badge badge-mora">En Mora</span>', 'Cronograma vencido por completo (sin ninguna cuota futura pendiente).') +
         item(cuad(rojo), 'Sub-fila roja: cuota vencida, con sus dias de atraso.') +
-        item(cuad(ambar), 'Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha), con su fecha real a cobrar.') +
+        // 3.2.0: la transitoria ya no sale solo de un cambio de fecha; tambien de un primer
+        // pago elegido al crear que no cae un mes despues del inicio.
+        item(cuad(ambar), 'Sub-fila ambar: cuota transitoria (interes prorrateado por dias: primer periodo irregular o cambio de fecha), con su fecha real a cobrar.') +
         '</div>';
     }() : '',
     '<div class="footer"><p>Reporte informativo del estado actual de la cartera</p><p style="margin-top:4px">Cartera</p></div>',

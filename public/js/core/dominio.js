@@ -446,11 +446,52 @@ export function progresoCapital(loan, loanPays) {
 // UNA sola fuente de verdad para el "Valor de liquidación": LiquidarModal, AbonoModal, la
 // tarjeta del perfil del deudor (DebtorModal) y los PDFs (cronograma + recibo de abono)
 // llaman a este helper, así no pueden divergir. Regla de negocio:
-//   Total = Capital pendiente + Intereses en mora − abonos parciales en curso (+ interés
-//           del próximo mes si el checkbox está activo)
+//   Total = Capital pendiente + Intereses en mora (+ la mora consolidada dentro de la
+//           cuota transitoria) − abonos parciales en curso (+ interés del próximo mes
+//           si el checkbox está activo)
 //   Capital pendiente = originalCOP − Σ abonoCapital de cuotas Pagadas (incluye abonos '-ab-').
 //     Las cuotas EN MORA **no** restan capital: siguen debiéndose y se pagan al liquidar.
 // Devuelve todo el desglose (incl. el valor por mes de los intereses) para renderizarlo.
+// ── LA CUOTA TRANSITORIA (3.2.0) ─────────────────────────────────────────────
+// ESPEJO de `transitoriaDe` / `aplicarPeriodoIrregular` (backend/core/engine.js): una cuota de
+// periodo irregular —el primer periodo elegido al crear, o la cuota que sigue a un cambio de
+// dia— cobra sus DIAS REALES sobre el capital vivo (dias / 30), mas la mora consolidada.
+export function esTransitoria(loan, cuotaN){
+  var n=+(loan&&loan.periodoIrregularN)||0;
+  if(!n||!loan.periodoIrregularDesde||n!==cuotaN) return false;
+  return loan.modalidad==='Intereses'||loan.modalidad==='Capital + Intereses';
+}
+export function interesTransitoria(loan, saldoInicial, fechaPago){
+  var dias=Math.max(1, diasEntre(loan.periodoIrregularDesde, fechaPago));
+  return interesDeTramo(saldoInicial, loan.tasaMensual, dias)+Math.max(0, Math.round(+loan.periodoIrregularMora||0));
+}
+
+// ── EL PERIODO EN CURSO ES IRREGULAR (3.2.0, Fase 3) ─────────────────────────
+// La cuota "en curso" es la regular Pendiente mas proxima (la misma que usa el cobro en
+// cascada). Si es la transitoria, el periodo que se esta corriendo NO es un mes: va desde
+// `periodoIrregularDesde` hasta el vencimiento de esa cuota, y puede ser un tiempo muerto de
+// 90 dias o uno corto de 15. Devuelve null si el periodo en curso es un mes normal.
+export function periodoIrregularEnCurso(loan, loanPays, hasta){
+  var enCurso=(loanPays||[]).filter(function(p){
+    return String(p.prestamoId)===String(loan.id) && esCuotaRegular(p) && p.estadoPago==='Pendiente';
+  }).sort(function(a,b){
+    var d=String(a.fechaPago||'').localeCompare(String(b.fechaPago||''));
+    return d!==0?d:((a.cuotaN||0)-(b.cuotaN||0));
+  })[0];
+  if(!enCurso||!esTransitoria(loan, enCurso.cuotaN)) return null;
+  var desde=loan.periodoIrregularDesde;
+  var diasPeriodo=Math.max(1, diasEntre(desde, enCurso.fechaPago));
+  return {
+    cuotaN:enCurso.cuotaN, desde:desde, hasta:enCurso.fechaPago, diasPeriodo:diasPeriodo,
+    diasTranscurridos:Math.min(diasPeriodo, Math.max(0, diasEntre(desde, hasta)))
+  };
+}
+function sumarDiasISO(iso, n){
+  var d=new Date(String(iso)+'T12:00:00');
+  d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
 export function computeLiquidacion(loan, loanPays, opts){
   opts = opts || {};
   var esUSD = loan.moneda === 'USD';
@@ -473,7 +514,50 @@ export function computeLiquidacion(loan, loanPays, opts){
   var aplicaInteres = loan.modalidad !== 'Prestamo' && loan.modalidad !== 'Pago Unico' && (+loan.tasaMensual || 0) > 0;
   var intProxMes = aplicaInteres ? Math.round(capitalPendiente * (+loan.tasaMensual || 0) / 100) : 0;
   var incluye = !!opts.incluyeProxMes && aplicaInteres;
+
+  // ── PERIODO IRREGULAR EN CURSO: DIAS VARIABLES (3.2.0, Fase 3, regla del PO) ──
+  // Si la cuota en curso es la transitoria (primer periodo elegido al crear, o la que sigue
+  // a un cambio de dia), "el interes del mes en curso" no es un mes: un tiempo muerto de 92
+  // dias no se liquida con 30, ni uno de 15 con 30. El administrador ESCOGE cuantos dias
+  // cobrar (`opts.diasProxMes`); por defecto, los que ya corrieron hasta `hasta` (si liquida
+  // al dia 10 de un periodo de 15, cobra 10). Se acota a [0, dias del periodo]: cobrar mas
+  // pediria mas de lo que la propia cuota pide. La formula es la del motor: dias reales / 30
+  // sobre el capital pendiente.
+  // `validoHasta`: hasta cuando cubre ese interes. Los dias cobrados cuentan desde el inicio
+  // del periodo; si son menos de los ya transcurridos, la cifra vale solo para `hasta`.
+  var hastaLiq = opts.hasta || (function () {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  })();
+  var irregular = (aplicaInteres && !esDiario(loan)) ? periodoIrregularEnCurso(loan, pays, hastaLiq) : null;
+  var diasCobrados = 0, validoHasta = null;
+  if (irregular) {
+    var pedidos = opts.diasProxMes;
+    pedidos = (pedidos === undefined || pedidos === null || pedidos === '' || !isFinite(+pedidos))
+      ? irregular.diasTranscurridos : Math.round(+pedidos);
+    diasCobrados = Math.max(0, Math.min(irregular.diasPeriodo, pedidos));
+    intProxMes = interesDeTramo(capitalPendiente, +loan.tasaMensual || 0, diasCobrados);
+    var cubre = sumarDiasISO(irregular.desde, diasCobrados);
+    validoHasta = cubre < hastaLiq ? hastaLiq : cubre;
+  }
   var intExtra = incluye ? intProxMes : 0;
+
+  // ── MORA CONSOLIDADA DENTRO DE LA CUOTA TRANSITORIA (3.2.0, Fase 4) ─────────
+  // `/cambiar-dia-pago` BORRA las cuotas En Mora y consolida sus intereses dentro de la
+  // cuota transitoria (`loans.periodoIrregularMora`). Es deuda YA CAUSADA, pero deja de
+  // vivir en una fila `En Mora`, asi que `intMora` no la ve; y como liquidar borra el
+  // cronograma, esa fila desaparece y el dinero se perdia ENTERO (medido con el server
+  // real: un total de 3.382.739 caia a 3.000.000 justo despues del cambio de dia).
+  // Se suma SIEMPRE, no depende del checkbox: no es el interes de un periodo por correr
+  // --eso se pacta con el deudor-- sino atraso ya devengado, como cualquier cuota vencida.
+  // El gate es el ESTADO de la propia fila transitoria, para no contarla dos veces:
+  //   Pendiente -> hay que cobrarla aparte (esta rama);
+  //   En Mora   -> su `interesPeriodo` YA la incluye, y `intMora` ya la sumo;
+  //   Pagado    -> ya se cobro (la columna no se limpia al pagar: queda inerte).
+  var filaTrans = (+loan.periodoIrregularN || 0)
+    ? regs.filter(function(p){ return p.cuotaN === +loan.periodoIrregularN; })[0] : null;
+  var moraConsolidada = (filaTrans && filaTrans.estadoPago === 'Pendiente' && esTransitoria(loan, filaTrans.cuotaN))
+    ? Math.max(0, Math.round(+loan.periodoIrregularMora || 0)) : 0;
 
   // ── INTERES DIARIO ──────────────────────────────────────────────────────────
   // Un credito abierto no tiene cuotas En Mora, asi que `intMora` sale 0 y la
@@ -500,11 +584,16 @@ export function computeLiquidacion(loan, loanPays, opts){
     interesDia = interesDeTramo(dev.capitalVivo, +loan.tasaMensual || 0, 30) / 30;
   }
 
-  var total = Math.max(0, capitalPendiente + intMora + devengo - partialPend + intExtra);
+  var total = Math.max(0, capitalPendiente + intMora + moraConsolidada + devengo - partialPend + intExtra);
   return {
     esUSD: esUSD, trm: loan.trmAcordada, tasaMensual: +loan.tasaMensual || 0,
     capitalPendiente: capitalPendiente,
     intMora: intMora, moraCount: moraCount, moraUniforme: moraUniforme, moraValorMes: moraValorMes,
+    // Mora consolidada VIVA dentro de la cuota transitoria (3.2.0, Fase 4). No es opcional:
+    // es atraso ya causado. Quien liquide tiene que COBRARLA ademas del capital, y como su
+    // fila se borra al liquidar, viaja al backend dentro del `intExtra` del abono (app.js).
+    moraConsolidada: moraConsolidada,
+    moraConsolidadaFecha: moraConsolidada > 0 ? filaTrans.fechaPago : null,
     partialPend: partialPend,
     aplicaInteres: aplicaInteres, intProxMes: intProxMes,
     incluyeProxMes: incluye, intExtra: intExtra,
@@ -512,6 +601,14 @@ export function computeLiquidacion(loan, loanPays, opts){
     // que las superficies pueden leerlos sin ramificar.
     esDiario: diario, interesDevengado: devengo,
     diasDevengados: diasDevengados, interesDia: Math.round(interesDia),
+    // Periodo irregular en curso (3.2.0). Fuera de el valen false/0/null.
+    periodoIrregular: !!irregular,
+    periodoDesde: irregular ? irregular.desde : null,
+    periodoHasta: irregular ? irregular.hasta : null,
+    diasPeriodo: irregular ? irregular.diasPeriodo : 0,
+    diasTranscurridos: irregular ? irregular.diasTranscurridos : 0,
+    diasCobrados: diasCobrados,
+    validoHasta: validoHasta,
     total: total
   };
 }

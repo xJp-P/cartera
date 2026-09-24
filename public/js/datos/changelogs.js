@@ -680,5 +680,13 @@ export const CHANGELOGS = {
   '3.1.0': [
     'Antes de descargar el cronograma en PDF puedes decidir si su valor de liquidacion incluye el interes del mes en curso, con la misma casilla de Liquidar deuda. La cifra que se imprimira se ve en pantalla antes de descargar, y si incluye ese interes el PDF dice hasta que fecha es valida.',
     'La pregunta solo aparece en los creditos que cobran interes, tanto desde el perfil del deudor como al crear un prestamo nuevo. En los prestamos sin interes y de pago unico el PDF sale directo, como siempre.'
+  ],
+  '3.2.0': [
+    'Al crear un prestamo de Intereses o Capital + Intereses con cobro mensual puedes elegir la fecha del primer pago. Si no cae un mes despues del inicio, eliges si la primera cuota cobra un mes completo o solo los dias reales del periodo (proporcional, la opcion por defecto), y ves las dos cifras antes de crear el prestamo.',
+    'Sirve tambien para periodos de gracia: si el primer pago es a tres meses, la primera cuota cobra el interes de todos esos dias y el resto del cronograma queda igual. No hay un limite para esa fecha.',
+    'Al liquidar un credito o descargar su cronograma durante ese primer periodo, el interes del periodo en curso ya no se cobra como un mes completo: eliges cuantos dias cobrar (por defecto, los que ya corrieron), ves el total antes de confirmar y los documentos dicen hasta que fecha vale.',
+    'Se corrigio el calculo de la cuota que sigue a un cambio de dia de pago cuando se registraba un abono antes de pagarla: su interes ahora se recalcula sobre el capital que queda, y el cronograma que muestra el cobro coincide con el que se guarda.',
+    'Se corrigio que al editar los datos de un prestamo al que se le habia cambiado el dia de pago, sus cuotas pendientes volvieran al dia de la fecha de inicio.',
+    'Se corrigio el valor de liquidacion despues de un cambio de dia de cobro: los intereses ya vencidos que quedan dentro de la cuota siguiente vuelven a contar en el total, se explican en el modal y en los documentos, y se cobran al cerrar el credito.'
   ]
 };

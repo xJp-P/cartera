@@ -101,9 +101,9 @@ module.exports = function crearRutasRecalculate(ctx) {
         }
       }
 
-      // Aplicar extra del prorrateo (proximaCuotaExtra) a la cuota objetivo si aun esta pendiente
-      const extraLoan = Math.round(+loan.proximaCuotaExtra || 0);
-      const extraN = +loan.proximaCuotaExtraN || 0;
+      // La cuota transitoria (si la hay) ya salio derivada del motor sobre `saldoReal`: `loan`
+      // viene de SELECT * y trae su periodo. Aqui se aplicaba antes un MONTO guardado el dia del
+      // cambio de fecha, que un abono dejaba viejo (3.2.0, Fase 1).
       // Bug #44: una cuota con dinero encima cuyo cuotaN no exista en el cronograma nuevo
       // no tiene donde restaurarse. Alcanzable aqui via `buildScheduleFixedPMT`, que deriva
       // el numero de cuotas de la cuota fija pactada y puede devolver menos de las que se
@@ -112,14 +112,6 @@ module.exports = function crearRutasRecalculate(ctx) {
       // lo captura y sigue con los demas (ver `omitidos`).
       abortarSiHuerfanos(schedule, partialMap);
       restaurarCobros(schedule, partialMap);
-      schedule.forEach(p => {
-        if (extraLoan !== 0 && p.cuotaN === extraN) {
-          p.interesPeriodo = Math.round(p.interesPeriodo + extraLoan);
-          p.cuotaTotal = Math.round(p.cuotaTotal + extraLoan);
-          p.extraConsolidado = extraLoan;
-          if (!p.observaciones) p.observaciones = 'Cuota transitoria por cambio de fecha de pago (' + (extraLoan >= 0 ? '+$' : '-$') + Math.abs(extraLoan).toLocaleString('es-CO') + ')';
-        }
-      });
       if (schedule.length > 0) insertSchedule(schedule);
     });
     // Un prestamo que el motor rechaza (modalidad desconocida) o que perderia un pago

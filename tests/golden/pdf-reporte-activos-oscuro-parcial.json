@@ -22,7 +22,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 12139,
+    "bytes": 12172,
     "nFilas": 23,
     "nCeldas": 184,
     "celdasPorTr": [
@@ -53,7 +53,7 @@
     "nMontos": 50,
     "hashMontos": "12a043d8e61defcc69099361f8c54c3e3ee40c3f",
     "hashFname": "b8f8233920e5bcdeee9079ac1b2c17fa72f8fa34",
-    "hashTexto": "3f8c453c2fafaa8531cda8dd32f4cd95418bc87b",
+    "hashTexto": "466423e307ccef968eeb83029e3f41adcf888412",
     "clases": [
       "badge badge-mora",
       "badge badge-pagado",

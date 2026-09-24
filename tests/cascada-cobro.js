@@ -98,7 +98,7 @@ function cargarCascada() {
   const ctx = vm.createContext(sb);
   vm.runInContext(orden.join('\n'), ctx);
   const api = vm.runInContext(
-    '({planCascada,cobrableTotal,contextoCascada,proyeccionCobro,filasPreview,previewRecalculo,' +
+    '({planCascada,cobrableTotal,contextoCascada,proyeccionCobro,filasPreview,previewRecalculo,aplicarTransitoriaPreview,' +
     '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros})', ctx);
   api.pdfs = pdfs;
   return api;
@@ -176,7 +176,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
 }
 
 (async function main() {
-  const { planCascada, cobrableTotal, proyeccionCobro, filasPreview, previewRecalculo, _pmt, _tasaPeriodo,
+  const { planCascada, cobrableTotal, proyeccionCobro, filasPreview, previewRecalculo, aplicarTransitoriaPreview, _pmt, _tasaPeriodo,
           generateReciboCobro, generatePropuestaAbono, saldoConCaja, imputarCobros, pdfs } = cargarCascada();
   // La seccion J necesita el mismo buzon de PDFs con otro nombre, porque comparte
   // scope con la G y alli `pdfs` ya esta en uso.
@@ -465,6 +465,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
       const r       = _tasaPeriodo((+loan.tasaMensual || 0) / 100, loan.frecuencia || 'Mensual');
       const nominal = Math.round(_pmt(r, n, saldo));
       const filas   = filasPreview(saldo, r, n, false, nominal);
+      aplicarTransitoriaPreview(loan, filas, plan.ctx.regularConsumed + 1, saldo, pays);
       R.check('F (' + obj.etiqueta + ') ANTI-VACIO: el preview dibuja filas', filas.length > 0, 'n=' + n);
 
       const est = await ejecutarPlan(loan.id, plan, hoy, 'test preview', PORT_F);

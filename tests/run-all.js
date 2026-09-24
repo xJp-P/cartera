@@ -39,6 +39,7 @@ const SUITES = [
   { nombre: 'e2e-api',       archivo: 'e2e-api.js',       desc: 'todos los endpoints contra el server.js real' },
   { nombre: 'cascada-cobro', archivo: 'cascada-cobro.js', desc: 'orquestador de cobro en cascada (mora -> abono) contra el server real' },
   { nombre: 'condonacion',   archivo: 'condonacion.js',   desc: 'condonar intereses: la obligacion baja sin mover un peso de caja' },
+  { nombre: 'periodo-irregular', archivo: 'periodo-irregular.js', desc: 'cuota transitoria derivada en el motor sobre el capital vivo (3.2.0)' },
 ];
 
 const args  = process.argv.slice(2);

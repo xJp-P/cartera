@@ -63,7 +63,12 @@ export function AbonoModal(props){
   var capImputadoVivo=Math.max(0,saldoActual-saldoCajaModal);
   var parcialVivo=loanPays.filter(function(p){return !esAbono(p)&&p.estadoPago!=='Pagado';})
     .reduce(function(s,p){return s+(p.partialPaid||0);},0);
-  var liquidacion=computeLiquidacion(loan,loanPays,{}).total; // v1.19.0: helper centralizado
+  var _liq=computeLiquidacion(loan,loanPays,{});               // v1.19.0: helper centralizado
+  var liquidacion=_liq.total;
+  // 3.2.0 Fase 4 — la mora que "Cambiar fecha" dejo dentro de la cuota transitoria. No tiene
+  // fila En Mora que la respalde, asi que `intMora` no la ve: sin esto la linea de abajo
+  // desaparecia justo cuando el valor de liquidacion deja de ser el capital pelado.
+  var moraConsolidada=_liq.moraConsolidada;
   // ── v2.0.0 — DOBLE ENTRADA OBLIGATORIA EN PRESTAMOS USD ──────────────────────────────
   // La deuda esta denominada en DOLARES y el ledger la lleva en COP a la TRM PACTADA
   // (originalCOP = montoOrigen x trmAcordada). Por eso el CAPITAL que se descuenta lo manda el
@@ -198,8 +203,9 @@ export function AbonoModal(props){
         h('div',null,'Saldo con esos pagos aplicados: ',
           h('span',{className:'mono',style:{fontWeight:700,color:'var(--text2)'}},fmt(saldoCajaModal)),
           h('span',{style:{color:'var(--text3)'}},' — es el que ves en el perfil'))),
-      intMora>0&&h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',marginTop:4}},'Valor de liquidacion: '+fmt(liquidacion)+(esUSD?' '+copToUsd(liquidacion,loan.trmAcordada):''),
-        h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:'var(--font)',marginTop:1}},'(incluye intereses en mora)'))),
+      (intMora>0||moraConsolidada>0)&&h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',marginTop:4}},'Valor de liquidacion: '+fmt(liquidacion)+(esUSD?' '+copToUsd(liquidacion,loan.trmAcordada):''),
+        h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:'var(--font)',marginTop:1}},
+          moraConsolidada>0&&intMora===0?'(incluye la mora consolidada en la cuota en curso)':'(incluye intereses en mora)'))),
     function(){
       var hayMora=intMora>0;
       var esPrestamo=loan.modalidad==='Prestamo';

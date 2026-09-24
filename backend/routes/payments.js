@@ -125,11 +125,10 @@ module.exports = function crearRutasPayments(ctx) {
     if (estadoPago === 'Pagado') {
       const pay = db.prepare('SELECT prestamoId, cuotaN FROM payments WHERE id = ?').get(req.params.id);
       if (pay) {
-        // Si la cuota pagada era la de proximaCuotaExtra → limpiar para que recalculate no la vuelva a aplicar.
-        const loanRow = db.prepare('SELECT proximaCuotaExtraN FROM loans WHERE id = ?').get(pay.prestamoId);
-        if (loanRow && loanRow.proximaCuotaExtraN === pay.cuotaN) {
-          db.prepare('UPDATE loans SET proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?').run(pay.prestamoId);
-        }
+        // (Aqui se limpiaba `proximaCuotaExtra` al pagar la cuota transitoria. Desde 3.2.0 la
+        // transitoria se guarda como decision —`periodoIrregularN`— y NO se limpia: pagada, la
+        // fila ya no se regenera y la decision queda inerte; si el pago se revierte, la cuota
+        // renace con su prorrateo en vez de perderlo. Ver `aplicarPeriodoIrregular`.)
         const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(pay.prestamoId);
         // Cuotas regulares = las que NO son abonos a capital. Regla canonica: id con '-ab-'.
         // NO usar la heuristica interes===0 && capital>0: la cuota unica de un Prestamo (o Pago Unico
@@ -252,11 +251,7 @@ module.exports = function crearRutasPayments(ctx) {
       db.prepare("UPDATE payments SET estadoPago=?, fechaRecaudo=?, observaciones=?, montoCOPRecibido=?, montoUSDRecibido=?, partialPaid=?, recibos=?, paidAt=datetime('now','localtime') WHERE id=?")
         .run('Pagado', fechaPago, obsCombinada, copAcum, Math.round(usdAcum * 100) / 100, pay.cuotaTotal, recibosJSON, req.params.id);
 
-      // Si era la cuota con proximaCuotaExtra, limpiarla del loan
-      const loanRow = db.prepare('SELECT proximaCuotaExtraN FROM loans WHERE id = ?').get(pay.prestamoId);
-      if (loanRow && loanRow.proximaCuotaExtraN === pay.cuotaN) {
-        db.prepare('UPDATE loans SET proximaCuotaExtra = 0, proximaCuotaExtraN = 0 WHERE id = ?').run(pay.prestamoId);
-      }
+      // (La cuota transitoria ya no se "limpia" al pagarse: ver la nota en PUT /payments/:id.)
       // Auto-finalización del préstamo
       const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(pay.prestamoId);
       const regulares = allPays.filter(p => esCuotaRegular(p)); // abono = id con '-ab-' (canonico, ver Bug #26)

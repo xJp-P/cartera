@@ -8,13 +8,15 @@
 import { Fld, Modal } from '../componentes/base.js';
 import { Ico } from '../componentes/iconos.js';
 import { showError } from '../core/api.js';
-import { pmt, filasPreview } from '../core/calculo.js';
+import {
+  pmt, filasPreview, aplicarTransitoriaPreview, infoPrimerPeriodo, primerPagoDe, primerPagoRegular,
+} from '../core/calculo.js';
 import { MODALIDAD_DIARIA, diasEntre } from '../core/dominio.js';
 import {
   copToUsd, fmt, fmtD, fmtN, fmtNumInput, fmtUSD, parseDecimalInput, parseIntInput, parseNum,
 } from '../core/format.js';
 import { h, useMemo, useState } from '../core/react.js';
-import { freqCuotaLabel, nowStr } from '../core/ui.js';
+import { addDays, freqCuotaLabel, nowStr } from '../core/ui.js';
 
 // ── LoanModal ─────────────────────────────────────────────────────────────────
 export function LoanModal(props){
@@ -28,6 +30,9 @@ export function LoanModal(props){
   // matematica del cronograma ya pactado con el deudor.
   var hasActivity=(function(){
     if(!loan||!loan.id) return false;
+    // Mora consolidada por un cambio de dia (3.2.0): es deuda causada que vive en el prestamo,
+    // no en una cuota. Editar el calendario la borraria; el backend lo trata igual.
+    if((+loan.periodoIrregularMora||0)>0) return true;
     return allPays.some(function(p){
       if(String(p.prestamoId)!==String(loan.id)) return false;
       if(p.estadoPago==='Pagado') return true;          // cuotas pagadas o abonos a capital
@@ -36,6 +41,13 @@ export function LoanModal(props){
     });
   })();
   var lockSens=hasActivity&&!(loan&&(loan._prefill||loan._calcPrefill)); // solo bloquea en edicion real, no en prefill desde calc
+  // Primer pago de un prestamo que se EDITA: la fecha de su cuota 1 tal como quedo guardada
+  // (un cambio de dia posterior la pudo mover); si no hay fila, la que dan su base y su dia.
+  var primerPagoGuardado=(function(){
+    if(!loan||!loan.id||loan._prefill||loan._calcPrefill) return '';
+    var f1=allPays.filter(function(p){ return String(p.id)===String(loan.id)+'-1'; })[0];
+    return f1?f1.fechaPago:primerPagoDe(loan);
+  })();
   var fs=useState({
     nombre:prefill.nombre||loan&&loan.nombre||'',cedula:prefill.cedula||loan&&loan.cedula||'',telefono:prefill.telefono||loan&&loan.telefono||'',
     moneda:calcPre.moneda||loan&&loan.moneda||'COP',montoOrigen:calcPre.montoOrigen||loan&&loan.montoOrigen||'',
@@ -55,10 +67,29 @@ export function LoanModal(props){
     gananciaInput:(loan&&(+loan.gananciaFija||0)>0)
       ?String(Math.round((loan.moneda==='USD'&&(+loan.trmAcordada||0)>0)?(+loan.gananciaFija/+loan.trmAcordada):+loan.gananciaFija))
       :'',
-    estado:loan&&loan.estado||'Activo',notas:loan&&loan.notas||''
+    estado:loan&&loan.estado||'Activo',notas:loan&&loan.notas||'',
+    // 3.2.0 — PRIMER PAGO. Al crear nace un mes despues del inicio (lo de siempre) y lo sigue
+    // mientras nadie lo toque. Al editar muestra el primer pago REAL del prestamo; si no es el
+    // regular, cuenta como elegido a mano (no se mueve solo al cambiar la fecha de inicio).
+    // `primerPeriodo`: 'proporcional' (preseleccionado, decision del PO) o 'completo'.
+    primerPago:primerPagoGuardado||primerPagoRegular(loan&&loan.fechaInicio||nowStr()),
+    primerPagoManual:!!primerPagoGuardado&&primerPagoGuardado!==primerPagoRegular(loan.fechaInicio),
+    primerPeriodo:(!!primerPagoGuardado&&primerPagoGuardado!==primerPagoRegular(loan.fechaInicio)&&+loan.periodoIrregularN!==1)
+      ?'completo':'proporcional'
   });
   var f=fs[0]; var setF=fs[1];
   var isNew=!loan||!!loan._prefill||!!loan._calcPrefill;
+  // La fecha de inicio arrastra al primer pago mientras este no se haya elegido a mano.
+  function setFechaInicio(v){
+    setF(function(p){
+      var n=Object.assign({},p); n.fechaInicio=v;
+      if(!p.primerPagoManual) n.primerPago=primerPagoRegular(v);
+      return n;
+    });
+  }
+  function setPrimerPago(v){
+    setF(function(p){ return Object.assign({},p,{primerPago:v,primerPagoManual:true}); });
+  }
   function set(k,v){setF(function(p){var n=Object.assign({},p);n[k]=v;return n;});}
   // v1.11.x — Selector "Cliente nuevo / existente" (solo al dar de alta un prestamo). La app asocia por
   // NOMBRE (no hay persona_id): elegir un cliente existente reusa su nombre/cedula/telefono y el backend
@@ -133,6 +164,16 @@ export function LoanModal(props){
   })();
   // % implicito derivado para el indicador de equivalencia
   var gananciaPctImpl=montoCOP>0?Math.round(gananciaCOPCalc/montoCOP*10000)/100:0;
+  // 3.2.0 — PRIMER PAGO. Se elige solo donde el motor lo sabe usar: cuotas mensuales con dia de
+  // pago (Intereses y C+I). En Semanal/Quincenal las fechas salen del inicio y siempre son
+  // regulares; Prestamo y Pago Unico ya piden su fecha exacta; el credito abierto no tiene cuotas.
+  var muestraPrimerPago=(f.modalidad==='Intereses'||f.modalidad==='Capital + Intereses')&&(f.frecuencia||'Mensual')==='Mensual';
+  var infoPP=infoPrimerPeriodo(montoCOP,f.tasaMensual,f.fechaInicio,f.primerPago);
+  var primerPagoInvalido=muestraPrimerPago&&(!f.primerPago||!f.fechaInicio||f.primerPago<=f.fechaInicio);
+  // La pregunta del primer periodo solo existe si el periodo NO es un mes calendario y hay
+  // interes que repartir. Sin limite superior: un "tiempo muerto" de meses cobra todos sus dias.
+  var ofrecePrimerPeriodo=muestraPrimerPago&&!primerPagoInvalido&&infoPP.irregular&&(+f.tasaMensual||0)>0;
+  var prorrateaPrimero=ofrecePrimerPeriodo&&f.primerPeriodo==='proporcional';
   var preview=useMemo(function(){
     if(!montoCOP) return {cuota:0,totalInt:0,rows:[],totalPagar:0};
     var n=+f.plazoMeses||12;
@@ -160,12 +201,19 @@ export function LoanModal(props){
       } else {
         var nFilas=f.modalidad==='Intereses'?Math.min(n||12,24):n;
         rows=filasPreview(montoCOP,r,nFilas,f.modalidad==='Intereses',c);
+        // Primer periodo proporcional: la cuota 1 cobra sus dias reales, con el MISMO espejo del
+        // motor que usa el cobro. El prestamo aun no existe, asi que se le da una identidad de paso.
+        if(prorrateaPrimero){
+          aplicarTransitoriaPreview({id:'nuevo',modalidad:f.modalidad,tasaMensual:+f.tasaMensual||0,
+            periodoIrregularN:1,periodoIrregularDesde:f.fechaInicio,periodoIrregularMora:0},
+            rows,1,montoCOP,[{id:'nuevo-1',fechaPago:f.primerPago}]);
+        }
       }
     }
     var totalInt=rows.reduce(function(s,r){return s+r.interes;},0);
     var totalPagar=rows.reduce(function(s,r){return s+r.cuota;},0);
     return {cuota:c,totalInt:totalInt,rows:rows,totalPagar:totalPagar};
-  },[montoCOP,f.tasaMensual,f.plazoMeses,f.modalidad,f.frecuencia,gananciaCOPCalc]);
+  },[montoCOP,f.tasaMensual,f.plazoMeses,f.modalidad,f.frecuencia,gananciaCOPCalc,prorrateaPrimero,f.fechaInicio,f.primerPago]);
   var scs=useState(false); var showCronoLoan=scs[0]; var setShowCronoLoan=scs[1];
   // Anti-doble-clic: bloquea el boton tras el primer click para evitar duplicados
   var sub=useState(false); var isSubmitting=sub[0]; var setIsSubmitting=sub[1];
@@ -185,6 +233,8 @@ export function LoanModal(props){
     if(esUnaCuotaSubmit&&!f.fechaDevolucion){showError('Falta la fecha de pago');return;}
     // v1.10.0 — Pago Unico debe tener ganancia >= 0 (puede ser 0 si el user quiere sin ganancia)
     if(esPagoUnico&&(+f.gananciaInput||0)<0){showError('La ganancia no puede ser negativa');return;}
+    // 3.2.0 — el primer pago tiene que caer DESPUES del inicio. Sin tope superior (regla del PO).
+    if(muestraPrimerPago&&!lockSens&&primerPagoInvalido){showError('El primer pago debe ser posterior a la fecha de inicio');return;}
     var base=isNew?{}:(loan||{});
     var diaPagoAuto=new Date(f.fechaInicio+'T12:00:00').getDate();
     var trmFinal=aplicaFracc&&tasaPromedio>0?tasaPromedio:(+f.trmAcordada||0);
@@ -198,7 +248,12 @@ export function LoanModal(props){
       // es NOT NULL con default: se normaliza para que ninguna ruta lea un valor suelto.
       frecuencia:(esUnaCuotaSubmit||f.modalidad===MODALIDAD_DIARIA)?'Mensual':(f.frecuencia||'Mensual'),
       comprasUSD:comprasFinal,
-      gananciaFija:esPagoUnico?gananciaCOPCalc:0
+      gananciaFija:esPagoUnico?gananciaCOPCalc:0,
+      // 3.2.0 — la DECISION del primer pago. El backend la traduce a dia de pago, base del
+      // cronograma y cuota transitoria (`resolverPrimerPago`); `diaPago` de arriba solo cuenta
+      // cuando no viaja. Con campos bloqueados no se manda: el backend congela el calendario.
+      primerPago:(muestraPrimerPago&&!lockSens)?f.primerPago:undefined,
+      primerPeriodo:(muestraPrimerPago&&!lockSens)?f.primerPeriodo:undefined
     };
     if(esUnaCuotaSubmit&&f.fechaDevolucion) extra.fechaDevolucion=f.fechaDevolucion;
     // Defense-in-depth (v1.9.0): si los campos sensibles estan bloqueados, sobrescribir
@@ -219,9 +274,15 @@ export function LoanModal(props){
       extra.comprasUSD=loan.comprasUSD||'';
       // v1.10.0: gananciaFija tambien queda bloqueada si hay actividad
       extra.gananciaFija=loan.gananciaFija||0;
+      // 3.2.0: el dia de pago tambien. Antes viajaba siempre el dia de la fecha de inicio, y
+      // editar una nota de un prestamo con el dia cambiado movia todas sus cuotas pendientes.
+      extra.diaPago=loan.diaPago;
     }
+    var payload=Object.assign({},base,f,extra);
+    delete payload.primerPagoManual;                       // estado de la pantalla, no del prestamo
+    if(payload.primerPago===undefined){ delete payload.primerPago; delete payload.primerPeriodo; }
     setIsSubmitting(true);
-    onSave(Object.assign({},base,f,extra));
+    onSave(payload);
     // Safety net: si por alguna razon el modal sigue abierto despues de 5s, re-habilitar el boton
     setTimeout(function(){setIsSubmitting(false);},5000);
   }
@@ -334,9 +395,42 @@ export function LoanModal(props){
       h(Fld,{label:f.modalidad==='Capital + Intereses'?(f.frecuencia==='Semanal'?'Plazo (semanas) *':f.frecuencia==='Quincenal'?'Plazo (quincenas) *':'Plazo (meses) *'):'\u221E Plazo indefinido'},
         h('input',{type:'text',inputMode:'numeric',value:f.plazoMeses,onChange:function(e){set('plazoMeses',parseIntInput(e.target.value));},placeholder:f.modalidad==='Capital + Intereses'?'12':'\u221E',className:'inp',disabled:lockSens||f.modalidad==='Intereses',style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
     esUnaCuota?h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-      h(Fld,{label:f.modalidad==='Pago Unico'?'Fecha del prestamo':'Fecha del prestamo'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){set('fechaInicio',e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+      h(Fld,{label:f.modalidad==='Pago Unico'?'Fecha del prestamo':'Fecha del prestamo'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
       h(Fld,{label:f.modalidad==='Pago Unico'?'Fecha exacta de pago':'Fecha de devolucion'},h('input',{type:'date',value:f.fechaDevolucion||'',onChange:function(e){set('fechaDevolucion',e.target.value);},className:'inp',min:f.fechaInicio,disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})))
-    :h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){set('fechaInicio',e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+    :muestraPrimerPago?h('div',null,
+      // 3.2.0 — PRIMER PAGO junto a la fecha de inicio. Sin `max`: el negocio da "tiempos
+      // muertos" de varios meses (regla del PO). El `min` solo evita elegir el inicio o antes.
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+        h(Fld,{label:'Primer pago'},
+          h('input',{type:'date',value:f.primerPago||'',min:f.fechaInicio?addDays(f.fechaInicio,1):undefined,onChange:function(e){setPrimerPago(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
+          h('div',{style:{fontSize:11,marginTop:4,lineHeight:1.4,color:primerPagoInvalido?'var(--red)':'var(--text3)'}},
+            primerPagoInvalido?'Debe ser posterior a la fecha de inicio'
+              :(infoPP.irregular?'Primer periodo de '+infoPP.dias+' dias':'Un mes despues del inicio')+
+               ' · despues, el '+(+f.primerPago.slice(8,10))+' de cada mes'+(+f.primerPago.slice(8,10)>28?' (o el ultimo dia)':'')),
+          // Aviso SUAVE, no un tope: una fecha a mas de un año casi siempre es un error de
+          // tecleo, pero un tiempo muerto largo es legitimo.
+          !primerPagoInvalido&&infoPP.dias>366&&h('div',{style:{fontSize:11,marginTop:2,color:'var(--yellow)',fontWeight:600}},
+            'Mas de un año hasta el primer pago: revisa la fecha'))),
+      ofrecePrimerPeriodo&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px 14px',marginBottom:8}},
+        h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:4}},'PRIMER PERIODO: '+infoPP.dias+' DIAS'),
+        h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4,marginBottom:10}},
+          'El primer pago no cae un mes despues del inicio. ¿Cuanto interes cobra la primera cuota?'),
+        [['completo','Cobrar mes completo',infoPP.interesCompleto],
+         ['proporcional','Cobrar proporcional - '+infoPP.dias+' dias',infoPP.interesProporcional]].map(function(op){
+          var sel=f.primerPeriodo===op[0];
+          return h('label',{key:op[0],style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:6,border:'1px solid '+(sel?'var(--blue)':'var(--border)'),borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:sel?'rgba(88,166,255,.08)':'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
+            h('input',{type:'radio',name:'primerPeriodo',checked:sel,onChange:function(){if(!lockSens)set('primerPeriodo',op[0]);},disabled:lockSens,style:{accentColor:'var(--blue)',cursor:lockSens?'not-allowed':'pointer',margin:0}}),
+            h('span',{style:{flex:1,fontSize:12,color:'var(--text)',fontWeight:500}},op[1]),
+            h('span',{className:'mono',style:{fontSize:12,color:sel?'var(--blue)':'var(--text3)',fontWeight:sel?700:400}},'(interes '+fmt(op[2])+')'));
+        }),
+        preview.rows&&preview.rows.length>0&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.5}},
+          'Primera cuota: ',h('b',{className:'mono'},fmt(preview.rows[0].cuota)),
+          preview.rows.length>1?' · las demas: '+fmt(preview.rows[1].cuota):'',
+          // Tiempo muerto: que se lea que el interes de TODOS esos dias va a la primera cuota.
+          prorrateaPrimero&&infoPP.dias>31?h('div',{style:{color:'var(--text3)',marginTop:2}},
+            'El interes de los '+infoPP.dias+' dias se cobra completo en la primera cuota.'):null)))
+    :h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
     // v1.10.0 — Bloque Ganancia para modalidad Pago Unico: toggle %/monto + indicador de equivalencia
     f.modalidad==='Pago Unico'&&h('div',{style:{background:'rgba(63,185,80,.04)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px',marginBottom:8}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--green)',letterSpacing:.5,marginBottom:10,display:'flex',alignItems:'center',gap:5}},
@@ -367,6 +461,11 @@ export function LoanModal(props){
       h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:5}},
         h('span',{style:{fontSize:12,color:'var(--text2)'}},f.modalidad==='Prestamo'?'Monto a devolver':f.modalidad==='Pago Unico'?'Total a cobrar (capital + ganancia)':f.modalidad==='Intereses'?'Cuota de interes'+(f.frecuencia==='Semanal'?' semanal':f.frecuencia==='Quincenal'?' quincenal':' mensual'):'Cuota '+(f.frecuencia==='Semanal'?'semanal':f.frecuencia==='Quincenal'?'quincenal':'mensual')),
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:f.modalidad==='Prestamo'?'var(--blue)':'var(--green)'}},fmt(preview.cuota))),
+      // 3.2.0 — con un primer pago irregular la cuota 1 no vale lo mismo que las demas.
+      muestraPrimerPago&&infoPP.irregular&&!primerPagoInvalido&&preview.rows&&preview.rows.length>0&&
+        h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:5}},
+          h('span',{style:{fontSize:12,color:'var(--text2)'}},'Primera cuota ('+fmtD(f.primerPago)+', '+infoPP.dias+' dias)'),
+          h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--green)'}},fmt(preview.rows[0].cuota))),
       f.moneda==='USD'&&trmEfectiva>0&&h('div',{style:{display:'flex',justifyContent:'space-between'}},
         h('span',{style:{fontSize:12,color:'var(--text2)'}},'Cuota '+freqCuotaLabel(f.frecuencia)+' en USD'),
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},fmtUSD(preview.cuota/(trmEfectiva||1)))),
