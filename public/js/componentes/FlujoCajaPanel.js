@@ -3,8 +3,7 @@
 // Extraido de `app.js` en la Etapa 3 (B7) del refactor. Codigo VERBATIM.
 //
 // Va en componentes/ y no en modales/ porque NO es un modal: no superpone ni
-// bloquea, es un panel expandible dentro del perfil del deudor — la misma
-// naturaleza que SparklineChart.
+// bloquea, es un panel expandible dentro del perfil del deudor.
 //
 // Reconstruye lo que REALMENTE entro y cuando, a partir de `flujoCajaDe`. Es la
 // UNICA arista componente->componente de toda la app: DebtorModal lo usa.

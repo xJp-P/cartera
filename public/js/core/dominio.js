@@ -42,8 +42,8 @@
 // v1.11.4: eventos de caja reales de un pago. Devuelve [{fecha:'YYYY-MM-DD', cop:int}].
 // Fuente de verdad = ledger payments.recibos (cada parcial en su fecha + el pago final). Si la fila
 // no tiene ledger (historico previo, abonos a capital, liquidaciones de mora) cae al FALLBACK: un
-// unico evento en fechaRecaudo por (montoCOPRecibido||cuotaTotal). metrics.recibido y sparkCobros
-// usan ESTA funcion -> el KPI y la suma del grafico cuadran por construccion, sin doble conteo.
+// unico evento en fechaRecaudo por (montoCOPRecibido||cuotaTotal). metrics.recibido y la curva del
+// Resumen (3.4.0) usan ESTA funcion -> la cifra y el grafico cuadran por construccion, sin doble conteo.
 import { esAbono, esCorte, esCuotaRegular } from './ids.js';
 
 export function cobrosDe(p){

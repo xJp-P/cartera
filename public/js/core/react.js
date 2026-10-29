@@ -16,4 +16,5 @@ export var useState = React.useState;
 export var useEffect = React.useEffect;
 export var useMemo = React.useMemo;
 export var useCallback = React.useCallback;
+export var useRef = React.useRef;          // 3.4.0: el grafico de flujo del Resumen mide su ancho
 export var createRoot = ReactDOM.createRoot;

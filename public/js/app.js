@@ -758,8 +758,8 @@ function App(){
     var esperadoTot=mp.reduce(function(s,p){return s+p.cuotaTotal;},0);
     // RECIBIDO (Cobros del Mes) = flujo de caja real por FECHA DE TRANSACCION via cobrosDe():
     // ledger de recibos (cada parcial en su dia exacto + el pago final) con fallback a fechaRecaudo.
-    // Incluye parciales EN CURSO y abonos a capital. Definicion IDENTICA a sparkCobros -> el KPI ==
-    // suma de los puntos del grafico por construccion, sin doble conteo.
+    // Incluye parciales EN CURSO y abonos a capital. Definicion IDENTICA a la curva diaria del
+    // Resumen (`modeloResumen`, 3.4.0) -> la cifra == el ultimo punto de la curva, sin doble conteo.
     var recibidoTot=pays.reduce(function(s,p){
       return s+cobrosDe(p).reduce(function(a,e){return a+(e.fecha.slice(0,7)===thisM?e.cop:0);},0);
     },0);
@@ -977,7 +977,7 @@ function App(){
           h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'v'+globalUpdate.version+' lista para instalar')),
         h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reiniciar e instalar')),
       h('div',{className:'main-content'},
-      view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,pays:pays,onNameClick:openDebtorByName,onNewLoan:function(){navTo('cartera');setLoanModal('new');}}),
+      view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,pays:pays,debts:debts,onNameClick:openDebtorByName,onNewLoan:function(){navTo('cartera');setLoanModal('new');}}),
       view==='cartera'    && h(CarteraView,{loans:loans,pays:pays,onAdd:function(){setLoanModal('new');},onEdit:setLoanModal,onDelete:delLoan,onAbono:setAbonoModal,onCobro:function(l){setCobroModal({loan:l});},onCorte:setCorteModal,onForceClose:forceCloseLoan}),
       view==='deudores'   && h(DeudoresView,{deudores:deudores,pays:pays,onSelect:setDebtorModal,onAdd:function(){setLoanModal('new');}}),
       view==='pagos'      && h(PagosView,  {pays:filtPays,allPays:pays,loans:loans,searchQ:searchQ,setSearchQ:setSearchQ,fMonth:fMonth,setFMonth:setFMonth,onSelect:openPayModal,onQuickPay:quickPay,onNameClick:openDebtorByName,datosPago:cfg.datos_pago}),

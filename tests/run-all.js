@@ -40,6 +40,7 @@ const SUITES = [
   { nombre: 'cascada-cobro', archivo: 'cascada-cobro.js', desc: 'orquestador de cobro en cascada (mora -> abono) contra el server real' },
   { nombre: 'condonacion',   archivo: 'condonacion.js',   desc: 'condonar intereses: la obligacion baja sin mover un peso de caja' },
   { nombre: 'periodo-irregular', archivo: 'periodo-irregular.js', desc: 'cuota transitoria derivada en el motor sobre el capital vivo (3.2.0)' },
+  { nombre: 'resumen',       archivo: 'resumen.js',       desc: 'la pestana Resumen: modelo, meta del mes sin cortes, agenda y la vista real (3.4.0)' },
 ];
 
 const args  = process.argv.slice(2);

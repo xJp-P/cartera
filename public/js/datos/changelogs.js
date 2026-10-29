@@ -696,5 +696,13 @@ export const CHANGELOGS = {
     'Al liquidar un credito semanal o quincenal, o al descargar su cronograma, la casilla del interes en curso ahora cobra una semana o una quincena, no un mes completo.',
     'Si un credito se liquida dentro de sus dias de gracia, no se cobra interes por adelantado: el modal y el Estado de Liquidacion explican desde que fecha empieza a correr el interes.',
     'Se corrigio que cambiar el dia de pago antes del primer pago volviera a cobrar los dias de gracia que se habian perdonado al crear el prestamo.'
+  ],
+  '3.4.0': [
+    'El Resumen se renovo por completo y ahora aprovecha todo el ancho de la pantalla. Arriba, una frase resume el dia: lo que vence hoy, lo que entra en la semana y lo que esta vencido.',
+    'Cinco cifras clave: el capital en la calle con lo ya recuperado, lo cobrado en el mes con su curva dia a dia, la ganancia del mes y de los ultimos 12 meses, la mora, y la nueva posicion neta: lo que te deben menos lo que debes en Mis Deudas.',
+    'Agenda de cobro: una linea de tiempo de los proximos 7, 14 o 30 dias con lo que entra cada dia, y una columna con lo vencido por deudor. En pantallas angostas se muestra como lista. Toca un nombre para abrir su perfil.',
+    'Radar de la cartera: cada prestamo activo ordenado por lo que necesita atencion primero, con su capital en la calle, el proximo cobro y su estado, y filtros por mora, cobros de la semana, dolares y creditos abiertos.',
+    'Flujo de caja de los ultimos 12 meses separado en intereses y capital, con los 3 meses siguientes proyectados; donde esta tu capital por deudor, modalidad o moneda; y los ultimos movimientos de caja agrupados por dia.',
+    'Se corrigio la meta del mes: los cortes de los creditos de interes diario ya no se cuentan como cuotas que vencen, asi que el porcentaje coincide con lo que realmente entro en el mes.'
   ]
 };
