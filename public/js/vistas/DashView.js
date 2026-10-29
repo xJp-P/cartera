@@ -369,7 +369,9 @@ function RzMetaMes(p){
         h('div', { className: 'rz-fila' }, h('span', null, h('i', { className: 'rz-dot', style: { background: 'var(--green)' } }), 'Cobrado del mes'), h('b', { style: { color: 'var(--green)' } }, fmt(r.cobrado))),
         r.moraRec > 0 && h('div', { className: 'rz-fila' }, h('span', null, h('i', { className: 'rz-dot', style: { background: 'var(--gold)' } }), 'Mora recuperada'), h('b', { style: { color: 'var(--gold)' } }, fmt(r.moraRec))),
         h('div', { className: 'rz-fila' }, h('span', null, h('i', { className: 'rz-dot', style: { background: 'var(--yellow)' } }), 'Falta por cobrar'), h('b', null, fmt(r.falta))))),
-    r.pend.length > 0 && h('div', { className: 'rz-lista rz-scroll', style: { maxHeight: 250 } },
+    // Sin tope en linea: la lista llena el alto que la rejilla le da a la tarjeta (styles.css,
+    // `.rz-meta-lista`). Mas de 4 cuotas ya no caben en 250 px: `larga` fija ese minimo.
+    r.pend.length > 0 && h('div', { className: 'rz-lista rz-scroll rz-meta-lista' + (r.pend.length > 4 ? ' larga' : '') },
       r.pend.map(function(x){
         var l = M.loanMap[x.prestamoId], mora = x.estadoPago === 'En Mora';
         return h('div', { key: x.id, className: 'rz-li', onClick: function(){ p.onNameClick(x.nombreCliente); } },
@@ -547,7 +549,9 @@ function RzRadar(p){
     h('div', { className: 'rz-filtros', style: { marginBottom: 10 } }, filtros.map(function(f){
       return h('button', { key: f[0], className: 'rz-filtro' + (filtro === f[0] ? ' on' : ''), onClick: function(){ setFiltro(f[0]); } }, f[1] + ' · ' + f[2]);
     })),
-    h('div', { className: 'rz-scroll', style: { maxHeight: 460 } },
+    // Como la lista de la Meta (3.4.1): sin tope en linea, llena el alto de la fila (`.rz-radar-lista`).
+    // Con mas de 6 prestamos la tabla ya no cabe en 460 px: `larga` fija ese minimo.
+    h('div', { className: 'rz-scroll rz-radar-lista' + (filas.length > 6 ? ' larga' : '') },
       h('table', { className: 'rz-tabla' },
         h('thead', null, h('tr', null, h('th', null, 'Deudor'), h('th', { className: 'num' }, 'Capital en la calle'), h('th', null, 'Próximo cobro'), h('th', null, 'Estado'))),
         h('tbody', null, filas.map(function(x){

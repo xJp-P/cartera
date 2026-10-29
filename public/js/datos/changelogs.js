@@ -704,5 +704,8 @@ export const CHANGELOGS = {
     'Radar de la cartera: cada prestamo activo ordenado por lo que necesita atencion primero, con su capital en la calle, el proximo cobro y su estado, y filtros por mora, cobros de la semana, dolares y creditos abiertos.',
     'Flujo de caja de los ultimos 12 meses separado en intereses y capital, con los 3 meses siguientes proyectados; donde esta tu capital por deudor, modalidad o moneda; y los ultimos movimientos de caja agrupados por dia.',
     'Se corrigio la meta del mes: los cortes de los creditos de interes diario ya no se cuentan como cuotas que vencen, asi que el porcentaje coincide con lo que realmente entro en el mes.'
+  ],
+  '3.4.1': [
+    'En el Resumen, la lista de cuotas pendientes de la Meta del mes y la tabla del Radar de la cartera ahora usan todo el alto de su tarjeta: ya no se cortan antes de tiempo dejando un espacio vacio debajo.'
   ]
 };

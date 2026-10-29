@@ -235,6 +235,24 @@
 .rz-fila b{font-family:'Cascadia Code','Consolas',monospace;font-weight:700;color:var(--text);font-size:13px;white-space:nowrap}
 .rz-dot{display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:7px;vertical-align:1px}
 .rz-lista{margin-top:14px;border-top:1px solid var(--border);padding-top:6px}
+/* Meta del mes y Radar: la lista llena la tarjeta (hotfix 3.4.1). La rejilla estira la tarjeta a la altura
+   del Radar (align-items:stretch), pero la lista tenia un tope fijo de 250 px en linea y el cuerpo no
+   era flexible: la lista se cortaba a media fila y el alto sobrante quedaba vacio al fondo. Ahora el
+   cuerpo es una columna flexible y la lista crece hasta el borde. Con mas de 4 cuotas (`larga`) parte
+   de 0 con minimo 250 px: aporta a la fila lo mismo que antes y no la empuja con una lista larga.
+   Sola en su fila (<=1180 px) no hay nada que llenar: vuelve a un tope propio. Dos clases para
+   ganarle al max-height de .rz-scroll sin depender del orden del archivo. */
+.rz-meta > .rz-body,.rz-radar > .rz-body{flex:1 1 auto;display:flex;flex-direction:column}
+.rz-meta .rz-meta-lista{flex:1 1 auto;min-height:0;max-height:none}
+.rz-meta .rz-meta-lista.larga{flex-basis:0;min-height:250px}
+/* El Radar, igual, con su propio minimo: la tabla tenia un tope en linea de 460 px y, donde la Meta
+   es la tarjeta mas alta de la fila (1.366 px), dejaba 35 px vacios bajo la tabla. */
+.rz-radar .rz-radar-lista{flex:1 1 auto;min-height:0;max-height:none}
+.rz-radar .rz-radar-lista.larga{flex-basis:0;min-height:460px}
+@media (max-width:1180px){
+  .rz-meta .rz-meta-lista,.rz-meta .rz-meta-lista.larga{flex:0 1 auto;min-height:0;max-height:360px}
+  .rz-radar .rz-radar-lista,.rz-radar .rz-radar-lista.larga{flex:0 1 auto;min-height:0;max-height:460px}
+}
 .rz-li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--bg3);cursor:pointer}
 .rz-li:last-child{border-bottom:none}
 .rz-li:hover .rz-li-n{text-decoration:underline}

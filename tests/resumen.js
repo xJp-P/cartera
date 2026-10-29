@@ -287,6 +287,30 @@ function metricsComoApp(X, loans, pays) {
     R.check('D5 y cuenta las deudas propias activas', tiene(debts.filter(d => d.estado === 'Activa').length + ' deudas propias activas'));
     R.check('D6 el anillo de la meta marca 125%', t.indexOf('125%') !== -1);
     R.check('D6 la meta muestra sus cuatro cifras', [meta.esperado, meta.cobrado, meta.moraRec, meta.falta].every(v => t.indexOf(X.fmt(v)) !== -1));
+    // Hotfix 3.4.1: la lista de pendientes NO lleva un tope de alto en linea. La tarjeta se estira a
+    // la altura del Radar y un `maxHeight` fijo dejaba la lista cortada a media fila con la tarjeta
+    // vacia por debajo. El alto lo gobierna styles.css (`.rz-meta-lista`, ver E4).
+    const listas = [];
+    const buscar = n => { if (Array.isArray(n)) return n.forEach(buscar); if (!n || !n.kids) return;
+      if (n.props && /\brz-meta-lista\b/.test(n.props.className || '')) listas.push(n); n.kids.forEach(buscar); };
+    buscar(arbol);
+    R.check('D6b la lista de la meta lleva su clase y ningun tope de alto en linea',
+      listas.length === 1 && !(listas[0].props.style && listas[0].props.style.maxHeight != null),
+      listas.map(l => ({ className: l.props.className, style: l.props.style })));
+    R.check('D6b con mas de 4 cuotas pendientes es "larga" (parte de 0 con minimo 250 px)',
+      listas.length === 1 && (meta.pend.length > 4) === /\blarga\b/.test(listas[0].props.className) && meta.pend.length > 4,
+      { pendientes: meta.pend.length, className: listas[0] && listas[0].props.className });
+    // El Radar, igual (su tope en linea de 460 px dejaba 35 px vacios a 1.366 px).
+    const radares = [];
+    const buscarR = n => { if (Array.isArray(n)) return n.forEach(buscarR); if (!n || !n.kids) return;
+      if (n.props && /\brz-radar-lista\b/.test(n.props.className || '')) radares.push(n); n.kids.forEach(buscarR); };
+    buscarR(arbol);
+    R.check('D6c la tabla del Radar lleva su clase y ningun tope de alto en linea',
+      radares.length === 1 && !(radares[0].props.style && radares[0].props.style.maxHeight != null),
+      radares.map(l => ({ className: l.props.className, style: l.props.style })));
+    R.check('D6c con mas de 6 prestamos activos es "larga" (parte de 0 con minimo 460 px)',
+      radares.length === 1 && activos.length > 6 && /\blarga\b/.test(radares[0].props.className),
+      { activos: activos.length, className: radares[0] && radares[0].props.className });
     // A 1.280 px la agenda arranca con una semana (14 dias desde 1.500 px).
     R.check('D7 a 1.280 px la agenda cubre 7 dias con su total', tiene('durante los próximos 7 días') && t.indexOf(X.fmt(ag[7].total) + ' por entrar en ' + ag[7].n + ' cuota' + (ag[7].n > 1 ? 's' : '') + ' durante los próximos 7 días') !== -1,
       t.filter(s => /por entrar/.test(s)));
@@ -362,6 +386,22 @@ function metricsComoApp(X, loans, pays) {
   R.check('E1 SparklineChart ya no existe (solo lo usaba el Inicio viejo)', !fs.existsSync(path.join(REPO, 'public/js/componentes/SparklineChart.js')));
   R.check('E2 styles.css sin las clases .dash-* y con las .rz-*', !/\.dash-(card|lists|container|list-body)/.test(css) && /\.rz-card\b/.test(css) && /\.rz-agenda\b/.test(css));
   R.check('E3 App le pasa las deudas propias al Resumen (alimentan la posicion neta)', /h\(DashView,\s*\{[^}]*debts:debts/.test(app));
+  // El layout no se puede medir en el arnes (no hay motor de CSS): se fijan las reglas que lo
+  // sostienen. Medido en la app real: a 1.600 px la lista paso de 249 a 326 px y el hueco bajo ella
+  // de 78 a 1 px, sin cambiar el alto de la fila.
+  const reglas = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  R.check('E4 Meta del mes: el cuerpo es una columna flexible y la lista crece hasta el borde',
+    /\.rz-meta > \.rz-body(,[^{]*)?\{[^}]*flex:1 1 auto[^}]*display:flex[^}]*flex-direction:column/.test(reglas) &&
+    /\.rz-meta \.rz-meta-lista\{[^}]*flex:1 1 auto[^}]*max-height:none/.test(reglas));
+  R.check('E4 con lista larga parte de 0 con el minimo de antes (250 px) y sola en su fila vuelve a un tope',
+    /\.rz-meta \.rz-meta-lista\.larga\{[^}]*flex-basis:0[^}]*min-height:250px/.test(reglas) &&
+    /@media \(max-width:1180px\)\{\s*\.rz-meta \.rz-meta-lista,\.rz-meta \.rz-meta-lista\.larga\{[^}]*max-height:360px/.test(reglas));
+  R.check('E5 Radar: cuerpo flexible y tabla que crece hasta el borde (medido a 1.366 px: 460 -> 494 px, hueco 35 -> 1 px)',
+    /[,{}\s]\.rz-radar > \.rz-body[,{][^}]*flex:1 1 auto[^}]*display:flex[^}]*flex-direction:column/.test(reglas) &&
+    /\.rz-radar \.rz-radar-lista\{[^}]*flex:1 1 auto[^}]*max-height:none/.test(reglas));
+  R.check('E5 Radar largo parte de 0 con el minimo de antes (460 px) y solo en su fila conserva ese tope',
+    /\.rz-radar \.rz-radar-lista\.larga\{[^}]*flex-basis:0[^}]*min-height:460px/.test(reglas) &&
+    /@media \(max-width:1180px\)\{[^@]*\.rz-radar \.rz-radar-lista,\.rz-radar \.rz-radar-lista\.larga\{[^}]*max-height:460px/.test(reglas));
 
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });
