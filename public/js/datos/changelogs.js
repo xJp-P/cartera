@@ -688,5 +688,13 @@ export const CHANGELOGS = {
     'Se corrigio el calculo de la cuota que sigue a un cambio de dia de pago cuando se registraba un abono antes de pagarla: su interes ahora se recalcula sobre el capital que queda, y el cronograma que muestra el cobro coincide con el que se guarda.',
     'Se corrigio que al editar los datos de un prestamo al que se le habia cambiado el dia de pago, sus cuotas pendientes volvieran al dia de la fecha de inicio.',
     'Se corrigio el valor de liquidacion despues de un cambio de dia de cobro: los intereses ya vencidos que quedan dentro de la cuota siguiente vuelven a contar en el total, se explican en el modal y en los documentos, y se cobran al cerrar el credito.'
+  ],
+  '3.3.0': [
+    'La fecha del primer pago ahora tambien se elige en los prestamos con cobro semanal y quincenal, no solo en los mensuales.',
+    'Si el primer pago cae mas lejos que un periodo normal, la opcion preseleccionada es perdonar los dias de mas (dias de gracia): la primera cuota cobra una semana, una quincena o un mes normal, y una barra muestra desde que dia empieza a correr el interes. Si prefieres, puedes cobrar todos los dias. Si cae antes, sigue preseleccionado cobrar solo esos dias.',
+    'Cuando el primer periodo se cobra por dias, su interes se mide con el periodo de la frecuencia: 7 dias de un credito semanal valen exactamente su cuota semanal, y 14 dias de uno quincenal, su cuota quincenal. En los mensuales no cambia nada.',
+    'Al liquidar un credito semanal o quincenal, o al descargar su cronograma, la casilla del interes en curso ahora cobra una semana o una quincena, no un mes completo.',
+    'Si un credito se liquida dentro de sus dias de gracia, no se cobra interes por adelantado: el modal y el Estado de Liquidacion explican desde que fecha empieza a correr el interes.',
+    'Se corrigio que cambiar el dia de pago antes del primer pago volviera a cobrar los dias de gracia que se habian perdonado al crear el prestamo.'
   ]
 };

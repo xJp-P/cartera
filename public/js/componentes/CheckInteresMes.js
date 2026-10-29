@@ -12,20 +12,24 @@
 
 import { h } from '../core/react.js';
 import { fmt, fmtD } from '../core/format.js';
+import { periodoEnCursoDe } from '../core/dominio.js';
 
 // En un credito abierto el devengo ya corre al dia, asi que el mes opcional es un
 // cobro HACIA ADELANTE; en los de cuotas es el mes en curso que aun no se facturo.
 // Con un periodo irregular en curso (3.2.0) no hay "mes": se cobran los dias elegidos.
+// En Semanal y Quincenal (3.3.0) el periodo en curso es una semana o una quincena.
 export function etiquetaInteresMes(L) {
   if (L && L.periodoIrregular) return 'Interes de ' + L.diasCobrados + ' dias del periodo en curso';
-  return L && L.esDiario ? 'Interes del proximo mes' : 'Interes del mes en curso';
+  return L && L.esDiario ? 'Interes del proximo mes' : 'Interes ' + periodoEnCursoDe(L && L.frecuencia);
 }
 
 export function CheckInteresMes(props) {
   var L = props.L, checked = !!props.checked, onChange = props.onChange;
   if (!L || !L.aplicaInteres) return null;
+  if (L.enGracia) return avisoGracia(L);
   if (L.periodoIrregular) return casillaPeriodoIrregular(L, checked, onChange, props.onDias);
   var lbl = etiquetaInteresMes(L);
+  var esePeriodo = L.frecuencia === 'Semanal' ? 'esa semana' : L.frecuencia === 'Quincenal' ? 'esa quincena' : 'ese mes';
   // El texto viejo ("¿Incluir 1 mes de interes adicional?") preguntaba sin dar contexto:
   // no decia de donde sale ese mes ni cuando corresponde cobrarlo. Ahora dice QUE se
   // cobra, POR QUE existe (se liquida a mitad de ciclo) y CUANDO activarlo.
@@ -38,7 +42,21 @@ export function CheckInteresMes(props) {
       h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
         L.esDiario
           ? 'El interes ya esta cobrado al dia de hoy. Activalo solo si pactaste cobrarle ademas el mes siguiente.'
-          : 'El credito se cierra antes del proximo vencimiento, asi que ese mes aun no se ha facturado. Activalo solo si lo pactaste con el deudor.')));
+          : 'El credito se cierra antes del proximo vencimiento, asi que '+esePeriodo+' aun no se ha facturado. Activalo solo si lo pactaste con el deudor.')));
+}
+
+// ── Dentro de los dias de gracia (3.3.0, Fase 3, regla del PO) ───────────────
+// Se perdonaron los dias muertos y el interes todavia no corre: no hay nada que cobrar por
+// adelantado, asi que en vez de la casilla va un aviso que dice por que y desde cuando.
+function avisoGracia(L) {
+  return h('div',{style:{display:'flex',alignItems:'flex-start',gap:10,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'11px 12px',marginBottom:12}},
+    h('span',{style:{flex:1}},
+      h('span',{style:{display:'flex',justifyContent:'space-between',gap:8}},
+        h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Dias de gracia: sin interes en curso'),
+        h('span',{className:'mono',style:{fontSize:12,color:'var(--text3)',whiteSpace:'nowrap'}},fmt(0))),
+      h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
+        'Al crear el credito se perdonaron los dias muertos: el interes empieza a correr el '+fmtD(L.graciaHasta)+
+        '. Si el deudor liquida antes, no se cobra interes por adelantado.')));
 }
 
 // ── Periodo irregular en curso: DIAS VARIABLES (3.2.0, Fase 3, regla del PO) ──

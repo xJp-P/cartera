@@ -29,7 +29,7 @@
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
-import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento } from '../core/dominio.js';
+import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento, periodoEnCursoDe, detalleInteresEnCurso } from '../core/dominio.js';
 import { esAbono, esCorte } from '../core/ids.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
@@ -144,8 +144,10 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
       ') &nbsp;&middot;&nbsp; pactado con el deudor',
       money(L.intExtra), C.amber));
   } else if (L.incluyeProxMes && L.intExtra > 0) {
-    desglose.push(dsg(diario ? 'Interes del proximo mes' : 'Interes del mes en curso',
-      L.tasaMensual + '% sobre el capital pendiente &nbsp;&middot;&nbsp; pactado con el deudor',
+    // 3.3.0 — en Semanal y Quincenal el periodo en curso es una semana o una quincena.
+    desglose.push(dsg(diario ? 'Interes del proximo mes' : 'Interes ' + periodoEnCursoDe(L.frecuencia),
+      (diario ? L.tasaMensual + '% sobre el capital pendiente' : detalleInteresEnCurso(L.frecuencia, L.tasaMensual)) +
+      ' &nbsp;&middot;&nbsp; pactado con el deudor',
       money(L.intExtra), C.amber));
   }
 
@@ -282,6 +284,12 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(L.validoHasta) + '.</b> ' +
       'Incluye ' + L.diasCobrados + ' dias de interes del periodo en curso. ' +
       'Si el pago se realiza despues, se generaran nuevos intereses.';
+  } else if (L.enGracia) {
+    // 3.3.0 — se liquida dentro de los dias perdonados: todavia no corre interes, asi que no
+    // se cobra nada por adelantado y el valor (el capital) no cambia hasta el primer pago.
+    vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(proxVenc || L.graciaHasta) + '.</b> ' +
+      'El credito esta en sus dias de gracia: el interes empieza a correr el ' + fmtD(L.graciaHasta) +
+      ', asi que si liquida antes no se cobra interes por adelantado.';
   } else if (proxVenc && L.incluyeProxMes) {
     vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(proxVenc) + '.</b> ' +
       'Incluye el interes de este periodo, de modo que el monto no cambia hasta esa fecha. ' +

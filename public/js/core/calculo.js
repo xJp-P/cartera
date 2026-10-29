@@ -13,13 +13,16 @@
 // la duplicacion es preexistente y unificarla es una decision de diseno aparte,
 // no un efecto colateral de mover archivos.
 
-import { diasEntre, esTransitoria, interesDeTramo, interesTransitoria } from './dominio.js';
+import {
+  diasDelPeriodo, diasEntre, esTransitoria, interesPeriodoParcial, interesTransitoria, tasaDelPeriodo,
+} from './dominio.js';
 
 export function pmt(r,n,pv){ return r===0?pv/n:pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1); }
 // ── AbonoModal ────────────────────────────────────────────────────────────────
 // Helper: PMT (cuota fija de amortizacion francesa)
 export function _pmt(r,n,pv){if(r===0)return pv/n;return pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1);}
-export function _tasaPeriodo(tasaMensual,frecuencia){if(frecuencia==='Semanal')return tasaMensual/4.33;if(frecuencia==='Quincenal')return tasaMensual/2;return tasaMensual;}
+// 3.3.0: una sola implementacion de la tasa del periodo, en dominio.js (ver `tasaDelPeriodo`).
+export function _tasaPeriodo(tasaMensual,frecuencia){return tasaDelPeriodo(tasaMensual,frecuencia);}
 // NPER: numero de cuotas dado PMT, r, pv. Devuelve null si PMT <= pv*r (impossible).
 export function _nper(r,pmtVal,pv){var int1=pv*r;if(pmtVal<=int1)return null;return Math.log(pmtVal/(pmtVal-int1))/Math.log(1+r);}
 
@@ -99,10 +102,10 @@ export function aplicarTransitoriaPreview(loan, filas, startN, saldoInicial, loa
   return filas;
 }
 
-// ── PRIMER PAGO del formulario (3.2.0, Fase 2) ───────────────────────────────
-// ESPEJO de `getPayDate` (rama Mensual) y de `resolverPrimerPago` (backend/core/engine.js).
-// El backend es el que decide: esto solo alimenta lo que el formulario muestra mientras se
-// teclea. La prueba de paridad vive en `tests/periodo-irregular.js`.
+// ── PRIMER PAGO del formulario (3.2.0, Fase 2; las tres frecuencias desde 3.3.0) ─
+// ESPEJO de `getPayDate`, `primerPagoRegular`, `inicioPeriodoRegular` y `resolverPrimerPago`
+// (backend/core/engine.js). El backend es el que decide: esto solo alimenta lo que el formulario
+// muestra mientras se teclea. La prueba de paridad vive en `tests/periodo-irregular.js`.
 export function fechaPagoMensual(baseISO, cuotaN, diaPago){
   var d=new Date(baseISO+'T12:00:00');
   if(isNaN(d)) return '';
@@ -111,29 +114,67 @@ export function fechaPagoMensual(baseISO, cuotaN, diaPago){
   d.setDate(Math.min(diaPago, new Date(d.getFullYear(), d.getMonth()+1, 0).getDate()));
   return d.toISOString().split('T')[0];
 }
-// El primer pago REGULAR: el mismo dia del mes siguiente (acotado a fin de mes). Es el que la
-// app asumia siempre, y elegirlo deja el prestamo exactamente como antes.
-export function primerPagoRegular(fechaInicio){
-  if(!fechaInicio) return '';
-  return fechaPagoMensual(fechaInicio, 1, +String(fechaInicio).slice(8,10));
+// Las tres ramas de `getPayDate`: Semanal y Quincenal cuentan 7 y 14 dias desde la base.
+export function fechaPagoFrecuencia(baseISO, cuotaN, diaPago, frecuencia){
+  if(frecuencia==='Semanal'||frecuencia==='Quincenal'){
+    var d=new Date(baseISO+'T12:00:00');
+    if(isNaN(d)) return '';
+    d.setDate(d.getDate()+cuotaN*diasDelPeriodo(frecuencia));
+    return d.toISOString().split('T')[0];
+  }
+  return fechaPagoMensual(baseISO, cuotaN, diaPago);
 }
-// El primer pago de un prestamo YA guardado, con su base y su dia de pago.
+// El primer pago REGULAR: un periodo despues del inicio (7 o 14 dias, o el mismo dia del mes
+// siguiente acotado a fin de mes). Es el que la app asumia siempre, y elegirlo deja el prestamo
+// exactamente como antes.
+export function primerPagoRegular(fechaInicio, frecuencia){
+  if(!fechaInicio) return '';
+  return fechaPagoFrecuencia(fechaInicio, 1, +String(fechaInicio).slice(8,10), frecuencia||'Mensual');
+}
+// El dia en que arranca el periodo regular que vence en `fecha`: un periodo antes. En Mensual,
+// el mismo dia del mes anterior acotado a fin de mes (31-mar -> 28-feb).
+export function inicioPeriodoRegular(fecha, frecuencia){
+  if(!fecha) return '';
+  if(frecuencia==='Semanal'||frecuencia==='Quincenal') return fechaPagoFrecuencia(fecha, -1, 0, frecuencia);
+  var b=new Date(fecha+'T12:00:00');
+  if(isNaN(b)) return '';
+  b.setDate(1);                     // evita el desborde de mes antes de restar
+  b.setMonth(b.getMonth()-1);
+  return fechaPagoMensual(b.toISOString().split('T')[0], 0, +String(fecha).slice(8,10));
+}
+// El primer pago de un prestamo YA guardado, con su base, su dia de pago y su frecuencia.
 export function primerPagoDe(loan){
   if(!loan||!loan.fechaInicio) return '';
-  return fechaPagoMensual(loan.fechaBaseCronograma||loan.fechaInicio, 1, +loan.diaPago||+String(loan.fechaInicio).slice(8,10));
+  return fechaPagoFrecuencia(loan.fechaBaseCronograma||loan.fechaInicio, 1, +loan.diaPago||+String(loan.fechaInicio).slice(8,10), loan.frecuencia||'Mensual');
 }
 // Lo que el formulario necesita para ofrecer la decision: si el periodo es irregular, cuantos
-// dias tiene y cuanto cobraria la cuota 1 de interes en cada opcion. Mes completo = `saldo * tasa`
-// (lo que calcula el motor para una cuota normal); proporcional = dias reales / 30.
-export function infoPrimerPeriodo(montoCOP, tasaMensual, fechaInicio, primerPago){
-  var regular=primerPagoRegular(fechaInicio);
+// dias tiene y cuanto cobraria la cuota 1 de interes en cada opcion. 'completo' = el interes de
+// una cuota normal (lo que calcula el motor); 'proporcional' = esa cuota x dias / dias del periodo.
+//
+// `caso` decide QUE se pregunta (3.3.0):
+//   'gracia'     el primer pago llega mas lejos que un periodo: sobran dias, y 'completo' es
+//                PERDONARLOS (el interes corre desde `inicioIntereses`, un periodo antes del pago).
+//                La opcion por defecto es perdonar (decision del PO).
+//   'sinGracia'  llega antes, o el mes no deja dias que perdonar: no hay gracia posible, y la
+//                opcion por defecto sigue siendo cobrar los dias (la de 3.2.0).
+// `graciaDias` e `inicioIntereses` replican la regla de `resolverPrimerPago`.
+export function infoPrimerPeriodo(montoCOP, tasaMensual, fechaInicio, primerPago, frecuencia){
+  var freq=frecuencia||'Mensual';
+  var regular=primerPagoRegular(fechaInicio, freq);
   var irregular=!!primerPago&&!!regular&&primerPago!==regular&&primerPago>fechaInicio;
   var dias=(fechaInicio&&primerPago)?diasEntre(fechaInicio, primerPago):0;
+  var arranque=irregular?inicioPeriodoRegular(primerPago, freq):'';
+  var graciaDias=(irregular&&arranque>fechaInicio)?diasEntre(fechaInicio, arranque):0;
   var saldo=Math.round(+montoCOP||0);
   return {
-    regular:regular, irregular:irregular, dias:dias,
-    interesCompleto:Math.round(saldo*((+tasaMensual||0)/100)),
-    interesProporcional:interesDeTramo(saldo, tasaMensual, Math.max(1,dias))
+    regular:regular, irregular:irregular, dias:dias, frecuencia:freq,
+    diasRegular:regular?diasEntre(fechaInicio, regular):0,
+    caso:!irregular?'regular':(graciaDias>0?'gracia':'sinGracia'),
+    graciaDias:graciaDias,
+    inicioIntereses:graciaDias>0?arranque:fechaInicio,
+    modoPorDefecto:graciaDias>0?'completo':'proporcional',
+    interesCompleto:Math.round(saldo*tasaDelPeriodo((+tasaMensual||0)/100, freq)),
+    interesProporcional:interesPeriodoParcial(saldo, tasaMensual, freq, Math.max(1,dias))
   };
 }
 

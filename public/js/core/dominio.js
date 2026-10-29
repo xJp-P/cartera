@@ -348,6 +348,31 @@ export function interesDeTramo(saldo, tasaMensual, dias) {
   return Math.round(saldo * ((+tasaMensual || 0) / 100) * dias / 30);
 }
 
+// ── INTERES DE UNA FRACCION DE PERIODO (3.3.0, Fase 1) ──────────────────────
+// ESPEJO de `tasaPeriodo`, `diasDelPeriodo` e `interesPeriodoParcial` (backend/core/engine.js).
+// La tasa del periodo vive AQUI y `_tasaPeriodo` (calculo.js) delega en ella: calculo importa
+// de dominio y no al reves, asi que es el unico sitio donde ambos pueden compartirla.
+export function tasaDelPeriodo(tasaFrac, frecuencia) {
+  if (frecuencia === 'Semanal') return tasaFrac / 4.33;
+  if (frecuencia === 'Quincenal') return tasaFrac / 2;
+  return tasaFrac;
+}
+// La quincena son 14 dias: es el calendario que genera el motor (decision del PO para 3.3.0).
+export function diasDelPeriodo(frecuencia) {
+  if (frecuencia === 'Semanal') return 7;
+  if (frecuencia === 'Quincenal') return 14;
+  return 30;
+}
+// interes = interes de una cuota normal x dias reales / dias del periodo. En Mensual delega en
+// `interesDeTramo` (la expresion de siempre, intacta); en Semanal y Quincenal `dias / P` vale 1
+// exacto cuando se cobra un periodo entero, asi que el resultado es la cuota normal al peso.
+export function interesPeriodoParcial(saldo, tasaMensual, frecuencia, dias) {
+  if (frecuencia !== 'Semanal' && frecuencia !== 'Quincenal') return interesDeTramo(saldo, tasaMensual, dias);
+  if (!(dias > 0) || !(saldo > 0)) return 0;
+  var r = tasaDelPeriodo((+tasaMensual || 0) / 100, frecuencia);
+  return Math.round(saldo * r * (dias / diasDelPeriodo(frecuencia)));
+}
+
 // Espejo de `devengoDiario`. Ver engine.js para el porque de cada decision.
 export function devengoDiario(loan, cortes, hastaISO) {
   var tasaMensual = +loan.tasaMensual || 0;
@@ -463,7 +488,7 @@ export function esTransitoria(loan, cuotaN){
 }
 export function interesTransitoria(loan, saldoInicial, fechaPago){
   var dias=Math.max(1, diasEntre(loan.periodoIrregularDesde, fechaPago));
-  return interesDeTramo(saldoInicial, loan.tasaMensual, dias)+Math.max(0, Math.round(+loan.periodoIrregularMora||0));
+  return interesPeriodoParcial(saldoInicial, loan.tasaMensual, loan.frecuencia||'Mensual', dias)+Math.max(0, Math.round(+loan.periodoIrregularMora||0));
 }
 
 // ── EL PERIODO EN CURSO ES IRREGULAR (3.2.0, Fase 3) ─────────────────────────
@@ -512,8 +537,31 @@ export function computeLiquidacion(loan, loanPays, opts){
   var partialPend = regs.filter(function(p){ return p.estadoPago !== 'Pagado'; })
     .reduce(function(s,p){ return s + (p.partialPaid || 0); }, 0);
   var aplicaInteres = loan.modalidad !== 'Prestamo' && loan.modalidad !== 'Pago Unico' && (+loan.tasaMensual || 0) > 0;
-  var intProxMes = aplicaInteres ? Math.round(capitalPendiente * (+loan.tasaMensual || 0) / 100) : 0;
-  var incluye = !!opts.incluyeProxMes && aplicaInteres;
+  var hastaLiq = opts.hasta || (function () {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  })();
+  // ── EL PERIODO EN CURSO ES EL DE LA FRECUENCIA (3.3.0, Fase 3) ──────────────
+  // La casilla cobra UN periodo normal: el interes de la cuota que el motor genera para ese
+  // capital. En Semanal y Quincenal eso es una semana o una quincena, no un mes: hasta 3.2.0
+  // un semanal de 4.000.000 al 10% ofrecia 400.000 (un mes) cuando su cuota cobra 92.379. En
+  // Mensual se conserva la expresion de siempre, bit a bit (`x * t / 100` y `x * (t / 100)` no
+  // siempre redondean igual).
+  var frecuencia = loan.frecuencia || 'Mensual';
+  var periodoCorto = !esDiario(loan) && (frecuencia === 'Semanal' || frecuencia === 'Quincenal');
+  var intProxMes = !aplicaInteres ? 0
+    : periodoCorto ? Math.round(capitalPendiente * tasaDelPeriodo((+loan.tasaMensual || 0) / 100, frecuencia))
+    : Math.round(capitalPendiente * (+loan.tasaMensual || 0) / 100);
+  // ── LA GRACIA SE RESPETA AL LIQUIDAR (3.3.0, Fase 3, regla del PO) ──────────
+  // Si al crear se perdonaron los dias muertos, el interes corre desde `fechaInicioIntereses`.
+  // Liquidar ANTES de esa fecha es liquidar dentro de la gracia: todavia no corre ningun
+  // periodo, asi que no hay interes que cobrar por adelantado (0) y la casilla no se ofrece.
+  // Gana sobre el periodo irregular: una transitoria creada por un cambio de dia dentro de la
+  // gracia arranca en esa misma fecha (Bug #73) y tampoco ha corrido.
+  var enGracia = aplicaInteres && !esDiario(loan) && !!loan.fechaInicioIntereses &&
+    String(loan.fechaInicioIntereses) > String(loan.fechaInicio || '') && hastaLiq < String(loan.fechaInicioIntereses);
+  if (enGracia) intProxMes = 0;
+  var incluye = !!opts.incluyeProxMes && aplicaInteres && !enGracia;
 
   // ── PERIODO IRREGULAR EN CURSO: DIAS VARIABLES (3.2.0, Fase 3, regla del PO) ──
   // Si la cuota en curso es la transitoria (primer periodo elegido al crear, o la que sigue
@@ -521,22 +569,18 @@ export function computeLiquidacion(loan, loanPays, opts){
   // dias no se liquida con 30, ni uno de 15 con 30. El administrador ESCOGE cuantos dias
   // cobrar (`opts.diasProxMes`); por defecto, los que ya corrieron hasta `hasta` (si liquida
   // al dia 10 de un periodo de 15, cobra 10). Se acota a [0, dias del periodo]: cobrar mas
-  // pediria mas de lo que la propia cuota pide. La formula es la del motor: dias reales / 30
-  // sobre el capital pendiente.
+  // pediria mas de lo que la propia cuota pide. La formula es la del motor (3.3.0): el
+  // interes de una cuota normal x dias / dias del periodo de la frecuencia.
   // `validoHasta`: hasta cuando cubre ese interes. Los dias cobrados cuentan desde el inicio
   // del periodo; si son menos de los ya transcurridos, la cifra vale solo para `hasta`.
-  var hastaLiq = opts.hasta || (function () {
-    var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  })();
-  var irregular = (aplicaInteres && !esDiario(loan)) ? periodoIrregularEnCurso(loan, pays, hastaLiq) : null;
+  var irregular = (aplicaInteres && !esDiario(loan) && !enGracia) ? periodoIrregularEnCurso(loan, pays, hastaLiq) : null;
   var diasCobrados = 0, validoHasta = null;
   if (irregular) {
     var pedidos = opts.diasProxMes;
     pedidos = (pedidos === undefined || pedidos === null || pedidos === '' || !isFinite(+pedidos))
       ? irregular.diasTranscurridos : Math.round(+pedidos);
     diasCobrados = Math.max(0, Math.min(irregular.diasPeriodo, pedidos));
-    intProxMes = interesDeTramo(capitalPendiente, +loan.tasaMensual || 0, diasCobrados);
+    intProxMes = interesPeriodoParcial(capitalPendiente, +loan.tasaMensual || 0, frecuencia, diasCobrados);
     var cubre = sumarDiasISO(irregular.desde, diasCobrados);
     validoHasta = cubre < hastaLiq ? hastaLiq : cubre;
   }
@@ -609,8 +653,29 @@ export function computeLiquidacion(loan, loanPays, opts){
     diasTranscurridos: irregular ? irregular.diasTranscurridos : 0,
     diasCobrados: diasCobrados,
     validoHasta: validoHasta,
+    // 3.3.0: la frecuencia nombra el periodo en curso, y la gracia lo anula mientras dure.
+    frecuencia: frecuencia,
+    enGracia: enGracia,
+    graciaHasta: enGracia ? String(loan.fechaInicioIntereses) : null,
     total: total
   };
+}
+
+// ── COMO SE NOMBRA EL PERIODO EN CURSO (3.3.0, Fase 3) ───────────────────────
+// La casilla, el modal y los tres documentos dicen "el interes del mes en curso". En un credito
+// semanal o quincenal ese periodo es una semana o una quincena; en Mensual el texto queda como
+// siempre, asi que ningun documento mensual cambia.
+export function periodoEnCursoDe(frecuencia) {
+  if (frecuencia === 'Semanal') return 'de la semana en curso';
+  if (frecuencia === 'Quincenal') return 'de la quincena en curso';
+  return 'del mes en curso';
+}
+// La sub-linea que explica esa cifra: un periodo de interes sobre el capital pendiente.
+export function detalleInteresEnCurso(frecuencia, tasaMensual) {
+  var t = +tasaMensual || 0;
+  if (frecuencia === 'Semanal') return 'Una semana de interes al ' + t + '% mensual sobre el capital pendiente';
+  if (frecuencia === 'Quincenal') return 'Una quincena de interes al ' + t + '% mensual sobre el capital pendiente';
+  return t + '% sobre el capital pendiente';
 }
 
 // ── PROXIMO VENCIMIENTO de un credito de cuotas (3.1.0) ──────────────────────
@@ -642,7 +707,8 @@ export function proximoVencimiento(loan, loanPays, hasta) {
 export function preguntaInteresMes(loan, loanPays) {
   if (!loan || esDiario(loan)) return false;
   var L = computeLiquidacion(loan, loanPays, {});
-  return !!L.aplicaInteres && L.capitalPendiente > 0;
+  // 3.3.0: dentro de la gracia no corre interes, asi que no hay nada que preguntar.
+  return !!L.aplicaInteres && L.capitalPendiente > 0 && !L.enGracia;
 }
 
 // Saldo restante de una cuota considerando pagos parciales.

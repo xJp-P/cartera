@@ -374,6 +374,36 @@ function interesDeTramo(saldo, tasaMensual, dias) {
   return Math.round(saldo * ((+tasaMensual || 0) / 100) * dias / 30);
 }
 
+// ── INTERES DE UNA FRACCION DE PERIODO (3.3.0, Fase 1) ──────────────────────
+// Dias de un periodo regular, tal como los genera `getPayDate`: la semana son 7 dias y la
+// QUINCENA 14 (no 15: es el calendario que el motor usa desde siempre, y el PO decidio
+// conservarlo en este ciclo para no mover las fechas de los prestamos quincenales vivos).
+// El mes se cuenta como 30, la convencion de siempre del prorrateo.
+function diasDelPeriodo(frecuencia) {
+  if (frecuencia === 'Semanal') return 7;
+  if (frecuencia === 'Quincenal') return 14;
+  return 30;
+}
+// `interes = interes de una cuota normal x dias reales / dias del periodo`.
+// Es la unica formula en la que cobrar exactamente UN periodo de dias cuesta lo mismo que
+// una cuota normal de esa frecuencia. Con "dias / 30 de la tasa mensual" para todas, una
+// semana prorrateada costaba 1,04% MAS que la semana del cronograma (la semana se cobra a
+// tasa / 4,33, o sea 6,93 dias de 30) y una quincena prorrateada 6,7% MENOS (se cobra a
+// tasa / 2 sobre 14 dias): la pantalla habria mostrado dos cifras para los mismos dias.
+//   - MENSUAL: delega en `interesDeTramo`, la MISMA expresion de siempre. Algebraicamente
+//     es la misma formula, pero reescribirla cambiaria el orden de las operaciones de coma
+//     flotante, y en un borde de redondeo eso basta para mover un peso. Asi queda intacto
+//     byte a byte (lo fija la seccion K de `periodo-irregular`).
+//   - SEMANAL / QUINCENAL: `round(saldo x r x (dias / P))`, con `r` calculada EXACTAMENTE
+//     como la calcula `buildSchedule`. Con dias === P el factor es 1 exacto y el resultado
+//     es la cuota normal al peso, por construccion.
+function interesPeriodoParcial(saldo, tasaMensual, frecuencia, dias) {
+  if (frecuencia !== 'Semanal' && frecuencia !== 'Quincenal') return interesDeTramo(saldo, tasaMensual, dias);
+  if (!(dias > 0) || !(saldo > 0)) return 0;
+  const r = tasaPeriodo((+tasaMensual || 0) / 100, frecuencia);
+  return Math.round(saldo * r * (dias / diasDelPeriodo(frecuencia)));
+}
+
 /**
  * devengoDiario — reconstruye el devengo completo de un credito abierto.
  *
@@ -510,7 +540,10 @@ function devengoDiario(loan, cortes, hastaISO) {
 // ruta de cambio de dia (para su respuesta) y la migracion de los datos viejos.
 function transitoriaDe(loan, row) {
   const dias = Math.max(1, diasEntre(loan.periodoIrregularDesde, row.fechaPago));
-  const prorrateado = interesDeTramo(row.saldoInicial, loan.tasaMensual, dias);
+  // 3.3.0: el prorrateo se mide con el periodo de la frecuencia del prestamo. Sin
+  // `frecuencia` (la migracion de los datos viejos, que solo pudieron nacer mensuales)
+  // es mensual, o sea la formula de siempre.
+  const prorrateado = interesPeriodoParcial(row.saldoInicial, loan.tasaMensual, loan.frecuencia || 'Mensual', dias);
   const mora = Math.max(0, Math.round(+loan.periodoIrregularMora || 0));
   const interes = prorrateado + mora;
   // `ajuste` = lo que la transitoria cambia sobre la cuota de mes completo. Con signo:
@@ -561,15 +594,39 @@ function aplicarPeriodoIrregular(loan, rows) {
 //
 // Si la fecha elegida ES la regular, el resultado es identico a no haber elegido nada
 // (diaPago = dia de inicio, sin base, sin transitoria): el prestamo queda byte a byte igual.
+//
+// 3.3.0 (Fase 1) — LAS TRES FRECUENCIAS Y LA GRACIA:
+//   - Semanal y Quincenal entran con la misma logica: el primer pago regular es un periodo
+//     despues del inicio (+7 / +14 dias) y la base del cronograma, un periodo antes del
+//     primer pago, de modo que getPayDate(base, 1) === primerPago y las cuotas siguientes
+//     caen cada 7 o 14 dias desde ahi. En Mensual la base sigue siendo la de 3.2.0.
+//   - 'proporcional' cobra los dias reales del primer periodo (transitoria desde el inicio).
+//   - 'completo' cobra UN periodo normal. Cuando el primer pago queda MAS LEJOS que un periodo,
+//     eso es PERDONAR los dias muertos: el reloj del interes arranca un periodo antes del
+//     primer pago, y los dias entre el inicio y ese arranque son gracia. El motor no necesita
+//     saberlo —la cuota 1 sale normal de `buildSchedule`—, pero la liquidacion y el cambio de
+//     dia de pago si: por eso se guarda `fechaInicioIntereses`, el dia desde el que corre el
+//     interes. Nunca antes del inicio: si el primer pago esta MAS CERCA que un periodo,
+//     'completo' cobra el periodo entero, pero el interes corre desde el dia del prestamo.
 const RE_FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 function fechaIsoValida(s) {
   if (!RE_FECHA_ISO.test(String(s))) return false;
   const d = new Date(s + 'T12:00:00');
   return !isNaN(d) && d.toISOString().slice(0, 10) === s;
 }
-function primerPagoRegular(fechaInicio) {
-  return getPayDate(fechaInicio, 1, +String(fechaInicio).slice(8, 10), 'Mensual');
+function primerPagoRegular(fechaInicio, frecuencia) {
+  return getPayDate(fechaInicio, 1, +String(fechaInicio).slice(8, 10), frecuencia || 'Mensual');
 }
+// El dia en que arranca el periodo regular que vence en `fecha`: un periodo antes. En Mensual,
+// el mismo dia del mes anterior acotado a fin de mes (31-mar -> 28-feb), la regla de getPayDate.
+function inicioPeriodoRegular(fecha, frecuencia) {
+  if (frecuencia === 'Semanal' || frecuencia === 'Quincenal') return sumarDias(fecha, -diasDelPeriodo(frecuencia));
+  const b = new Date(fecha + 'T12:00:00');
+  b.setDate(1);                       // evita el desborde de mes antes de restar
+  b.setMonth(b.getMonth() - 1);
+  return getPayDate(b.toISOString().split('T')[0], 0, +String(fecha).slice(8, 10), 'Mensual');
+}
+const FRECUENCIAS = ['Mensual', 'Semanal', 'Quincenal'];
 function resolverPrimerPago(loan, primerPago, primerPeriodo) {
   const modo = (primerPeriodo === undefined || primerPeriodo === null || primerPeriodo === '') ? 'proporcional' : primerPeriodo;
   if (modo !== 'proporcional' && modo !== 'completo') {
@@ -578,27 +635,37 @@ function resolverPrimerPago(loan, primerPago, primerPeriodo) {
   if (loan.modalidad !== 'Intereses' && loan.modalidad !== 'Capital + Intereses') {
     throw new ClientError('La fecha del primer pago solo aplica a creditos de Intereses o Capital + Intereses (modalidad: ' + loan.modalidad + ').');
   }
-  if ((loan.frecuencia || 'Mensual') !== 'Mensual') {
-    throw new ClientError('La fecha del primer pago solo aplica a la frecuencia Mensual.');
+  const freq = loan.frecuencia || 'Mensual';
+  if (FRECUENCIAS.indexOf(freq) === -1) {
+    throw new ClientError('Frecuencia invalida para el primer pago: "' + freq + '". Debe ser Mensual, Quincenal o Semanal.');
   }
   if (!fechaIsoValida(loan.fechaInicio)) throw new ClientError('Fecha de inicio invalida: "' + loan.fechaInicio + '".');
   if (!fechaIsoValida(primerPago)) throw new ClientError('Fecha del primer pago invalida: "' + primerPago + '".');
   if (primerPago <= loan.fechaInicio) throw new ClientError('El primer pago debe ser posterior a la fecha de inicio.');
   const sinTransitoria = { periodoIrregularN: null, periodoIrregularDesde: null, periodoIrregularMora: 0 };
-  if (primerPago === primerPagoRegular(loan.fechaInicio)) {
-    return Object.assign({ irregular: false, diaPago: +loan.fechaInicio.slice(8, 10), fechaBaseCronograma: null }, sinTransitoria);
+  if (primerPago === primerPagoRegular(loan.fechaInicio, freq)) {
+    return Object.assign({ irregular: false, diaPago: +loan.fechaInicio.slice(8, 10), fechaBaseCronograma: null,
+      fechaInicioIntereses: loan.fechaInicio }, sinTransitoria);
   }
-  const b = new Date(primerPago + 'T12:00:00');
-  b.setDate(1);                       // evita el desborde de mes antes de restar
-  b.setMonth(b.getMonth() - 1);
-  const base = b.toISOString().split('T')[0];
+  let base;
+  if (freq === 'Mensual') {
+    const b = new Date(primerPago + 'T12:00:00');
+    b.setDate(1);                     // evita el desborde de mes antes de restar
+    b.setMonth(b.getMonth() - 1);
+    base = b.toISOString().split('T')[0];
+  } else {
+    base = inicioPeriodoRegular(primerPago, freq);
+  }
   const dia = +primerPago.slice(8, 10);
   // Defensivo: la base tiene que reproducir la fecha elegida con el MISMO calculo del motor.
-  if (getPayDate(base, 1, dia, 'Mensual') !== primerPago) {
+  if (getPayDate(base, 1, dia, freq) !== primerPago) {
     throw new ClientError('No se pudo fijar el primer pago en ' + primerPago + '.');
   }
   const proporcional = modo === 'proporcional' && (+loan.tasaMensual || 0) > 0;
-  return Object.assign({ irregular: true, diaPago: dia, fechaBaseCronograma: base },
+  // Desde cuando corre el interes: el dia del prestamo, salvo que se perdonen dias muertos.
+  const arranque = inicioPeriodoRegular(primerPago, freq);
+  const fechaInicioIntereses = (modo === 'completo' && arranque > loan.fechaInicio) ? arranque : loan.fechaInicio;
+  return Object.assign({ irregular: true, diaPago: dia, fechaBaseCronograma: base, fechaInicioIntereses },
     proporcional ? { periodoIrregularN: 1, periodoIrregularDesde: loan.fechaInicio, periodoIrregularMora: 0 } : sinTransitoria);
 }
 
@@ -616,6 +683,8 @@ module.exports = {
   diasEntre,
   sumarDias,
   interesDeTramo,
+  diasDelPeriodo,
+  interesPeriodoParcial,
   devengoDiario,
   pmt,
   getPayDate,
@@ -626,5 +695,6 @@ module.exports = {
   transitoriaDe,
   aplicarPeriodoIrregular,
   primerPagoRegular,
+  inicioPeriodoRegular,
   resolverPrimerPago,
 };

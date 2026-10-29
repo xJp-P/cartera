@@ -48,12 +48,14 @@ export function LoanModal(props){
     var f1=allPays.filter(function(p){ return String(p.id)===String(loan.id)+'-1'; })[0];
     return f1?f1.fechaPago:primerPagoDe(loan);
   })();
+  var freqInicial=calcPre.frecuencia||loan&&loan.frecuencia||'Mensual';
+  var primerPagoElegido=!!primerPagoGuardado&&primerPagoGuardado!==primerPagoRegular(loan.fechaInicio, loan.frecuencia);
   var fs=useState({
     nombre:prefill.nombre||loan&&loan.nombre||'',cedula:prefill.cedula||loan&&loan.cedula||'',telefono:prefill.telefono||loan&&loan.telefono||'',
     moneda:calcPre.moneda||loan&&loan.moneda||'COP',montoOrigen:calcPre.montoOrigen||loan&&loan.montoOrigen||'',
     trmAcordada:calcPre.trmAcordada||loan&&loan.trmAcordada||trm,tasaMensual:calcPre.tasaMensual||loan&&loan.tasaMensual||'',
     plazoMeses:calcPre.plazoMeses||loan&&loan.plazoMeses||'',modalidad:calcPre.modalidad||(loan&&loan.modalidad==='Intereses Indefinido'?'Intereses':(loan&&loan.modalidad||'Intereses')),
-    frecuencia:calcPre.frecuencia||loan&&loan.frecuencia||'Mensual',
+    frecuencia:freqInicial,
     fechaInicio:loan&&loan.fechaInicio||nowStr(),
     fechaDevolucion:loan&&loan.fechaDevolucion||'',
     // v1.10.0 — campos para modalidad Pago Unico
@@ -68,22 +70,34 @@ export function LoanModal(props){
       ?String(Math.round((loan.moneda==='USD'&&(+loan.trmAcordada||0)>0)?(+loan.gananciaFija/+loan.trmAcordada):+loan.gananciaFija))
       :'',
     estado:loan&&loan.estado||'Activo',notas:loan&&loan.notas||'',
-    // 3.2.0 — PRIMER PAGO. Al crear nace un mes despues del inicio (lo de siempre) y lo sigue
+    // 3.2.0 — PRIMER PAGO. Al crear nace un periodo despues del inicio (lo de siempre) y lo sigue
     // mientras nadie lo toque. Al editar muestra el primer pago REAL del prestamo; si no es el
     // regular, cuenta como elegido a mano (no se mueve solo al cambiar la fecha de inicio).
-    // `primerPeriodo`: 'proporcional' (preseleccionado, decision del PO) o 'completo'.
-    primerPago:primerPagoGuardado||primerPagoRegular(loan&&loan.fechaInicio||nowStr()),
-    primerPagoManual:!!primerPagoGuardado&&primerPagoGuardado!==primerPagoRegular(loan.fechaInicio),
-    primerPeriodo:(!!primerPagoGuardado&&primerPagoGuardado!==primerPagoRegular(loan.fechaInicio)&&+loan.periodoIrregularN!==1)
-      ?'completo':'proporcional'
+    primerPago:primerPagoGuardado||primerPagoRegular(loan&&loan.fechaInicio||nowStr(), freqInicial),
+    primerPagoManual:primerPagoElegido,
+    // 3.3.0 — la DECISION del primer periodo ('completo' | 'proporcional') y el CASO en que se
+    // tomo ('gracia' | 'sinGracia', ver `infoPrimerPeriodo`). `null` = nadie eligio: vale la
+    // opcion por defecto del caso, que con dias de sobra es PERDONAR (decision del PO). Se guarda
+    // el caso porque 'completo' no significa lo mismo en los dos: si la fecha pasa de sobrar dias
+    // a faltar (o al reves) la pregunta es otra y vuelve su opcion por defecto.
+    primerPeriodo:primerPagoElegido?(+loan.periodoIrregularN===1?'proporcional':'completo'):null,
+    primerPeriodoCaso:primerPagoElegido?infoPrimerPeriodo(0,0,loan.fechaInicio,primerPagoGuardado,loan.frecuencia).caso:null
   });
   var f=fs[0]; var setF=fs[1];
   var isNew=!loan||!!loan._prefill||!!loan._calcPrefill;
-  // La fecha de inicio arrastra al primer pago mientras este no se haya elegido a mano.
+  // La fecha de inicio y la frecuencia arrastran al primer pago mientras este no se haya elegido
+  // a mano: el regular es un periodo despues del inicio, y el periodo depende de la frecuencia.
   function setFechaInicio(v){
     setF(function(p){
       var n=Object.assign({},p); n.fechaInicio=v;
-      if(!p.primerPagoManual) n.primerPago=primerPagoRegular(v);
+      if(!p.primerPagoManual) n.primerPago=primerPagoRegular(v, p.frecuencia);
+      return n;
+    });
+  }
+  function setFrecuencia(v){
+    setF(function(p){
+      var n=Object.assign({},p); n.frecuencia=v;
+      if(!p.primerPagoManual) n.primerPago=primerPagoRegular(p.fechaInicio, v);
       return n;
     });
   }
@@ -164,16 +178,55 @@ export function LoanModal(props){
   })();
   // % implicito derivado para el indicador de equivalencia
   var gananciaPctImpl=montoCOP>0?Math.round(gananciaCOPCalc/montoCOP*10000)/100:0;
-  // 3.2.0 — PRIMER PAGO. Se elige solo donde el motor lo sabe usar: cuotas mensuales con dia de
-  // pago (Intereses y C+I). En Semanal/Quincenal las fechas salen del inicio y siempre son
-  // regulares; Prestamo y Pago Unico ya piden su fecha exacta; el credito abierto no tiene cuotas.
-  var muestraPrimerPago=(f.modalidad==='Intereses'||f.modalidad==='Capital + Intereses')&&(f.frecuencia||'Mensual')==='Mensual';
-  var infoPP=infoPrimerPeriodo(montoCOP,f.tasaMensual,f.fechaInicio,f.primerPago);
+  // 3.2.0 — PRIMER PAGO. Se elige donde hay cuotas periodicas: Intereses y C+I, en las tres
+  // frecuencias desde 3.3.0 (el motor las sabe usar desde la Fase 1). Prestamo y Pago Unico ya
+  // piden su fecha exacta; el credito abierto no tiene cuotas.
+  var muestraPrimerPago=f.modalidad==='Intereses'||f.modalidad==='Capital + Intereses';
+  var freqPP=f.frecuencia||'Mensual';
+  var infoPP=infoPrimerPeriodo(montoCOP,f.tasaMensual,f.fechaInicio,f.primerPago,freqPP);
   var primerPagoInvalido=muestraPrimerPago&&(!f.primerPago||!f.fechaInicio||f.primerPago<=f.fechaInicio);
-  // La pregunta del primer periodo solo existe si el periodo NO es un mes calendario y hay
-  // interes que repartir. Sin limite superior: un "tiempo muerto" de meses cobra todos sus dias.
+  // La pregunta del primer periodo solo existe si el primer pago no cae un periodo despues del
+  // inicio y hay interes que repartir. Sin limite superior: un "tiempo muerto" de meses es valido.
   var ofrecePrimerPeriodo=muestraPrimerPago&&!primerPagoInvalido&&infoPP.irregular&&(+f.tasaMensual||0)>0;
-  var prorrateaPrimero=ofrecePrimerPeriodo&&f.primerPeriodo==='proporcional';
+  // La decision vigente: la elegida, si se eligio para ESTE caso; si no, la del caso.
+  var modoPP=(f.primerPeriodo&&f.primerPeriodoCaso===infoPP.caso)?f.primerPeriodo:infoPP.modoPorDefecto;
+  var prorrateaPrimero=ofrecePrimerPeriodo&&modoPP==='proporcional';
+  // Los textos del primer periodo se arman con el periodo de la frecuencia, para que la misma
+  // pregunta se lea igual en semanal, quincenal y mensual.
+  var PERIODO_PP=({
+    Semanal:{un:'una semana',completo:'la semana completa',nota:' (7 dias)',regular:'Una semana despues del inicio'},
+    Quincenal:{un:'una quincena',completo:'la quincena completa',nota:' (14 dias)',regular:'Dos semanas despues del inicio'},
+    Mensual:{un:'un mes',completo:'el mes completo',nota:'',regular:'Un mes despues del inicio'}
+  })[freqPP]||{un:'un mes',completo:'el mes completo',nota:'',regular:'Un mes despues del inicio'};
+  function nDias(n){ return n+(n===1?' dia':' dias'); }
+  function losDias(n){ return n===1?'1 dia':'los '+n+' dias'; }
+  var DIAS_SEMANA=['domingo','lunes','martes','miercoles','jueves','viernes','sabado'];
+  // Como siguen las cuotas despues del primer pago: el mismo dia de la semana o del mes.
+  var luegoPP=(function(){
+    if(!f.primerPago) return '';
+    var dSem=DIAS_SEMANA[new Date(f.primerPago+'T12:00:00').getDay()], dMes=+f.primerPago.slice(8,10);
+    if(freqPP==='Semanal') return 'cada '+dSem;
+    if(freqPP==='Quincenal') return 'un '+dSem+' de por medio (cada 14 dias)';
+    return 'el '+dMes+' de cada mes'+(dMes>28?' (o el ultimo dia)':'');
+  })();
+  // Fecha corta para la linea de la gracia: el año solo si el periodo cruza de año.
+  function fCortaPP(iso){
+    var o={day:'numeric',month:'short'};
+    if(f.fechaInicio&&f.primerPago&&f.fechaInicio.slice(0,4)!==f.primerPago.slice(0,4)) o.year='numeric';
+    return new Date(iso+'T12:00:00').toLocaleDateString('es-CO',o);
+  }
+  var conGracia=infoPP.caso==='gracia';
+  var preguntaPP=conGracia
+    ?'El primer pago llega '+nDias(infoPP.dias)+' despues del inicio: mas que '+PERIODO_PP.un+' normal'+PERIODO_PP.nota+'. ¿Que hacer con los dias de mas?'
+    :(infoPP.dias<infoPP.diasRegular
+      ?'El primer pago llega '+nDias(infoPP.dias)+' despues del inicio: antes de completar '+PERIODO_PP.un+PERIODO_PP.nota+'. ¿Cuanto interes cobra la primera cuota?'
+      :'El primer pago no cae '+PERIODO_PP.un+' despues del inicio. ¿Cuanto interes cobra la primera cuota?');
+  // [modo, titulo, detalle, interes]. La opcion por defecto del caso va primero.
+  var opcionesPP=conGracia
+    ?[['completo','Perdonar '+nDias(infoPP.graciaDias)+' (dar dias de gracia)','La primera cuota cobra '+PERIODO_PP.un+' de interes; los dias de gracia no se cobran nunca',infoPP.interesCompleto],
+      ['proporcional','Cobrar '+losDias(infoPP.dias),'La primera cuota cobra el interes de todo el tiempo',infoPP.interesProporcional]]
+    :[['proporcional','Cobrar '+(infoPP.dias<infoPP.diasRegular?'solo ':'')+losDias(infoPP.dias),null,infoPP.interesProporcional],
+      ['completo','Cobrar '+PERIODO_PP.completo,null,infoPP.interesCompleto]];
   var preview=useMemo(function(){
     if(!montoCOP) return {cuota:0,totalInt:0,rows:[],totalPagar:0};
     var n=+f.plazoMeses||12;
@@ -204,7 +257,7 @@ export function LoanModal(props){
         // Primer periodo proporcional: la cuota 1 cobra sus dias reales, con el MISMO espejo del
         // motor que usa el cobro. El prestamo aun no existe, asi que se le da una identidad de paso.
         if(prorrateaPrimero){
-          aplicarTransitoriaPreview({id:'nuevo',modalidad:f.modalidad,tasaMensual:+f.tasaMensual||0,
+          aplicarTransitoriaPreview({id:'nuevo',modalidad:f.modalidad,frecuencia:freq,tasaMensual:+f.tasaMensual||0,
             periodoIrregularN:1,periodoIrregularDesde:f.fechaInicio,periodoIrregularMora:0},
             rows,1,montoCOP,[{id:'nuevo-1',fechaPago:f.primerPago}]);
         }
@@ -234,6 +287,7 @@ export function LoanModal(props){
     // v1.10.0 — Pago Unico debe tener ganancia >= 0 (puede ser 0 si el user quiere sin ganancia)
     if(esPagoUnico&&(+f.gananciaInput||0)<0){showError('La ganancia no puede ser negativa');return;}
     // 3.2.0 — el primer pago tiene que caer DESPUES del inicio. Sin tope superior (regla del PO).
+    // (`modoPP` viaja como `primerPeriodo`: la decision vigente, elegida o por defecto.)
     if(muestraPrimerPago&&!lockSens&&primerPagoInvalido){showError('El primer pago debe ser posterior a la fecha de inicio');return;}
     var base=isNew?{}:(loan||{});
     var diaPagoAuto=new Date(f.fechaInicio+'T12:00:00').getDate();
@@ -253,7 +307,7 @@ export function LoanModal(props){
       // cronograma y cuota transitoria (`resolverPrimerPago`); `diaPago` de arriba solo cuenta
       // cuando no viaja. Con campos bloqueados no se manda: el backend congela el calendario.
       primerPago:(muestraPrimerPago&&!lockSens)?f.primerPago:undefined,
-      primerPeriodo:(muestraPrimerPago&&!lockSens)?f.primerPeriodo:undefined
+      primerPeriodo:(muestraPrimerPago&&!lockSens)?modoPP:undefined
     };
     if(esUnaCuotaSubmit&&f.fechaDevolucion) extra.fechaDevolucion=f.fechaDevolucion;
     // Defense-in-depth (v1.9.0): si los campos sensibles estan bloqueados, sobrescribir
@@ -280,6 +334,7 @@ export function LoanModal(props){
     }
     var payload=Object.assign({},base,f,extra);
     delete payload.primerPagoManual;                       // estado de la pantalla, no del prestamo
+    delete payload.primerPeriodoCaso;
     if(payload.primerPago===undefined){ delete payload.primerPago; delete payload.primerPeriodo; }
     setIsSubmitting(true);
     onSave(payload);
@@ -380,7 +435,7 @@ export function LoanModal(props){
       h('option',null,'Prestamo'),
       h('option',null,'Pago Unico'),
       h('option',null,MODALIDAD_DIARIA))),
-    !esUnaCuota&&!esDiarioF&&h(Fld,{label:'Frecuencia de cobro'},h('select',{value:f.frecuencia,onChange:function(e){set('frecuencia',e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}},
+    !esUnaCuota&&!esDiarioF&&h(Fld,{label:'Frecuencia de cobro'},h('select',{value:f.frecuencia,onChange:function(e){setFrecuencia(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}},
       h('option',null,'Semanal'),h('option',null,'Quincenal'),h('option',null,'Mensual'))),
     // Credito abierto: solo TASA. No hay plazo que pedir, y dejar el campo visible
     // invitaria a escribir un numero que el motor ignora.
@@ -406,29 +461,36 @@ export function LoanModal(props){
           h('input',{type:'date',value:f.primerPago||'',min:f.fechaInicio?addDays(f.fechaInicio,1):undefined,onChange:function(e){setPrimerPago(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
           h('div',{style:{fontSize:11,marginTop:4,lineHeight:1.4,color:primerPagoInvalido?'var(--red)':'var(--text3)'}},
             primerPagoInvalido?'Debe ser posterior a la fecha de inicio'
-              :(infoPP.irregular?'Primer periodo de '+infoPP.dias+' dias':'Un mes despues del inicio')+
-               ' · despues, el '+(+f.primerPago.slice(8,10))+' de cada mes'+(+f.primerPago.slice(8,10)>28?' (o el ultimo dia)':'')),
+              :(infoPP.irregular?'Primer periodo de '+nDias(infoPP.dias):PERIODO_PP.regular)+' · despues, '+luegoPP),
           // Aviso SUAVE, no un tope: una fecha a mas de un año casi siempre es un error de
           // tecleo, pero un tiempo muerto largo es legitimo.
           !primerPagoInvalido&&infoPP.dias>366&&h('div',{style:{fontSize:11,marginTop:2,color:'var(--yellow)',fontWeight:600}},
             'Mas de un año hasta el primer pago: revisa la fecha'))),
       ofrecePrimerPeriodo&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px 14px',marginBottom:8}},
         h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:4}},'PRIMER PERIODO: '+infoPP.dias+' DIAS'),
-        h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4,marginBottom:10}},
-          'El primer pago no cae un mes despues del inicio. ¿Cuanto interes cobra la primera cuota?'),
-        [['completo','Cobrar mes completo',infoPP.interesCompleto],
-         ['proporcional','Cobrar proporcional - '+infoPP.dias+' dias',infoPP.interesProporcional]].map(function(op){
-          var sel=f.primerPeriodo===op[0];
+        h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4,marginBottom:10}},preguntaPP),
+        opcionesPP.map(function(op){
+          var sel=modoPP===op[0];
           return h('label',{key:op[0],style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:6,border:'1px solid '+(sel?'var(--blue)':'var(--border)'),borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:sel?'rgba(88,166,255,.08)':'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
-            h('input',{type:'radio',name:'primerPeriodo',checked:sel,onChange:function(){if(!lockSens)set('primerPeriodo',op[0]);},disabled:lockSens,style:{accentColor:'var(--blue)',cursor:lockSens?'not-allowed':'pointer',margin:0}}),
-            h('span',{style:{flex:1,fontSize:12,color:'var(--text)',fontWeight:500}},op[1]),
-            h('span',{className:'mono',style:{fontSize:12,color:sel?'var(--blue)':'var(--text3)',fontWeight:sel?700:400}},'(interes '+fmt(op[2])+')'));
+            h('input',{type:'radio',name:'primerPeriodo',checked:sel,onChange:function(){if(!lockSens)setF(function(p){return Object.assign({},p,{primerPeriodo:op[0],primerPeriodoCaso:infoPP.caso});});},disabled:lockSens,style:{accentColor:'var(--blue)',cursor:lockSens?'not-allowed':'pointer',margin:0}}),
+            h('span',{style:{flex:1,minWidth:0}},
+              h('span',{style:{display:'block',fontSize:12,color:'var(--text)',fontWeight:500}},op[1]),
+              op[2]?h('span',{style:{display:'block',fontSize:10.5,color:'var(--text3)',marginTop:2,lineHeight:1.35}},op[2]):null),
+            h('span',{className:'mono',style:{fontSize:12,color:sel?'var(--blue)':'var(--text3)',fontWeight:sel?700:400,whiteSpace:'nowrap'}},'(interes '+fmt(op[3])+')'));
         }),
+        // La gracia a la vista: los dias que no corre interes y el periodo que si se cobra.
+        conGracia&&modoPP==='completo'&&h('div',{style:{margin:'2px 0 8px'}},
+          h('div',{style:{display:'flex',height:6,borderRadius:3,overflow:'hidden',background:'var(--bg4)'}},
+            h('div',{style:{flex:infoPP.graciaDias}}),
+            h('div',{style:{flex:Math.max(1,infoPP.dias-infoPP.graciaDias),background:'var(--blue)'}})),
+          h('div',{style:{display:'flex',justifyContent:'space-between',gap:8,fontSize:10.5,marginTop:4,lineHeight:1.4}},
+            h('span',{style:{color:'var(--text3)'}},'Sin interes: '+fCortaPP(f.fechaInicio)+' al '+fCortaPP(infoPP.inicioIntereses)),
+            h('span',{style:{color:'var(--blue)',textAlign:'right'}},'Con interes: '+fCortaPP(infoPP.inicioIntereses)+' al '+fCortaPP(f.primerPago)))),
         preview.rows&&preview.rows.length>0&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.5}},
           'Primera cuota: ',h('b',{className:'mono'},fmt(preview.rows[0].cuota)),
           preview.rows.length>1?' · las demas: '+fmt(preview.rows[1].cuota):'',
           // Tiempo muerto: que se lea que el interes de TODOS esos dias va a la primera cuota.
-          prorrateaPrimero&&infoPP.dias>31?h('div',{style:{color:'var(--text3)',marginTop:2}},
+          prorrateaPrimero&&infoPP.dias>infoPP.diasRegular?h('div',{style:{color:'var(--text3)',marginTop:2}},
             'El interes de los '+infoPP.dias+' dias se cobra completo en la primera cuota.'):null)))
     :h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
     // v1.10.0 — Bloque Ganancia para modalidad Pago Unico: toggle %/monto + indicador de equivalencia

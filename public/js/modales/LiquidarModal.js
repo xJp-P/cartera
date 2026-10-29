@@ -7,7 +7,7 @@
 
 import { Modal } from '../componentes/base.js';
 import { Ico } from '../componentes/iconos.js';
-import { computeLiquidacion } from '../core/dominio.js';
+import { computeLiquidacion, detalleInteresEnCurso } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD } from '../core/format.js';
 import { generateEstadoLiquidacion } from '../pdf/estado-liquidacion.js';
 import { h, useState } from '../core/react.js';
@@ -72,7 +72,7 @@ export function LiquidarModal(props){
       L.incluyeProxMes&&rowLine(lblExtra,
         L.periodoIrregular
           ? L.diasCobrados+' de '+L.diasPeriodo+' dias del periodo · '+cLoan.tasaMensual+'% mensual sobre el capital pendiente'
-          : cLoan.tasaMensual+'% sobre el capital pendiente',
+          : detalleInteresEnCurso(L.frecuencia,cLoan.tasaMensual),
         L.intProxMes,'var(--yellow)')),
     // La casilla es compartida con CronogramaPdfModal (3.1.0): mismas palabras, misma cifra.
     // Con un periodo irregular en curso trae el campo de dias (3.2.0).

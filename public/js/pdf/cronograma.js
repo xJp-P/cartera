@@ -15,7 +15,7 @@
 // `computeLiquidacion`, que resta el parcial APARTE; migrarlo lo restaria dos veces.
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
-import { imputarCobros, computeLiquidacion, proximoVencimiento } from '../core/dominio.js';
+import { imputarCobros, computeLiquidacion, proximoVencimiento, periodoEnCursoDe } from '../core/dominio.js';
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 
@@ -194,7 +194,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
         (L.intMora > 0 ? ' + mora ' + fv(L.intMora) + ' (' + L.moraCount + ' cuota' + (L.moraCount>1?'s':'') + ' a ' + mesTxt + ')' : '') +
         (L.moraConsolidada > 0 ? ' + mora consolidada ' + fv(L.moraConsolidada) : '') +
         (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '') +
-        (L.intExtra > 0 ? (L.periodoIrregular ? ' + interes de ' + L.diasCobrados + ' dias del periodo en curso ' : ' + interes del mes en curso ') + fv(L.intExtra) : '');
+        (L.intExtra > 0 ? (L.periodoIrregular ? ' + interes de ' + L.diasCobrados + ' dias del periodo en curso ' : ' + interes ' + periodoEnCursoDe(L.frecuencia) + ' ') + fv(L.intExtra) : '');
       var bg = dark ? '#2b2005' : '#fff8c5';
       var bd = dark ? '#3d2e08' : '#d4a72c';
       var cl = dark ? '#d29922' : '#7a5900';

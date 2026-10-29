@@ -33,6 +33,12 @@
 //      defecto previo del dia de pago que una edicion devolvia al dia de inicio.
 //   H. EL FORMULARIO REAL (`LoanModal`) renderizado con su estado sembrado.
 //
+// 3.3.0, FASE 1 — el periodo de cada frecuencia y la gracia:
+//   K. La formula "interes de una cuota normal x dias / dias del periodo": mensual intacto bit a
+//      bit, y un periodo entero de dias = la cuota normal del motor en semanal y quincenal. El
+//      primer pago en las tres frecuencias, cobrando o perdonando los dias muertos, con
+//      `fechaInicioIntereses`; su migracion; y el cambio de dia de pago respetando la gracia.
+//
 // FASE 4 — la MORA CONSOLIDADA en la liquidacion:
 //   J. Cambiar el dia de cobro NO puede mover el valor de liquidacion. La mora que el
 //      endpoint mete dentro de la cuota transitoria es deuda ya causada: entra en el total,
@@ -442,7 +448,7 @@ function cargarFront() {
   const ctx = vm.createContext(sb);
   vm.runInContext(orden.join('\n'), ctx);
   return vm.runInContext('({planCascada,cobrableTotal,filasPreview,aplicarTransitoriaPreview,interesTransitoria,esTransitoria,imputarCobros,_pmt,_tasaPeriodo,' +
-    'fechaPagoMensual,primerPagoRegular,primerPagoDe,infoPrimerPeriodo})', ctx);
+    'fechaPagoMensual,fechaPagoFrecuencia,primerPagoRegular,primerPagoDe,inicioPeriodoRegular,infoPrimerPeriodo,tasaDelPeriodo,diasDelPeriodo,interesPeriodoParcial})', ctx);
 }
 
 async function seccionE() {
@@ -585,8 +591,8 @@ function seccionF() {
     ['antes del inicio', CI, '2026-09-01'],
     ['fecha inexistente (30-feb)', CI, '2027-02-30'],
     ['formato no ISO', CI, '15/12/2026'],
-    ['frecuencia Semanal', Object.assign({}, CI, { frecuencia: 'Semanal' }), '2026-12-15'],
-    ['frecuencia Quincenal', Object.assign({}, CI, { frecuencia: 'Quincenal' }), '2026-12-15'],
+    // 3.3.0: Semanal y Quincenal ya se aceptan (seccion K); se sigue rechazando lo desconocido.
+    ['frecuencia desconocida', Object.assign({}, CI, { frecuencia: 'Diaria' }), '2026-12-15'],
     ['modalidad Prestamo', Object.assign({}, CI, { modalidad: 'Prestamo' }), '2026-12-15'],
     ['modalidad Pago Unico', Object.assign({}, CI, { modalidad: 'Pago Unico' }), '2026-12-15'],
     ['modalidad Interes Diario', Object.assign({}, CI, { modalidad: 'Interes Diario' }), '2026-12-15'],
@@ -707,7 +713,7 @@ async function seccionG() {
       ['primer pago el mismo dia del inicio', { primerPago: '2026-07-20' }],
       ['primer pago antes del inicio', { primerPago: '2026-07-01' }],
       ['fecha inexistente', { primerPago: '2026-02-30' }],
-      ['frecuencia Semanal', { primerPago: '2026-10-20', frecuencia: 'Semanal' }],
+      ['frecuencia desconocida', { primerPago: '2026-10-20', frecuencia: 'Diaria' }],
       ['modalidad Prestamo', { primerPago: '2026-10-20', modalidad: 'Prestamo', tasaMensual: 0, plazoMeses: 1, fechaDevolucion: '2026-10-20' }],
       ['primer periodo invalido', { primerPago: '2026-10-20', primerPeriodo: 'xyz' }],
     ];
@@ -793,7 +799,8 @@ async function seccionG() {
 // ═════════════════════════════════════════════════════════════════════════════
 // H — FASE 2: el FORMULARIO real (LoanModal)
 // ═════════════════════════════════════════════════════════════════════════════
-function seccionH() {
+// El arnes del formulario: el `LoanModal` REAL pintado con su estado sembrado. Lo comparten H y L.
+function arnesLoanModal() {
   const { cargarFrontend } = require('./lib/load-frontend');
   const FE = cargarFrontend({ silenciarConsola: true });
   const X = FE.sandbox;
@@ -840,19 +847,42 @@ function seccionH() {
       return { t, todo: t.join(' '), boton, fechas, radios, guardados, enviar: () => { if (boton) boton.props.onClick(); return guardados; } };
     } finally { X.useState = useStateOrig; }
   };
-  const FORM = { nombre: 'H', montoOrigen: '10000000', modalidad: 'Capital + Intereses', frecuencia: 'Mensual', tasaMensual: '5', plazoMeses: '6', fechaInicio: '2026-09-15' };
+  // Como `vista`, pero el setter del formulario SI aplica el cambio: `hacer` recibe el arbol y
+  // dispara un evento (un select, un radio) y se devuelve el estado que deja.
+  const accion = (cambios, props, hacer) => {
+    let f = Object.assign({}, inicial(props || {}), cambios);
+    let i = 0;
+    X.useState = init => {
+      const v = i === 0 ? f : (typeof init === 'function' ? init() : init);
+      const set = i === 0 ? (u => { f = typeof u === 'function' ? u(f) : u; }) : (() => {});
+      i++; return [v, set];
+    };
+    try { hacer(pintar({ type: X.LoanModal, props: Object.assign({ loan: null, trm: 4000, pays: [], onSave: () => {}, onClose: () => {}, clientes: [] }, props || {}), children: [] })); }
+    finally { X.useState = useStateOrig; }
+    return f;
+  };
+  return { X, pintar, textos, nodos, inicial, vista, accion };
+}
+
+function seccionH() {
+  const { X, inicial, vista } = arnesLoanModal();
+  const FORM ={ nombre: 'H', montoOrigen: '10000000', modalidad: 'Capital + Intereses', frecuencia: 'Mensual', tasaMensual: '5', plazoMeses: '6', fechaInicio: '2026-09-15' };
 
   R.seccion('H1 — alta: el primer pago nace un mes despues del inicio y lo sigue');
   const f0 = inicial({});
-  R.check('H1 primer pago = el mismo dia del mes siguiente, no elegido a mano, proporcional por defecto',
-    f0.primerPago === X.primerPagoRegular(f0.fechaInicio) && f0.primerPagoManual === false && f0.primerPeriodo === 'proporcional', f0);
+  // 3.3.0 (Fase 2): nadie eligio todavia -> `primerPeriodo` null, y vale la opcion por defecto
+  // del caso (perdonar con dias de sobra, cobrar los dias si el periodo es corto).
+  R.check('H1 primer pago = el mismo dia del mes siguiente, no elegido a mano, sin decision tomada',
+    f0.primerPago === X.primerPagoRegular(f0.fechaInicio, 'Mensual') && f0.primerPagoManual === false &&
+    f0.primerPeriodo === null && f0.primerPeriodoCaso === null, f0);
 
-  R.seccion('H2 — el campo solo aparece donde aplica');
+  R.seccion('H2 — el campo solo aparece donde aplica (desde 3.3.0, en las tres frecuencias)');
   const tieneCampo = v => v.t.indexOf('Primer pago') !== -1;
-  R.check('H2 visible en Capital + Intereses mensual', tieneCampo(vista(FORM)));
-  R.check('H2 visible en Intereses mensual', tieneCampo(vista(Object.assign({}, FORM, { modalidad: 'Intereses' }))));
-  for (const [desc, c] of [['Semanal', { frecuencia: 'Semanal' }], ['Quincenal', { frecuencia: 'Quincenal' }],
-    ['Prestamo', { modalidad: 'Prestamo' }], ['Pago Unico', { modalidad: 'Pago Unico' }], ['Interes Diario', { modalidad: 'Interes Diario' }]]) {
+  for (const freq of ['Mensual', 'Semanal', 'Quincenal']) {
+    R.check('H2 visible en Capital + Intereses ' + freq, tieneCampo(vista(Object.assign({}, FORM, { frecuencia: freq }))));
+    R.check('H2 visible en Intereses ' + freq, tieneCampo(vista(Object.assign({}, FORM, { modalidad: 'Intereses', frecuencia: freq }))));
+  }
+  for (const [desc, c] of [['Prestamo', { modalidad: 'Prestamo' }], ['Pago Unico', { modalidad: 'Pago Unico' }], ['Interes Diario', { modalidad: 'Interes Diario' }]]) {
     R.check('H2 oculto en ' + desc, !tieneCampo(vista(Object.assign({}, FORM, c))));
   }
 
@@ -863,19 +893,26 @@ function seccionH() {
   R.check('H3 tasa 0: se ve el campo pero no la pregunta',
     (v => tieneCampo(v) && v.todo.indexOf('PRIMER PERIODO') === -1)(vista(Object.assign({}, FORM, { tasaMensual: '0', primerPago: '2026-12-15' }))));
 
+  // 3.3.0 (Fase 2): con dias de sobra la pregunta es que hacer con ellos, y la opcion por
+  // defecto es PERDONARLOS (decision del PO). Los rotulos de 3.2.0 ("Cobrar mes completo",
+  // "Cobrar proporcional - N dias") cambiaron a proposito: ver la seccion L.
   R.seccion('H4 — las dos opciones con sus cifras en vivo');
-  R.check('H4 "Cobrar mes completo (interes $ 500.000)"', muerto.t.indexOf('Cobrar mes completo') !== -1 && muerto.t.indexOf('(interes ' + X.fmt(500000) + ')') !== -1);
-  R.check('H4 "Cobrar proporcional - 91 dias (interes $ 1.516.667)"', muerto.t.indexOf('Cobrar proporcional - 91 dias') !== -1 && muerto.t.indexOf('(interes ' + X.fmt(1516667) + ')') !== -1);
-  const marcado = n => muerto.radios.filter(r => r.props.checked).length === 1 && muerto.radios[n].props.checked;
-  R.check('H4 "proporcional" preseleccionado', muerto.radios.length === 2 && marcado(1));
-  // La cuota 1 que anuncia la pantalla es la que el motor va a guardar.
-  const motor = buildSchedule(conPrimerPago({ id: 'x', nombre: 'x', modalidad: 'Capital + Intereses', frecuencia: 'Mensual', tasaMensual: 5, plazoMeses: 6,
-    montoCOP: 10000000, fechaInicio: '2026-09-15', diaPago: 15 }, '2026-12-15', 'proporcional'));
-  R.check('H4 la primera cuota que muestra el formulario (' + X.fmt(motor[0].cuotaTotal) + ') es la que guarda el motor',
-    muerto.t.indexOf(X.fmt(motor[0].cuotaTotal)) !== -1 && muerto.todo.indexOf('Primera cuota (15 de dic de 2026, 91 dias)') !== -1);
-  R.check('H4 el tiempo muerto se explica', muerto.todo.indexOf('El interes de los 91 dias se cobra completo en la primera cuota.') !== -1);
-  const comp = vista(Object.assign({}, FORM, { primerPago: '2026-12-15', primerPagoManual: true, primerPeriodo: 'completo' }));
-  R.check('H4 con "mes completo" la primera cuota es la normal', comp.t.indexOf(X.fmt(1970175)) !== -1 && comp.radios[0].props.checked);
+  R.check('H4 "Perdonar 61 dias (dar dias de gracia)" con el interes de un mes ($ 500.000)',
+    muerto.t.indexOf('Perdonar 61 dias (dar dias de gracia)') !== -1 && muerto.t.indexOf('(interes ' + X.fmt(500000) + ')') !== -1, muerto.todo.slice(0, 600));
+  R.check('H4 "Cobrar los 91 dias" ($ 1.516.667)', muerto.t.indexOf('Cobrar los 91 dias') !== -1 && muerto.t.indexOf('(interes ' + X.fmt(1516667) + ')') !== -1);
+  const marcado = (v, n) => v.radios.filter(r => r.props.checked).length === 1 && v.radios[n].props.checked;
+  R.check('H4 "Perdonar" preseleccionado y en primer lugar', muerto.radios.length === 2 && marcado(muerto, 0) && muerto.radios[0].props.checked);
+  // La cuota 1 que anuncia la pantalla es la que el motor va a guardar, en las dos opciones.
+  const motorDe = modo => buildSchedule(conPrimerPago({ id: 'x', nombre: 'x', modalidad: 'Capital + Intereses', frecuencia: 'Mensual', tasaMensual: 5, plazoMeses: 6,
+    montoCOP: 10000000, fechaInicio: '2026-09-15', diaPago: 15 }, '2026-12-15', modo));
+  R.check('H4 por defecto la primera cuota que muestra el formulario es la normal que guarda el motor (' + X.fmt(motorDe('completo')[0].cuotaTotal) + ')',
+    motorDe('completo')[0].cuotaTotal === 1970175 && muerto.t.indexOf(X.fmt(1970175)) !== -1 && muerto.todo.indexOf('Primera cuota (15 de dic de 2026, 91 dias)') !== -1);
+  const prop = vista(Object.assign({}, FORM, { primerPago: '2026-12-15', primerPagoManual: true, primerPeriodo: 'proporcional', primerPeriodoCaso: 'gracia' }));
+  const motorP = motorDe('proporcional');
+  R.check('H4 eligiendo cobrar los dias, la primera cuota es la que guarda el motor (' + X.fmt(motorP[0].cuotaTotal) + ')',
+    marcado(prop, 1) && prop.t.indexOf(X.fmt(motorP[0].cuotaTotal)) !== -1);
+  R.check('H4 el tiempo muerto cobrado se explica', prop.todo.indexOf('El interes de los 91 dias se cobra completo en la primera cuota.') !== -1);
+  R.check('H4 ...y con perdonar no (no se cobra)', muerto.todo.indexOf('se cobra completo en la primera cuota') === -1);
 
   R.seccion('H5 — sin tope superior en el selector');
   const pp = muerto.fechas[1];
@@ -886,10 +923,12 @@ function seccionH() {
 
   R.seccion('H6 — lo que viaja al backend');
   const env = vista(Object.assign({}, FORM, { primerPago: '2026-12-15', primerPagoManual: true })).enviar();
-  R.check('H6 alta: viajan primerPago y primerPeriodo, no el estado de pantalla',
-    env.length === 1 && env[0].primerPago === '2026-12-15' && env[0].primerPeriodo === 'proporcional' && !('primerPagoManual' in env[0]), env[0]);
+  R.check('H6 alta: viajan primerPago y la decision vigente (perdonar, la de por defecto), no el estado de pantalla',
+    env.length === 1 && env[0].primerPago === '2026-12-15' && env[0].primerPeriodo === 'completo' &&
+    !('primerPagoManual' in env[0]) && !('primerPeriodoCaso' in env[0]), env[0]);
   const envSem = vista(Object.assign({}, FORM, { frecuencia: 'Semanal', primerPago: '2026-12-15', primerPagoManual: true })).enviar();
-  R.check('H6 Semanal: no viaja primerPago (el backend lo rechazaria)', envSem.length === 1 && !('primerPago' in envSem[0]) && !('primerPeriodo' in envSem[0]), envSem[0]);
+  R.check('H6 Semanal: desde 3.3.0 tambien viajan primerPago y primerPeriodo', envSem.length === 1 && envSem[0].primerPago === '2026-12-15' &&
+    envSem[0].primerPeriodo === 'completo' && envSem[0].frecuencia === 'Semanal', envSem[0]);
   const malo = vista(Object.assign({}, FORM, { primerPago: '2026-09-10', primerPagoManual: true }));
   R.check('H6 primer pago antes del inicio: se avisa y NO se envia', malo.enviar().length === 0 && malo.todo.indexOf('Debe ser posterior a la fecha de inicio') !== -1);
 
@@ -912,6 +951,395 @@ function seccionH() {
     envAct.length === 1 && !('primerPago' in envAct[0]) && envAct[0].diaPago === 28, envAct[0]);
   R.check('H7 la mora consolidada de un cambio de dia cuenta como actividad',
     vista({}, { loan: Object.assign({}, L, { periodoIrregularMora: 5000 }), pays: [fila1] }).fechas.every(n => n.props.disabled === true));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// L — 3.3.0, FASE 2: el formulario en las tres frecuencias
+// ═════════════════════════════════════════════════════════════════════════════
+// El campo "Primer pago" se ofrece tambien en Semanal y Quincenal, y la pregunta depende del
+// caso: con dias de SOBRA se pregunta que hacer con ellos y "Perdonar (dar dias de gracia)"
+// viene preseleccionado (decision del PO); con un periodo CORTO no hay nada que perdonar y sigue
+// preseleccionado cobrar los dias. L1 fija el espejo contra el motor; L2-L7, el formulario
+// real; L8, lo que el formulario envia contra el server real.
+async function seccionL() {
+  const { resolverPrimerPago, inicioPeriodoRegular, primerPagoRegular, tasaPeriodo } = engine;
+  const Fr = cargarFront();
+  const K4 = 4000000;
+  const BASE = { id: 'L', nombre: 'l', modalidad: 'Capital + Intereses', tasaMensual: 10, plazoMeses: 8, montoCOP: K4, montoOrigen: K4, moneda: 'COP' };
+  const filasCmp = filas => JSON.stringify(filas.map(x => ({ int: x.interes, cap: x.capital, cuota: x.cuota })));
+
+  R.seccion('L1 — el espejo del formulario contra el motor: 3 frecuencias x 5 inicios x 1..120 dias');
+  const INICIOS = ['2026-07-28', '2026-01-31', '2026-02-28', '2026-03-31', '2026-12-31'];
+  const conteo = {};
+  const malos = [];
+  let n = 0;
+  for (const f of ['Semanal', 'Quincenal', 'Mensual']) {
+    conteo[f] = { regular: 0, gracia: 0, sinGracia: 0 };
+    for (const ini of INICIOS) {
+      const loan = Object.assign({}, BASE, { frecuencia: f, fechaInicio: ini, diaPago: +ini.slice(8, 10) });
+      if (Fr.primerPagoRegular(ini, f) !== primerPagoRegular(ini, f)) malos.push({ f, ini, m: 'primer pago regular' });
+      for (let d = 1; d <= 120; d++) {
+        n++;
+        const pp = sumarDias(ini, d);
+        const info = Fr.infoPrimerPeriodo(K4, 10, ini, pp, f);
+        const malo = m => { if (malos.length < 50) malos.push({ f, ini, d, m, info }); else malos.length++; };
+        conteo[f][info.caso]++;
+        const rC = resolverPrimerPago(loan, pp, 'completo');
+        if (info.irregular !== rC.irregular) { malo('irregular'); continue; }
+        if (Fr.inicioPeriodoRegular(pp, f) !== inicioPeriodoRegular(pp, f)) malo('inicio del periodo');
+        // Lo que se guardaria perdonando: desde cuando corre el interes y cuantos dias se regalan.
+        if (info.inicioIntereses !== rC.fechaInicioIntereses) malo('arranque del interes');
+        if (info.graciaDias !== diasISO(ini, rC.fechaInicioIntereses)) malo('dias de gracia');
+        if ((info.caso === 'gracia') !== (rC.fechaInicioIntereses > ini)) malo('caso');
+        if (info.modoPorDefecto !== (info.caso === 'gracia' ? 'completo' : 'proporcional')) malo('opcion por defecto');
+        // El primer pago de un prestamo ya guardado se reconstruye desde su base y su frecuencia.
+        const conC = conPrimerPago(loan, pp, 'completo'), conP = conPrimerPago(loan, pp, 'proporcional');
+        if (Fr.primerPagoDe(conC) !== pp || Fr.primerPagoDe(conP) !== pp) malo('primer pago guardado');
+        if (!info.irregular) continue;
+        const rowsC = buildSchedule(conC), rowsP = buildSchedule(conP);
+        if (info.interesCompleto !== rowsC[0].interesPeriodo) malo('interes de un periodo');
+        if (info.interesProporcional !== rowsP[0].interesPeriodo) malo('interes de los dias');
+        // El cronograma tentativo del formulario, en las dos opciones, == el que guarda el motor.
+        const r = tasaPeriodo(0.1, f);
+        const filas = () => Fr.filasPreview(K4, r, 8, false, Math.round(Fr._pmt(r, 8, K4)));
+        const prev = filas();
+        Fr.aplicarTransitoriaPreview({ id: 'nuevo', modalidad: 'Capital + Intereses', frecuencia: f, tasaMensual: 10, periodoIrregularN: 1,
+          periodoIrregularDesde: ini, periodoIrregularMora: 0 }, prev, 1, K4, [{ id: 'nuevo-1', fechaPago: pp }]);
+        if (filasCmp(prev) !== JSON.stringify(sinFechas(rowsP))) malo('preview cobrando los dias');
+        if (filasCmp(filas()) !== JSON.stringify(sinFechas(rowsC))) malo('preview perdonando');
+      }
+    }
+  }
+  R.check('L1 ' + n + ' primeros pagos: fecha regular, caso, arranque del interes, dias de gracia, opcion por defecto, primer pago guardado, ' +
+    'interes de cada opcion y cronograma tentativo, frontend == motor', malos.length === 0 && n === 1800, malos.slice(0, 3));
+  R.check('L1 ANTI-VACIO: en cada frecuencia hay primeros pagos regulares, con dias de sobra y cortos',
+    ['Semanal', 'Quincenal', 'Mensual'].every(f => conteo[f].regular >= 5 && conteo[f].gracia >= 400 && conteo[f].sinGracia >= 5), conteo);
+  R.check('L1 el borde de fin de mes (28-feb -> 31-mar) no tiene dias que perdonar: no es "gracia"',
+    Fr.infoPrimerPeriodo(K4, 10, '2026-02-28', '2026-03-31', 'Mensual').caso === 'sinGracia' &&
+    resolverPrimerPago(Object.assign({}, BASE, { frecuencia: 'Mensual', fechaInicio: '2026-02-28', diaPago: 28 }), '2026-03-31', 'completo').fechaInicioIntereses === '2026-02-28');
+
+  const { X, vista, inicial, accion, nodos, textos } = arnesLoanModal();
+  const FS = { nombre: 'L', montoOrigen: '4000000', modalidad: 'Capital + Intereses', frecuencia: 'Semanal', tasaMensual: '10', plazoMeses: '8',
+    fechaInicio: '2026-07-28', primerPagoManual: true };
+  const tiene = (v, s) => v.todo.indexOf(s) !== -1;
+  const marcada = (v, i) => v.radios.length === 2 && v.radios.filter(r => r.props.checked).length === 1 && v.radios[i].props.checked;
+
+  R.seccion('L2 — semanal con dias de sobra: "Perdonar" preseleccionado');
+  const sg = vista(Object.assign({}, FS, { primerPago: '2026-08-09' }));
+  R.check('L2 la pregunta habla de la semana', tiene(sg, 'PRIMER PERIODO: 12 DIAS') &&
+    tiene(sg, 'El primer pago llega 12 dias despues del inicio: mas que una semana normal (7 dias). ¿Que hacer con los dias de mas?'), sg.todo.slice(0, 800));
+  R.check('L2 primera opcion, MARCADA: "Perdonar 5 dias (dar dias de gracia)" con el interes de una semana ($ 92.379)',
+    marcada(sg, 0) && sg.t.indexOf('Perdonar 5 dias (dar dias de gracia)') !== -1 && sg.t.indexOf('(interes ' + X.fmt(92379) + ')') !== -1 &&
+    tiene(sg, 'La primera cuota cobra una semana de interes; los dias de gracia no se cobran nunca'));
+  R.check('L2 segunda opcion: "Cobrar los 12 dias" ($ 158.364)', sg.t.indexOf('Cobrar los 12 dias') !== -1 && sg.t.indexOf('(interes ' + X.fmt(158364) + ')') !== -1);
+  R.check('L2 la gracia a la vista: sin interes del 28-jul al 2-ago, con interes del 2-ago al 9-ago',
+    tiene(sg, 'Sin interes: 28 de jul al 2 de ago') && tiene(sg, 'Con interes: 2 de ago al 9 de ago'), sg.todo.slice(0, 900));
+  R.check('L2 la cadencia: "Primer periodo de 12 dias · despues, cada domingo"', tiene(sg, 'Primer periodo de 12 dias · despues, cada domingo'));
+  const motorSem = modo => buildSchedule(conPrimerPago(Object.assign({}, BASE, { frecuencia: 'Semanal', fechaInicio: '2026-07-28', diaPago: 28 }), '2026-08-09', modo));
+  R.check('L2 la primera cuota anunciada es la que guarda el motor perdonando (' + X.fmt(motorSem('completo')[0].cuotaTotal) + ')',
+    tiene(sg, 'Primera cuota (09 de ago de 2026, 12 dias)') && sg.t.indexOf(X.fmt(motorSem('completo')[0].cuotaTotal)) !== -1);
+  const sgP = vista(Object.assign({}, FS, { primerPago: '2026-08-09', primerPeriodo: 'proporcional', primerPeriodoCaso: 'gracia' }));
+  R.check('L2 cobrando los dias: queda marcada, la primera cuota es la del motor (' + X.fmt(motorSem('proporcional')[0].cuotaTotal) + ') y no hay linea de gracia',
+    marcada(sgP, 1) && sgP.t.indexOf(X.fmt(motorSem('proporcional')[0].cuotaTotal)) !== -1 && !tiene(sgP, 'Sin interes:') &&
+    tiene(sgP, 'El interes de los 12 dias se cobra completo en la primera cuota.'));
+
+  R.seccion('L3 — quincenal con dias de sobra');
+  const qg = vista(Object.assign({}, FS, { frecuencia: 'Quincenal', primerPago: '2026-08-17' }));
+  R.check('L3 "mas que una quincena normal (14 dias)"; "Perdonar 6 dias" marcado con una quincena ($ 200.000); "Cobrar los 20 dias" ($ 285.714)',
+    tiene(qg, 'mas que una quincena normal (14 dias)') && marcada(qg, 0) && qg.t.indexOf('Perdonar 6 dias (dar dias de gracia)') !== -1 &&
+    qg.t.indexOf('(interes ' + X.fmt(200000) + ')') !== -1 && qg.t.indexOf('Cobrar los 20 dias') !== -1 && qg.t.indexOf('(interes ' + X.fmt(285714) + ')') !== -1,
+    qg.todo.slice(0, 800));
+  R.check('L3 la cadencia: "un lunes de por medio (cada 14 dias)"; la gracia del 28-jul al 3-ago',
+    tiene(qg, 'despues, un lunes de por medio (cada 14 dias)') && tiene(qg, 'Sin interes: 28 de jul al 3 de ago'));
+  const mg = vista(Object.assign({}, FS, { frecuencia: 'Mensual', primerPago: '2026-10-15' }));
+  R.check('L3 mensual: "mas que un mes normal", "Perdonar 49 dias" marcado con un mes ($ 400.000)',
+    tiene(mg, 'mas que un mes normal. ¿Que hacer con los dias de mas?') && marcada(mg, 0) && mg.t.indexOf('Perdonar 49 dias (dar dias de gracia)') !== -1 &&
+    mg.t.indexOf('(interes ' + X.fmt(400000) + ')') !== -1, mg.todo.slice(0, 800));
+
+  R.seccion('L4 — periodo corto: no hay nada que perdonar y sigue preseleccionado cobrar los dias');
+  const sc = vista(Object.assign({}, FS, { primerPago: '2026-08-01' }));
+  R.check('L4 semanal a 4 dias: "antes de completar una semana"; "Cobrar solo los 4 dias" ($ 52.788) marcado y primero; "Cobrar la semana completa" ($ 92.379)',
+    tiene(sc, 'antes de completar una semana (7 dias). ¿Cuanto interes cobra la primera cuota?') && marcada(sc, 0) &&
+    sc.t.indexOf('Cobrar solo los 4 dias') !== -1 && sc.t.indexOf('(interes ' + X.fmt(52788) + ')') !== -1 &&
+    sc.t.indexOf('Cobrar la semana completa') !== -1 && sc.t.indexOf('(interes ' + X.fmt(92379) + ')') !== -1, sc.todo.slice(0, 800));
+  R.check('L4 ...sin rastro de "Perdonar" ni linea de gracia', !tiene(sc, 'Perdonar') && !tiene(sc, 'Sin interes:'));
+  const qc = vista(Object.assign({}, FS, { frecuencia: 'Quincenal', primerPago: '2026-08-07' }));
+  R.check('L4 quincenal a 10 dias: "Cobrar solo los 10 dias" marcado / "Cobrar la quincena completa"',
+    marcada(qc, 0) && qc.t.indexOf('Cobrar solo los 10 dias') !== -1 && qc.t.indexOf('Cobrar la quincena completa') !== -1);
+  const mc = vista(Object.assign({}, FS, { frecuencia: 'Mensual', primerPago: '2026-08-17' }));
+  R.check('L4 mensual a 20 dias: "antes de completar un mes"; "Cobrar solo los 20 dias" marcado / "Cobrar el mes completo"',
+    tiene(mc, 'antes de completar un mes. ') && marcada(mc, 0) && mc.t.indexOf('Cobrar solo los 20 dias') !== -1 && mc.t.indexOf('Cobrar el mes completo') !== -1);
+  const borde = vista(Object.assign({}, FS, { frecuencia: 'Mensual', fechaInicio: '2026-02-28', primerPago: '2026-03-31' }));
+  R.check('L4 borde de fin de mes (28-feb -> 31-mar): "no cae un mes despues", "Cobrar los 31 dias" (sin "solo"), sin "Perdonar"',
+    tiene(borde, 'El primer pago no cae un mes despues del inicio.') && borde.t.indexOf('Cobrar los 31 dias') !== -1 && !tiene(borde, 'Perdonar'), borde.todo.slice(0, 800));
+
+  R.seccion('L5 — primer pago regular: sin pregunta, con la cadencia de la frecuencia');
+  for (const [f, pp, txt] of [['Semanal', '2026-08-04', 'Una semana despues del inicio · despues, cada martes'],
+    ['Quincenal', '2026-08-11', 'Dos semanas despues del inicio · despues, un martes de por medio (cada 14 dias)'],
+    ['Mensual', '2026-08-28', 'Un mes despues del inicio · despues, el 28 de cada mes']]) {
+    const v = vista(Object.assign({}, FS, { frecuencia: f, primerPago: pp, primerPagoManual: false }));
+    R.check('L5 ' + f + ': "' + txt + '"', tiene(v, txt) && !tiene(v, 'PRIMER PERIODO') && v.radios.length === 0, v.todo.slice(0, 600));
+  }
+
+  R.seccion('L6 — la frecuencia y la fecha arrastran al primer pago; la decision se recuerda por caso');
+  const selFreq = a => nodos(a, 'select').filter(s => textos(s).indexOf('Quincenal') !== -1)[0];
+  const radiosDe = a => nodos(a, 'input').filter(x => x.props && x.props.type === 'radio' && x.props.name === 'primerPeriodo');
+  const aMen = Object.assign({}, FS, { frecuencia: 'Mensual', primerPago: '2026-08-28', primerPagoManual: false });
+  const aSem = accion(aMen, {}, a => selFreq(a).props.onChange({ target: { value: 'Semanal' } }));
+  const aQui = accion(aMen, {}, a => selFreq(a).props.onChange({ target: { value: 'Quincenal' } }));
+  R.check('L6 cambiar a Semanal / Quincenal mueve el primer pago no elegido a 7 / 14 dias (4-ago / 11-ago)',
+    aSem.frecuencia === 'Semanal' && aSem.primerPago === '2026-08-04' && aQui.frecuencia === 'Quincenal' && aQui.primerPago === '2026-08-11', { aSem, aQui });
+  const aMan = accion(Object.assign({}, aMen, { primerPago: '2026-09-20', primerPagoManual: true }), {}, a => selFreq(a).props.onChange({ target: { value: 'Semanal' } }));
+  R.check('L6 un primer pago elegido a mano no se mueve al cambiar la frecuencia', aMan.frecuencia === 'Semanal' && aMan.primerPago === '2026-09-20');
+  const aIni = accion(Object.assign({}, FS, { primerPago: '2026-08-04', primerPagoManual: false }), {},
+    a => nodos(a, 'input').filter(x => x.props && x.props.type === 'date')[0].props.onChange({ target: { value: '2026-08-01' } }));
+  R.check('L6 en Semanal, cambiar la fecha de inicio arrastra el primer pago una semana despues (8-ago)', aIni.primerPago === '2026-08-08', aIni);
+  const aEl = accion(Object.assign({}, FS, { primerPago: '2026-08-09' }), {}, a => radiosDe(a)[1].props.onChange());
+  R.check('L6 elegir "Cobrar los 12 dias" guarda la decision Y el caso en que se tomo',
+    aEl.primerPeriodo === 'proporcional' && aEl.primerPeriodoCaso === 'gracia', aEl);
+  R.check('L6 ...y el formulario la respeta', marcada(vista(aEl), 1));
+  const otro = vista(Object.assign({}, FS, { primerPago: '2026-08-01', primerPeriodo: 'completo', primerPeriodoCaso: 'gracia' }));
+  R.check('L6 si la fecha pasa a un periodo corto, "perdonar" no se arrastra como "cobrar la semana completa": vuelve "Cobrar solo los 4 dias"',
+    marcada(otro, 0) && otro.t.indexOf('Cobrar solo los 4 dias') !== -1);
+  const envOtro = otro.enviar();
+  R.check('L6 ...y es la que viaja', envOtro.length === 1 && envOtro[0].primerPeriodo === 'proporcional', envOtro[0]);
+
+  R.seccion('L7 — edicion de un prestamo semanal');
+  const LS = { id: 'LS', nombre: 'Sem', cedula: '', telefono: '', moneda: 'COP', montoOrigen: K4, trmAcordada: 0, montoCOP: K4, tasaMensual: 10, plazoMeses: 8,
+    modalidad: 'Capital + Intereses', frecuencia: 'Semanal', fechaInicio: '2026-07-28', diaPago: 9, fechaBaseCronograma: '2026-08-02',
+    periodoIrregularN: null, periodoIrregularDesde: null, periodoIrregularMora: 0, fechaInicioIntereses: '2026-08-02', estado: 'Activo', notas: '' };
+  const fila1 = { id: 'LS-1', prestamoId: 'LS', cuotaN: 1, fechaPago: '2026-08-09', estadoPago: 'Pendiente' };
+  const fl = inicial({ loan: LS, pays: [fila1] });
+  R.check('L7 un semanal guardado perdonando se reabre con su primer pago (9-ago), elegido, en "Perdonar" y con su caso',
+    fl.primerPago === '2026-08-09' && fl.primerPagoManual === true && fl.primerPeriodo === 'completo' && fl.primerPeriodoCaso === 'gracia', fl);
+  R.check('L7 ...sin la fila 1 a mano, el primer pago sale de su base + una semana', inicial({ loan: LS, pays: [] }).primerPago === '2026-08-09');
+  const fr = inicial({ loan: Object.assign({}, LS, { diaPago: 28, fechaBaseCronograma: null, fechaInicioIntereses: '2026-07-28' }), pays: [] });
+  R.check('L7 un semanal regular se reabre con su primer pago a 7 dias, sin marcarlo como elegido', fr.primerPago === '2026-08-04' && fr.primerPagoManual === false && fr.primerPeriodo === null, fr);
+  const env7 = vista({}, { loan: LS, pays: [fila1] }).enviar();
+  R.check('L7 guardar sin tocar nada reenvia la misma decision (9-ago, perdonar)',
+    env7.length === 1 && env7[0].primerPago === '2026-08-09' && env7[0].primerPeriodo === 'completo' && !('primerPeriodoCaso' in env7[0]), env7[0]);
+
+  R.seccion('L8 — lo que el formulario envia, contra el server real');
+  const S = await arrancar(bdVacia('periodo-irregular-l'));
+  try {
+    const casos = [
+      ['semanal perdonando 5 dias', Object.assign({}, FS, { nombre: 'L8a', primerPago: '2026-08-09' }), '2026-08-02', 92379, null],
+      ['semanal cobrando los 12 dias', Object.assign({}, FS, { nombre: 'L8b', primerPago: '2026-08-09', primerPeriodo: 'proporcional', primerPeriodoCaso: 'gracia' }), '2026-07-28', 158364, 1],
+      ['quincenal perdonando 6 dias', Object.assign({}, FS, { nombre: 'L8c', frecuencia: 'Quincenal', primerPago: '2026-08-17' }), '2026-08-03', 200000, null],
+      ['semanal corto (4 dias, por defecto)', Object.assign({}, FS, { nombre: 'L8d', primerPago: '2026-08-01' }), '2026-07-28', 52788, 1],
+      ['mensual perdonando 49 dias', Object.assign({}, FS, { nombre: 'L8e', frecuencia: 'Mensual', primerPago: '2026-10-15' }), '2026-09-15', 400000, null],
+      ['Intereses semanal perdonando', Object.assign({}, FS, { nombre: 'L8f', modalidad: 'Intereses', plazoMeses: '', primerPago: '2026-08-09' }), '2026-08-02', 92379, null],
+    ];
+    for (const [desc, estado, arranque, interes, transN] of casos) {
+      const v = vista(estado);
+      const env = v.enviar();
+      const r = env.length === 1 ? await pedir(S, 'POST', '/api/loans', env[0]) : { status: 0 };
+      const id = r.json && r.json.id;
+      const L = id ? loanDe(S, id) : null, f1 = id ? filaDe(S, id, 1) : null;
+      R.check('L8 ' + desc + ': cuota 1 el ' + estado.primerPago + ' con ' + X.fmt(interes) + ' de interes, interes desde el ' + arranque +
+        ', y la primera cuota que anuncio el formulario es la guardada',
+        r.status === 201 && !!L && !!f1 && f1.fechaPago === estado.primerPago && f1.interesPeriodo === interes && L.fechaInicioIntereses === arranque &&
+        (L.periodoIrregularN === null ? null : +L.periodoIrregularN) === transN && L.frecuencia === estado.frecuencia &&
+        v.t.indexOf(X.fmt(f1.cuotaTotal)) !== -1,
+        { status: r.status, err: r.json && r.json.error, loan: L && { fii: L.fechaInicioIntereses, n: L.periodoIrregularN, f: L.frecuencia }, fila: clave(f1) });
+    }
+  } finally { await cerrar(S); }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// M — 3.3.0, FASE 3: liquidar un semanal o quincenal, y liquidar dentro de la gracia
+// ═════════════════════════════════════════════════════════════════════════════
+// Hasta 3.2.0 la casilla "interes del mes en curso" cobraba un MES en cualquier frecuencia: un
+// semanal de 4.000.000 al 10% ofrecia 400.000 cuando su cuota cobra 92.379. Ahora cobra un
+// periodo de la frecuencia, y dentro de los dias perdonados al crear no cobra nada (0), porque
+// el interes todavia no corre. El reloj de la suite esta en 31-jul-2026.
+async function seccionM() {
+  const { resolverPrimerPago, tasaPeriodo, interesPeriodoParcial } = engine;
+  const { cargarFrontend } = require('./lib/load-frontend');
+  const FE = cargarFrontend({ silenciarConsola: true });
+  const X = FE.sandbox;
+  X.Date = Date;                    // el reloj congelado de esta suite (31-jul-2026)
+  const CAP = FE.captura;
+  const K4 = 4000000;
+  const SEM = { id: 'M', nombre: 'Sem', cedula: '', telefono: '', moneda: 'COP', trmAcordada: 0, montoOrigen: K4, montoCOP: K4, tasaMensual: 10,
+    plazoMeses: 8, modalidad: 'Capital + Intereses', frecuencia: 'Semanal', fechaInicio: '2026-07-28', diaPago: 28, estado: 'Activo', notas: '' };
+  // Como lo guarda el server: la decision del primer pago Y desde cuando corre el interes.
+  const conDecision = (loan, pp, modo) => Object.assign(conPrimerPago(loan, pp, modo),
+    { fechaInicioIntereses: resolverPrimerPago(loan, pp, modo).fechaInicioIntereses });
+  const liq = (loan, o) => X.computeLiquidacion(loan, buildSchedule(loan), Object.assign({ hasta: '2026-07-31' }, o));
+
+  R.seccion('M1 — la casilla cobra UN periodo de la frecuencia: la cuota normal del motor');
+  const s = liq(SEM, { incluyeProxMes: true });
+  R.check('M1 semanal: una semana (92.379), no un mes (400.000), y el total la suma',
+    s.intProxMes === 92379 && s.intExtra === 92379 && s.total === K4 + 92379 && s.frecuencia === 'Semanal' && !s.periodoIrregular, s);
+  R.eq('M1 ...es exactamente el interes de la cuota del motor', s.intProxMes, buildSchedule(SEM)[0].interesPeriodo);
+  const QUI = Object.assign({}, SEM, { frecuencia: 'Quincenal' });
+  R.eq('M1 quincenal: una quincena (200.000)', liq(QUI, { incluyeProxMes: true }).intExtra, 200000);
+  const rowsS = buildSchedule(SEM);
+  const pagadaS = rowsS.map(p => p.cuotaN === 1 ? Object.assign({}, p, { estadoPago: 'Pagado' }) : p);
+  const tras1 = X.computeLiquidacion(SEM, pagadaS, { incluyeProxMes: true, hasta: '2026-08-05' });
+  R.check('M1 tras pagar la cuota 1: el periodo en curso es el de la cuota 2, sobre el capital que queda',
+    tras1.capitalPendiente === rowsS[1].saldoInicial && tras1.intProxMes === rowsS[1].interesPeriodo, { liq: tras1.intProxMes, motor: rowsS[1].interesPeriodo });
+  let difCorto = 0, difMensual = 0, nM1 = 0;
+  for (const f of ['Semanal', 'Quincenal', 'Mensual']) for (const cap of [1, 999, 50000, 349660, 1000000, 3333333, 4000000, 10000000, 87654321])
+    for (const t of [1.5, 3, 5, 7.25, 10, 11.165, 12.93, 20]) {
+      nM1++;
+      const loan = Object.assign({}, SEM, { frecuencia: f, tasaMensual: t, montoOrigen: cap, montoCOP: cap });
+      const v = liq(loan, {}).intProxMes;
+      if (f === 'Mensual') { if (v !== Math.round(cap * t / 100)) difMensual++; }
+      else if (v !== buildSchedule(loan)[0].interesPeriodo || v !== Math.round(cap * tasaPeriodo(t / 100, f))) difCorto++;
+    }
+  R.check('M1 barrido de ' + nM1 + ' casos: semanal y quincenal = la cuota normal del motor; mensual, la expresion de siempre bit a bit',
+    difCorto === 0 && difMensual === 0, { difCorto, difMensual });
+
+  R.seccion('M2 — periodo irregular en curso en un semanal: los dias con el periodo de la semana');
+  const trS = conDecision(SEM, '2026-08-09', 'proporcional');
+  const t3 = liq(trS, { incluyeProxMes: true });
+  R.check('M2 van 3 de 12 dias: se cobran 3 con la formula por periodo (' + interesPeriodoParcial(K4, 10, 'Semanal', 3) + ', no dias/30)',
+    t3.periodoIrregular && t3.diasPeriodo === 12 && t3.diasCobrados === 3 && t3.intExtra === interesPeriodoParcial(K4, 10, 'Semanal', 3) &&
+    t3.intExtra !== Math.round(K4 * 0.1 * 3 / 30), t3);
+  R.eq('M2 todo el periodo (12 dias) = el interes de la cuota transitoria del motor (158.364)',
+    liq(trS, { incluyeProxMes: true, diasProxMes: 12 }).intExtra, buildSchedule(trS)[0].interesPeriodo);
+
+  R.seccion('M3 — dentro de los dias perdonados no se cobra interes por adelantado');
+  const grS = conDecision(SEM, '2026-08-09', 'completo');
+  const g = liq(grS, { incluyeProxMes: true });
+  R.check('M3 ANTI-VACIO: el semanal perdona del 28-jul al 2-ago', grS.fechaInicioIntereses === '2026-08-02' && grS.periodoIrregularN === null);
+  R.check('M3 liquidar el 31-jul (en la gracia), aunque se marque la casilla: 0 de interes, total = capital',
+    g.enGracia && g.graciaHasta === '2026-08-02' && g.intProxMes === 0 && g.intExtra === 0 && !g.incluyeProxMes && g.total === K4, g);
+  R.check('M3 el ultimo dia de gracia (1-ago) tambien es 0', liq(grS, { incluyeProxMes: true, hasta: '2026-08-01' }).intExtra === 0);
+  const g2 = liq(grS, { incluyeProxMes: true, hasta: '2026-08-02' });
+  R.check('M3 desde el 2-ago corre el interes: la casilla vuelve a cobrar una semana', !g2.enGracia && g2.intExtra === 92379, g2);
+  R.check('M3 dentro de la gracia no se pregunta por el interes antes de imprimir el cronograma',
+    X.preguntaInteresMes(grS, buildSchedule(grS)) === false && X.preguntaInteresMes(SEM, buildSchedule(SEM)) === true);
+  const fin = conDecision(Object.assign({}, SEM, { fechaInicio: '2026-07-01', diaPago: 1 }), '2026-08-05', 'completo');
+  R.check('M3 con la gracia ya vencida (termino el 29-jul) se vuelve a preguntar',
+    fin.fechaInicioIntereses === '2026-07-29' && X.preguntaInteresMes(fin, buildSchedule(fin)) === true && !liq(fin, {}).enGracia);
+  const MEN = { id: 'MM', nombre: 'Men', moneda: 'COP', trmAcordada: 0, montoOrigen: 10000000, montoCOP: 10000000, tasaMensual: 5, plazoMeses: 6,
+    modalidad: 'Capital + Intereses', frecuencia: 'Mensual', fechaInicio: '2026-07-20', diaPago: 20, estado: 'Activo' };
+  const grM = conDecision(MEN, '2026-10-15', 'completo');
+  R.check('M3 mensual perdonando hasta el 15-sep: 0 en la gracia (31-jul), un mes (500.000) despues (20-sep)',
+    liq(grM, { incluyeProxMes: true }).intExtra === 0 && liq(grM, { incluyeProxMes: true, hasta: '2026-09-20' }).intExtra === 500000);
+  // El escenario del Bug #73: dentro de la gracia se cambio el dia de cobro, y la transitoria
+  // arranca donde arranca el interes. Mientras dure la gracia tampoco hay dias que cobrar.
+  const cambio = Object.assign({}, grM, { diaPago: 25, fechaBaseCronograma: '2026-09-01', periodoIrregularN: 1, periodoIrregularDesde: '2026-09-15', periodoIrregularMora: 0 });
+  const cEn = liq(cambio, { incluyeProxMes: true, diasProxMes: 20, hasta: '2026-08-10' });
+  const cDes = liq(cambio, { incluyeProxMes: true, hasta: '2026-09-25' });
+  R.check('M3 con el dia cambiado dentro de la gracia: 0 antes del 15-sep (aunque se pidan 20 dias); despues, los dias desde el 15-sep',
+    cEn.enGracia && !cEn.periodoIrregular && cEn.intExtra === 0 && cDes.periodoIrregular && cDes.diasTranscurridos === 10 &&
+    cDes.intExtra === 166667, { cEn: cEn.intExtra, cDes: [cDes.diasTranscurridos, cDes.intExtra] });
+  R.check('M3 un prestamo sin gracia (interes desde el inicio) nunca esta "en gracia"',
+    !liq(Object.assign({}, SEM, { fechaInicioIntereses: '2026-07-28' }), {}).enGracia &&
+    !liq(Object.assign({}, SEM, { fechaInicioIntereses: '2026-07-28' }), { hasta: '2026-07-20' }).enGracia);
+
+  // Render de un modal real con su estado sembrado por posicion (patron de la seccion I).
+  const pintar = n => {
+    if (n === null || n === undefined || typeof n === 'boolean') return null;
+    if (typeof n === 'string' || typeof n === 'number') return String(n);
+    if (Array.isArray(n)) return n.map(pintar).filter(x => x !== null);
+    if (typeof n.type === 'function') return pintar(n.type(Object.assign({}, n.props, { children: n.children })));
+    return { tag: n.type, props: n.props, kids: (n.children || []).map(pintar).filter(x => x !== null) };
+  };
+  const textos = (n, out) => {
+    out = out || [];
+    if (typeof n === 'string') { out.push(n); return out; }
+    if (Array.isArray(n)) { n.forEach(x => textos(x, out)); return out; }
+    if (n && n.kids) n.kids.forEach(x => textos(x, out));
+    return out;
+  };
+  const nodos = (n, tag, out) => {
+    out = out || [];
+    if (Array.isArray(n)) { n.forEach(x => nodos(x, tag, out)); return out; }
+    if (n && n.kids) { if (n.tag === tag) out.push(n); n.kids.forEach(x => nodos(x, tag, out)); }
+    return out;
+  };
+  const useStateOrig = X.useState;
+  const montar = (Comp, props, estado) => {
+    let i = 0;
+    X.useState = init => { const k = i++; const v = (k < estado.length && estado[k] !== undefined) ? estado[k] : (typeof init === 'function' ? init() : init); return [v, () => {}]; };
+    try {
+      const arbol = pintar({ type: Comp, props, children: [] });
+      return { t: textos(arbol), todo: textos(arbol).join(' '), inputs: nodos(arbol, 'input'), botones: nodos(arbol, 'button') };
+    } finally { X.useState = useStateOrig; }
+  };
+  const boton = (v, re) => v.botones.filter(b => re.test(textos(b).join('')))[0];
+  const pdfDe = fn => { CAP.pdfs.length = 0; fn(); return CAP.pdfs[0] ? CAP.pdfs[0].html : ''; };
+
+  R.seccion('M4 — Liquidar deuda, el cronograma y el Estado de Liquidacion (REALES) en un semanal');
+  const confirmados = [];
+  const propsS = { loan: SEM, pays: buildSchedule(SEM), datosPago: '', onConfirm: (id, monto, intExtra) => { confirmados.push({ monto, intExtra }); }, onClose: () => {} };
+  const lq = montar(X.LiquidarModal, propsS, [true, false, false, null]);      // [incluyeProxMes, liqSending, pdfBusy, dias]
+  R.check('M4 la casilla: "Cobrar el interes de la semana en curso  + $ 92.379", explicando que esa semana aun no se facturo',
+    lq.t.indexOf('Cobrar el interes de la semana en curso') !== -1 && lq.t.indexOf('+ ' + X.fmt(92379)) !== -1 &&
+    lq.todo.indexOf('asi que esa semana aun no se ha facturado') !== -1 && lq.todo.indexOf('mes en curso') === -1, lq.todo.slice(0, 600));
+  R.check('M4 el desglose: "Interes de la semana en curso", una semana al 10% mensual, y el total',
+    lq.t.indexOf('Interes de la semana en curso') !== -1 && lq.t.indexOf('Una semana de interes al 10% mensual sobre el capital pendiente') !== -1 &&
+    lq.t.indexOf(X.fmt(K4 + 92379)) !== -1);
+  boton(lq, /Confirmar liquidacion/).props.onClick();
+  await new Promise(r => setTimeout(r, 0));
+  R.check('M4 confirmar manda el capital y UNA semana de interes', confirmados.length === 1 && confirmados[0].monto === K4 && confirmados[0].intExtra === 92379, confirmados);
+  const est = pdfDe(() => boton(lq, /Generar PDF de liquidacion/).props.onClick());
+  R.check('M4 el Estado de Liquidacion dice lo mismo', est.indexOf('Interes de la semana en curso') !== -1 &&
+    est.indexOf('Una semana de interes al 10% mensual sobre el capital pendiente') !== -1 && est.indexOf(X.fmt(K4 + 92379)) !== -1 &&
+    est.indexOf('mes en curso') === -1, est.length);
+  const lqQ = montar(X.LiquidarModal, Object.assign({}, propsS, { loan: QUI, pays: buildSchedule(QUI) }), [true, false, false, null]);
+  R.check('M4 quincenal: "Cobrar el interes de la quincena en curso  + $ 200.000"',
+    lqQ.t.indexOf('Cobrar el interes de la quincena en curso') !== -1 && lqQ.t.indexOf('+ ' + X.fmt(200000)) !== -1 &&
+    lqQ.t.indexOf('Una quincena de interes al 10% mensual sobre el capital pendiente') !== -1);
+  const cr = montar(X.CronogramaPdfModal, { loan: SEM, pays: buildSchedule(SEM), onClose: () => {} }, [true, false, null]);
+  R.check('M4 el modal del cronograma: misma casilla y la misma cifra en el valor que va al PDF',
+    cr.t.indexOf('Cobrar el interes de la semana en curso') !== -1 && cr.todo.indexOf('+ interes de la semana en curso ' + X.fmt(92379)) !== -1, cr.todo.slice(0, 500));
+  const crono = pdfDe(() => boton(cr, /Descargar PDF/).props.onClick());
+  R.check('M4 el PDF del cronograma: "+ interes de la semana en curso" y el total con una semana',
+    crono.indexOf('+ interes de la semana en curso') !== -1 && crono.indexOf(X.fmt(K4 + 92379)) !== -1, crono.length);
+
+  R.seccion('M5 — en la gracia: el aviso en vez de la casilla, en pantalla y en el papel');
+  const propsG = Object.assign({}, propsS, { loan: grS, pays: buildSchedule(grS) });
+  const confG = [];
+  propsG.onConfirm = (id, monto, intExtra) => { confG.push({ monto, intExtra }); };
+  const lg = montar(X.LiquidarModal, propsG, [true, false, false, null]);   // aun con la casilla "marcada" en el estado
+  R.check('M5 Liquidar deuda: sin casilla; el aviso dice que hay gracia y desde cuando corre el interes',
+    lg.inputs.filter(n => n.props.type === 'checkbox').length === 0 && lg.t.indexOf('Dias de gracia: sin interes en curso') !== -1 &&
+    lg.todo.indexOf('el interes empieza a correr el ' + X.fmtD('2026-08-02')) !== -1, lg.todo.slice(0, 600));
+  R.check('M5 ...total = capital, sin fila de interes', lg.t.indexOf(X.fmt(K4)) !== -1 && lg.t.indexOf('Interes de la semana en curso') === -1);
+  boton(lg, /Confirmar liquidacion/).props.onClick();
+  await new Promise(r => setTimeout(r, 0));
+  R.check('M5 confirmar manda 0 de interes adelantado', confG.length === 1 && confG[0].monto === K4 && confG[0].intExtra === 0, confG);
+  const estG = pdfDe(() => boton(lg, /Generar PDF de liquidacion/).props.onClick());
+  R.check('M5 el Estado de Liquidacion explica la gracia en la vigencia y no cobra interes',
+    estG.indexOf('El credito esta en sus dias de gracia: el interes empieza a correr el ' + X.fmtD('2026-08-02')) !== -1 &&
+    estG.indexOf('Interes de la semana en curso') === -1 && estG.indexOf(X.fmt(K4)) !== -1, estG.length);
+  const crG = montar(X.CronogramaPdfModal, { loan: grS, pays: buildSchedule(grS), onClose: () => {} }, [true, false, null]);
+  R.check('M5 si el modal del cronograma se abre igual, muestra el aviso y el valor sin interes',
+    crG.t.indexOf('Dias de gracia: sin interes en curso') !== -1 && crG.todo.indexOf('interes de la semana') === -1 && crG.t.indexOf(X.fmt(K4)) !== -1);
+
+  R.seccion('M6 — contra el server real: la caja cuadra con lo que mostro el modal');
+  const S = await arrancar(bdVacia('periodo-irregular-m'));
+  try {
+    const BASE_S = { montoOrigen: K4, montoCOP: K4, tasaMensual: 10, plazoMeses: 8, modalidad: 'Capital + Intereses', frecuencia: 'Semanal',
+      fechaInicio: '2026-07-28', diaPago: 28 };
+    for (const [desc, extra, interes] of [['semanal sin gracia, con la casilla', {}, 92379],
+      ['semanal dentro de la gracia', { primerPago: '2026-08-09', primerPeriodo: 'completo' }, 0]]) {
+      const id = await crear(S, Object.assign({ nombre: 'M6' }, BASE_S, extra));
+      const lDb = loanDe(S, id), pDb = filasDe(S, id);
+      const Lb = X.computeLiquidacion(lDb, pDb, { incluyeProxMes: true, hasta: '2026-07-31' });
+      const liqPre = X.computeLiquidacion(lDb, pDb, {});
+      const r = await pedir(S, 'POST', '/api/loans/' + id + '/abono', { monto: Lb.capitalPendiente, fecha: '2026-07-31', observaciones: '',
+        liquidar: true, intExtra: Lb.intExtra, recalcMode: 'mantener' });
+      const tras = filasDe(S, id);
+      const caja = tras.reduce((acc, p) => acc + X.cobrosDe(p).reduce((a, e) => a + e.cop, 0), 0);
+      R.check('M6 ' + desc + ': interes ' + X.fmt(interes) + ', Finalizado, y la caja es EXACTAMENTE el total del modal (' + X.fmt(K4 + interes) + ')',
+        r.status === 200 && Lb.intExtra === interes && loanDe(S, id).estado === 'Finalizado' && caja === Lb.total && Lb.total === K4 + interes,
+        { st: r.status, intExtra: Lb.intExtra, caja, total: Lb.total });
+      if (interes > 0) {
+        const paz = pdfDe(() => X.generateReciboAbono(loanDe(S, id), tras, { monto: Lb.capitalPendiente, fecha: '2026-07-31', liquidar: true, intExtra: Lb.intExtra,
+          pre: { saldo: K4, saldoCaja: K4, cuota: pDb[0].cuotaTotal, cuotas: pDb.length, intereses: 0, plazo: 8, liq: liqPre } }));
+        R.check('M6 el Paz y Salvo rotula el interes como de la SEMANA en curso, con una semana de interes',
+          paz.indexOf('Interes de la semana en curso') !== -1 && paz.indexOf('Una semana de interes al 10% mensual') !== -1 &&
+          paz.indexOf('Interes del mes en curso') === -1 && paz.indexOf(X.fmt(K4 + interes)) !== -1, paz.length);
+      }
+    }
+  } finally { await cerrar(S); }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1296,6 +1724,231 @@ async function seccionJ() {
     /liquidar:!!liquidar,intExtra:intExtra\|\|0\}\)/.test(app));
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// K — 3.3.0, FASE 1: EL PERIODO DE CADA FRECUENCIA Y LA GRACIA
+// ═════════════════════════════════════════════════════════════════════════════
+// El prorrateo se mide con el periodo del prestamo: `interes de una cuota normal x dias / dias del
+// periodo` (7 en semanal, 14 en quincenal, 30 en mensual). En MENSUAL tiene que quedar intacto
+// bit a bit: es la formula de los prestamos ya publicados. En semanal y quincenal, cobrar
+// exactamente un periodo de dias tiene que costar la cuota normal del motor, al peso.
+// Y la gracia: perdonar los dias muertos no cambia el cronograma (la cuota 1 sale normal), pero
+// se guarda desde cuando corre el interes, y el cambio de dia de pago tiene que respetarlo.
+async function seccionK() {
+  const { resolverPrimerPago, interesPeriodoParcial, diasDelPeriodo, inicioPeriodoRegular, interesDeTramo,
+    primerPagoRegular, tasaPeriodo } = engine;
+  const Fr = cargarFront();
+  const CORTAS = ['Semanal', 'Quincenal'];
+  const SALDOS = [1, 999, 50000, 349660, 1000000, 3333333, 4000000, 10000000, 87654321];
+  const TASAS = [1.5, 3, 5, 7.25, 10, 11.165, 12.93, 20];
+
+  R.seccion('K1 — la formula: interes de una cuota normal x dias / dias del periodo');
+  let mensualDistinto = 0, nM = 0;
+  for (const s of SALDOS) for (const t of [0].concat(TASAS)) for (let d = 0; d <= 120; d++) {
+    nM++;
+    const base = interesDeTramo(s, t, d);
+    if (interesPeriodoParcial(s, t, 'Mensual', d) !== base || interesPeriodoParcial(s, t, undefined, d) !== base) mensualDistinto++;
+  }
+  R.check('K1 MENSUAL intacto: identico a la formula de siempre en ' + nM + ' casos (tambien sin frecuencia)', mensualDistinto === 0, mensualDistinto);
+  let periodoDistinto = 0, nP = 0, propMal = [];
+  for (const f of CORTAS) for (const s of SALDOS) for (const t of TASAS) {
+    const fila = buildSchedule({ id: 'K', nombre: 'k', modalidad: 'Capital + Intereses', frecuencia: f, tasaMensual: t, plazoMeses: 6,
+      montoCOP: s, fechaInicio: '2026-08-01', diaPago: 1 })[0];
+    nP++;
+    const P = diasDelPeriodo(f);
+    if (interesPeriodoParcial(fila.saldoInicial, t, f, P) !== fila.interesPeriodo) periodoDistinto++;
+    for (const k of [2, 3]) {
+      const v = interesPeriodoParcial(fila.saldoInicial, t, f, k * P);
+      if (Math.abs(v - k * fila.interesPeriodo) > 1) propMal.push({ f, s, t, k, v, cuota: fila.interesPeriodo });
+    }
+  }
+  R.check('K1 SEMANAL y QUINCENAL: un periodo entero de dias = la cuota normal del motor, al peso (' + nP + ' casos)', periodoDistinto === 0, periodoDistinto);
+  R.check('K1 dos y tres periodos de dias = dos y tres cuotas normales (a 1 peso de redondeo)', propMal.length === 0, propMal.slice(0, 3));
+  R.check('K1 la semana son 7 dias, la quincena 14 (el calendario del motor) y el mes 30',
+    diasDelPeriodo('Semanal') === 7 && diasDelPeriodo('Quincenal') === 14 && diasDelPeriodo('Mensual') === 30 && diasDelPeriodo(undefined) === 30);
+  const K4 = 4000000;
+  R.eq('K1 semanal, 7 dias sobre 4.000.000 al 10% = 1 semana normal', interesPeriodoParcial(K4, 10, 'Semanal', 7), 92379);
+  R.eq('K1 semanal, 12 dias = 158.364 (con dias/30 eran 160.000)', interesPeriodoParcial(K4, 10, 'Semanal', 12), 158364);
+  R.eq('K1 quincenal, 14 dias = 1 quincena normal', interesPeriodoParcial(K4, 10, 'Quincenal', 14), 200000);
+  R.eq('K1 quincenal, 20 dias = 285.714 (con dias/30 eran 266.667)', interesPeriodoParcial(K4, 10, 'Quincenal', 20), 285714);
+  R.eq('K1 mensual, 45 dias = 600.000 (sin cambios)', interesPeriodoParcial(K4, 10, 'Mensual', 45), 600000);
+  R.eq('K1 la tasa del periodo del motor es la que usa la formula', tasaPeriodo(0.1, 'Semanal'), 0.1 / 4.33);
+
+  R.seccion('K2 — el primer pago en Semanal y Quincenal (resolvedor puro)');
+  const SEM = { id: 'S', nombre: 's', modalidad: 'Capital + Intereses', frecuencia: 'Semanal', tasaMensual: 10, plazoMeses: 8,
+    montoCOP: K4, montoOrigen: K4, moneda: 'COP', fechaInicio: '2026-07-28', diaPago: 28 };
+  const regS = resolverPrimerPago(SEM, '2026-08-04', 'completo');
+  R.check('K2 semanal a 7 dias es el pago regular: sin base, sin transitoria, interes desde el inicio',
+    !regS.irregular && regS.fechaBaseCronograma === null && regS.periodoIrregularN === null && regS.fechaInicioIntereses === '2026-07-28', regS);
+  R.check('K2 ...y el cronograma queda byte a byte como el de siempre',
+    JSON.stringify(buildSchedule(conPrimerPago(SEM, '2026-08-04', 'completo'))) === JSON.stringify(buildSchedule(SEM)));
+  const normalS = buildSchedule(Object.assign({}, SEM, { fechaBaseCronograma: '2026-08-02' }));
+  const pS = resolverPrimerPago(SEM, '2026-08-09', 'proporcional');
+  const rowsP = buildSchedule(conPrimerPago(SEM, '2026-08-09', 'proporcional'));
+  R.check('K2 semanal a 12 dias, COBRAR los dias: base una semana antes, transitoria e interes desde el inicio',
+    pS.irregular && pS.fechaBaseCronograma === '2026-08-02' && pS.periodoIrregularN === 1 && pS.periodoIrregularDesde === '2026-07-28' &&
+    pS.fechaInicioIntereses === '2026-07-28', pS);
+  R.check('K2 la cuota 1 vence el 9-ago con 12 dias de interes (158.364) y el mismo capital de una cuota normal',
+    rowsP[0].fechaPago === '2026-08-09' && rowsP[0].interesPeriodo === 158364 && rowsP[0].abonoCapital === normalS[0].abonoCapital, clave(rowsP[0]));
+  R.check('K2 las demas cuotas caen cada 7 dias e identicas a las de un cronograma normal',
+    rowsP.slice(1).every((p, i) => p.fechaPago === sumarDias('2026-08-09', 7 * (i + 1)) &&
+      JSON.stringify(clave(p)) === JSON.stringify(clave(normalS[i + 1]))), rowsP.map(clave));
+  R.eq('K2 el capital suma exactamente lo prestado', rowsP.reduce((s, p) => s + p.abonoCapital, 0), K4);
+  const cS = resolverPrimerPago(SEM, '2026-08-09', 'completo');
+  const rowsC = buildSchedule(conPrimerPago(SEM, '2026-08-09', 'completo'));
+  R.check('K2 semanal a 12 dias, PERDONAR: sin transitoria, y el interes arranca una semana antes del pago (5 dias de gracia)',
+    cS.irregular && cS.periodoIrregularN === null && cS.fechaBaseCronograma === '2026-08-02' && cS.fechaInicioIntereses === '2026-08-02', cS);
+  R.check('K2 ...la cuota 1 cobra UNA semana normal (92.379) y el cronograma es el normal, byte a byte',
+    rowsC[0].interesPeriodo === 92379 && JSON.stringify(rowsC) === JSON.stringify(normalS), clave(rowsC[0]));
+  R.eq('K2 lo que se perdona es exactamente la diferencia (65.985)', rowsP[0].interesPeriodo - rowsC[0].interesPeriodo, 65985);
+  const corto = resolverPrimerPago(SEM, '2026-08-01', 'completo');
+  R.check('K2 semanal a 4 dias con "periodo completo": cobra la semana, pero el interes corre desde el inicio (sin gracia)',
+    corto.fechaInicioIntereses === '2026-07-28' && buildSchedule(conPrimerPago(SEM, '2026-08-01', 'completo'))[0].interesPeriodo === 92379, corto);
+  R.eq('K2 semanal a 4 dias proporcional: 52.788', buildSchedule(conPrimerPago(SEM, '2026-08-01', 'proporcional'))[0].interesPeriodo, 52788);
+  const QUI = Object.assign({}, SEM, { frecuencia: 'Quincenal' });
+  R.check('K2 quincenal a 14 dias es el pago regular', !resolverPrimerPago(QUI, '2026-08-11', 'proporcional').irregular);
+  const qP = buildSchedule(conPrimerPago(QUI, '2026-08-17', 'proporcional'));
+  const qC = resolverPrimerPago(QUI, '2026-08-17', 'completo');
+  const qCrows = buildSchedule(conPrimerPago(QUI, '2026-08-17', 'completo'));
+  R.check('K2 quincenal a 20 dias: cobrar = 285.714; la cuota 2 cae 14 dias despues',
+    qP[0].fechaPago === '2026-08-17' && qP[0].interesPeriodo === 285714 && qP[1].fechaPago === '2026-08-31', qP.slice(0, 2).map(clave));
+  R.check('K2 quincenal a 20 dias, perdonar: quincena normal (200.000) y el interes desde el 3-ago (6 dias de gracia)',
+    qCrows[0].interesPeriodo === 200000 && qC.fechaInicioIntereses === '2026-08-03' && qC.fechaBaseCronograma === '2026-08-03', qC);
+  const INT = Object.assign({}, SEM, { modalidad: 'Intereses', plazoMeses: 0 });
+  const iP = buildSchedule(conPrimerPago(INT, '2026-08-09', 'proporcional'));
+  R.check('K2 tambien en Intereses semanal: 12 dias (158.364) y sin capital', iP[0].interesPeriodo === 158364 && iP[0].abonoCapital === 0, clave(iP[0]));
+  const MEN = Object.assign({}, SEM, { frecuencia: 'Mensual' });
+  R.eq('K2 mensual, perdonar con 79 dias muertos: el interes arranca un mes antes del pago', resolverPrimerPago(MEN, '2026-10-15', 'completo').fechaInicioIntereses, '2026-09-15');
+  R.eq('K2 mensual, cobrar los dias: el interes corre desde el inicio', resolverPrimerPago(MEN, '2026-10-15', 'proporcional').fechaInicioIntereses, '2026-07-28');
+  R.check('K2 el mes anterior se acota a fin de mes (31-mar -> 28-feb; bisiesto 29-feb)',
+    inicioPeriodoRegular('2027-03-31', 'Mensual') === '2027-02-28' && inicioPeriodoRegular('2028-03-31', 'Mensual') === '2028-02-29' &&
+    inicioPeriodoRegular('2026-12-15', 'Mensual') === '2026-11-15');
+
+  // Barrido: 3 frecuencias x primer pago de 1 a 120 dias x las dos opciones, contra el motor y
+  // contra el espejo del frontend.
+  const fallas = [];
+  let nB = 0;
+  for (const f of ['Semanal', 'Quincenal', 'Mensual']) for (let d = 1; d <= 120; d++) for (const modo of ['proporcional', 'completo']) {
+    nB++;
+    const loan = Object.assign({}, SEM, { frecuencia: f });
+    const pp = sumarDias(loan.fechaInicio, d);
+    let r;
+    try { r = resolverPrimerPago(loan, pp, modo); } catch (e) { fallas.push({ f, d, modo, e: e.message }); continue; }
+    const conD = conPrimerPago(loan, pp, modo);
+    const rows = buildSchedule(conD);
+    const P = diasDelPeriodo(f);
+    const normal = Math.round(K4 * tasaPeriodo(0.1, f));
+    const malo = m => fallas.push({ f, d, modo, m, fila: clave(rows[0]), r });
+    if (rows[0].fechaPago !== pp) { malo('fecha'); continue; }
+    const siguiente = f === 'Mensual' ? mesSiguiente(pp, +pp.slice(8, 10)) : sumarDias(pp, P);
+    if (rows[1].fechaPago !== siguiente) malo('segunda cuota');
+    if (!r.irregular) {
+      if (pp !== primerPagoRegular(loan.fechaInicio, f) || r.fechaInicioIntereses !== loan.fechaInicio || rows[0].interesPeriodo !== normal) malo('regular');
+      continue;
+    }
+    if (modo === 'proporcional') {
+      if (rows[0].interesPeriodo !== interesPeriodoParcial(K4, 10, f, d)) malo('interes de los dias');
+      if (Fr.interesTransitoria(conD, rows[0].saldoInicial, pp) !== rows[0].interesPeriodo) malo('espejo del frontend');
+      if (r.fechaInicioIntereses !== loan.fechaInicio) malo('arranque proporcional');
+    } else {
+      const arranque = inicioPeriodoRegular(pp, f);
+      if (rows[0].interesPeriodo !== normal) malo('periodo normal');
+      if (r.fechaInicioIntereses !== (arranque > loan.fechaInicio ? arranque : loan.fechaInicio)) malo('arranque perdonar');
+    }
+  }
+  R.check('K2 barrido: ' + nB + ' primeros pagos (3 frecuencias, 1 a 120 dias, cobrar y perdonar) con fecha, cuota siguiente, interes, arranque y espejo correctos',
+    fallas.length === 0 && nB === 720, fallas.slice(0, 3));
+
+  R.seccion('K3 — el espejo del frontend: la misma formula y la misma tasa del periodo');
+  let espejoMal = 0, nE = 0;
+  for (const f of ['Semanal', 'Quincenal', 'Mensual', undefined]) for (const s of SALDOS) for (const t of TASAS) for (const d of [1, 4, 7, 12, 14, 20, 45, 90]) {
+    nE++;
+    if (Fr.interesPeriodoParcial(s, t, f, d) !== interesPeriodoParcial(s, t, f, d)) espejoMal++;
+  }
+  R.check('K3 interesPeriodoParcial: frontend == motor en ' + nE + ' casos', espejoMal === 0, espejoMal);
+  R.check('K3 _tasaPeriodo (calculo.js) delega en la tasa del periodo de dominio y coincide con el motor',
+    ['Semanal', 'Quincenal', 'Mensual'].every(f => Fr._tasaPeriodo(0.1, f) === tasaPeriodo(0.1, f) && Fr.tasaDelPeriodo(0.1, f) === tasaPeriodo(0.1, f)) &&
+    Fr.diasDelPeriodo('Quincenal') === 14);
+  const filas = Fr.filasPreview(K4, tasaPeriodo(0.1, 'Semanal'), 8, false, Fr._pmt(tasaPeriodo(0.1, 'Semanal'), 8, K4));
+  const conDS = Object.assign({}, conPrimerPago(SEM, '2026-08-09', 'proporcional'), { id: 'S' });
+  Fr.aplicarTransitoriaPreview(conDS, filas, 1, K4, [{ id: 'S-1', fechaPago: '2026-08-09' }]);
+  R.check('K3 el preview del cobro aplica la transitoria semanal igual que el motor (interes y cuota)',
+    filas[0].interes === rowsP[0].interesPeriodo && filas[0].cuota === rowsP[0].cuotaTotal, { preview: filas[0], motor: clave(rowsP[0]) });
+
+  R.seccion('K4 — la columna fechaInicioIntereses: migracion');
+  const pFix = copiaDeProduccion('periodo-irregular-k');
+  let S0 = await arrancar(pFix);
+  await cerrar(S0);
+  const conteo = () => leer(pFix, d => d.prepare("SELECT COUNT(*) n, SUM(CASE WHEN fechaInicioIntereses = fechaInicio THEN 1 ELSE 0 END) igual, " +
+    "SUM(CASE WHEN fechaInicioIntereses IS NULL OR fechaInicioIntereses = '' THEN 1 ELSE 0 END) vacio FROM loans").get());
+  const c1 = conteo();
+  R.check('K4 ANTI-VACIO + migracion: los ' + c1.n + ' prestamos del fixture arrancan su interes en su fecha de inicio, ninguno vacio',
+    c1.n >= 20 && c1.igual === c1.n && c1.vacio === 0, c1);
+  const victima = leer(pFix, d => d.prepare('SELECT id, fechaInicio FROM loans ORDER BY id LIMIT 1').get());
+  escribir(pFix, d => d.prepare('UPDATE loans SET fechaInicioIntereses = NULL WHERE id = ?').run(victima.id));
+  S0 = await arrancar(pFix);
+  await cerrar(S0);
+  const c2 = conteo();
+  R.check('K4 idempotente, y rellena la fila que una version anterior de la app dejara vacia', c2.igual === c1.n && c2.vacio === 0 &&
+    leer(pFix, d => d.prepare('SELECT fechaInicioIntereses f FROM loans WHERE id = ?').get(victima.id)).f === victima.fechaInicio, c2);
+
+  const S = await arrancar(bdVacia('periodo-irregular-k'));
+  try {
+    R.seccion('K5 — contra el server real: alta y edicion');
+    const BASE_S = { montoOrigen: K4, montoCOP: K4, tasaMensual: 10, plazoMeses: 8, modalidad: 'Capital + Intereses',
+      frecuencia: 'Semanal', fechaInicio: '2026-07-28', diaPago: 28 };
+    const idP = await crear(S, Object.assign({ nombre: 'K5p', primerPago: '2026-08-09', primerPeriodo: 'proporcional' }, BASE_S));
+    const idC = await crear(S, Object.assign({ nombre: 'K5c', primerPago: '2026-08-09', primerPeriodo: 'completo' }, BASE_S));
+    const idN = await crear(S, Object.assign({ nombre: 'K5n' }, BASE_S));
+    R.check('K5 semanal cobrando los dias: guarda la transitoria y el interes desde el inicio; cuota 1 de 158.364',
+      loanDe(S, idP).fechaInicioIntereses === '2026-07-28' && loanDe(S, idP).periodoIrregularN === 1 && filaDe(S, idP, 1).interesPeriodo === 158364, loanDe(S, idP));
+    R.check('K5 semanal perdonando: sin transitoria, interes desde el 2-ago y cuota 1 de una semana (92.379)',
+      loanDe(S, idC).fechaInicioIntereses === '2026-08-02' && loanDe(S, idC).periodoIrregularN === null && filaDe(S, idC, 1).interesPeriodo === 92379 &&
+      filaDe(S, idC, 1).fechaPago === '2026-08-09', loanDe(S, idC));
+    R.check('K5 sin primer pago elegido: el interes corre desde el inicio', loanDe(S, idN).fechaInicioIntereses === '2026-07-28');
+    const logs = ((await pedir(S, 'GET', '/api/activity')).json || []).map(a => a.mensaje);
+    R.check('K5 el historial deja constancia de la gracia', logs.some(m => /K5c.*5 dias de gracia/.test(m)), logs.slice(0, 4));
+    const todos = (await pedir(S, 'GET', '/api/loans')).json || [];
+    R.check('K5 GET /api/loans expone la columna', todos.length >= 3 && todos.every(l => typeof l.fechaInicioIntereses === 'string'));
+    const editar = (id, extra) => pedir(S, 'PUT', '/api/loans/' + id, Object.assign({}, BASE_LOAN, BASE_S, { nombre: 'K5e' }, extra));
+    await editar(idP, { primerPago: '2026-08-09', primerPeriodo: 'completo' });
+    R.check('K5 editar sin actividad recalcula la decision: ahora perdona (interes desde el 2-ago, cuota de una semana)',
+      loanDe(S, idP).fechaInicioIntereses === '2026-08-02' && loanDe(S, idP).periodoIrregularN === null && filaDe(S, idP, 1).interesPeriodo === 92379, loanDe(S, idP));
+    await editar(idN, { fechaInicio: '2026-07-29' });
+    R.check('K5 sin gracia, cambiar la fecha de inicio arrastra el arranque del interes', loanDe(S, idN).fechaInicioIntereses === '2026-07-29');
+    await editar(idC, { fechaInicio: '2026-07-30' });
+    R.check('K5 con gracia, la conserva (sigue el 2-ago, despues del nuevo inicio)', loanDe(S, idC).fechaInicioIntereses === '2026-08-02');
+    await editar(idC, { fechaInicio: '2026-08-05' });
+    R.check('K5 ...pero el interes nunca arranca antes del prestamo', loanDe(S, idC).fechaInicioIntereses === '2026-08-05');
+    const idA = await crear(S, Object.assign({ nombre: 'K5a', primerPago: '2026-08-09', primerPeriodo: 'completo' }, BASE_S));
+    await pagar(S, idA, 1);
+    const r = await editar(idA, { primerPago: '2026-08-09', primerPeriodo: 'proporcional' });
+    R.check('K5 con actividad el calendario queda congelado, incluido el arranque del interes',
+      r.status === 200 && loanDe(S, idA).fechaInicioIntereses === '2026-08-02' && loanDe(S, idA).periodoIrregularN === null, loanDe(S, idA));
+
+    R.seccion('K6 — cambiar el dia de pago respeta la gracia (Bug #73)');
+    const BASE_M = { montoOrigen: 10000000, montoCOP: 10000000, tasaMensual: 5, plazoMeses: 6, modalidad: 'Capital + Intereses',
+      frecuencia: 'Mensual', fechaInicio: '2026-07-20', diaPago: 20 };
+    const idG = await crear(S, Object.assign({ nombre: 'K6g', primerPago: '2026-10-15', primerPeriodo: 'completo' }, BASE_M));
+    R.check('K6 ANTI-VACIO: prestamo mensual con gracia (interes desde el 15-sep) y cuota 1 de un mes el 15-oct',
+      loanDe(S, idG).fechaInicioIntereses === '2026-09-15' && filaDe(S, idG, 1).fechaPago === '2026-10-15' && filaDe(S, idG, 1).interesPeriodo === 500000, loanDe(S, idG));
+    const cd = await pedir(S, 'POST', '/api/loans/' + idG + '/cambiar-dia-pago', { nuevoDia: 25 });
+    const lG = loanDe(S, idG), fG = filaDe(S, idG, 1);
+    R.check('K6 el periodo de la nueva cuota 1 corre desde el arranque del interes (15-sep), no desde el prestamo (20-jul)',
+      cd.status === 200 && lG.periodoIrregularDesde === '2026-09-15' && fG.fechaPago === '2026-10-25', { st: cd.status, desde: lG.periodoIrregularDesde, fila: clave(fG) });
+    R.eq('K6 ...y cobra 40 dias (666.667), no los 97 que incluian la gracia (1.616.667)', fG.interesPeriodo, 666667);
+    const idSin = await crear(S, Object.assign({ nombre: 'K6s', primerPago: '2026-10-15', primerPeriodo: 'proporcional' }, BASE_M));
+    await pedir(S, 'POST', '/api/loans/' + idSin + '/cambiar-dia-pago', { nuevoDia: 25 });
+    R.check('K6 control sin gracia: como siempre, el periodo corre desde el prestamo', loanDe(S, idSin).periodoIrregularDesde === '2026-07-20');
+    const head = async id => ((await pedir(S, 'GET', '/api/undo?scopeTipo=loan&scopeId=' + id)).json || []).filter(u => u.estado === 'disponible')[0];
+    const u = await head(idG);
+    await pedir(S, 'POST', '/api/undo/' + u.id, {});
+    const lU = loanDe(S, idG);
+    R.check('K6 deshacer el cambio de dia devuelve el prestamo con su gracia intacta y la cuota de un mes',
+      u.accion === 'cambio-fecha' && lU.periodoIrregularN === null && lU.fechaInicioIntereses === '2026-09-15' &&
+      filaDe(S, idG, 1).interesPeriodo === 500000 && filaDe(S, idG, 1).fechaPago === '2026-10-15', { u: u && u.accion, l: lU });
+  } finally { await cerrar(S); }
+}
+
 
 // ═════════════════════════════════════════════════════════════════════════════
 // D — GUARDA ESTATICA
@@ -1336,6 +1989,9 @@ async function seccion(nombre, fn) {
   await seccion('H', seccionH);
   await seccion('I', seccionI);
   await seccion('J', seccionJ);
+  await seccion('K', seccionK);
+  await seccion('L', seccionL);
+  await seccion('M', seccionM);
   await seccion('D', seccionD);
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

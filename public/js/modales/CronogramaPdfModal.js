@@ -19,7 +19,7 @@
 import { Modal } from '../componentes/base.js';
 import { Ico } from '../componentes/iconos.js';
 import { CheckInteresMes } from '../componentes/CheckInteresMes.js';
-import { computeLiquidacion, proximoVencimiento } from '../core/dominio.js';
+import { computeLiquidacion, proximoVencimiento, periodoEnCursoDe } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { nowStr } from '../core/ui.js';
@@ -44,7 +44,7 @@ export function CronogramaPdfModal(props){
     (L.intMora>0?' + mora '+fmt(L.intMora):'')+
     (L.moraConsolidada>0?' + mora consolidada '+fmt(L.moraConsolidada):'')+
     (L.partialPend>0?' \u2212 parciales '+fmt(L.partialPend):'')+
-    (L.intExtra>0?(L.periodoIrregular?' + interes de '+L.diasCobrados+' dias':' + interes del mes en curso')+' '+fmt(L.intExtra):'');
+    (L.intExtra>0?(L.periodoIrregular?' + interes de '+L.diasCobrados+' dias':' + interes '+periodoEnCursoDe(L.frecuencia))+' '+fmt(L.intExtra):'');
 
   function descargar(){
     if(busy) return;

@@ -30,7 +30,7 @@ import { h, useState, useEffect, useMemo, useCallback, createRoot } from './core
 import { API, setErrorHandler } from './core/api.js';
 import { fmt, fmtD } from './core/format.js';
 import { properCase, nowStr, addDays, payMatchesQuery } from './core/ui.js';
-import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe, preguntaInteresMes } from './core/dominio.js';
+import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe, preguntaInteresMes, periodoEnCursoDe } from './core/dominio.js';
 import { Ico } from './componentes/iconos.js';
 import { generateCronogramaPDF } from './pdf/cronograma.js';
 import { generateReciboCorte } from './pdf/recibo-corte.js';
@@ -1028,7 +1028,8 @@ function App(){
       onClose:function(){setCronoPdfModal(null);}}),
     liquidarModal&&h(LiquidarModal,{loan:liquidarModal.loan,pays:pays,datosPago:cfg.datos_pago,
       onClose:function(){if(liquidarModal.fromDeudor){setDebtorModal(liquidarModal.fromDeudor);} setLiquidarModal(null);},
-      onConfirm:function(loanId,monto,intExtra){var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados proximo mes: $'+Math.round(intExtra).toLocaleString('es-CO'):'');
+      onConfirm:function(loanId,monto,intExtra){var fqLiq=liquidarModal.loan.frecuencia; // 3.3.0: semana o quincena en curso
+        var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados '+((fqLiq==='Semanal'||fqLiq==='Quincenal')?periodoEnCursoDe(fqLiq):'proximo mes')+': $'+Math.round(intExtra).toLocaleString('es-CO'):'');
       // v1.18.1: se devuelve la promesa para que el modal de liquidacion libere su guarda.
       // Hasta ahora la unica proteccion era accidental: setDebtorModal(null) desmontaba el
       // modal en el mismo click, y el backend rechazaba el 2o intento porque el saldo ya

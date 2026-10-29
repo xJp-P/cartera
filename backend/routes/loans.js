@@ -40,6 +40,7 @@ const express = require('express');
 // Predicados de clasificacion de filas de `payments` (core/ids.js): unica fuente
 // de verdad de que es un abono. Antes cada sitio repetia el literal indexOf('-ab-').
 const { esAbono } = require('../core/ids');
+const { diasEntre } = require('../core/engine');
 
 module.exports = function crearRutasLoans(ctx) {
   const {
@@ -82,6 +83,8 @@ module.exports = function crearRutasLoans(ctx) {
     loan.periodoIrregularN = null;
     loan.periodoIrregularDesde = null;
     loan.periodoIrregularMora = 0;
+    // 3.3.0: desde cuando corre el interes. Sin decision de primer pago, el dia del prestamo.
+    loan.fechaInicioIntereses = loan.fechaInicio || null;
     const pidePrimerPago = req.body.primerPago !== undefined && req.body.primerPago !== null && req.body.primerPago !== '';
     let primerPeriodo = null;
     if (pidePrimerPago) {
@@ -96,6 +99,7 @@ module.exports = function crearRutasLoans(ctx) {
       loan.periodoIrregularN = primerPeriodo.periodoIrregularN;
       loan.periodoIrregularDesde = primerPeriodo.periodoIrregularDesde;
       loan.periodoIrregularMora = primerPeriodo.periodoIrregularMora;
+      loan.fechaInicioIntereses = primerPeriodo.fechaInicioIntereses;
     }
     // ── Interes Diario: sembrar el cache del devengo ──────────────────────────
     // El credito abierto nace SIN cortes, asi que el tramo abierto corre desde
@@ -137,11 +141,11 @@ module.exports = function crearRutasLoans(ctx) {
         INSERT INTO loans(id,nombre,cedula,telefono,moneda,montoOrigen,trmAcordada,montoCOP,
           tasaMensual,plazoMeses,modalidad,fechaInicio,diaPago,estado,notas,frecuencia,fechaDevolucion,comprasUSD,gananciaFija,
           fechaUltimoCorte,interesAcumuladoPend,
-          fechaBaseCronograma,periodoIrregularN,periodoIrregularDesde,periodoIrregularMora)
+          fechaBaseCronograma,periodoIrregularN,periodoIrregularDesde,periodoIrregularMora,fechaInicioIntereses)
         VALUES (@id,@nombre,@cedula,@telefono,@moneda,@montoOrigen,@trmAcordada,@montoCOP,
           @tasaMensual,@plazoMeses,@modalidad,@fechaInicio,@diaPago,@estado,@notas,@frecuencia,@fechaDevolucion,@comprasUSD,@gananciaFija,
           @fechaUltimoCorte,@interesAcumuladoPend,
-          @fechaBaseCronograma,@periodoIrregularN,@periodoIrregularDesde,@periodoIrregularMora)
+          @fechaBaseCronograma,@periodoIrregularN,@periodoIrregularDesde,@periodoIrregularMora,@fechaInicioIntereses)
       `).run(loan);
       insertSchedule(schedule);
     })();
@@ -151,9 +155,10 @@ module.exports = function crearRutasLoans(ctx) {
     }
     // El primer periodo irregular queda en el historial: cambia cuanto cobra la cuota 1.
     if (primerPeriodo && primerPeriodo.irregular && schedule.length > 0) {
+      const graciaDias = diasEntre(loan.fechaInicio, loan.fechaInicioIntereses);
       detalleLog += ' [primer pago ' + schedule[0].fechaPago + (loan.periodoIrregularN
         ? ', interes de ' + transitoriaDe(loan, schedule[0]).dias + ' dias'
-        : ', primer mes completo') + ']';
+        : ', primer periodo completo' + (graciaDias > 0 ? ', ' + graciaDias + ' dias de gracia' : '')) + ']';
     }
     logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + detalleLog);
     res.status(201).json(loan);
@@ -199,6 +204,8 @@ module.exports = function crearRutasLoans(ctx) {
     loan.periodoIrregularN = prevLoan.periodoIrregularN || null;
     loan.periodoIrregularDesde = prevLoan.periodoIrregularDesde || null;
     loan.periodoIrregularMora = prevLoan.periodoIrregularMora || 0;
+    // 3.3.0: desde cuando corre el interes. Sigue la misma regla que el resto del calendario.
+    loan.fechaInicioIntereses = prevLoan.fechaInicioIntereses || prevLoan.fechaInicio || loan.fechaInicio || null;
     const pidePrimerPago = req.body.primerPago !== undefined && req.body.primerPago !== null && req.body.primerPago !== '';
     if (conActividad) {
       if (prevLoan.diaPago !== undefined) loan.diaPago = prevLoan.diaPago;
@@ -209,9 +216,18 @@ module.exports = function crearRutasLoans(ctx) {
       loan.periodoIrregularN = pp.periodoIrregularN;
       loan.periodoIrregularDesde = pp.periodoIrregularDesde;
       loan.periodoIrregularMora = pp.periodoIrregularMora;
+      loan.fechaInicioIntereses = pp.fechaInicioIntereses;
     } else if (+loan.periodoIrregularN === 1 && loan.periodoIrregularDesde === prevLoan.fechaInicio &&
                loan.fechaInicio && loan.fechaInicio !== prevLoan.fechaInicio) {
       loan.periodoIrregularDesde = loan.fechaInicio;
+    }
+    // Sin actividad y sin decision de primer pago en el body (clientes de la API), un cambio de
+    // fecha de inicio arrastra el arranque del interes si no habia gracia; si la habia, la gracia
+    // se conserva, pero el interes nunca puede arrancar antes del prestamo.
+    if (!conActividad && !pidePrimerPago && loan.fechaInicio && loan.fechaInicio !== prevLoan.fechaInicio) {
+      const habiaGracia = !!prevLoan.fechaInicioIntereses && prevLoan.fechaInicioIntereses > prevLoan.fechaInicio;
+      loan.fechaInicioIntereses = (habiaGracia && prevLoan.fechaInicioIntereses > loan.fechaInicio)
+        ? prevLoan.fechaInicioIntereses : loan.fechaInicio;
     }
     const prevAbonos = prev.filter(p => esAbono(p));
     const prevRegulares = prev.filter(p => !esAbono(p));
@@ -280,7 +296,8 @@ module.exports = function crearRutasLoans(ctx) {
             tasaMensual=@tasaMensual, plazoMeses=@plazoMeses, modalidad=@modalidad,
             fechaInicio=@fechaInicio, diaPago=@diaPago, estado=@estado, notas=@notas, frecuencia=@frecuencia, fechaDevolucion=@fechaDevolucion, comprasUSD=@comprasUSD, gananciaFija=@gananciaFija,
             fechaBaseCronograma=@fechaBaseCronograma, periodoIrregularN=@periodoIrregularN,
-            periodoIrregularDesde=@periodoIrregularDesde, periodoIrregularMora=@periodoIrregularMora
+            periodoIrregularDesde=@periodoIrregularDesde, periodoIrregularMora=@periodoIrregularMora,
+            fechaInicioIntereses=@fechaInicioIntereses
           WHERE id=@id
         `).run(loan);
         // Borrar SOLO Pendientes — Pagadas, Mora y abonos quedan intactos
@@ -1051,11 +1068,16 @@ module.exports = function crearRutasLoans(ctx) {
     if (saldoActual <= 0) throw new ClientError('El prestamo no tiene saldo pendiente');
 
     // CUOTA TRANSITORIA: prorratear el interes de la 1a cuota a los DIAS REALES de su periodo.
-    // Referencia = fechaPago de la ultima cuota PAGADA (o fechaInicio si aun no hay pagos).
-    // diasReales = nuevaFecha - referencia. La mora ya cubre su propio periodo (se suma aparte).
+    // Referencia = fechaPago de la ultima cuota PAGADA o, si aun no hay pagos, el dia desde el
+    // que corre el interes. diasReales = nuevaFecha - referencia. La mora ya cubre su propio
+    // periodo (se suma aparte).
+    // 3.3.0 (Fase 1, Bug #73): antes la referencia sin pagos era `fechaInicio`, asi que en un
+    // prestamo creado perdonando los dias muertos, cambiar el dia antes del primer pago volvia a
+    // cobrar esos dias. `fechaInicioIntereses` es la gracia que se pacto; el fallback a
+    // `fechaInicio` solo cubre una fila que la migracion no haya podido rellenar.
     const lastSettledDate = pagadasRegulares.length > 0
       ? pagadasRegulares.map(p => p.fechaPago).sort().slice(-1)[0]
-      : loan.fechaInicio;
+      : (loan.fechaInicioIntereses || loan.fechaInicio);
     // Regla "NUNCA ADELANTAR EL COBRO": si el nuevo dia dejaria la 1a cuota ANTES de la que ya
     // estaba agendada (mismo mes, dia menor), se rueda la base del cronograma +1 mes -> el pago
     // queda PROYECTADO HACIA ADELANTE (aplazamiento). Se persiste en fechaBaseCronograma para que

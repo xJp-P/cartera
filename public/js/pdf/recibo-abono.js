@@ -16,7 +16,7 @@
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
-import { saldoConCaja, pendienteDeCuota, computeLiquidacion, esDiario } from '../core/dominio.js';
+import { saldoConCaja, pendienteDeCuota, computeLiquidacion, esDiario, periodoEnCursoDe, detalleInteresEnCurso } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 
 // ── Recibo de Abono a Capital (v1.17.0) ──────────────────────────────────────
@@ -245,10 +245,11 @@ export function generateReciboAbono(loan, allPays, opts) {
     }
     if (uExtra > 0) {
       // 3.2.0 — si el periodo era irregular, lo cobrado fueron DIAS de ese periodo, no un mes.
-      filasD += dsgRow(liq.periodoIrregular ? 'Interes del periodo en curso' : 'Interes del mes en curso',
+      // 3.3.0 — en Semanal y Quincenal el periodo en curso es una semana o una quincena.
+      filasD += dsgRow(liq.periodoIrregular ? 'Interes del periodo en curso' : 'Interes ' + periodoEnCursoDe(loan.frecuencia),
         liq.periodoIrregular
           ? 'periodo del ' + fmtD(liq.periodoDesde) + ' al ' + fmtD(liq.periodoHasta) + ' &nbsp;&middot;&nbsp; pactado con el deudor'
-          : (+loan.tasaMensual || 0) + '% sobre el capital pendiente &nbsp;&middot;&nbsp; pactado con el deudor',
+          : detalleInteresEnCurso(loan.frecuencia, loan.tasaMensual) + ' &nbsp;&middot;&nbsp; pactado con el deudor',
         fmtUni(uExtra), C.amber);
     }
     dsgHTML = '<div class="ab-st">Como se aplico tu pago</div><div class="ab-dsg">' + filasD + '</div>';

@@ -140,6 +140,22 @@ function aplicarEsquema(db) {
   try { db.exec("ALTER TABLE loans ADD COLUMN periodoIrregularMora REAL DEFAULT 0"); } catch(_){}
   migrarTransitoriasLegacy(db);
 
+  // ── 3.3.0 (Fase 1): desde cuando corre el interes del primer periodo ──────────
+  // `fechaInicioIntereses` es la DECISION de la gracia: cuando el formulario perdona los dias
+  // muertos, el interes no arranca el dia del prestamo sino un periodo antes del primer pago, y
+  // los dias de en medio no se cobran nunca. El motor no la necesita (la cuota 1 ya sale normal),
+  // pero si quien tiene que saber desde cuando se debe interes: el cambio de dia de pago (que
+  // antes contaba desde la fecha de inicio y cobraba los dias perdonados) y la liquidacion.
+  // NUNCA NULL, misma doctrina que `fechaUltimoCorte`: un lector que olvidara el fallback le
+  // pasaria null a `diasEntre`, que devuelve 0 sin quejarse. Todo prestamo existente arranca con
+  // su fecha de inicio (instruccion del PO). El UPDATE es idempotente y se limita solo: tambien
+  // rellena las filas que una version anterior de la app pudiera insertar sobre esta misma BD.
+  try { db.exec("ALTER TABLE loans ADD COLUMN fechaInicioIntereses TEXT"); } catch(_){}
+  try {
+    db.exec("UPDATE loans SET fechaInicioIntereses = fechaInicio " +
+            "WHERE (fechaInicioIntereses IS NULL OR fechaInicioIntereses = '') AND fechaInicio IS NOT NULL");
+  } catch (e) { console.error('[schema] relleno de fechaInicioIntereses fallo:', e && e.message); }
+
   // ── Migración v1.18.2 (Bug #30): normalizar abonoCapital en modalidad 'Prestamo' ──
   // Historicamente buildSchedule escribia abonoCapital=0 en la cuota unica de un Prestamo (0% interes),
   // asi que la formula canonica de saldo (origCOP - Σ abonoCapital de Pagadas) no contaba el capital
