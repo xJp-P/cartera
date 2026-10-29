@@ -47,6 +47,27 @@ const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
 
+// ── RELOJ: calendario CONGELADO, reloj de ids INTACTO ────────────────────────
+// La suite corre contra un fixture ESTATICO (tests/fixture/cartera-fixture.db), cuya fecha
+// de referencia es el 31-jul-2026: todo lo que guarda ocurre en o antes de ese dia (el
+// ultimo cobro, el ultimo corte del credito abierto, las 3 entradas del journal de undo, la
+// actividad), y a esa fecha ninguna cuota Pendiente esta vencida, asi que la auto-mora
+// reproduce exactamente los estados guardados. Con el reloj real la suite caducaba sola:
+// el 2026-09-21 el prestamo de E7 se quedo sin cuotas Pendientes y el 2026-10-29 las
+// entradas del journal cumplieron los 90 dias de retencion y la poda las borro.
+// Mismo instante y misma tecnica que `pdf-render`, `cascada-cobro` y `periodo-irregular`:
+// se congela `new Date()` (que es de donde leen la fecha `hoyStr` del backend, la
+// auto-mora y, desde que dejo de preguntarsela a SQLite, la poda del journal). `Date.now()`
+// se deja REAL a proposito: de el salen los ids nuevos (`genId`, `${loanId}-ab-${ts}`, que se
+// insertan con INSERT OR REPLACE) y la normalizacion "ids de las ultimas 2 horas" del golden.
+// Se instala ANTES de `require('../backend/server')`: el backend usa el `Date` global.
+const RelojReal = Date;
+const INSTANTE_FIJO = new RelojReal(2026, 6, 31, 12, 0, 0);   // 31-jul-2026 12:00 local
+global.Date = class extends RelojReal {
+  constructor(...args) { if (args.length === 0) super(INSTANTE_FIJO.getTime()); else super(...args); }
+  static now() { return RelojReal.now(); }   // ids unicos: NO se congela
+};
+
 const { Reporter }          = require('./lib/report');
 const { copiaDeProduccion } = require('./lib/db');
 const createApp             = require('../backend/server');
@@ -1575,6 +1596,35 @@ async function main() {
   console.log('modo: ' + (ACTUALIZAR ? 'ACTUALIZAR BASELINES' : 'comparar contra baseline'));
   const podadas = podarCopiasViejas();
   if (podadas) console.log('copias temporales viejas eliminadas: ' + podadas);
+  console.log('reloj congelado en ' + INSTANTE_FIJO.toString() + ' (fecha de referencia del fixture)');
+
+  // ── EL RELOJ DE LA SUITE ───────────────────────────────────────────────────
+  // Si el congelamiento dejara de alcanzar al backend, la suite volveria a depender del dia en
+  // que se corre y caducaria sola. Se afirma sobre los helpers REALES del backend.
+  R.seccion('Reloj — calendario congelado en la fecha del fixture, ids con el reloj real');
+  const util = require('../backend/core/util');
+  R.eq('el backend lee "hoy" del reloj congelado (31-jul-2026)', util.hoyStr(), '2026-07-31');
+  R.eq('la poda del journal calcula su corte de 90 dias con ese mismo reloj', util.ahoraLocal(-90), '2026-05-02 12:00:00');
+  R.check('Date.now() sigue siendo el real (ids unicos y su normalizacion)', Math.abs(Date.now() - RelojReal.now()) < 1000 &&
+    Date.now() !== INSTANTE_FIJO.getTime());
+  // Ninguna DECISION del backend puede volver a preguntarle la hora a SQLite: ese reloj no se
+  // puede fijar desde aqui. Escribir una marca de tiempo con datetime('now') esta bien (el
+  // golden las normaliza); compararse contra ella, no.
+  const decisionesSQLite = [];
+  (function recorrer(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { recorrer(p); continue; }
+      if (!/\.js$/.test(e.name)) continue;
+      fs.readFileSync(p, 'utf8').split(/\r?\n/).forEach((l, i) => {
+        if (/^\s*\/\//.test(l)) return;
+        if (/WHERE[^;]*datetime\('now'/i.test(l) || /[<>]=?\s*datetime\('now'/i.test(l)) {
+          decisionesSQLite.push(path.relative(path.join(__dirname, '..'), p) + ':' + (i + 1));
+        }
+      });
+    }
+  })(path.join(__dirname, '..', 'backend'));
+  R.check('ninguna decision del backend compara contra datetime(\'now\') de SQLite', decisionesSQLite.length === 0, decisionesSQLite.join('\n'));
 
   await faseLectura();
   await faseEscritura();

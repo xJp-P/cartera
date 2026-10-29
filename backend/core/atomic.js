@@ -28,6 +28,7 @@
 
 const crypto = require('crypto');
 const { ClientError } = require('./errors');
+const { ahoraLocal } = require('./util');
 const { genId } = require('./util');
 
 function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
@@ -94,8 +95,12 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
 
   // Retencion: conservar las 200 mas recientes y descartar > 90 dias (lo que ocurra
   // primero). Borra el TAIL (mas viejo), nunca el head, asi que no rompe el LIFO.
+  // El corte de 90 dias se calcula con el reloj de JS (`ahoraLocal`), el mismo de `hoyStr` y
+  // la auto-mora, y no con datetime('now') de SQLite. En la app es la misma hora local en el
+  // mismo formato, asi que poda exactamente lo mismo; la diferencia es que un solo reloj
+  // gobierna todas las decisiones, y una prueba que lo fija ya no ve caducar el journal.
   function podarJournal() {
-    db.prepare("DELETE FROM undo_journal WHERE created_at < datetime('now','localtime','-90 days')").run();
+    db.prepare('DELETE FROM undo_journal WHERE created_at < ?').run(ahoraLocal(-90));
     db.prepare("DELETE FROM undo_journal WHERE rowid NOT IN (SELECT rowid FROM undo_journal ORDER BY rowid DESC LIMIT 200)").run();
   }
 

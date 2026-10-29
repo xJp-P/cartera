@@ -14,9 +14,22 @@ function hoyStr() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// Fecha y hora local "YYYY-MM-DD HH:MM:SS" desplazada `dias` dias: el mismo formato que
+// escribe SQLite con datetime('now','localtime'), leida del MISMO reloj que `hoyStr`.
+// La usa la poda del journal de undo: antes le preguntaba la hora a SQLite, que es el
+// unico sitio del backend donde una DECISION dependia de un reloj distinto al de JS
+// (y por eso ninguna suite podia fijarlo).
+function ahoraLocal(dias) {
+  const d = new Date();
+  if (dias) d.setDate(d.getDate() + dias);
+  const dd = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + dd(d.getMonth() + 1) + '-' + dd(d.getDate()) + ' ' +
+         dd(d.getHours()) + ':' + dd(d.getMinutes()) + ':' + dd(d.getSeconds());
+}
+
 // ID unico estilo timestamp + sufijo aleatorio (mismo formato que los IDs de loans)
 function genId() {
   return Date.now().toString() + Math.random().toString(36).slice(2, 6);
 }
 
-module.exports = { hoyStr, genId };
+module.exports = { hoyStr, ahoraLocal, genId };
