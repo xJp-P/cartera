@@ -170,8 +170,8 @@ function RzHero(p){
       h('div', { className: 'rz-insight' }, partes)),
     h('div', { className: 'rz-acciones' },
       btn('plus', 'Nuevo préstamo', p.onNewLoan, true),
-      btn('dollar', 'Cobros', function(){ p.onNav('pagos'); }),
-      btn('users', 'Deudores', function(){ p.onNav('deudores'); }),
+      btn('dollar', 'Cobros', function(){ p.onNav('cobros'); }),
+      btn('users', 'Cartera', function(){ p.onNav('cartera'); }),
       btn('calc', 'Calculadora', function(){ p.onNav('calculadora'); })));
 }
 
@@ -205,7 +205,7 @@ function RzKpis(p){
       sub: h('span', null, 'Últimos 12 meses: ', h('b', null, fmt(M.ganancia12)), ' · histórico ', h('b', null, rzCompacto(met.totalInteresesRecibidos))),
       spark: M.meses.slice(0, 12).map(function(m){ return m.ganancia; }), sparkColor: 'var(--gold)' }),
     met.mora && met.mora.length
-      ? h(RzKpi, { icono: 'alert', acento: 'red', label: 'En mora', valor: fmt(met.totalMora), valColor: 'var(--red)', onClick: function(){ p.onNav('pagos'); },
+      ? h(RzKpi, { icono: 'alert', acento: 'red', label: 'En mora', valor: fmt(met.totalMora), valColor: 'var(--red)', onClick: function(){ p.onNav('cobros', 'vencido'); },
           sub: h('span', null, h('b', null, met.mora.length + ' cuotas'), ' de ' + M.deudoresMora + ' deudor' + (M.deudoresMora > 1 ? 'es' : '') + ' · la más antigua hace ', h('b', null, M.diasMoraMax + ' días')),
           barra: M.vivo > 0 ? met.totalMora / M.vivo * 100 : 0, barraColor: 'var(--red)',
           pie: (M.vivo > 0 ? Math.round(met.totalMora / M.vivo * 1000) / 10 : 0) + '% del capital en la calle' })

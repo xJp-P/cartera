@@ -1,340 +1,121 @@
-// public/js/vistas/CarteraView.js — Lista de prestamos con cronograma expandible y abonos intercalados.
+// public/js/vistas/CarteraView.js — Cartera: deudores y prestamos en una sola pantalla (3.5.0;
+// fusiona las viejas pestanas Cartera y Deudores).
 //
-// Extraido de `app.js` en la Etapa 3 (B7) del refactor. Codigo VERBATIM.
+// A la izquierda, las personas (con sus prestamos activos como chips), ordenadas por lo que
+// necesita atencion primero. A la derecha, el panel del deudor elegido. El prestamo deja de vivir
+// en dos lugares (la tarjeta de Cartera y el perfil del deudor): vive en uno.
 //
-// El estado global sigue viviendo en `App` y baja por PROPS, igual que antes.
-// Sin Context API y sin store: eso seria rediseno, no refactor.
+// `props.foco` ({nombre, loanId, payId}) abre un deudor concreto: es como llegan aqui los nombres
+// del Resumen y la busqueda global. App remonta la vista (key) con cada foco nuevo.
 
+import { DeudorPanel } from '../componentes/DeudorPanel.js';
 import { Ico } from '../componentes/iconos.js';
-import { GananciaBimonetaria, notaCOPGanancia } from '../componentes/GananciaBimonetaria.js';
-import { imputarCobros, saldoConCaja, esDiario, progresoCapital, estadoDiario, gananciaDePrestamo } from '../core/dominio.js';
-import { copToUsd, fmt, fmtD, fmtN, fmtUSD } from '../core/format.js';
-import { h, useState } from '../core/react.js';
-import { freqLabel, nowStr } from '../core/ui.js';
-import { esAbono } from '../core/ids.js';
+import { fmt, fmtN, fmtUSD } from '../core/format.js';
+import { modeloDeudor, opModalidad, opIniciales, opCorta, opRel, opPesoEstado } from '../core/operacion.js';
+import { h, useEffect, useMemo, useState } from '../core/react.js';
+import { addDays, properCase } from '../core/ui.js';
 
-// ── Cartera ───────────────────────────────────────────────────────────────────
+var CT_FILTROS = [['activos', 'Activos'], ['mora', 'En mora'], ['semana', 'Cobran esta semana'], ['usd', 'En dólares'], ['inactivos', 'Sin préstamos activos'], ['todos', 'Todos']];
+var CT_ORDEN = [['prioridad', 'Lo urgente primero'], ['saldo', 'Mayor saldo'], ['nombre', 'Nombre'], ['recientes', 'Préstamo más reciente']];
+
 export function CarteraView(props){
-  var loans=props.loans,pays=props.pays,onAdd=props.onAdd,onEdit=props.onEdit,onDelete=props.onDelete,onAbono=props.onAbono,onCobro=props.onCobro,onCorte=props.onCorte,onForceClose=props.onForceClose;
-  var es=useState(null); var exp=es[0]; var setExp=es[1];
-  var ft=useState('Activo'); var filtro=ft[0]; var setFiltro=ft[1];
-  var active=loans.filter(function(l){return l.estado==='Activo';});
-  // "Finalizados" agrupa los dos estados terminales: éxito (Finalizado) y cierre forzoso (Cancelado)
-  var finalized=loans.filter(function(l){return l.estado==='Finalizado'||l.estado==='Cancelado';});
-  var filtered=filtro==='Activo'?active:finalized;
-  return h('div',{className:'fade-in',style:{padding:16}},
-    h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
-      h('div',null,
-        h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)'}},'Mis Prestamos'),
-        h('div',{style:{fontSize:13,color:'var(--text2)',marginTop:2}},active.length+' activos - '+fmt(active.reduce(function(s,l){
-          // Fase 3: total del encabezado = SALDO CON CAJA APLICADA, via el unico helper. Antes
-          // replicaba inline el saldo del MOTOR y quedaba congelado ante un parcial en curso,
-          // contradiciendo al KPI del Inicio y a la lista de Deudores.
-          return s+saldoConCaja(l,pays.filter(function(p){return p.prestamoId===l.id;}));
-        },0)))),
-      h('button',{onClick:onAdd,style:{display:'flex',alignItems:'center',gap:6,background:'var(--green2)',color:'white',border:'none',borderRadius:10,padding:'8px 14px',fontSize:14,fontWeight:600,cursor:'pointer'}},
-        h(Ico,{name:'plus',size:15,color:'white'}),' Nuevo')),
-    h('div',{style:{display:'flex',gap:6,marginBottom:12}},
-      [['Activo','Activos',active.length],['Finalizados','Finalizados',finalized.length]].map(function(t){
-        var isActive=filtro===t[0];
-        return h('button',{key:t[0],onClick:function(){setFiltro(t[0]);},style:{flex:1,padding:'8px 0',borderRadius:10,border:'1.5px solid '+(isActive?(t[0]==='Activo'?'var(--green)':'var(--blue)'):'var(--border)'),background:isActive?(t[0]==='Activo'?'var(--green-bg)':'var(--blue-bg)'):'transparent',color:isActive?(t[0]==='Activo'?'var(--green)':'var(--blue)'):'var(--text3)',fontSize:13,fontWeight:isActive?700:500,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:5}},
-          t[1],h('span',{style:{background:isActive?'rgba(255,255,255,.12)':'var(--bg3)',padding:'1px 6px',borderRadius:99,fontSize:11,fontWeight:700}},t[2]));
-      })),
-    loans.length===0&&h('div',{style:{textAlign:'center',padding:'48px 0',color:'var(--text3)'}},
-      h('div',{style:{marginBottom:12}},h(Ico,{name:'clipboard',size:44,color:'var(--text3)'})),
-      h('p',{style:{fontWeight:600,color:'var(--text2)'}},'Sin prestamos registrados')),
-    filtered.length===0&&loans.length>0&&h('div',{style:{textAlign:'center',padding:'40px 0',color:'var(--text3)'}},
-      h('div',{style:{marginBottom:10}},h(Ico,{name:filtro==='Finalizados'?'check':'clipboard',size:36,color:'var(--text3)'})),
-      h('p',{style:{fontWeight:600,color:'var(--text2)'}},'Sin prestamos '+(filtro==='Finalizados'?'finalizados':'activos'))),
-    h('div',{style:{display:'flex',flexDirection:'column',gap:10}},
-      filtered.slice().sort(function(a,b){return b.fechaInicio.localeCompare(a.fechaInicio);}).map(function(loan){
-        var lp=pays.filter(function(p){return p.prestamoId===loan.id;});
-        var regs=lp.filter(function(p){return !esAbono(p);});
-        var paid=regs.filter(function(p){return p.estadoPago==='Pagado';}).length;
-        var mora=regs.filter(function(p){return p.estadoPago==='En Mora';}).length;
-        var isExp=exp===loan.id;
-        // Barra de progreso por MONTO (considera abonos parciales):
-        var totEsp=regs.reduce(function(s,p){return s+p.cuotaTotal;},0);
-        var totRec=regs.reduce(function(s,p){
-          if(p.estadoPago==='Pagado') return s+p.cuotaTotal;
-          return s+(p.partialPaid||0);
-        },0);
-        // En un credito abierto `totRec/totEsp` da SIEMPRE 100%: todo corte nace 'Pagado',
-        // asi que cobrado == esperado mientras el capital sigue vivo. Medido en la app real:
-        // un credito con $600.000 pendientes marcaba la barra llena. Se mide el CAPITAL
-        // devuelto, que es lo unico que avanza hacia el cierre (el interes se cobra y se
-        // vuelve a generar: no es progreso).
-        var pct=esDiario(loan)?progresoCapital(loan,lp):(totEsp>0?Math.round(totRec/totEsp*100):0);
-        // Devengo al dia de HOY. Null en las otras 4 modalidades, de modo que cada bloque
-        // se enciende con `devD&&...` sin ramificar toda la tarjeta.
-        var devD=esDiario(loan)&&loan.estado==='Activo'?estadoDiario(loan,lp,nowStr()):null;
-        return h('div',{key:loan.id,className:'loan-card',style:{background:'var(--bg2)',borderRadius:14,border:'1px solid '+(mora>0?'var(--red-bd)':'var(--border)'),boxShadow:'var(--shadow)',overflow:'hidden',transition:'border-color .15s'}},
-          h('div',{style:{padding:'13px 14px 11px'}},
-            h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}},
-              h('div',{style:{flex:1,minWidth:0}},
-                h('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}},
-                  h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},loan.nombre),
-                  function(){
-                    var st=loan.estado;
-                    var bg=st==='Activo'?'var(--green-bg)':st==='Cancelado'?'var(--red-bg)':'var(--green-bg)';
-                    var co=st==='Activo'?'var(--green)':st==='Cancelado'?'var(--red)':'var(--green)';
-                    var ic=st==='Cancelado'?'x':st==='Finalizado'?'check':null;
-                    return h('span',{className:'tag',style:{background:bg,color:co,display:'inline-flex',alignItems:'center',gap:3}},
-                      ic&&h(Ico,{name:ic,size:10,color:co,sw:2.4}),st);
-                  }(),
-                  loan.modalidad==='Intereses'&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)'}},'\u221E Indefinido'),
-                  loan.modalidad==='Prestamo'&&h('span',{className:'tag',style:{background:'var(--yellow-bg)',color:'var(--yellow)'}},'Sin interes'),
-                  loan.modalidad==='Pago Unico'&&h('span',{className:'tag',style:{background:'var(--green-bg)',color:'var(--green)'}},'Pago unico'),
-                  esDiario(loan)&&h('span',{className:'tag',style:{background:'var(--blue-bg)',color:'var(--blue)'}},'Interes diario'),
-                  mora>0&&h('span',{className:'tag',style:{background:'var(--red-bg)',color:'var(--red)'}},mora+' mora')),
-                h('div',{style:{display:'flex',gap:8,marginTop:5,flexWrap:'wrap',alignItems:'center'}},
-                  h('span',{className:'mono',style:{fontSize:13,color:'var(--green)',fontWeight:600}},loan.moneda==='USD'?'$'+fmtN(loan.montoOrigen)+' USD | '+fmt(Math.round(loan.montoOrigen*loan.trmAcordada)):fmt(Math.round(loan.montoOrigen))),
-                  h('span',{style:{fontSize:13,color:'var(--border2)'}},' | '),
-                  h('span',{style:{fontSize:13,color:'var(--text2)'}},loan.tasaMensual+'% mens.'),
-                  // Un credito abierto no tiene frecuencia de cobro: lo que importa es
-                  // cuanto lleva devengando desde el ultimo movimiento.
-                  !esDiario(loan)&&h('span',{style:{fontSize:13,color:'var(--border2)'}},' | '),
-                  !esDiario(loan)&&h('span',{style:{fontSize:13,color:'var(--text2)'}},freqLabel(loan)),
-                  devD&&h('span',{style:{fontSize:13,color:'var(--border2)'}},' | '),
-                  devD&&h('span',{style:{fontSize:13,color:'var(--blue)',fontWeight:600}},'devengando hace '+devD.diasDesdeUltimoCorte+' dia'+(devD.diasDesdeUltimoCorte===1?'':'s'))),
-                // "N pagadas" no significa nada sin cronograma: se muestra el capital vivo.
-                h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:3}},
-                  devD?(loan.modalidad+' - capital vivo '+fmt(devD.capitalVivo)):(loan.modalidad+' - '+paid+' pagadas'))),
-              h('div',{style:{display:'flex',gap:5,flexShrink:0}},
-                // En un credito abierto el abono NO va por /abono (crearia una fila que el
-                // motor del devengo no mira): va por CORTE, que baja capital y liquida el
-                // interes en el mismo movimiento.
-                loan.estado==='Activo'&&h('button',{onClick:function(){if(esDiario(loan)&&onCorte){onCorte(loan);}else if(onCobro){onCobro(loan);}else{onAbono(loan);}},title:esDiario(loan)?'Registrar corte':'Registrar cobro',style:{padding:7,background:'var(--green-bg)',border:'none',borderRadius:8,cursor:'pointer',display:'flex'}},h(Ico,{name:esDiario(loan)?'receipt':'dollar',size:14,color:'var(--green)',sw:1.8})),
-                loan.estado==='Activo'&&onForceClose&&h('button',{onClick:function(){onForceClose(loan);},title:'Cerrar prestamo (forzar)',style:{padding:7,background:'var(--yellow-bg)',border:'none',borderRadius:8,cursor:'pointer',display:'flex'}},h(Ico,{name:'xCircle',size:14,color:'var(--yellow)',sw:1.8})),
-                h('button',{onClick:function(){onEdit(loan);},title:'Editar',style:{padding:7,background:'var(--blue-bg)',border:'none',borderRadius:8,cursor:'pointer',display:'flex'}},h(Ico,{name:'edit',size:14,color:'var(--blue)',sw:1.8})),
-                h('button',{onClick:function(){onDelete(loan.id);},title:'Eliminar prestamo',style:{padding:7,background:'var(--red-bg)',border:'none',borderRadius:8,cursor:'pointer',display:'flex'}},h(Ico,{name:'trash',size:14,color:'var(--red)',sw:1.8})))),
-            // Un credito abierto recien creado no tiene ninguna fila, pero SI tiene barra:
-            // sin ella la tarjeta cambiaba de forma segun tuviera cortes o no. Se muestra
-            // en 0%, que es su progreso real (nada de capital devuelto todavia).
-            (lp.length>0||esDiario(loan))&&(loan.modalidad==='Intereses'?h('div',{style:{marginTop:10,fontSize:10,color:'var(--text3)'}},paid+' cuotas pagadas \u2022 \u221E'):h('div',{style:{marginTop:10,display:'flex',alignItems:'center',gap:8}},
-              h('div',{style:{flex:1,height:5,background:'var(--bg4)',borderRadius:99,overflow:'hidden'}},
-                h('div',{style:{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#2ea043,#3fb950)',borderRadius:99}})),
-              h('span',{className:'mono',style:{fontSize:15,fontWeight:700,color:'var(--green)',flexShrink:0,minWidth:42,textAlign:'right'}},pct+'%'))),
-            // ── Credito abierto: lo que define al producto ────────────────────────
-            // El interes devengado y no cobrado no vive en ninguna fila —se deriva del
-            // tiempo transcurrido— asi que sin este bloque simplemente NO SE VE, y es
-            // justo lo que el cliente debe hoy. Se muestra la formula (dias x tasa/dia)
-            // porque es lo que permite al usuario verificar la cifra antes de cobrar.
-            devD&&h('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--border)'}},
-              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}},
-                h('div',{style:{minWidth:0}},
-                  h('div',{style:{fontSize:12,color:'var(--text2)',fontWeight:600}},'Interes devengado por cobrar'),
-                  h('div',{style:{fontSize:10.5,color:'var(--text3)',marginTop:2}},
-                    devD.diasDesdeUltimoCorte+' dia'+(devD.diasDesdeUltimoCorte===1?'':'s')+' x '+
-                    fmt(Math.round(devD.capitalVivo*(+loan.tasaMensual||0)/100/30))+'/dia'+
-                    (devD.fechaUltimoCorte?(' · ultimo corte '+fmtD(devD.fechaUltimoCorte)):' · sin cortes aun'))),
-                h('div',{style:{textAlign:'right',flexShrink:0}},
-                  h('div',{className:'mono',style:{fontSize:14,fontWeight:700,color:'var(--blue)'}},fmt(devD.interesPendiente)),
-                  loan.moneda==='USD'&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(devD.interesPendiente,loan.trmAcordada)))),
-              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,background:'var(--blue-bg)',borderRadius:8,padding:'8px 10px'}},
-                h('span',{style:{fontSize:12,color:'var(--text2)',fontWeight:600}},'Liquidar hoy'),
-                h('span',{className:'mono',style:{fontSize:15,fontWeight:700,color:'var(--blue)'}},fmt(devD.capitalVivo+devD.interesPendiente)))),
-            h('button',{onClick:function(){setExp(isExp?null:loan.id);},style:{marginTop:8,background:'none',border:'none',cursor:'pointer',color:'var(--green)',fontSize:12,fontWeight:600,display:'flex',alignItems:'center',gap:4,padding:0}},
-              isExp?'Ocultar cronograma':'Ver cronograma')),
-          isExp&&function(){
-            // Cronograma unificado con DebtorModal, el Recibo de Abono y el PDF:
-            // # / Vence / Interes / Abono a capital / Valor cuota / Saldo / Estado
-            var cuotasReg=lp.filter(function(p){return !esAbono(p);}).filter(function(p){return loan.modalidad!=='Intereses'||p.estadoPago!=='Pendiente';});
-            var abonos=lp.filter(function(p){return esAbono(p);});
-            var esUSD=loan.moneda==='USD';
-            var cronoItems=cuotasReg.slice().sort(function(a,b){return a.cuotaN-b.cuotaN;});
-            // Linea de tiempo unica: cuotas + abonos intercalados por fecha, con la MISMA regla
-            // de orden que generateCronogramaPDF (fechaPago y, a igualdad, cuotaN) para que la
-            // app y el PDF muestren siempre la misma secuencia.
-            var timeline=cronoItems.concat(abonos).sort(function(a,b){
-              var c=String(a.fechaPago).localeCompare(String(b.fechaPago));
-              return c!==0?c:a.cuotaN-b.cuotaN;
-            });
-            // La columna SALDO lee p.saldoFinal (saldo de CIERRE persistido por el backend),
-            // unificada con el Recibo de Abono y el cronograma PDF. Sustituye a la antigua
-            // "Deuda", que era un acumulador local del saldo de APERTURA: mostraba el saldo
-            // ANTES de cada cuota (corrido un renglon respecto del resto de documentos) y
-            // derivaba hasta 1 peso por recalcular en vez de leer el dato persistido.
-            var cronoCols='32px 1fr 1fr 1fr 1fr 1fr 60px';
-            return h('div',{style:{borderTop:'1px solid var(--bg3)'}},
-              h('div',{style:{padding:'8px 10px'}},
-                h('div',{style:{borderRadius:8,overflow:'hidden',border:'1px solid var(--border)'}},
-                  h('div',{style:{display:'grid',gridTemplateColumns:cronoCols,background:'var(--bg4)',padding:'6px 8px',fontSize:10,fontWeight:700,color:'var(--text3)',gap:4}},
-                    h('span',null,'#'),
-                    h('span',null,'Vence'),
-                    h('span',{style:{textAlign:'right'}},'Interes'),
-                    h('span',{style:{textAlign:'right'}},'Abono a capital'),
-                    h('span',{style:{textAlign:'right'}},'Valor cuota'),
-                    h('span',{style:{textAlign:'right'}},'Saldo'),
-                    h('span',{style:{textAlign:'center'}},'Estado')),
-                  timeline.map(function(p,idx){
-                    // Fila de ABONO intercalada (regla canonica '-ab-'), espejo de la del PDF:
-                    // sin numero de cuota ni interes, el monto en ABONO A CAPITAL y VALOR CUOTA,
-                    // y el saldo que quedo inmediatamente despues del abono.
-                    if(esAbono(p)){
-                      return h('div',{key:p.id,style:{display:'grid',gridTemplateColumns:cronoCols,padding:'5px 8px',fontSize:11,gap:4,borderTop:'1px solid var(--blue-bd)',background:'var(--blue-bg)'}},
-                        h('span',{style:{color:'var(--blue)',fontWeight:600}},'-'),
-                        h('span',{style:{color:'var(--blue)',fontStyle:'italic'}},fmtD(p.fechaPago),
-                          p.observaciones&&h('div',{style:{fontSize:9,color:'var(--text3)',fontStyle:'italic'}},p.observaciones)),
-                        h('span',{style:{textAlign:'right',color:'var(--text3)'}},'—'),
-                        h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.abonoCapital),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.abonoCapital,loan.trmAcordada))),
-                        h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.cuotaTotal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,loan.trmAcordada))),
-                        h('span',{className:'mono',style:{textAlign:'right',color:'var(--blue)',fontWeight:600}},fmt(p.saldoFinal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.saldoFinal,loan.trmAcordada))),
-                        h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:'var(--blue-bd)',color:'var(--blue)',fontWeight:600}},'Abono')));
-                    }
-                    var stColor=p.estadoPago==='Pagado'?'var(--green)':p.estadoPago==='En Mora'?'var(--red)':'var(--yellow)';
-                    var stBg=p.estadoPago==='Pagado'?'var(--green-bg)':p.estadoPago==='En Mora'?'var(--red-bg)':'var(--yellow-bg)';
-                    var hasPartial=(p.partialPaid||0)>0&&p.estadoPago!=='Pagado';
-                    // Capital reconciliado (= Valor cuota - Interes), no p.abonoCapital crudo:
-                    // en modalidad Prestamo el backend lo persiste en 0 (Bug #2) y la fila
-                    // mostraria "0 + 0 = cuota". Ver misma doctrina en generateCronogramaPDF.
-                    var capRec=Math.max(0,p.cuotaTotal-p.interesPeriodo);
-                    // La sub-linea USD se reconcilia en centavos de dolar: convertir el capital
-                    // en COP por separado descuadra 1 centavo (363.25 + 96.74 = 459.99 != 460.00).
-                    var _trm=loan.trmAcordada||1;
-                    var capRecUSD=esUSD?Math.max(0,(Math.round(p.cuotaTotal/_trm*100)-Math.round(p.interesPeriodo/_trm*100))/100):0;
-                    return h('div',{key:p.id,style:{display:'grid',gridTemplateColumns:cronoCols,padding:'5px 8px',fontSize:11,gap:4,borderTop:'1px solid var(--border)',background:idx%2===0?'transparent':'var(--bg3)'}},
-                      h('span',{style:{color:'var(--text3)',fontWeight:600}},p.cuotaN),
-                      h('span',{style:{color:'var(--text2)'}},fmtD(p.fechaPago)),
-                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(p.interesPeriodo),esUSD&&p.interesPeriodo>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.interesPeriodo,loan.trmAcordada))),
-                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text2)',fontWeight:500}},fmt(capRec),esUSD&&capRec>0&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},fmtUSD(capRecUSD))),
-                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.cuotaTotal),hasPartial&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:600}},'-'+fmt(p.partialPaid)),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.cuotaTotal,loan.trmAcordada))),
-                      h('span',{className:'mono',style:{textAlign:'right',color:'var(--text)',fontWeight:600}},fmt(p.saldoFinal),esUSD&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(p.saldoFinal,loan.trmAcordada))),
-                      h('span',{style:{textAlign:'center'}},h('span',{style:{fontSize:9,padding:'2px 6px',borderRadius:99,background:stBg,color:stColor,fontWeight:600}},p.estadoPago==='Pagado'?'Pagado':p.estadoPago==='En Mora'?'Mora':hasPartial?'Parc.':'Pend.')));
-                  }))),
-              // El bloque "HISTORIAL DE ABONOS A CAPITAL" que iba aqui se retiro: con los abonos
-              // ya intercalados en la linea de tiempo, repetirlos abajo mostraba cada movimiento
-              // dos veces. Su unico dato exclusivo (observaciones) viaja ahora como sub-linea de
-              // la fila del abono, asi que no se pierde informacion.
-              loan.estado==='Activo'&&function(){
-                var esUSD=loan.moneda==='USD';
-                var regsPag=cuotasReg.filter(function(p){return p.estadoPago==='Pagado';});
-                var abonosPag=abonos.filter(function(p){return p.estadoPago==='Pagado';});
-                var parcialesVivos=cuotasReg.filter(function(p){return p.estadoPago!=='Pagado'&&(p.partialPaid||0)>0;});
-                if(regsPag.length===0&&abonosPag.length===0&&parcialesVivos.length===0)return null; // aun no se cobra nada
-                var trm=loan.trmAcordada;
-                // Fase 2: gemelo del bloque del perfil del deudor. Los rubros salen de la
-                // IMPUTACION (cascada interes -> capital) sobre TODOS los pagos del prestamo, de
-                // modo que un parcial en curso deja de ser invisible aqui. El gate de arriba
-                // tambien tuvo que admitirlos: antes exigia al menos una cuota Pagada, asi que un
-                // prestamo cuyo unico cobro fuera un parcial no mostraba el bloque en absoluto.
-                var impC=cuotasReg.concat(abonos).reduce(function(a,p){var t=imputarCobros(p).totales;
-                  a.cobrado+=t.cobrado; a.interes+=t.interes; a.capital+=t.capital; a.ajuste+=t.ajuste; return a;},
-                  {cobrado:0,interes:0,capital:0,ajuste:0});
-                var intCobrados=Math.round(impC.interes);
-                var capRecHoy=Math.round(impC.capital);
-                var gananciaTRM=Math.round(impC.ajuste);
-                var totalRecibidoCOP=Math.round(impC.cobrado); // caja real == capital+interes+ajuste
-                // GANANCIA (3.0.0): regla del PO, gemela del perfil del deudor. Prestamo conserva el
-                // RESULTADO TOTAL de caja (interes + efecto TRM) con su signo.
-                var gpAct=gananciaDePrestamo(loan, cuotasReg.concat(abonos));
-                var esPrestAct=loan.modalidad==='Prestamo';
-                var gananciaTotalCOP=esPrestAct?(intCobrados+gananciaTRM):gpAct.cop;
-                var efectoTRMUSD=esUSD&&trm>0?(regsPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
-                var capitalUSD=esUSD&&trm>0?capRecHoy/trm:0;
-                var intUSD=esUSD&&trm>0?intCobrados/trm:0;
-                var totalRecibidoUSD=capitalUSD+intUSD+efectoTRMUSD;
-                function rowItem(label,value,valColor,subUSD,opts){
-                  opts=opts||{};
-                  var bt=opts.topBorder===false?'none':(opts.accentTop?'2px solid var(--green)':'1px solid var(--bg3)');
-                  return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:opts.note?'flex-start':'center',padding:opts.master?'4px 0 10px':'8px 0',borderTop:bt,marginTop:opts.accentTop?3:0}},
-                    h('div',null,
-                      h('div',{style:{fontSize:opts.master?12:10,color:opts.master?'var(--text)':'var(--text3)',fontWeight:opts.master?700:600,letterSpacing:.5}},label),
-                      opts.note&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:2,fontWeight:400,letterSpacing:.2}},opts.note)),
-                    h('div',{style:{textAlign:'right'}},
-                      h('div',{className:'mono',style:{fontSize:opts.master?16:(opts.strong?14:13),fontWeight:(opts.master||opts.strong)?700:500,color:valColor||'var(--text)'}},value),
-                      subUSD&&h('div',{className:'mono',style:{fontSize:opts.master?11:10,color:'var(--blue)',fontWeight:400}},subUSD)));
-                }
-                return h('div',{style:{borderTop:'1px solid var(--bg3)',padding:'12px',background:'transparent'}},
-                  h('div',{style:{fontSize:11,fontWeight:600,color:'var(--green)',marginBottom:8,display:'flex',alignItems:'center',gap:6,letterSpacing:.5}},
-                    h(Ico,{name:'dollar',size:13,color:'var(--green)',sw:2.4}),'RECAUDADO A LA FECHA'),
-                  rowItem('TOTAL RECIBIDO',fmt(totalRecibidoCOP),'var(--text)',esUSD?fmtUSD(totalRecibidoUSD):null,{master:true,topBorder:false}),
-                  rowItem('CAPITAL RECUPERADO',fmt(capRecHoy),'var(--text)',esUSD?copToUsd(capRecHoy,trm):null),
-                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?fmtUSD(gpAct.usd):null),
-                  esUSD&&rowItem('EFECTO TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',null,{note:gananciaTRM>0?'TRM subio al cobrar':gananciaTRM<0?'TRM bajo al cobrar':'Sin efecto cambiario'}),
-                  // Las DOS realidades de la ganancia, lado a lado (regla bimonetaria del PO).
-                  esUSD&&h('div',{style:{paddingTop:10,marginTop:3,borderTop:'2px solid var(--green)'}},
-                    h(GananciaBimonetaria,{titulo:esPrestAct?'RESULTADO TOTAL':'GANANCIA TOTAL',
-                      colorTitulo:gananciaTotalCOP<0?'var(--red)':'var(--text3)', usd:gpAct.usd, cop:gananciaTotalCOP,
-                      notaUSD:esPrestAct?'Sin interes pactado':'Intereses pagados en dolares',
-                      notaCOP:notaCOPGanancia(gpAct, esPrestAct, gananciaTRM)})));
-              }(),
-              loan.estado!=='Activo'&&function(){
-                var esCanc=loan.estado==='Cancelado';
-                var esUSD=loan.moneda==='USD';
-                var regsPag=cuotasReg.filter(function(p){return p.estadoPago==='Pagado';});
-                var abonosPag=abonos.filter(function(p){return p.estadoPago==='Pagado';});
-                var intCobrados=Math.round(regsPag.reduce(function(s,p){return s+p.interesPeriodo;},0));
-                var capAbonosCOP=Math.round(abonosPag.reduce(function(s,p){return s+p.abonoCapital;},0));
-                var origCOP=esUSD?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
-                var capPerd=Math.round(loan.capitalPerdido||0);
-                var intPerd=Math.round(loan.interesesPerdidos||0);
-                var totPerd=capPerd+intPerd;
-                // Capital efectivamente recuperado (bruto): monto original menos lo perdido en cierre forzoso.
-                var capRecuperado=esCanc?Math.max(0,origCOP-capPerd):origCOP;
-                // Efecto TRM en COP (medido): diferencia entre lo cobrado en COP y el valor contractual (TRM acordada).
-                //   - Cuotas regulares pagadas: montoCOPRecibido - cuotaTotal
-                //   - Abonos pagados con USD:   montoCOPRecibido - (montoUSDRecibido * trmAcordada)
-                var gananciaTRMReg=esUSD?regsPag.filter(function(p){return p.montoCOPRecibido&&p.montoCOPRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-p.cuotaTotal);},0):0;
-                var gananciaTRMAb=esUSD?abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoCOPRecibido-(p.montoUSDRecibido*loan.trmAcordada));},0):0;
-                var gananciaTRM=Math.round(gananciaTRMReg+gananciaTRMAb);
-                // Flujo de caja COP: TOTAL RECIBIDO = capital recuperado + intereses cobrados +/- efecto TRM
-                // (derivado: la suma SIEMPRE cuadra con las filas mostradas, aun en datos sin montoCOPRecibido).
-                var totalRecibidoCOP=capRecuperado+intCobrados+gananciaTRM;
-                // GANANCIA (3.0.0): regla del PO. Ya NO es "total recibido - capital": esa resta sigue
-                // siendo la identidad de CAJA de las filas de arriba; la ganancia limita la perdida
-                // cambiaria al interes de cada cuota. Prestamo conserva el RESULTADO TOTAL de caja.
-                var gpCer=gananciaDePrestamo(loan, cuotasReg.concat(abonos));
-                var esPrestCer=loan.modalidad==='Prestamo';
-                var gananciaTotalCOP=esPrestCer?(intCobrados+gananciaTRM):gpCer.cop;
-                // Columna USD (Bug #25): capital/intereses contractuales + efecto TRM en USD (residual ~0:
-                // los dolares llegan completos, la perdida es solo de pesos). TOTAL USD = USD realmente recibido.
-                var trm=loan.trmAcordada;
-                var efectoTRMUSD=esUSD&&trm>0?(regsPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.cuotaTotal/trm);},0)+abonosPag.filter(function(p){return p.montoUSDRecibido&&p.montoUSDRecibido>0;}).reduce(function(s,p){return s+(p.montoUSDRecibido-p.abonoCapital/trm);},0)):0;
-                var capitalUSD=esUSD&&trm>0?capRecuperado/trm:0;
-                var intUSD=esUSD&&trm>0?intCobrados/trm:0;
-                var totalRecibidoUSD=capitalUSD+intUSD+efectoTRMUSD;
-                var cuotasPagCnt=regsPag.length;
-                var denomCuotas=loan.modalidad==='Intereses'?'∞':(loan.plazoMeses||cuotasReg.length||'-');
-                var acento=esCanc?'var(--red)':'var(--green)';
-                function rowItem(label,value,valColor,subUSD,opts){
-                  opts=opts||{};
-                  var bt=opts.topBorder===false?'none':(opts.accentTop?'2px solid '+acento:'1px solid var(--bg3)');
-                  return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:opts.note?'flex-start':'center',padding:opts.master?'4px 0 10px':'8px 0',borderTop:bt,marginTop:opts.accentTop?3:0}},
-                    h('div',null,
-                      h('div',{style:{fontSize:opts.master?12:10,color:opts.master?'var(--text)':'var(--text3)',fontWeight:opts.master?700:600,letterSpacing:.5}},label),
-                      opts.note&&h('div',{style:{fontSize:9,color:'var(--text3)',marginTop:2,fontWeight:400,letterSpacing:.2}},opts.note)),
-                    h('div',{style:{textAlign:'right'}},
-                      h('div',{className:'mono',style:{fontSize:opts.master?16:(opts.strong?14:13),fontWeight:(opts.master||opts.strong)?700:500,color:valColor||'var(--text)'}},value),
-                      subUSD&&h('div',{className:'mono',style:{fontSize:opts.master?11:10,color:'var(--blue)',fontWeight:400}},subUSD)));
-                }
-                return h('div',{style:{borderTop:'1px solid var(--bg3)',padding:'12px',background:'transparent'}},
-                  h('div',{style:{fontSize:11,fontWeight:600,color:acento,marginBottom:8,display:'flex',alignItems:'center',gap:6,letterSpacing:.5}},
-                    h(Ico,{name:esCanc?'x':'check',size:13,color:acento,sw:2.4}),'RESUMEN '+(esCanc?'(CIERRE FORZOSO)':'(FINALIZADO)')),
-                  // Dato maestro: TOTAL RECIBIDO (flujo de caja real)
-                  rowItem('TOTAL RECIBIDO',fmt(totalRecibidoCOP),'var(--text)',esUSD?fmtUSD(totalRecibidoUSD):null,{master:true,topBorder:false}),
-                  // Desglose que compone el total
-                  rowItem(esCanc?'CAPITAL RECUPERADO':'CAPITAL PRESTADO',fmt(capRecuperado),'var(--text)',esUSD?copToUsd(capRecuperado,trm):null),
-                  rowItem('INTERESES COBRADOS',(intCobrados>0?'+':'')+fmt(intCobrados),intCobrados>0?'var(--green)':'var(--text2)',esUSD&&intCobrados>0?fmtUSD(gpCer.usd):null),
-                  esUSD&&rowItem('EFECTO TRM',(gananciaTRM>0?'+':gananciaTRM<0?'-':'')+fmt(Math.abs(gananciaTRM)),gananciaTRM>0?'var(--green)':gananciaTRM<0?'var(--red)':'var(--text2)',null,{note:gananciaTRM>0?'TRM subio al cobrar':gananciaTRM<0?'TRM bajo al cobrar':'Sin efecto cambiario'}),
-                  // Subtotal de utilidad (solo USD; en COP la ganancia = intereses, seria redundante)
-                  esUSD&&h('div',{style:{paddingTop:10,marginTop:3,marginBottom:4,borderTop:'2px solid '+acento}},
-                    h(GananciaBimonetaria,{titulo:esPrestCer?'RESULTADO TOTAL':'GANANCIA TOTAL',
-                      colorTitulo:gananciaTotalCOP<0?'var(--red)':'var(--text3)', usd:gpCer.usd, cop:gananciaTotalCOP,
-                      notaUSD:esPrestCer?'Sin interes pactado':'Intereses pagados en dolares',
-                      notaCOP:notaCOPGanancia(gpCer, esPrestCer, gananciaTRM)})),
-                  rowItem('CUOTAS PAGADAS',cuotasPagCnt+(loan.modalidad==='Intereses'?'':'/'+denomCuotas)),
-                  // Misma correccion que en el perfil del deudor: el azul es del dolar
-                  // (lo pinta `subUSD` por su cuenta), no del peso.
-                  capAbonosCOP>0&&rowItem('TOTAL ABONOS A CAPITAL',fmt(capAbonosCOP),'var(--text)',esUSD?copToUsd(capAbonosCOP,trm):null),
-                  esCanc&&rowItem('CAPITAL DEBIENDO',fmt(capPerd),capPerd>0?'var(--red)':'var(--text2)',esUSD&&capPerd>0?copToUsd(capPerd,trm):null),
-                  esCanc&&rowItem('INTERESES DEBIENDO',fmt(intPerd),intPerd>0?'var(--red)':'var(--text2)',esUSD&&intPerd>0?copToUsd(intPerd,trm):null),
-                  esCanc&&h('div',{style:{marginTop:12,padding:'10px 12px',background:'var(--bg3)',borderRadius:8,borderLeft:'3px solid var(--red)',display:'flex',justifyContent:'space-between',alignItems:'center'}},
-                    h('div',null,
-                      h('div',{style:{fontSize:10,color:'var(--text2)',fontWeight:600,letterSpacing:.5}},'MONTO TOTAL PERDIDO'),
-                      h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'Capital + intereses en mora')),
-                    h('div',{className:'mono',style:{fontSize:16,fontWeight:700,color:'var(--red)'}},'-'+fmt(totPerd))));
-              }());
-          }());
-      })));
+  var loans = props.loans, pays = props.pays, hoy = props.hoy, foco = props.foco;
+  var _q = useState(''); var q = _q[0], setQ = _q[1];
+  var _f = useState(foco && foco.filtro ? foco.filtro : 'activos'); var filtro = _f[0], setFiltro = _f[1];
+  var _o = useState('prioridad'); var orden = _o[0], setOrden = _o[1];
+  var _w = useState(window.innerWidth); var ancho = _w[0], setAncho = _w[1];
+  useEffect(function(){
+    function r(){ setAncho(window.innerWidth); }
+    window.addEventListener('resize', r); return function(){ window.removeEventListener('resize', r); };
+  }, []);
+  // Ventana angosta (la minima de la app es 1.000 px): la lista ocupa todo y el panel se abre encima.
+  var superpuesto = ancho < 1100;
+
+  var todos = useMemo(function(){ return props.deudores.map(function(d){ return modeloDeudor(d, loans, pays, hoy); }); }, [props.deudores, loans, pays, hoy]);
+  var cuenta = function(fn){ return todos.filter(fn).length; };
+  var pasa = {
+    activos: function(x){ return x.activos.length > 0; },
+    mora: function(x){ return x.moraN > 0; },
+    semana: function(x){ return x.prox && x.prox.p.fechaPago <= addDays(hoy, 7); },
+    usd: function(x){ return x.activos.some(function(m){ return m.esUSD; }); },
+    inactivos: function(x){ return x.activos.length === 0; },
+    todos: function(){ return true; }
+  };
+  var lista = todos.filter(pasa[filtro]).filter(function(x){
+    if (!q) return true;
+    var s = q.toLowerCase();
+    return x.nombre.toLowerCase().indexOf(s) !== -1 || (x.d.telefono || '').indexOf(q) !== -1;
+  });
+  lista.sort(function(a, b){
+    if (orden === 'saldo') return b.saldo - a.saldo;
+    if (orden === 'nombre') return a.nombre.localeCompare(b.nombre);
+    if (orden === 'recientes'){ var fa = a.mods.reduce(function(m, x){ return x.loan.fechaInicio > m ? x.loan.fechaInicio : m; }, ''), fb = b.mods.reduce(function(m, x){ return x.loan.fechaInicio > m ? x.loan.fechaInicio : m; }, ''); return fb.localeCompare(fa); }
+    var pa = a.activos.length ? opPesoEstado(a.estado) : 9, pb = b.activos.length ? opPesoEstado(b.estado) : 9;
+    return pa - pb || b.moraDias - a.moraDias || (a.prox && b.prox ? a.prox.p.fechaPago.localeCompare(b.prox.p.fechaPago) : (a.prox ? -1 : b.prox ? 1 : 0)) || b.saldo - a.saldo;
+  });
+
+  var inicial = foco && foco.nombre ? foco.nombre : (!superpuesto && lista[0] ? lista[0].nombre : null);
+  var _s = useState(inicial); var sel = _s[0], setSel = _s[1];
+  var _fl = useState(foco && foco.loanId ? { loan: foco.loanId, pay: foco.payId } : null); var focoL = _fl[0], setFocoL = _fl[1];
+  var deudorSel = sel ? props.deudores.filter(function(d){ return d.nombre === sel; })[0] : null;
+
+  var activos = todos.filter(function(x){ return x.activos.length; });
+  var calle = activos.reduce(function(s, x){ return s + x.saldo; }, 0);
+  var prestado = activos.reduce(function(s, x){ return s + x.prestado; }, 0);
+  var enMora = todos.filter(function(x){ return x.moraN > 0; });
+
+  function fila(x){
+    var on = sel === x.nombre;
+    var linea = x.estado === 'mora' ? h('span', { style: { color: 'var(--red)' } }, fmt(x.mora) + ' vencidos · ' + x.moraDias + ' días')
+      : x.prox ? h('span', { style: { color: x.prox.p.fechaPago === hoy ? 'var(--yellow)' : 'var(--text3)' } }, 'próxima ' + opCorta(x.prox.p.fechaPago) + ' · ' + opRel(hoy, x.prox.p.fechaPago))
+      : x.activos.length ? h('span', { style: { color: 'var(--blue)' } }, 'crédito abierto')
+      : h('span', null, x.ultimo ? 'último pago ' + opCorta(x.ultimo.fecha) : 'sin movimientos');
+    var pct = x.prestado > 0 ? Math.round((1 - x.saldo / x.prestado) * 100) : 0;
+    return h('button', { key: x.nombre, className: 'ct-fila' + (on ? ' on' : '') + (x.activos.length ? '' : ' inactivo'), onClick: function(){ setSel(x.nombre); setFocoL(null); } },
+      h('div', { className: 'op-avatar e-' + x.estado }, opIniciales(x.nombre)),
+      h('div', { className: 'ct-fila-c' },
+        h('div', { className: 'ct-fila-1' },
+          h('span', { className: 'cb-nombre' }, properCase(x.nombre)),
+          h('span', { className: 'ct-saldo mono' }, x.activos.length ? fmt(x.saldo) : '')),
+        h('div', { className: 'ct-fila-2' }, linea,
+          x.saldoUSD > 0 && h('span', { className: 'dp-usd mono' }, fmtUSD(x.saldoUSD))),
+        x.activos.length > 0 && h('div', { className: 'ct-chips' },
+          x.activos.map(function(m){
+            return h('span', { key: m.loan.id, className: 'ct-chip e-' + m.estado, title: opModalidad(m.loan.modalidad) + ' · debe ' + fmt(m.saldo),
+                onClick: function(e){ e.stopPropagation(); setSel(x.nombre); setFocoL({ loan: m.loan.id }); } },
+              h('i', null), (m.esUSD ? 'USD ' + fmtN(m.loan.montoOrigen) : fmt(m.loan.montoOrigen)) + ' · ' + opModalidad(m.loan.modalidad, true));
+          }),
+          x.cerrados.length > 0 && h('span', { className: 'ct-chip cerrado' }, '+' + x.cerrados.length + ' cerrado' + (x.cerrados.length > 1 ? 's' : ''))),
+        x.activos.length > 0 && h('div', { className: 'ct-prog', title: pct + '% del capital prestado ya volvió' }, h('div', { style: { width: pct + '%' } }))));
+  }
+
+  var panel = deudorSel && h(DeudorPanel, Object.assign({ key: sel + '|' + (focoL ? focoL.loan : ''), deudor: deudorSel, loans: loans, pays: pays, hoy: hoy,
+    focoLoan: focoL ? focoL.loan : null, focoPay: focoL ? focoL.pay : null, superpuesto: superpuesto, datosPago: props.datosPago, showToast: props.showToast, onPay: props.onPay,
+    onClose: function(){ setSel(null); } }, props.acciones));
+
+  return h('div', { className: 'op' + (sel ? ' con-panel' : '') + ' ct' },
+    h('div', { className: 'op-main ct-main' },
+      h('div', { className: 'op-cab' },
+        h('div', { style: { minWidth: 0 } },
+          h('div', { className: 'op-titulo' }, 'Cartera'),
+          h('div', { className: 'op-subt' }, activos.length + ' deudores activos · ' + fmt(calle) + ' en la calle' + (enMora.length ? ' · ' + enMora.length + ' en mora' : ''))),
+        h('button', { className: 'op-btn pri', onClick: props.onNuevo }, h(Ico, { name: 'plus', size: 15, color: '#fff', sw: 2.5 }), 'Nuevo préstamo')),
+      h('div', { className: 'ct-res' },
+        h('div', null, h('div', { className: 'dp-fig-l' }, 'En la calle'), h('div', { className: 'mono' }, fmt(calle))),
+        h('div', null, h('div', { className: 'dp-fig-l' }, 'Prestado'), h('div', { className: 'mono' }, fmt(prestado))),
+        h('div', null, h('div', { className: 'dp-fig-l' }, 'Recuperado'), h('div', { className: 'mono', style: { color: 'var(--green)' } }, (prestado ? Math.round((1 - calle / prestado) * 100) : 0) + '%'))),
+      h('div', { className: 'op-buscar' }, h(Ico, { name: 'search', size: 15, color: 'var(--text3)' }),
+        h('input', { value: q, onChange: function(e){ setQ(e.target.value); }, placeholder: 'Buscar deudor o teléfono' }),
+        q && h('button', { className: 'op-icono', onClick: function(){ setQ(''); } }, h(Ico, { name: 'x', size: 13, color: 'var(--text3)' }))),
+      h('div', { className: 'ct-filtros' },
+        CT_FILTROS.map(function(f){
+          var n = cuenta(pasa[f[0]]);
+          if (!n && f[0] !== 'activos' && f[0] !== 'todos') return null;
+          return h('button', { key: f[0], className: 'op-filtro' + (filtro === f[0] ? ' on' : ''), onClick: function(){ setFiltro(f[0]); } }, f[1], h('span', null, n));
+        }),
+        h('select', { className: 'ct-orden', value: orden, onChange: function(e){ setOrden(e.target.value); } },
+          CT_ORDEN.map(function(o){ return h('option', { key: o[0], value: o[0] }, o[1]); }))),
+      lista.length ? h('div', { className: 'ct-lista' }, lista.map(fila)) : h('div', { className: 'op-vacio' }, 'Nadie coincide con la búsqueda.')),
+    panel ? h('div', { className: 'op-lado' + (superpuesto ? ' superpuesto' : '') }, panel)
+      : !superpuesto && h('div', { className: 'op-lado' }, h('div', { className: 'cb-lado' }, h('div', { className: 'op-vacio' }, 'Elige un deudor de la lista.'))));
 }

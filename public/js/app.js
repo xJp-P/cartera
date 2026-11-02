@@ -29,7 +29,7 @@ import { CHANGELOGS } from './datos/changelogs.js';
 import { h, useState, useEffect, useMemo, useCallback, createRoot } from './core/react.js';
 import { API, setErrorHandler } from './core/api.js';
 import { fmt, fmtD } from './core/format.js';
-import { properCase, nowStr, addDays, payMatchesQuery } from './core/ui.js';
+import { properCase, nowStr, addDays } from './core/ui.js';
 import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe, preguntaInteresMes, periodoEnCursoDe } from './core/dominio.js';
 import { Ico } from './componentes/iconos.js';
 import { generateCronogramaPDF } from './pdf/cronograma.js';
@@ -39,9 +39,8 @@ import { generateReciboCobro }   from './pdf/recibo-cobro.js';
 
 // Vistas — Etapa 3/B7. El estado sigue en `App` y baja por props.
 import { DashView } from './vistas/DashView.js';
+import { CobrosView } from './vistas/CobrosView.js';
 import { CarteraView } from './vistas/CarteraView.js';
-import { DeudoresView } from './vistas/DeudoresView.js';
-import { PagosView } from './vistas/PagosView.js';
 import { PortfolioView } from './vistas/PortfolioView.js';
 import { CalcView } from './vistas/CalcView.js';
 import { HistorialView } from './vistas/HistorialView.js';
@@ -49,13 +48,13 @@ import { DebtsView } from './vistas/DebtsView.js';
 import { DevView } from './vistas/DevView.js';
 
 // Modales — Etapa 3/B7. `App` los monta como hermanos y les pasa props.
-import { DebtorModal } from './modales/DebtorModal.js';
 import { PayModal } from './modales/PayModal.js';
 import { PreflightMoraModal } from './modales/PreflightMoraModal.js';
 import { planCascada } from './core/cascada.js';
 import { AbonoModal } from './modales/AbonoModal.js';
 import { CobroModal } from './modales/CobroModal.js';
 import { CondonarModal } from './modales/CondonarModal.js';
+import { CambiarDiaModal } from './modales/CambiarDiaModal.js';
 import { CorteModal } from './modales/CorteModal.js';
 import { LiquidarModal } from './modales/LiquidarModal.js';
 import { CronogramaPdfModal } from './modales/CronogramaPdfModal.js';
@@ -91,12 +90,9 @@ function App(){
   var s5=useState('dashboard'); var view=s5[0]; var setView=s5[1];
   var s6=useState(null); var loanModal=s6[0]; var setLoanModal=s6[1];
   var s7=useState(null); var payModal=s7[0]; var setPayModal=s7[1];
-  var s8=useState(''); var searchQ=s8[0]; var setSearchQ=s8[1];
-  var s10=useState(''); var fMonth=s10[0]; var setFMonth=s10[1];
   var s11=useState(null); var abonoModal=s11[0]; var setAbonoModal=s11[1];
-  var s12=useState(null); var debtorModal=s12[0]; var setDebtorModal=s12[1];
-  // v2.0.0 — modal de liquidacion ELEVADO desde DebtorModal a nivel App: ahora es un modal
-  // hermano de AbonoModal, invocable desde el perfil del deudor Y desde el CTA de AbonoModal.
+  // v2.0.0 — modal de liquidacion ELEVADO a nivel App: un modal hermano de AbonoModal,
+  // invocable desde el panel del deudor Y desde el CTA de AbonoModal.
   var s13=useState(null); var liquidarModal=s13[0]; var setLiquidarModal=s13[1];
   // Corte de un credito de interes diario. Nombre propio en vez de `sNN`: ya hay dos
   // `var s13` en este bloque (funciona por el orden de asignacion, pero no hace falta
@@ -106,6 +102,12 @@ function App(){
   var sCobro=useState(null); var cobroModal=sCobro[0]; var setCobroModal=sCobro[1];
   // Condonacion de intereses. NO es un cobro: modifica la obligacion sin mover caja.
   var sCond=useState(null); var condonarModal=sCond[0]; var setCondonarModal=sCond[1];
+  // 3.5.0 — "Cambiar dia de pago", extraido del viejo perfil del deudor a su propio modal.
+  var sCambioDia=useState(null); var cambioDiaModal=sCambioDia[0]; var setCambioDiaModal=sCambioDia[1];
+  // 3.5.0 — a quien enfocar al abrir Cartera ({nombre, loanId, payId, t}) y que tramo abrir en
+  // Cobros ({tramo, t}). La marca `t` remonta la vista para que el foco nuevo se aplique.
+  var sFoco=useState(null); var foco=sFoco[0]; var setFoco=sFoco[1];
+  var sTramo=useState(null); var tramoCobros=sTramo[0]; var setTramoCobros=sTramo[1];
   // 3.1.0 — cronograma de un prestamo RECIEN creado: antes de imprimirlo se decide si su valor
   // de liquidacion incluye el interes del mes en curso (decision del PO: tambien aqui).
   var sCronoPdf=useState(null); var cronoPdfModal=sCronoPdf[0]; var setCronoPdfModal=sCronoPdf[1];
@@ -448,7 +450,7 @@ function App(){
   var confirmarCalc=useCallback(function(data){
     setCalcData(null);
     setLoanModal({_prefill:{},_calcPrefill:data});
-    setView('cartera');
+    setFoco(null);setView('cartera');
   },[]);
 
   // v1.9.0 — Helpers de aplicacion (abono + reestructurar). Cada uno verifica cuotas
@@ -483,7 +485,6 @@ function App(){
             totalPorPagar:porPagarPre,liq:computeLiquidacion(l,lp,{})};
   }
   function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido){
-    var fromDeudor=abonoModal&&abonoModal.fromDeudor;
     var pre=_snapshotAbono(loanId);
     // 3.2.0 (Fase 4) — la mora que "Cambiar fecha" consolido dentro de la cuota transitoria
     // es deuda YA causada y vive en una cuota Pendiente que la liquidacion BORRA. El deudor
@@ -503,9 +504,8 @@ function App(){
       .then(function(r){
         if(!r)return;
         if(r.error){showToast(r.error,'error');return;}
-        // v1.9.0 — await reload antes de re-abrir DebtorModal para evitar mostrar datos viejos
+        // v1.9.0 — await reload antes de cerrar, para que el panel del deudor no muestre datos viejos
         return reload().then(function(fresh){
-          if(fromDeudor) setDebtorModal(fromDeudor);
           setAbonoModal(null);
           showToast(liquidar?'Deuda liquidada':'Abono registrado');
           // v1.17.0 — Recibo de Abono con el estado YA persistido (cronograma real regenerado
@@ -579,7 +579,6 @@ function App(){
     });
   }
   function _ejecutarCascada(loanId,plan,fecha,obs,genRecibo,rc){
-    var fromDeudor=cobroModal&&cobroModal.fromDeudor;
     // Estado PREVIO, capturado antes de la primera escritura: es lo que el recibo
     // imprime como "antes" del saldo y de la cuota. Despues de la cadena ya no existe.
     var pre=_snapshotAbono(loanId);
@@ -616,7 +615,6 @@ function App(){
       return reload().then(function(fresh){
         if(estado.ok){
           setCobroModal(null);
-          if(fromDeudor) setDebtorModal(fromDeudor);
           showToast(plan.pasos.length>1
             ? 'Cobro registrado en '+plan.pasos.length+' movimientos'
             : 'Cobro registrado');
@@ -648,7 +646,6 @@ function App(){
   // el toast habla de deuda y no de dinero recibido, y por eso el backend marca la
   // entrada del journal con `afectaCaja: false` (sin la falsa alarma del recibo).
   function _doCondonar(loanId,cuotas,obs){
-    var fromDeudor=condonarModal&&condonarModal.fromDeudor;
     var body={observaciones:obs||''};
     // Sin lista, el backend condona TODAS las cuotas en mora. En credito abierto no
     // hay cuotas que enviar, asi que el campo se omite en vez de mandar un array vacio.
@@ -660,20 +657,18 @@ function App(){
       if(r.error){showToast(r.error,'error');return;}
       return reload().then(function(){
         setCondonarModal(null);
-        if(fromDeudor) setDebtorModal(fromDeudor);
         showToast('Intereses condonados: '+fmt(r.condonado||0));
       });
     });
   }
-  function _doReestructurar(loanId,mode,valor,fromDeudor){
+  function _doReestructurar(loanId,mode,valor){
     return API.post('/api/loans/'+loanId+'/reestructurar',{recalcMode:mode,recalcValor:valor})
       .then(function(r){
         if(!r)return;
         if(r.error){showToast(r.error,'error');return;}
-        // v1.9.0 — await reload antes de re-abrir DebtorModal
+        // v1.9.0 — await reload antes de cerrar
         return reload().then(function(){
           setRestructureModal(null);
-          if(fromDeudor) setDebtorModal(fromDeudor);
           showToast('Prestamo reestructurado');
         });
       });
@@ -699,18 +694,17 @@ function App(){
     });
   },[reload,abonoModal,pays,loans]);
   var reestructurarPrestamo=useCallback(function(loanId,mode,valor){
-    var fromDeudor=restructureModal&&restructureModal.fromDeudor;
     var enRiesgo=_cuotasEnRiesgo(pays,loanId);
     // v1.18.1: se devuelve la promesa para que RestructureModal libere su guarda (mismo
     // patron que registrarAbono). En la rama de pre-flight se devuelve undefined a proposito:
     // el modal libera de inmediato porque el control pasa al PreflightMoraModal.
-    if(enRiesgo.length===0){return _doReestructurar(loanId,mode,valor,fromDeudor);}
+    if(enRiesgo.length===0){return _doReestructurar(loanId,mode,valor);}
     var loanObj=loans.find(function(l){return l.id===loanId;});
     setPreflightDlg({
       cuotas:enRiesgo,loan:loanObj,
       // v1.18.1: se devuelve la promesa para que PreflightMoraModal libere su guarda.
-      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doReestructurar(loanId,mode,valor,fromDeudor);});},
-      onContinue:function(){setPreflightDlg(null);return _doReestructurar(loanId,mode,valor,fromDeudor);},
+      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doReestructurar(loanId,mode,valor);});},
+      onContinue:function(){setPreflightDlg(null);return _doReestructurar(loanId,mode,valor);},
       onCancel:function(){setPreflightDlg(null);}
     });
   },[reload,restructureModal,pays,loans]);
@@ -783,15 +777,6 @@ function App(){
     };
   },[loans,pays]);
 
-  var filtPays=useMemo(function(){
-    return pays.filter(function(p){
-      if(p.estadoPago==='Pagado') return false;
-      if(searchQ&&!payMatchesQuery(p,searchQ)) return false;
-      if(fMonth&&p.fechaPago.indexOf(fMonth)!==0) return false;
-      return true;
-    }).sort(function(a,b){return a.fechaPago.localeCompare(b.fechaPago)||a.nombreCliente.localeCompare(b.nombreCliente);});
-  },[pays,searchQ,fMonth]);
-
   // Deudores: agrupar loans por nombre
   var deudores=useMemo(function(){
     var map={};
@@ -862,14 +847,25 @@ function App(){
   function openGSearch(){setGSearch(true);setGQ('');}
   function closeGSearch(){setGSearch(false);setGQ('');}
 
-  // Abrir perfil deudor por nombre
-  function openDebtorByName(nombre){
-    var d=deudores.find(function(x){return x.nombre===nombre;});
-    if(d) setDebtorModal(d);
+  // 3.5.0 — abrir un deudor (desde el Resumen, la busqueda o cualquier nombre) = ir a Cartera con
+  // ese deudor, y si se sabe, ese prestamo, abierto en el panel. Antes abria el modal del perfil.
+  function openDebtorByName(nombre,loanId,payId){
+    navTo('cartera',{nombre:nombre,loanId:loanId||null,payId:payId||null});
   }
-
-  // Botón rápido ✓: abre PayModal (permite elegir Completo o Parcial)
-  var quickPay=openPayModal;
+  // Las acciones del panel del deudor: las mismas puertas de siempre (modales de App). El panel
+  // no se cierra al abrirlas, asi que ya no hay `fromDeudor` que restaurar al terminar.
+  var accionesOp={
+    onCobro:function(l){setCobroModal({loan:l});},
+    onCorte:function(l){setCorteModal({loan:l});},
+    onLiquidar:function(l){setLiquidarModal({loan:l});},
+    onReestructurar:function(l){setRestructureModal({loan:l});},
+    onCambiarDia:function(l){setCambioDiaModal({loan:l});},
+    onCondonar:function(l){setCondonarModal({loan:l});},
+    onEdit:function(l){setLoanModal(l);},
+    onDelete:delLoan,
+    onForceClose:forceCloseLoan,
+    onNewLoan:function(d){setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});}
+  };
 
   if(loading) return h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--bg)',gap:16}},
     h('div',{className:'spinner'}),
@@ -878,9 +874,8 @@ function App(){
   var navSections=[
     {key:'prestamos',label:'Prestamos',items:[
       ['dashboard','home','Resumen'],
-      ['cartera','briefcase','Cartera'],
-      ['deudores','users','Deudores'],
-      ['pagos','check2','Pagos'],
+      ['cobros','check2','Cobros'],
+      ['cartera','users','Cartera'],
       ['rendimiento','trending','Rendimiento'],
       ['calculadora','calc','Calculadora'],
       ['historial','activity','Historial']
@@ -893,7 +888,12 @@ function App(){
   // Lista plana derivada (para el lookup de icono+label de la vista actual en el header).
   var nav=navSections.reduce(function(acc,s){return acc.concat(s.items);},[]).concat(navStandalone);
 
-  function navTo(id){
+  // `destino` (opcional): en Cobros, el tramo que abrir ('vencido', 'semana'...); en Cartera, el
+  // deudor a enfocar ({nombre, loanId, payId}). Sin el, la vista abre en su estado normal: un foco
+  // viejo no puede reabrir a nadie al volver desde el menu.
+  function navTo(id,destino){
+    if(id==='cobros') setTramoCobros(destino?{tramo:destino,t:Date.now()}:null);
+    if(id==='cartera') setFoco(destino?Object.assign({t:Date.now()},destino):null);
     setView(id);setMenuOpen(false);
     if(id==='historial') loadHistorial();
     if(id==='deudas') loadDebts();
@@ -949,9 +949,9 @@ function App(){
           h('span',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},nav.find(function(n){return n[0]===view;})?nav.find(function(n){return n[0]===view;})[2]:'Inicio')),
         h('div',{style:{flex:1}}),
         h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-          metrics.pronto.length>0&&h('div',{onClick:function(){navTo('pagos');},style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',padding:'5px 10px',borderRadius:99,fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'var(--yellow)'},title:'Cuotas por vencer en 3 dias'},
+          metrics.pronto.length>0&&h('div',{onClick:function(){navTo('cobros','semana');},style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',padding:'5px 10px',borderRadius:99,fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'var(--yellow)'},title:'Cuotas por vencer en 3 dias'},
             h(Ico,{name:'clock',size:12,color:'var(--yellow)'}),metrics.pronto.length,' pronto'),
-          metrics.mora.length>0&&h('div',{onClick:function(){setSearchQ('');setFMonth('');navTo('pagos');},style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',padding:'5px 10px',borderRadius:99,fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'var(--red)'}},
+          metrics.mora.length>0&&h('div',{onClick:function(){navTo('cobros','vencido');},style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',padding:'5px 10px',borderRadius:99,fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'var(--red)'}},
             h(Ico,{name:'bell',size:12,color:'var(--red)'}),metrics.mora.length,' mora'),
           h('button',{onClick:openGSearch,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:99,padding:'6px 8px',cursor:'pointer',display:'flex',alignItems:'center'}},
             h(Ico,{name:'search',size:14,color:'var(--text3)'})),
@@ -978,9 +978,10 @@ function App(){
         h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reiniciar e instalar')),
       h('div',{className:'main-content'},
       view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,pays:pays,debts:debts,onNameClick:openDebtorByName,onNewLoan:function(){navTo('cartera');setLoanModal('new');}}),
-      view==='cartera'    && h(CarteraView,{loans:loans,pays:pays,onAdd:function(){setLoanModal('new');},onEdit:setLoanModal,onDelete:delLoan,onAbono:setAbonoModal,onCobro:function(l){setCobroModal({loan:l});},onCorte:setCorteModal,onForceClose:forceCloseLoan}),
-      view==='deudores'   && h(DeudoresView,{deudores:deudores,pays:pays,onSelect:setDebtorModal,onAdd:function(){setLoanModal('new');}}),
-      view==='pagos'      && h(PagosView,  {pays:filtPays,allPays:pays,loans:loans,searchQ:searchQ,setSearchQ:setSearchQ,fMonth:fMonth,setFMonth:setFMonth,onSelect:openPayModal,onQuickPay:quickPay,onNameClick:openDebtorByName,datosPago:cfg.datos_pago}),
+      // 3.5.0 — Cobros (antes Pagos) y Cartera (antes Cartera + Deudores), con el panel del
+      // deudor al lado. La `key` remonta la vista cuando llega un tramo o un foco nuevo.
+      view==='cobros'     && h(CobrosView,{key:'cb'+(tramoCobros?tramoCobros.t:0),tramo:tramoCobros?tramoCobros.tramo:null,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,datosPago:cfg.datos_pago,showToast:showToast}),
+      view==='cartera'    && h(CarteraView,{key:'ct'+(foco?foco.t:0),foco:foco,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,onNuevo:function(){setLoanModal('new');},datosPago:cfg.datos_pago,showToast:showToast}),
       view==='rendimiento'&& h(PortfolioView,{loans:loans,pays:pays}),
       view==='calculadora'&& h(CalcView,   {onConfirm:confirmarCalc}),
       view==='historial'   && h(HistorialView,{actLog:actLog,undoLog:undoLog,onUndo:function(entry){setUndoDlg(entry);},
@@ -996,48 +997,39 @@ function App(){
     // se ignora. Medido: abrir "+ Cargo" y luego "Abonar" dejaba el selector en Cargo.
     debtPayModal&&h(DebtPayModal,{key:debtPayModal.debt.id+'|'+debtPayModal.tipo,debt:debtPayModal.debt,tipoInicial:debtPayModal.tipo,onSave:payDebt,onClose:function(){setDebtPayModal(null);}}),
     debtDelete&&h(DeleteDebtModal,{debt:debtDelete,onConfirm:function(){var id=debtDelete.id;setDebtDelete(null);deleteDebt(id);},onClose:function(){setDebtDelete(null);}}),
-    abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){if(abonoModal.fromDeudor){setDebtorModal(abonoModal.fromDeudor);} setAbonoModal(null);},
+    abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){setAbonoModal(null);},
       // v2.0.0 — CTA "Liquidar deuda" del AbonoModal (cuando el abono excede el capital
-      // amortizable por haber capital atrapado en cuotas En Mora). Cierra el abono y abre el
-      // modal de liquidacion CONSERVANDO fromDeudor, para que Cancelar devuelva al perfil.
-      // No se reutiliza onClose a proposito: ese re-abriria DebtorModal encima.
-      onRequestLiquidar:function(l){var fd=abonoModal&&abonoModal.fromDeudor;setAbonoModal(null);setLiquidarModal({loan:l,fromDeudor:fd});}}),
+      // amortizable por haber capital atrapado en cuotas En Mora): cierra el abono y abre la
+      // liquidacion.
+      onRequestLiquidar:function(l){setAbonoModal(null);setLiquidarModal({loan:l});}}),
     cobroModal&&h(CobroModal,{loan:cobroModal.loan||cobroModal,pays:pays,onConfirm:_doCobroCascada,
-      onClose:function(){if(cobroModal.fromDeudor){setDebtorModal(cobroModal.fromDeudor);} setCobroModal(null);},
+      onClose:function(){setCobroModal(null);},
       // Mismo patron que el CTA de AbonoModal: si el dinero supera todo lo que el credito
       // debe hoy, la herramienta correcta es Liquidar, no capar el monto en silencio.
-      onRequestLiquidar:function(l){var fd=cobroModal&&cobroModal.fromDeudor;setCobroModal(null);setLiquidarModal({loan:l,fromDeudor:fd});}}),
+      onRequestLiquidar:function(l){setCobroModal(null);setLiquidarModal({loan:l});}}),
     condonarModal&&h(CondonarModal,{loan:condonarModal.loan||condonarModal,pays:pays,onConfirm:_doCondonar,
-      onClose:function(){if(condonarModal.fromDeudor){setDebtorModal(condonarModal.fromDeudor);} setCondonarModal(null);}}),
+      onClose:function(){setCondonarModal(null);}}),
     corteModal&&h(CorteModal,{loan:corteModal.loan||corteModal,pays:pays,onSave:registrarCorte,
-      onClose:function(){if(corteModal.fromDeudor){setDebtorModal(corteModal.fromDeudor);} setCorteModal(null);}}),
-    debtorModal&&h(DebtorModal,{deudor:debtorModal,pays:pays,loans:loans,onClose:function(){setDebtorModal(null);},onNewLoan:function(d){setDebtorModal(null);setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});},onAbono:function(l){var dRef=debtorModal;setDebtorModal(null);setAbonoModal({loan:l,fromDeudor:dRef});},onCobro:function(l){var dRef=debtorModal;setDebtorModal(null);setCobroModal({loan:l,fromDeudor:dRef});},
-      onCorte:function(l){var dRef=debtorModal;setDebtorModal(null);setCorteModal({loan:l,fromDeudor:dRef});},onReestructurar:function(l){var dRef=debtorModal;setDebtorModal(null);setRestructureModal({loan:l,fromDeudor:dRef});},
-      onCondonar:function(l){var dRef=debtorModal;setDebtorModal(null);setCondonarModal({loan:l,fromDeudor:dRef});},
-      // v2.0.0 — el modal de liquidacion se elevo a App; aqui solo se DISPARA, con el mismo
-      // patron fromDeudor de onAbono/onReestructurar (Cancelar devuelve al perfil).
-      onRequestLiquidar:function(l){var dRef=debtorModal;setDebtorModal(null);setLiquidarModal({loan:l,fromDeudor:dRef});},onReload:reload,datosPago:cfg.datos_pago}),
-    // v2.0.0 — LiquidarModal a nivel App (antes vivia DENTRO de DebtorModal, por eso era
-    // inalcanzable desde AbonoModal). La logica de confirmacion es la MISMA de v1.19.0:
+      onClose:function(){setCorteModal(null);}}),
+    // 3.5.0 — el modal publica el cambio el mismo (como lo hacia dentro del perfil) y muestra el
+    // comprobante con lo que el backend registro; aqui solo se recargan los datos.
+    cambioDiaModal&&h(CambiarDiaModal,{loan:cambioDiaModal.loan,pays:pays,onReload:reload,onClose:function(){setCambioDiaModal(null);}}),
+    // v2.0.0 — LiquidarModal a nivel App. La logica de confirmacion es la MISMA de v1.19.0:
     // registrarAbono(...,liquidar=true,...) con el mismo obs y el mismo intExtra.
-    // 3.1.0 — el cronograma de un prestamo recien creado (ver doSaveLoan). Desde el perfil
-    // del deudor el mismo modal lo abre DebtorModal, sin pasar por aqui.
+    // 3.1.0 — el cronograma de un prestamo recien creado (ver doSaveLoan). Desde el panel del
+    // deudor el mismo modal lo abre DeudorPanel, sin pasar por aqui.
     cronoPdfModal&&h(CronogramaPdfModal,{loan:cronoPdfModal.loan,pays:cronoPdfModal.pays,
       titulo:'Cronograma PDF',okLabel:'Generar PDF',
       mensaje:'¿Deseas generar el cronograma de pagos en PDF para enviar al deudor?',
       onClose:function(){setCronoPdfModal(null);}}),
     liquidarModal&&h(LiquidarModal,{loan:liquidarModal.loan,pays:pays,datosPago:cfg.datos_pago,
-      onClose:function(){if(liquidarModal.fromDeudor){setDebtorModal(liquidarModal.fromDeudor);} setLiquidarModal(null);},
+      onClose:function(){setLiquidarModal(null);},
       onConfirm:function(loanId,monto,intExtra){var fqLiq=liquidarModal.loan.frecuencia; // 3.3.0: semana o quincena en curso
         var obs='Liquidacion total'+(intExtra>0?' + intereses anticipados '+((fqLiq==='Semanal'||fqLiq==='Quincenal')?periodoEnCursoDe(fqLiq):'proximo mes')+': $'+Math.round(intExtra).toLocaleString('es-CO'):'');
-      // v1.18.1: se devuelve la promesa para que el modal de liquidacion libere su guarda.
-      // Hasta ahora la unica proteccion era accidental: setDebtorModal(null) desmontaba el
-      // modal en el mismo click, y el backend rechazaba el 2o intento porque el saldo ya
-      // era 0. Ninguna de las dos es una garantia — la primera se cae con cualquier refactor
-      // que mantenga el modal montado, y la segunda no aplica a una liquidacion parcial.
-      // Tras liquidar NO se re-abre el perfil (comportamiento identico a v1.19.0).
-      var _p=registrarAbono(loanId,monto,nowStr(),obs,0,true,null,null,undefined,intExtra);setLiquidarModal(null);setDebtorModal(null);return _p;}}),
-    restructureModal&&h(RestructureModal,{loan:restructureModal.loan||restructureModal,pays:pays,onSave:reestructurarPrestamo,onClose:function(){if(restructureModal.fromDeudor){setDebtorModal(restructureModal.fromDeudor);} setRestructureModal(null);}}),
+      // v1.18.1: se devuelve la promesa para que el modal de liquidacion libere su guarda (antes
+      // la unica proteccion era accidental: el modal se desmontaba en el mismo click).
+      var _p=registrarAbono(loanId,monto,nowStr(),obs,0,true,null,null,undefined,intExtra);setLiquidarModal(null);return _p;}}),
+    restructureModal&&h(RestructureModal,{loan:restructureModal.loan||restructureModal,pays:pays,onSave:reestructurarPrestamo,onClose:function(){setRestructureModal(null);}}),
     preflightDlg&&h(PreflightMoraModal,{cuotas:preflightDlg.cuotas,loan:preflightDlg.loan,onMarkMora:preflightDlg.onMarkMora,onContinue:preflightDlg.onContinue,onCancel:preflightDlg.onCancel}),
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
     // "La Bestia" Fase 2 — confirmacion de deshacer, con los candados C (>24h) y D (recibo).
@@ -1085,8 +1077,8 @@ function App(){
             var catLabel=r.type==='deudor'?'DEUDOR':r.type==='prestamo'?'PRESTAMO':'PAGO';
             return h('div',{key:i,className:'gsearch-item',onClick:function(){
               closeGSearch();
-              if(r.type==='deudor') setDebtorModal(r.data);
-              else if(r.type==='prestamo'){navTo('cartera');}
+              if(r.type==='deudor') openDebtorByName(r.data.nombre);
+              else if(r.type==='prestamo') openDebtorByName(r.data.nombre,r.data.id);
               else if(r.type==='pago') openPayModal(r.data);
             }},
               h('span',{className:'gsearch-cat',style:{background:catBg,color:catColor}},catLabel),

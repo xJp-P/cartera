@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "caso": "general-al-dia",
+  "generador": "generateReciboGeneral",
+  "tema": "light",
+  "entradaHash": "f7673cd03c7c7f6ff557e79acabc4e9822eec83c",
+  "estructura": {
+    "docTitle": "Recibo de cobro general",
+    "h1": [],
+    "cabeceras": [],
+    "etiquetas": [
+      "Tus opciones de pago",
+      "Tu próxima cuota",
+      "Liquidar el crédito",
+      "Así va tu crédito · $ #.#.# desde el # de M de #",
+      "Cómo pagar"
+    ]
+  },
+  "valores": {
+    "bytes": 8857,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 8,
+    "hashMontos": "6f29283f9eeeec259cf65345c24b29c625336bc7",
+    "hashFname": "c13be1945ce6f64aa8f9d7839f421d525f8daae4",
+    "hashTexto": "68a1b5516f7b35c4fd53e36876bbe5a8a14fe66c",
+    "clases": [
+      "",
+      "pagada",
+      "proxima",
+      "r-av",
+      "r-av-ley",
+      "r-cab",
+      "r-cap",
+      "r-doc",
+      "r-dos",
+      "r-hero",
+      "r-hero-l",
+      "r-logo",
+      "r-marca",
+      "r-monto",
+      "r-pagar",
+      "r-pie",
+      "r-pie-d",
+      "r-quien",
+      "r-saldos",
+      "r-sec",
+      "r-sec r-credito",
+      "r-sec-t",
+      "r-sello",
+      "r-tar",
+      "r-tar-l",
+      "r-tar-s",
+      "r-tar-v",
+      "r-tip",
+      "r-tot",
+      "viejo"
+    ]
+  }
+}

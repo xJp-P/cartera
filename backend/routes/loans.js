@@ -1050,33 +1050,50 @@ module.exports = function crearRutasLoans(ctx) {
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
     const regularesTodas = allPays.filter(p => !esAbono(p)); // regla canonica '-ab-'
 
-    // Mora a consolidar: intereses de las cuotas En Mora regulares -> se suman a la 1a cuota nueva
+    // ── LAS CUOTAS EN MORA NO SE TOCAN (3.5.0, Bug #78) ──────────────────────
+    // Hasta 3.4.1 este endpoint era la UNICA ruta que borraba las cuotas En Mora: metia sus
+    // intereses en la primera cuota nueva ("mora consolidada") y prorrateaba esa cuota desde la
+    // ultima cuota PAGADA. Pero las cuotas en mora cubren justo esos meses, asi que su interes
+    // se cobraba DOS veces: en la mora consolidada y en el prorrateo. Ademas el cronograma nuevo
+    // arrancaba en la cuota siguiente a la ultima pagada, con fechas YA vencidas que volvian a
+    // cobrar los mismos periodos. Medido: Intereses 3.000.000 al 10%, pagada hasta el 7-feb,
+    // 5 cuotas en mora, dia 7 -> 3: primera cuota del 3-abr (vencida) por 2.050.000 = 550.000 de
+    // 55 dias + 1.500.000 de mora, mas cuotas del 3-may y 3-jun.
+    // REGLA: una cuota En Mora es deuda causada e independiente --la doctrina de todas las demas
+    // rutas que regeneran (/recalculate, PUT /loans, /abono, /reestructurar)--, asi que se queda
+    // tal cual, vencida y cobrable. Solo se mueven las cuotas POR VENCER, y la primera de ellas
+    // cobra los dias que van desde la ultima cuota ya facturada (pagada o en mora) hasta la nueva
+    // fecha. Cada dia se cobra una sola vez. Es exactamente como /recalculate regenera.
     const morasRegulares = regularesTodas.filter(p => p.estadoPago === 'En Mora');
     const moraCount = morasRegulares.length;
-    const moraConsolidada = Math.round(morasRegulares.reduce((s, p) => s + p.interesPeriodo, 0));
+    const moraPendiente = Math.round(morasRegulares.reduce((s, p) => s + Math.max(0, p.cuotaTotal - (p.partialPaid || 0)), 0));
 
-    // Punto de partida: cuotas ya PAGADAS (las En Mora se borran; su capital vuelve al residual y
-    // se re-amortiza, simetrico con regularConsumed = solo Pagadas — misma doctrina que hoy).
-    const pagadasRegulares = regularesTodas.filter(p => p.estadoPago === 'Pagado');
-    const regularConsumed = pagadasRegulares.length;
+    // Cuotas ya CONSUMIDAS: Pagadas y En Mora (simetrico con /recalculate).
+    const consumidas = regularesTodas.filter(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora');
+    const regularConsumed = consumidas.length;
     const nextRegularN = regularConsumed + 1;
 
-    // Saldo actual (capital pendiente). Solo Pagadas -> simetrico con regularConsumed.
+    // Saldo vivo: la MISMA formula de /recalculate. Resta el capital de las cuotas consumidas
+    // (el de las En Mora se cobra en su propia cuota, no se re-amortiza) y el de los ABONOS a
+    // capital. Hasta 3.4.1 los abonos no se restaban (Bug #79): tras un abono de 2.000.000 sobre 6.000.000
+    // el cronograma nuevo volvia a amortizar 6.000.000 hasta el siguiente arranque de la app.
     const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
-    const todoCapPagado = pagadasRegulares.reduce((s, p) => s + p.abonoCapital, 0);
-    const saldoActual = Math.max(0, originalCOP - todoCapPagado);
-    if (saldoActual <= 0) throw new ClientError('El prestamo no tiene saldo pendiente');
+    const capConsumido = consumidas.reduce((s, p) => s + p.abonoCapital, 0);
+    const capAbonos = allPays.filter(p => esAbono(p) && p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const saldoActual = Math.max(0, originalCOP - capAbonos - capConsumido);
+    if (saldoActual <= 0) {
+      throw new ClientError(moraCount > 0
+        ? 'Todo lo que queda por pagar esta en cuotas vencidas: no hay cuotas por vencer a las que cambiarles el dia. Cobralas con "Registrar cobro".'
+        : 'El prestamo no tiene saldo pendiente');
+    }
 
     // CUOTA TRANSITORIA: prorratear el interes de la 1a cuota a los DIAS REALES de su periodo.
-    // Referencia = fechaPago de la ultima cuota PAGADA o, si aun no hay pagos, el dia desde el
-    // que corre el interes. diasReales = nuevaFecha - referencia. La mora ya cubre su propio
-    // periodo (se suma aparte).
-    // 3.3.0 (Fase 1, Bug #73): antes la referencia sin pagos era `fechaInicio`, asi que en un
-    // prestamo creado perdonando los dias muertos, cambiar el dia antes del primer pago volvia a
-    // cobrar esos dias. `fechaInicioIntereses` es la gracia que se pacto; el fallback a
-    // `fechaInicio` solo cubre una fila que la migracion no haya podido rellenar.
-    const lastSettledDate = pagadasRegulares.length > 0
-      ? pagadasRegulares.map(p => p.fechaPago).sort().slice(-1)[0]
+    // Referencia = fechaPago de la ultima cuota ya FACTURADA (pagada o en mora: el periodo que
+    // cierra ya esta cobrado) o, si aun no hay ninguna, el dia desde el que corre el interes.
+    // 3.3.0 (Fase 1, Bug #73): sin cuotas, la referencia es `fechaInicioIntereses` (la gracia
+    // pactada), no `fechaInicio`; el fallback solo cubre una fila que la migracion no relleno.
+    const lastSettledDate = consumidas.length > 0
+      ? consumidas.map(p => p.fechaPago).sort().slice(-1)[0]
       : (loan.fechaInicioIntereses || loan.fechaInicio);
     // Regla "NUNCA ADELANTAR EL COBRO": si el nuevo dia dejaria la 1a cuota ANTES de la que ya
     // estaba agendada (mismo mes, dia menor), se rueda la base del cronograma +1 mes -> el pago
@@ -1101,11 +1118,11 @@ module.exports = function crearRutasLoans(ctx) {
     const remaining = indefinido ? 3 : Math.max(1, (loan.plazoMeses || 12) - regularConsumed);
     let nuevasCuotas = buildSchedule(loanConNuevoDia, nextRegularN, saldoActual, remaining);
 
-    // ── GUARDA DEFENSIVA: NUNCA sobrescribir una cuota ya PAGADA ───────────────
-    // Este endpoint tiene una asimetria propia: BORRA las cuotas En Mora pero cuenta como
-    // consumidas SOLO las Pagadas (regularConsumed, arriba). Si las Pagadas no son contiguas
+    // ── GUARDA DEFENSIVA: NUNCA sobrescribir una cuota ya PAGADA (ni, desde 3.5.0, una En Mora) ──
+    // Hasta 3.4.1 este endpoint BORRABA las cuotas En Mora y contaba como consumidas SOLO las
+    // Pagadas. Si las Pagadas no eran contiguas
     // —estado normal cuando el deudor abona el mes corriente y arrastra cuotas viejas— entonces
-    // nextRegularN queda POR DEBAJO del cuotaN de una Pagada existente, y como los ids son
+    // nextRegularN quedaba POR DEBAJO del cuotaN de una Pagada existente, y como los ids son
     // deterministas (`${loanId}-${cuotaN}`) e insPayment es INSERT OR REPLACE, la fila Pagada
     // se reemplazaba EN SILENCIO por una Pendiente nueva: se perdian estadoPago, fechaRecaudo,
     // montoCOPRecibido, paidAt y el ledger `recibos`, y el capital de esa cuota dejaba de contar
@@ -1116,29 +1133,33 @@ module.exports = function crearRutasLoans(ctx) {
     // la existencia antes de insertar. NO cambia la doctrina financiera del prorrateo: el filtro
     // se aplica ANTES de marcar la cuota transitoria, de modo que la transitoria siempre recae
     // sobre una fila que si se va a insertar.
-    const idsPagadas = new Set(pagadasRegulares.map(p => p.id));
-    const cuotasProtegidas = nuevasCuotas.filter(p => idsPagadas.has(p.id)).map(p => p.cuotaN);
+    // Desde 3.5.0 las En Mora se conservan, asi que tampoco se pueden pisar: la guarda cubre las
+    // dos (con las consumidas contadas, el rango nuevo ya empieza despues de ellas; esto queda
+    // para los saltos no contiguos).
+    const idsConsumidas = new Set(consumidas.map(p => p.id));
+    const cuotasProtegidas = nuevasCuotas.filter(p => idsConsumidas.has(p.id)).map(p => p.cuotaN);
     if (cuotasProtegidas.length > 0) {
-      nuevasCuotas = nuevasCuotas.filter(p => !idsPagadas.has(p.id));
+      nuevasCuotas = nuevasCuotas.filter(p => !idsConsumidas.has(p.id));
     }
 
-    // DURABILIDAD DE LO COBRADO (ver /abono): este endpoint borra Pendientes Y En Mora, asi que
-    // el snapshot cubre ambas. Restaurar ANTES de marcar la transitoria es deliberado: asi la
-    // etiqueta "Cuota transitoria..." (que se escribe justo abajo) prevalece sobre la observacion
-    // vieja en vez de ser pisada por ella. El parcial de una cuota En Mora viaja al mismo cuotaN,
-    // que es coherente: la transitoria absorbe precisamente el interes de esa mora.
-    const cobrosPrevFecha = snapshotCobros(regularesTodas.filter(p => p.estadoPago === 'Pendiente' || p.estadoPago === 'En Mora'));
+    // DURABILIDAD DE LO COBRADO (ver /abono): este endpoint borra SOLO las Pendientes (desde
+    // 3.5.0 las En Mora se quedan con su dinero encima), asi que el snapshot las cubre a ellas.
+    // Restaurar ANTES de marcar la transitoria es deliberado: asi la etiqueta "Cuota
+    // transitoria..." (que se escribe justo abajo) prevalece sobre la observacion vieja.
+    const cobrosPrevFecha = snapshotCobros(regularesTodas.filter(p => p.estadoPago === 'Pendiente'));
     abortarSiHuerfanos(nuevasCuotas, cobrosPrevFecha);
     restaurarCobros(nuevasCuotas, cobrosPrevFecha);
 
     // LA TRANSITORIA SE GUARDA COMO DECISION (3.2.0, Fase 1): la primera cuota que SI se va a
-    // insertar, desde que fecha corre su periodo y la mora que consolida. El interes lo deriva
+    // insertar y desde que fecha corre su periodo. Desde 3.5.0 la mora consolidada es SIEMPRE 0:
+    // las cuotas en mora siguen siendo cuotas (la columna solo sigue viva para los prestamos que
+    // un cambio de dia anterior dejo con mora consolidada; el motor y la liquidacion la leen). El interes lo deriva
     // el motor (`aplicarPeriodoIrregular`) aqui y en cada regeneracion posterior, siempre sobre
     // el capital vivo de ese momento. Antes se persistia el MONTO del ajuste, que un abono
-    // dejaba viejo. La formula es la misma de siempre: dias reales / 30 sobre el saldo, mas la
-    // mora aparte; el capital de la cuota no se toca.
+    // dejaba viejo. La formula es la misma de siempre: dias reales / 30 sobre el saldo; el
+    // capital de la cuota no se toca.
     const periodoNuevo = nuevasCuotas.length > 0
-      ? { periodoIrregularN: nuevasCuotas[0].cuotaN, periodoIrregularDesde: lastSettledDate, periodoIrregularMora: moraConsolidada }
+      ? { periodoIrregularN: nuevasCuotas[0].cuotaN, periodoIrregularDesde: lastSettledDate, periodoIrregularMora: 0 }
       : sinTransitoria;
     const loanTransitoria = Object.assign({}, loanConNuevoDia, periodoNuevo);
     // Se mide ANTES de aplicarla: `ajuste` compara contra la cuota de mes completo.
@@ -1151,7 +1172,7 @@ module.exports = function crearRutasLoans(ctx) {
     // ── FASE 2: ESCRITURA — la ejecuta mutacionAtomica dentro de UNA transaccion.
     const logMsg = 'Cambiaste dia de pago de ' + loan.nombre + ' del ' + loan.diaPago + ' al ' + nuevoDiaInt
       + ' - 1a cuota transitoria de ' + diasReales + ' dias (interes $' + interesProrrateado.toLocaleString('es-CO') + ')'
-      + (moraCount > 0 ? ' + ' + moraCount + ' cuota' + (moraCount > 1 ? 's' : '') + ' en mora ($' + moraConsolidada.toLocaleString('es-CO') + ')' : '');
+      + (moraCount > 0 ? '; las ' + moraCount + ' cuota' + (moraCount > 1 ? 's' : '') + ' en mora ($' + moraPendiente.toLocaleString('es-CO') + ') siguen vencidas' : '');
 
     return {
       descripcion: logMsg,
@@ -1164,16 +1185,20 @@ module.exports = function crearRutasLoans(ctx) {
         capitalCuota: nuevasCuotas.length > 0 ? nuevasCuotas[0].abonoCapital : 0,
         cuotaTotalTransitoria: nuevasCuotas.length > 0 ? nuevasCuotas[0].cuotaTotal : 0,
         cuotasRecurrentes: nuevasCuotas.length > 1 ? nuevasCuotas[1].cuotaTotal : (nuevasCuotas[0] ? nuevasCuotas[0].cuotaTotal - netAdj : 0),
-        moraConsolidada: moraConsolidada,
+        // 3.5.0: la mora ya no se consolida (siempre 0; se conserva la clave por compatibilidad).
+        // `moraCount` / `moraPendiente` describen las cuotas en mora que quedan TAL CUAL.
+        moraConsolidada: 0,
         prorrateo: interesProrrateado,
         diasReales: diasReales,
+        desde: lastSettledDate,
         moraCount: moraCount,
+        moraPendiente: moraPendiente,
         // Cuotas ya Pagadas que la guarda defensiva protegio de ser sobrescritas (normalmente []).
         cuotasProtegidas: cuotasProtegidas
       },
       aplicar: () => {
-        // Borrar Pendientes + En Mora regulares (preserva Pagadas y abonos '-ab-')
-        db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND id NOT LIKE '%-ab-%'").run(req.params.id);
+        // Borrar SOLO las Pendientes regulares (preserva Pagadas, En Mora y abonos '-ab-')
+        db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago = 'Pendiente' AND id NOT LIKE '%-ab-%'").run(req.params.id);
         db.prepare('UPDATE loans SET diaPago = ?, fechaBaseCronograma = ? WHERE id = ?').run(nuevoDiaInt, baseCron, req.params.id);
         // Persistir la DECISION de la transitoria (no su monto): las cinco rutas que regeneran
         // cuotas la vuelven a derivar en el motor. `proximaCuotaExtra` se deja en 0: ya nadie la

@@ -707,5 +707,19 @@ export const CHANGELOGS = {
   ],
   '3.4.1': [
     'En el Resumen, la lista de cuotas pendientes de la Meta del mes y la tabla del Radar de la cartera ahora usan todo el alto de su tarjeta: ya no se cortan antes de tiempo dejando un espacio vacio debajo.'
+  ],
+  '3.5.0': [
+    'Nueva pestana Cobros (reemplaza a Pagos): todo lo que hay que cobrar ordenado por urgencia en cinco tramos (vencido, hoy, proximos 7 dias, este mes y mas adelante), cada uno con su total. Lo que vence en mas de 30 dias queda plegado para no alargar la lista.',
+    'En Cobros, lo vencido se agrupa por credito: si alguien debe varias cuotas se ve como una sola deuda, y el boton Cobrar reparte en cascada lo que te entregue. Cada cuota tiene su boton Pago y su factura en PDF a un clic.',
+    'Los creditos con varias cuotas vencidas aparecen plegados en una sola linea, con cuantas cuotas son, cuanto suman y los dias de mora de la mas vieja. Un clic las despliega una por una.',
+    'Cobros tiene ademas la vista Cobrado: toda la plata que entro en el mes, dia por dia, separada en intereses, capital y efecto de la tasa de cambio.',
+    'Cartera y Deudores se unieron en una sola pestana Cartera: cada persona con sus prestamos activos, ordenadas por lo que necesita atencion primero, con filtros (en mora, cobran esta semana, en dolares, sin prestamos activos), orden y busqueda por nombre o telefono.',
+    'El perfil del deudor ya no es una ventana que tapa la lista: se abre en un panel al lado, en Cobros y en Cartera. Sus prestamos van como pestanas, con las acciones a la vista, el cronograma, lo recaudado y el flujo de caja, y los prestamos cerrados en su historial. Despues de cobrar o liquidar, el panel sigue abierto y se actualiza solo.',
+    'Tocar un nombre en el Resumen o en la busqueda abre Cartera con esa persona y ese prestamo; los avisos de mora y de cuotas por vencer del encabezado abren Cobros en su tramo.',
+    'Cambiar el dia de pago tiene ahora su propia ventana, y solo se ofrece en los prestamos donde se puede usar (solo intereses o capital + intereses, con cobro mensual).',
+    'Nuevo recibo de pago al registrar un cobro: una sola cifra grande con lo que recibiste, una frase que explica a que se fue el dinero, cuanto le falta al cliente para ponerse al dia y su proxima cuota, la barra de avance del credito y una tabla corta de sus cuotas. Cabe en una hoja y se ve bien en el celular.',
+    'Nuevo Recibo de cobro general: un solo documento con toda la deuda vencida de un cliente, sus opciones de pago (ponerse al dia, al dia mas la proxima cuota o liquidar) y el estado de cada uno de sus creditos. Se genera desde la fila del credito con varias cuotas vencidas en Cobros y desde el panel del deudor. Si el cliente tiene varios creditos, el total va arriba y el detalle de cada uno debajo.',
+    'Se corrigio que cambiar el dia de pago de un prestamo con cuotas vencidas cobrara dos veces los intereses de esos meses. Ahora las cuotas vencidas se quedan como estan, y la primera cuota nueva solo cobra los dias que van desde la ultima cuota ya facturada.',
+    'Se corrigio que cambiar el dia de pago despues de un abono a capital recalculara las cuotas como si el abono no se hubiera hecho.'
   ]
 };

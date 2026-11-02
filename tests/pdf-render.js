@@ -119,7 +119,7 @@ const CAP = FE.captura;
 const GENERADORES = ['generateCronogramaPDF', 'generateReportePrestamosPDF',
                      'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono',
                      'generateEstadoLiquidacion', 'generateReciboCobro',
-                     'generatePropuestaAbono'];
+                     'generatePropuestaAbono', 'generateReciboGeneral'];
 const faltantes = GENERADORES.filter(n => typeof S[n] !== 'function');
 if (faltantes.length) {
   abortar('El frontend no expone estos generadores como funciones top-level: ' + faltantes.join(', ') +
@@ -540,41 +540,27 @@ const CASOS = [
       pre: snapshotPrevio(L('1773656070840'), pays, 100000) }),
     contiene: ['Resumen', 'Nuevo saldo pendiente'] },
 
-  // ── generateReciboCobro — comprobante consolidado del cobro en cascada ────────────────
-  // v2.9.6: estos casos declaraban `celdas: null` porque el bloque 4 era un RESUMEN sin
-  // tabla. Ya no: el documento incluye "Lo que queda por pagar", cuota por cuota, con lo
-  // ya abonado en cada una. El resumen solo no alcanzaba — en una prueba real convivian
-  // "saldo de capital USD 117.65" y "valor de la cuota USD 157.79" con UNA cuota
-  // pendiente, sin forma de ver que la diferencia era el interes que el cliente acababa
-  // de adelantar sobre esa misma cuota. El Paz y Salvo sigue en `null`: alli no hay
-  // bloque 4 porque no queda credito.
-  // Los pasos se construyen con `planCascada` REAL sobre los datos del fixture: escribirlos
-  // a mano fijaria una forma que podria dejar de ser la que el orquestador produce, y este
-  // documento existe precisamente para describir esa forma.
-  //
-  // v2.9.6: la PRIMERA tarjeta del bloque 4 es "Total por pagar" — la misma cifra con la
-  // que abre la Propuesta de Abono. Antes cada papel de la misma operacion lideraba con
-  // algo distinto en el mismo lugar visual (total alla, saldo de capital aca) y parecian
-  // contradecirse. Que las dos tarjetas convivan es lo que se fija aqui; que su cifra
-  // COINCIDA con la de la propuesta lo fija la seccion J de `cascada-cobro`.
-  { nombre: 'cobro-cascada-usd-oscuro', gen: 'generateReciboCobro', tema: 'dark', celdas: 5,
+  // ── generateReciboCobro — el RECIBO DE PAGO de un cobro en cascada ─────────────────────
+  // 3.5.0: rediseno aprobado por el PO sobre un prototipo con un cobro real. Una cifra
+  // protagonista (lo que entro), una FRASE por movimiento (las cuotas saldadas seguidas en una
+  // sola), "Lo que sigue" (ponerse al dia y la proxima cuota), la barra del credito con dos
+  // saldos con nombre propio y una tabla de 4 columnas con las cuotas lejanas resumidas.
+  // Los golden de estos casos se RE-ESTABLECIERON a proposito con ese rediseno.
+  // Los pasos se construyen con `planCascada` REAL sobre los datos del fixture: escribirlos a
+  // mano fijaria una forma que podria dejar de ser la que el orquestador produce.
+  // Que lo declarado cuadre al peso con el motor lo fijan las secciones G, H y J de
+  // `cascada-cobro`, contra el server real.
+  { nombre: 'cobro-cascada-usd-oscuro', gen: 'generateReciboCobro', tema: 'dark', celdas: 4,
     entrada: () => ({ loanId: '1782151590658w66y', cascada: true, tema: 'dark', dark: true }),
     ejecutar: () => S.generateReciboCobro(L('1782151590658w66y'), pays,
       cobroDe(L('1782151590658w66y'), pays)),
-    // Con mora viva el rotulo de la cuota NO puede prometer un proximo pago: hay plata
-    // vencida que se debe ANTES de esa fecha. Se degrada a "Proxima cuota" y el pie rojo
-    // sigue anunciando lo vencido.
-    contiene: ['Recibo de Cobro', 'Como se aplico tu pago', 'rc-paso', 'Total aplicado',
-               'Caja registrada en pesos', 'USD $', 'RC-', '#0d1117',
-               'Total por pagar', 'capital + intereses',
-               'Proxima cuota', 'A PAGAR', 'cuotas vencidas'],
-    noContiene: ['A pagar el'] },
+    // USD protagonista con la caja del dia debajo; mora + abono = dos frases y la nota del
+    // orden de imputacion. El recibo viejo repetia la cifra en "Total aplicado": ya no existe.
+    contiene: ['Recibo de pago', 'Recibimos tu pago', 'Cómo se aplicó tu pago', 'Saldamos tu', 'Abonamos',
+               'class="r-a"', 'Equivalen a', 'USD $', 'RC-', '#0d1117', 'Así va tu crédito',
+               'Te falta por pagar', 'De eso, capital', 'Tus cuotas', 'Total por pagar', 'Cómo se imputa el pago'],
+    noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos'] },
 
-  // v2.9.6 — el override `incluirInteresMes`. Lo que este caso fija, y que fallaba:
-  //   - el paso se rotula "Interes del mes", NO "Cuota #N vencida";
-  //   - dice "aun no vence", no "vencia el";
-  //   - el rubro es "Interes del mes en curso", separado de "Intereses vencidos";
-  //   - y el bloque "Lo que queda por pagar" detalla la cuota con lo ya abonado.
   // ── generatePropuestaAbono — el papel que se manda ANTES de cobrar ────────────────────
   // Lo que este caso fija: que el documento NO se presente como comprobante. Un papel con
   // el membrete de la app y cifras exactas que dijera "recibido" seria un registro falso
@@ -628,76 +614,106 @@ const CASOS = [
     // Lo que el titular dejo de decir, porque la tabla ya lo dice.
     noContiene: ['ya abonado', 'Total por pagar', 'Cuotas restantes'] },
 
-  { nombre: 'cobro-con-interes-del-mes', gen: 'generateReciboCobro', tema: 'dark', celdas: 5,
+  // El override `incluirInteresMes`: el paso se dice en otro tiempo verbal ("Adelantamos el
+  // interes de tu cuota del..., que aun no vence") y su importe lleva su propia clase. Una
+  // prueba real del PO destapo que el recibo viejo llamaba "vencida" a una cuota del 19 en un
+  // cobro del 3.
+  { nombre: 'cobro-con-interes-del-mes', gen: 'generateReciboCobro', tema: 'dark', celdas: 4,
     entrada: () => ({ loanId: '1782151590658w66y', cascada: 'interesMes', tema: 'dark', dark: true }),
     ejecutar: () => S.generateReciboCobro(L('1782151590658w66y'), pays,
       cobroConInteresMes(L('1782151590658w66y'), pays)),
-    contiene: ['Interes del mes', 'POR ADELANTADO', 'aun no vence',
-               'Interes del mes en curso', 'Lo que queda por pagar',
-               'YA ABONADO', 'TOTAL POR PAGAR', 'Total por pagar', 'capital + intereses'],
-    // En este escenario el dinero salda TODA la mora, asi que ningun paso puede quedar
-    // debiendo. Si "queda debiendo" reaparece es el paso del interes del mes imprimiendo
-    // su `restanteCuota`, que es una cifra PREVIA al abono y por tanto ya falsa cuando el
-    // abono regenera el cronograma (medido: decia USD 243.38 debiendo USD 117.65).
-    noContiene: ['queda debiendo'] },
+    contiene: ['Adelantamos el interés de', 'que aún no vence', 'class="r-m"', 'Tus cuotas', 'Total por pagar'],
+    noContiene: ['queda debiendo', 'Total aplicado'] },
 
-  { nombre: 'cobro-cascada-cop-intereses', gen: 'generateReciboCobro', tema: 'light', celdas: 5,
+  // Modalidad `Intereses`: varias cuotas vencidas saldadas van en UNA frase, y NO hay "Te falta
+  // por pagar": sus cuotas son de puro interes y el capital vence fuera de ellas, asi que la suma
+  // anunciaria MENOS deuda de la que hay (medido sobre este credito: 2.700.000 bajo un capital
+  // de 3.000.000). El total de la tabla se rotula como lo que es.
+  { nombre: 'cobro-cascada-cop-intereses', gen: 'generateReciboCobro', tema: 'light', celdas: 4,
     entrada: () => ({ loanId: '1773655076017', cascada: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateReciboCobro(L('1773655076017'), pays,
       cobroDe(L('1773655076017'), pays)),
-    contiene: ['Recibo de Cobro', 'Intereses vencidos', 'Como se imputa el pago',
-               'Tu credito despues de este pago',
-               // La tabla SI totaliza lo que lista...
-               'TOTAL POR PAGAR'],
-    // ...pero la TARJETA no se dibuja en modalidad `Intereses`: sus cuotas son de puro
-    // interes y el capital vence al final, fuera del cronograma. El titular diria
-    // "Total por pagar 2.700.000" bajo un "Saldo de capital 3.000.000" — menos deuda de
-    // la que hay. Este es el credito con el que se midio.
-    noContiene: ['Total por pagar', 'capital + intereses'] },
+    contiene: ['Saldamos tus <b>cuotas del', 'Cómo se imputa el pago', 'Saldo de capital', 'plazo indefinido',
+               'Total de estas cuotas'],
+    noContiene: ['Te falta por pagar', 'Total por pagar', 'De eso, capital'] },
 
-  // Un cobro de UN solo paso: sin mora, la cascada degenera en un abono. Aqui la nota que
-  // explica el orden de imputacion no debe aparecer (no hay nada que repartir).
-  { nombre: 'cobro-un-solo-paso', gen: 'generateReciboCobro', tema: 'light', celdas: 5,
+  // Un cobro de UN solo paso: sin mora, la cascada degenera en un abono. Sin numeracion de
+  // pasos ni nota de imputacion (no hay nada que repartir), y sin "Para ponerte al dia".
+  { nombre: 'cobro-un-solo-paso', gen: 'generateReciboCobro', tema: 'light', celdas: 4,
     entrada: () => ({ loanId: '17795544041379obc', cascada: true, unPaso: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateReciboCobro(L('17795544041379obc'), pays,
       cobroDe(L('17795544041379obc'), pays)),
-    // Sin mora, el rotulo si puede comprometer la fecha del proximo giro.
-    contiene: ['Abono extraordinario a capital', 'Saldo de capital', 'Total por pagar',
-               'A pagar el', 'A PAGAR'],
-    noContiene: ['Proxima cuota'] },
+    contiene: ['Abonamos', 'Tu próxima cuota', 'Te falta por pagar', 'De eso, capital', 'Total por pagar', 'Por vencer'],
+    noContiene: ['Cómo se imputa el pago', 'class="r-n"', 'Para ponerte al día'] },
 
-  // El colapso a UNA sola tarjeta. Con una cuota viva y un parcial que ya cubrio su
-  // interes, el total por pagar, el saldo de capital y el proximo pago son EL MISMO
-  // numero. No es casualidad, es una identidad:
-  //   total        = cuota - abonado
-  //   saldoConCaja = capital - (abonado - interes) = capital + interes - abonado = total
-  // Tres tarjetas repitiendo la cifra se leen como un error del documento, asi que se
-  // reemplazan por una sola que dice lo unico que el cliente necesita: cuanto gira y
-  // cuando. El fixture no tiene un credito en ese estado; se construye en memoria.
-  { nombre: 'cobro-hero-un-solo-pago', gen: 'generateReciboCobro', tema: 'light', celdas: 5,
+  // Una sola cuota viva con un parcial que ya cubrio su interes: lo que falta por pagar y el
+  // capital son EL MISMO numero (es una identidad: cuota - abonado = capital + interes -
+  // abonado), y ninguna cifra se repite: queda un solo saldo. La cuota a medias dice lo
+  // abonado en su fila. El fixture no tiene un credito en ese estado; se construye en memoria.
+  { nombre: 'cobro-hero-un-solo-pago', gen: 'generateReciboCobro', tema: 'light', celdas: 4,
     entrada: () => ({ loanId: LOAN_HERO, hero: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateReciboCobro(L(LOAN_HERO), paysHero, cobroDe(L(LOAN_HERO), paysHero)),
-    // `rc-hero` es el aserto que de verdad importa: si la identidad dejara de cumplirse,
-    // el documento volveria a las tres tarjetas y este caso se pondria rojo sin ambiguedad.
-    contiene: ['rc-hero', 'Tu proximo pago', 'A PAGAR', '&minus;'],
-    // El titular quedo con el monto y la fecha: la resta la desglosa la tabla en sus
-    // columnas VALOR CUOTA / YA ABONADO / A PAGAR. Mismo criterio que en la Propuesta.
-    noContiene: ['Total por pagar', 'Saldo de capital', 'Cuotas pendientes', 'ya abonado'] },
+    contiene: ['Tu próxima cuota', 'ya abonaste', 'Te falta por pagar', 'class="r-cap"'],
+    noContiene: ['De eso, capital', 'Para ponerte al día'] },
 
   // Variante PAZ Y SALVO. Es la unica que se alimenta de un paso sintetico: pdf-render no
-  // escribe en la BD, asi que ningun cobro sobre un prestamo activo puede dejarlo en cero
-  // dentro de este arnes. Se usa un prestamo YA saldado del fixture, que es el estado en el
-  // que el generador entra a esa variante.
+  // escribe en la BD. Sin "Lo que sigue", sin credito ni tabla: no queda deuda que anunciar.
   { nombre: 'cobro-paz-y-salvo', gen: 'generateReciboCobro', tema: 'light', celdas: null,
     entrada: () => ({ loanId: '1773652420812', cascada: true, sintetico: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateReciboCobro(L('1773652420812'), pays, {
       fecha: '2026-07-20', pre: { saldoCaja: 200000, cuota: 0 },
       pasos: [{ tipo: 'abono', obligacionCOP: 200000, obligacionUSD: 0,
                 interes: 0, capital: 200000, cajaCOP: 200000 }] }),
-    contiene: ['PAZ Y SALVO', 'Paz y Salvo', 'cancelada la totalidad'],
-    // La tarjeta "Total por pagar" vive DENTRO del `if (!esPazYSalvo)`. Sacarla de ahi
-    // dejaria un Paz y Salvo anunciando deuda: el documento se contradiria a si mismo.
-    noContiene: ['Total por pagar', 'Lo que queda por pagar'] },
+    contiene: ['PAZ Y SALVO', 'Paz y salvo', 'cancelada la totalidad', '¡Felicidades'],
+    noContiene: ['Te falta por pagar', 'Tus cuotas', 'Lo que sigue'] },
+
+  // ── generateReciboGeneral — el aviso de cobro con toda la deuda de un deudor (3.5.0) ──────
+  // El prototipo aprobado por el PO usaba el credito ...jkph del fixture: al 31-jul esta al
+  // dia, y al 2-nov (sin pagos nuevos) tiene 3 cuotas vencidas por $1.180.830. `hasta` es un
+  // parametro del generador, asi que el corte no depende del reloj congelado.
+  { nombre: 'general-un-credito-mora', gen: 'generateReciboGeneral', tema: 'light', celdas: 4,
+    entrada: () => ({ loanIds: ['1776205975507jkph'], hasta: '2026-11-02', tema: 'light' }),
+    ejecutar: () => S.generateReciboGeneral([L('1776205975507jkph')], pays, config.datos_pago, { hasta: '2026-11-02' }),
+    contiene: ['Recibo de cobro general', 'Para ponerte al día', '3 cuotas vencidas', 'Lo que está vencido',
+               'de eso, intereses', 'Tus opciones de pago', 'LO MÍNIMO', 'Al día + la próxima cuota', 'Liquidar el crédito',
+               'válido hasta el', 'Así va tu crédito', 'abono a capital', 'Cómo pagar', 'no certifica ningún pago', 'CG-'],
+    noContiene: ['Crédito 1', 'Recibimos tu pago', 'Estás al día'] },
+
+  { nombre: 'general-al-dia', gen: 'generateReciboGeneral', tema: 'light', celdas: null,
+    entrada: () => ({ loanIds: ['1776205975507jkph'], hasta: '2026-07-31', tema: 'light' }),
+    ejecutar: () => S.generateReciboGeneral([L('1776205975507jkph')], pays, config.datos_pago, { hasta: '2026-07-31' }),
+    contiene: ['Estás al día', 'Tu próxima cuota', 'Puedes adelantar cualquier valor', 'Gracias por estar al día'],
+    noContiene: ['Lo que está vencido', 'LO MÍNIMO', 'Para ponerte al día'] },
+
+  // VARIOS CREDITOS (decision del PO): el total consolidado arriba y el desglose por credito
+  // debajo. La tabla de lo vencido gana la columna del credito (5 celdas).
+  { nombre: 'general-varios-usd-oscuro', gen: 'generateReciboGeneral', tema: 'dark', celdas: 5,
+    entrada: () => ({ loanIds: ['1773657323435hkkb', '1782151590658w66y'], hasta: '2026-11-02', tema: 'dark' }),
+    ejecutar: () => S.generateReciboGeneral([L('1773657323435hkkb'), L('1782151590658w66y')], pays, config.datos_pago, { hasta: '2026-11-02' }),
+    contiene: ['Crédito 1', 'Crédito 2', 'en 2 créditos', 'Liquidar tus créditos', 'liquidarlo hoy', 'USD $', '#0d1117', '-2C-'],
+    noContiene: ['Así va tu crédito'] },
+
+  // `Intereses` con muchas cuotas vencidas: las mas viejas se resumen en UNA fila con su total
+  // (nunca se omiten), y no hay "lo que falta por pagar" (el capital vence fuera de las cuotas).
+  // Corre sobre `paysParcial`, con un abono de 120.000 encima de una cuota vencida: liquidar
+  // RESTA lo ya abonado (`computeLiquidacion`), y la tarjeta tiene que explicarlo sin tocar el
+  // capital. Sin un parcial, omitir esa resta pasaba la suite en verde (verificado).
+  { nombre: 'general-intereses-resumen', gen: 'generateReciboGeneral', tema: 'light', celdas: 4,
+    entrada: () => ({ loanIds: ['1773655076017'], hasta: '2026-11-02', tema: 'light', parcial: true }),
+    ejecutar: () => S.generateReciboGeneral([L('1773655076017')], paysParcial, '', { hasta: '2026-11-02' }),
+    contiene: ['8 cuotas vencidas', 'hasta ', ' cuotas</span>', 'Saldo de capital', 'plazo indefinido',
+               'capital ' + S.fmt(S.computeLiquidacion(L('1773655076017'), paysParcial, { hasta: '2026-11-02' }).capitalPendiente) + ' + intereses vencidos',
+               ' − lo ya abonado ' + S.fmt(120000)],
+    noContiene: ['Te falta por pagar', 'Cómo pagar'] },
+
+  // Un deudor con un credito en pesos y otro en dolares: los totales no se suman entre si, se
+  // imprimen juntos. Y el credito abierto de interes diario no entra, pero se ANUNCIA (doctrina
+  // "no silent caps"). El fixture no tiene ese deudor: se arma con creditos de otros.
+  { nombre: 'general-mixto-con-diario', gen: 'generateReciboGeneral', tema: 'light', celdas: 5,
+    entrada: () => ({ loanIds: ['1776205975507jkph', '1782151590658w66y', 'fixture-diario-01'], hasta: '2026-11-02', tema: 'light' }),
+    ejecutar: () => S.generateReciboGeneral([L('1776205975507jkph'), L('1782151590658w66y'), L('fixture-diario-01')], pays, config.datos_pago, { hasta: '2026-11-02' }),
+    contiene: ['r-monto mixto', ' + USD $', 'Crédito 2', 'de interés diario no está en este documento'],
+    noContiene: ['Crédito 3'] },
 
   { nombre: 'abono-paz-y-salvo', gen: 'generateReciboAbono', tema: 'light', celdas: null,
     entrada: () => ({ loanId: '1773652420812', monto: 200000, mode: 'mantener', tema: 'light' }),
@@ -827,7 +843,9 @@ const RE_MONTO = /(?:USD[\s ]*)?\$[\s ]*\d[\d.,]*/g;
 // ni `.ab-name`: ahi viven los importes y los nombres de las personas.
 const CLASES_ETIQUETA = ['section-title', 'label', 'rc-stitle', 'rc-lab', 'rc-doc-type',
                          'rc-hero-label', 'rc-total-label', 'rc-tdate-lab', 'ab-st', 'ab-lab',
-                         'ab-cl', 'ab-tl', 'ab-type', 'ab-liq-q', 'ab-paz-t'];
+                         'ab-cl', 'ab-tl', 'ab-type', 'ab-liq-q', 'ab-paz-t',
+                         // Los recibos de 3.5.0 (`recibo-estilo.js`): titulos de seccion y de tarjeta.
+                         'r-sec-t', 'r-tar-l'];
 
 const MESES = 'enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sept|sep|oct|nov|dic';
 
@@ -940,6 +958,16 @@ function escribirGolden(caso, obj) {
 
 // ── Corrida ──────────────────────────────────────────────────────────────────────────────
 
+// Los recibos de 3.5.0 envuelven el documento en una tabla cuyo thead/tfoot repite el margen en
+// cada hoja impresa (`RB_MARCO_*` en recibo-estilo.js). Es MAQUETACION, no contenido: se quita
+// antes de medir, o su fila de una celda contaria como una fila mas de cada documento.
+function sinMarco(html) {
+  const abre = S.RB_MARCO_ABRE, cierra = S.RB_MARCO_CIERRA;
+  if (!abre || html.indexOf(abre) === -1) return html;
+  const sin = html.replace(abre, ''), k = sin.lastIndexOf(cierra);
+  return sin.slice(0, k) + sin.slice(k + cierra.length);
+}
+
 // Ejecuta un caso y devuelve { html, fname } o lanza si no emitio exactamente un PDF.
 function generar(caso) {
   ponerTema(caso.tema);
@@ -948,7 +976,7 @@ function generar(caso) {
   if (CAP.pdfs.length !== 1) {
     throw new Error(`emitio ${CAP.pdfs.length} documento(s) por electronAPI.printPDF, se esperaba 1`);
   }
-  return CAP.pdfs[0];
+  return { html: sinMarco(CAP.pdfs[0].html), fname: CAP.pdfs[0].fname };
 }
 
 console.log('[pdf-render] frontend: ' + FE.meta.origen + ' (lineas ' + FE.meta.lineas + ', ' +
@@ -1213,10 +1241,11 @@ for (const caso of CASOS) {
   // entrada lo abren (la leccion de la seccion K de cascada-cobro: un arnes que arma sus propios
   // argumentos no ve si el cable real se corta).
   const leer = (rel) => fs.readFileSync(path.join(REPO, 'public', 'js', rel), 'utf8');
-  const srcDebtor = leer('modales/DebtorModal.js'), srcApp = leer('app.js'), srcLiq = leer('modales/LiquidarModal.js');
-  R.check('M4 perfil: "Descargar PDF" pasa por la compuerta y abre el modal',
-          /else if\(preguntaInteresMes\(l,lp\)\) setCronoPdf\(l\.id\);/.test(srcDebtor) &&
-          /cronoPdfLoan&&h\(CronogramaPdfModal,/.test(srcDebtor));
+  // 3.5.0: el perfil del deudor paso de modal (DebtorModal) a panel lateral (DeudorPanel).
+  const srcPanel = leer('componentes/DeudorPanel.js'), srcApp = leer('app.js'), srcLiq = leer('modales/LiquidarModal.js');
+  R.check('M4 panel del deudor: "Cronograma PDF" pasa por la compuerta y abre el modal',
+          /else if \(preguntaInteresMes\(l, m\.lp\)\) setCronoPdf\(l\.id\);/.test(srcPanel) &&
+          /cronoPdf && h\(CronogramaPdfModal,/.test(srcPanel));
   R.check('M4 alta de prestamo: pasa por la compuerta y abre el modal',
           /if\(pNuevo\.length&&preguntaInteresMes\(lNuevo,pNuevo\)\)\{\s*setCronoPdfModal\(/.test(srcApp) &&
           /cronoPdfModal&&h\(CronogramaPdfModal,/.test(srcApp));

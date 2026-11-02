@@ -99,7 +99,7 @@ function cargarCascada() {
   vm.runInContext(orden.join('\n'), ctx);
   const api = vm.runInContext(
     '({planCascada,cobrableTotal,contextoCascada,proyeccionCobro,filasPreview,previewRecalculo,aplicarTransitoriaPreview,' +
-    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros})', ctx);
+    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros,rbMedia})', ctx);
   api.pdfs = pdfs;
   return api;
 }
@@ -177,7 +177,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
 
 (async function main() {
   const { planCascada, cobrableTotal, proyeccionCobro, filasPreview, previewRecalculo, aplicarTransitoriaPreview, _pmt, _tasaPeriodo,
-          generateReciboCobro, generatePropuestaAbono, saldoConCaja, imputarCobros, pdfs } = cargarCascada();
+          generateReciboCobro, generatePropuestaAbono, saldoConCaja, imputarCobros, rbMedia, pdfs } = cargarCascada();
   // La seccion J necesita el mismo buzon de PDFs con otro nombre, porque comparte
   // scope con la G y alli `pdfs` ya esta en uso.
   const pdfsCascada = pdfs;
@@ -546,18 +546,22 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
       return m[1] ? parseFloat(m[2].replace(/,/g, ''))
                   : parseInt(m[2].replace(/[^0-9]/g, ''), 10);
     };
-    const heroDe  = html => (/<div class="rc-ta">([\s\S]*?)<\/div>/.exec(html) || [])[1];
-    const heroSub = html => (/<div class="rc-ts">([\s\S]*?)<\/div>/.exec(html) || [])[1];
-    const filasPanel = html => {
-      const out = [], re = /<div class="rc-row(?: rc-row-tot)?"><span class="rc-lab">([\s\S]*?)<\/span><span class="rc-val"[^>]*>([\s\S]*?)<\/span><\/div>/g;
-      let m; while ((m = re.exec(html)) !== null) out.push({ lab: m[1], val: m[2] });
-      return out;
+    // El recibo de 3.5.0 (`recibo-cobro.js`) dice a donde fue el dinero en FRASES, con cada
+    // importe marcado por su clase: `r-i` interes vencido, `r-m` interes del mes, `r-k` capital,
+    // `r-a` abono. Ya no hay panel de rubros con "Total aplicado" (repetia el titular): lo que
+    // se suma aqui es exactamente lo que el cliente lee.
+    const heroDe  = html => (/<div class="r-monto[^"]*">([\s\S]*?)<\/div>/.exec(html) || [])[1];
+    const heroSub = html => (/<div class="r-equiv">([\s\S]*?)<\/div>/.exec(html) || [])[1];
+    const rubrosDe = (html, esUSD) => {
+      const t = { 'r-i': 0, 'r-m': 0, 'r-k': 0, 'r-a': 0 }, hay = {};
+      const re = /<b class="(r-[imka])">([^<]*)<\/b>/g;
+      let m; while ((m = re.exec(html)) !== null) { t[m[1]] += numDe(m[2]); hay[m[1]] = true; }
+      Object.keys(t).forEach(k => { t[k] = esUSD ? Math.round(t[k] * 100) / 100 : Math.round(t[k]); });
+      t.total = esUSD ? Math.round((t['r-i'] + t['r-m'] + t['r-k'] + t['r-a']) * 100) / 100 : t['r-i'] + t['r-m'] + t['r-k'] + t['r-a'];
+      t.hay = hay;
+      return t;
     };
-    const tarjetas = html => {
-      const out = [], re = /<div class="rc-card"><div class="rc-cl">([\s\S]*?)<\/div>([\s\S]*?)<div class="rc-new">([\s\S]*?)<\/div><\/div>/g;
-      let m; while ((m = re.exec(html)) !== null) out.push({ lab: m[1], val: m[3] });
-      return out;
-    };
+    const saldoCapDe = html => { const m = /<b class="r-cap">([^<]*)<\/b>/.exec(html); return m ? m[1] : null; };
 
     const inicial = cargarG();
     const conMoraG = l => inicial.pays.some(p => p.prestamoId === l.id && p.estadoPago === 'En Mora' && !esAbono(p));
@@ -647,20 +651,13 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         R.eq(et + 'el hero declara la caja recibida, exacta', numDe(heroDe(html)), cajaCOP);
       }
 
-      // 2. IDENTIDAD DEL DESGLOSE, en la moneda visible (Bug #31).
-      const filas = filasPanel(html);
-      const fila = lab => filas.find(x => x.lab === lab);
-      const val  = lab => { const f = fila(lab); return f ? numDe(f.val) : 0; };
-      const totalDoc = val('Total aplicado');
-      const sumaRubros = val('Intereses vencidos') + val('Capital de cuotas vencidas') + val('Abono extraordinario a capital');
-      R.eq(et + 'intereses + capital de mora + abono == total aplicado',
-        esUSD ? Math.round(sumaRubros * 100) / 100 : Math.round(sumaRubros), totalDoc);
-      // El aserto anterior es NECESARIO pero no suficiente: el generador calcula el total
-      // COMO la suma de los rubros, asi que se cumple solo. Este es el que ata el papel al
-      // dinero — el total declarado tiene que ser la obligacion que de verdad se extinguio.
+      // 2. LO QUE DICEN LAS FRASES == LA OBLIGACION REALMENTE EXTINGUIDA, en la moneda visible
+      // (Bug #31). Es el aserto que ata el papel al dinero: cada importe que el cliente lee,
+      // sumado, tiene que ser exactamente la deuda que el motor dio por pagada.
+      const rub = rubrosDe(html, esUSD);
       const oblAplicada = est.hechos.reduce((s, p) => s + Math.round(p.obligacionCOP), 0);
-      R.eq(et + 'el total declarado == la obligacion realmente extinguida',
-        totalDoc, esUSD ? Math.round(oblAplicada / trm * 100) / 100 : oblAplicada);
+      R.eq(et + 'intereses + capital + abono declarados == la obligacion realmente extinguida',
+        rub.total, esUSD ? Math.round(oblAplicada / trm * 100) / 100 : oblAplicada);
 
       // 3. CADA RUBRO APARECE SI Y SOLO SI ESTE COBRO LO TIENE.
       // La expectativa se DERIVA de los pasos aplicados, no se cablea: un rubro en cero
@@ -669,28 +666,22 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
       // sin capital en la mora (modalidad Intereses) y sin intereses (cuota cuyo interes
       // ya lo cobro el parcial del objetivo anterior).
       const espera = {
-        'Intereses vencidos':             est.hechos.reduce((s, p) => s + p.interes, 0) > 0,
-        'Capital de cuotas vencidas':     esperaCapMora,
-        'Abono extraordinario a capital': est.hechos.filter(p => p.tipo === 'abono').length > 0,
+        'r-i': est.hechos.reduce((s, p) => s + p.interes, 0) > 0,
+        'r-k': esperaCapMora,
+        'r-a': est.hechos.filter(p => p.tipo === 'abono').length > 0,
       };
-      Object.keys(espera).forEach(lab => {
-        const hay = !!fila(lab);
-        rubrosVistos[lab] = rubrosVistos[lab] || (hay && val(lab) > 0);
-        R.check(et + (espera[lab] ? ('declara "' + lab + '"')
-                                  : ('omite "' + lab + '" en vez de imprimir un cero')),
-          espera[lab] ? (hay && val(lab) > 0) : !hay,
-          filas.map(f => f.lab).join(' | '));
+      const nombreRubro = { 'r-i': 'intereses vencidos', 'r-k': 'capital de cuotas vencidas', 'r-a': 'abono a capital' };
+      Object.keys(espera).forEach(k => {
+        rubrosVistos[k] = rubrosVistos[k] || (!!rub.hay[k] && rub[k] > 0);
+        R.check(et + (espera[k] ? ('declara ' + nombreRubro[k])
+                                : ('omite ' + nombreRubro[k] + ' en vez de imprimir un cero')),
+          espera[k] ? (!!rub.hay[k] && rub[k] > 0) : !rub.hay[k], JSON.stringify(rub));
       });
 
-      if (esUSD) {
-        R.eq(et + 'la caja en pesos tambien se declara en el desglose',
-          numDe((fila('Caja registrada en pesos') || {}).val), cajaCOP);
-      }
-
       // 4. EL SALDO IMPRESO ES EL QUE MUESTRA LA APP (nunca el del motor).
-      const cards = tarjetas(html);
-      const cSaldo = cards.find(c => c.lab === 'Saldo de capital');
-      R.check(et + 'el recibo imprime el saldo resultante', !!cSaldo, cards.map(c => c.lab).join(' | '));
+      const cSaldoTxt = saldoCapDe(html);
+      const cSaldo = cSaldoTxt === null ? null : { val: cSaldoTxt };
+      R.check(et + 'el recibo imprime el saldo de capital resultante', !!cSaldo);
       if (cSaldo) {
         const saldoApp = saldoConCaja(loanPost, lpPost);
         // Saldo del MOTOR, la formula canonica. Con un parcial en vuelo los dos numeros
@@ -707,9 +698,16 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           numDe(cSaldo.val), esUSD ? Math.round(saldoApp / trm * 100) / 100 : Math.round(saldoApp));
       }
 
-      // 5. UNA FILA POR MOVIMIENTO APLICADO.
-      R.eq(et + 'el recibo lista tantos movimientos como se aplicaron',
-        (html.match(/<div class="rc-paso">/g) || []).length, est.hechos.length);
+      // 5. CADA MOVIMIENTO APLICADO SE NOMBRA. Las cuotas vencidas saldadas seguidas van en UNA
+      // frase (un cobro de cinco cuotas no puede costar cinco renglones), asi que se espera una
+      // frase por GRUPO y que cada cuota aplicada aparezca por su fecha.
+      let gruposEsp = 0, previaSalda = false;
+      est.hechos.forEach(p => { const sm = p.tipo === 'partial' && p.salda && !p.esInteresMes; if (!(sm && previaSalda)) gruposEsp++; previaSalda = sm; });
+      R.eq(et + 'una frase por movimiento (las saldadas seguidas, juntas)',
+        (html.match(/<div class="r-paso">/g) || []).length, gruposEsp);
+      const sinNombrar = est.hechos.filter(p => p.tipo === 'partial' && html.indexOf(rbMedia(p.fechaPago)) === -1);
+      R.check(et + 'cada cuota a la que se aplico dinero se nombra por su fecha', sinNombrar.length === 0,
+        sinNombrar.map(p => p.fechaPago).join(', '));
     }
     // ── El borde del Bug #31, forzado a proposito ─────────────────────────────
     // En USD, redondear cada rubro por separado y sumarlos NO siempre da lo mismo que
@@ -752,13 +750,10 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
             { fecha: hoy, pasos: [pasoSint], pre: { saldoCaja: 0, cuota: 0 } });
           R.eq('G (borde #31) se emitio el documento', pdfs.length, 1);
           if (pdfs.length === 1) {
-            const filasB = filasPanel(pdfs[0].html);
-            const valB = lab => { const f = filasB.find(x => x.lab === lab); return f ? numDe(f.val) : 0; };
-            R.eq('G (borde #31) el total declarado == la obligacion extinguida',
-              valB('Total aplicado'), Math.round((I + K) / trmU * 100) / 100);
-            R.eq('G (borde #31) intereses + capital == total, sin perder el centavo',
-              Math.round((valB('Intereses vencidos') + valB('Capital de cuotas vencidas')) * 100) / 100,
-              valB('Total aplicado'));
+            const rB = rubrosDe(pdfs[0].html, true);
+            R.check('G (borde #31) la frase declara intereses Y capital', !!rB.hay['r-i'] && !!rB.hay['r-k'], JSON.stringify(rB));
+            R.eq('G (borde #31) intereses + capital == la obligacion extinguida, sin perder el centavo',
+              rB.total, Math.round((I + K) / trmU * 100) / 100);
           }
         }
       }
@@ -767,8 +762,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
     R.check('G ANTI-VACIO: se verificaron los tres recibos', recibosVerificados === 3,
       'recibos verificados=' + recibosVerificados);
     R.check('G ANTI-VACIO: los tres rubros del desglose se ejercitaron con valor',
-      ['Intereses vencidos', 'Capital de cuotas vencidas', 'Abono extraordinario a capital']
-        .every(k => rubrosVistos[k]),
+      ['r-i', 'r-k', 'r-a'].every(k => rubrosVistos[k]),
       JSON.stringify(rubrosVistos));
     srvG.close();
   }
@@ -1183,19 +1177,16 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         { fecha: '2026-08-23', pasos: plan.pasos, pre: { saldoCaja: 0, cuota: 0 } });
       R.eq('H el recibo emitio un documento', fe.captura.pdfs.length, 1);
       if (fe.captura.pdfs.length === 1) {
-        const filasR = [];
-        const reR = /<div class="rc-row(?: rc-row-tot)?"><span class="rc-lab">([\s\S]*?)<\/span><span class="rc-val"[^>]*>([\s\S]*?)<\/span><\/div>/g;
-        let mR; while ((mR = reR.exec(fe.captura.pdfs[0].html)) !== null) filasR.push({ lab: mR[1], val: mR[2] });
-        const valR = lab => {
-          const f = filasR.find(x => x.lab === lab);
-          return f ? numH(String(f.val).replace(/<[^>]*>/g, '')) : NaN;
-        };
-        R.check('H ANTI-VACIO: el recibo imprimio el panel de rubros', filasR.length >= 4,
-          filasR.map(f => f.lab).join(' | '));
-        R.eq('H modal == recibo: intereses vencidos',         rInt, valR('Intereses vencidos'));
-        R.eq('H modal == recibo: capital de cuotas vencidas', rCap, valR('Capital de cuotas vencidas'));
-        R.eq('H modal == recibo: abono extraordinario',       rAbo, valR('Abono extraordinario a capital'));
-        R.eq('H modal == recibo: total aplicado',             rTot, valR('Total aplicado'));
+        // El recibo de 3.5.0 lo dice en frases, con cada importe marcado por su clase.
+        const sumaR = { 'r-i': 0, 'r-k': 0, 'r-a': 0 }, hayR = {};
+        const reR = /<b class="(r-[ika])">([^<]*)<\/b>/g;
+        let mR; while ((mR = reR.exec(fe.captura.pdfs[0].html)) !== null) { sumaR[mR[1]] += numH(mR[2]); hayR[mR[1]] = true; }
+        R.check('H ANTI-VACIO: el recibo declaro intereses, capital y abono', !!(hayR['r-i'] && hayR['r-k'] && hayR['r-a']),
+          JSON.stringify(sumaR));
+        R.eq('H modal == recibo: intereses vencidos',         rInt, r2H(sumaR['r-i']));
+        R.eq('H modal == recibo: capital de cuotas vencidas', rCap, r2H(sumaR['r-k']));
+        R.eq('H modal == recibo: abono a capital',            rAbo, r2H(sumaR['r-a']));
+        R.eq('H modal == recibo: total aplicado',             rTot, r2H(sumaR['r-i'] + sumaR['r-k'] + sumaR['r-a']));
       }
     }
   }
@@ -1492,7 +1483,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           return numJ(vals[vals.length - 1] || '');
         })();
         const totalRecibo = (() => {
-          const m = /TOTAL POR PAGAR<\/td><td>([\s\S]*?)<\/td>/.exec(htmlRec);
+          const m = /<td colspan="3">Total por pagar<\/td><td class="n">([\s\S]*?)<\/td>/.exec(htmlRec);
           return m ? numJ(m[1]) : NaN;
         })();
         // Y en su TARJETA, que es lo que de verdad se compara: las dos encabezan el bloque
@@ -1500,9 +1491,11 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         // recibo lideraba con el saldo de CAPITAL y la propuesta con el TOTAL, los dos
         // documentos de la misma operacion abrian con cifras distintas y parecian
         // contradecirse aunque ambas fueran correctas.
+        // En el recibo de 3.5.0 es "Te falta por pagar" en "Asi va tu credito", con el valor
+        // de antes del pago debajo ("antes de este pago: ...").
         const totalReciboCard = (() => {
-          const m = /<div class="rc-cl">Total por pagar<\/div>(?:<div class="rc-old">([^<]*)<\/div>)?<div class="rc-new">([^<]*)<\/div>/.exec(htmlRec);
-          return m ? { antes: m[1] ? numJ(m[1]) : null, valor: numJ(m[2]) } : null;
+          const m = /Te falta por pagar<b class="r-(?:tot|cap)">([^<]*)<\/b><span class="viejo">(?:antes de este pago: ([^<]*))?/.exec(htmlRec);
+          return m ? { antes: m[2] ? numJ(m[2]) : null, valor: numJ(m[1]) } : null;
         })();
         R.check('J ANTI-VACIO: los dos documentos declaran su total por pagar',
           !isNaN(totalPropuesta) && !isNaN(totalRecibo) && !!totalReciboCard,

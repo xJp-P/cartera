@@ -1,0 +1,75 @@
+{
+  "version": 2,
+  "caso": "general-intereses-resumen",
+  "generador": "generateReciboGeneral",
+  "tema": "light",
+  "entradaHash": "f96aa4abd27a239598cc4a43f226793833a49c3f",
+  "estructura": {
+    "docTitle": "Recibo de cobro general",
+    "h1": [],
+    "cabeceras": [
+      "Cuota",
+      "Venció",
+      "Mora",
+      "Te falta"
+    ],
+    "etiquetas": [
+      "Lo que está vencido",
+      "Tus opciones de pago",
+      "Ponerte al día",
+      "Al día + la próxima cuota",
+      "Liquidar el crédito",
+      "Así va tu crédito · $ #.#.# desde el # de M de #"
+    ]
+  },
+  "valores": {
+    "bytes": 9534,
+    "nFilas": 7,
+    "nCeldas": 28,
+    "celdasPorTr": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    "nMontos": 16,
+    "hashMontos": "616c8df16fe1d7e2184c29d3fdd98669843c25af",
+    "hashFname": "ca33ffa3ede01f812363e8410da1d2e2355b1b19",
+    "hashTexto": "b0b40200a81a9e4b7a96dda65ecf52c497f27ae9",
+    "clases": [
+      "chip venc",
+      "n",
+      "r-av-ley",
+      "r-cab",
+      "r-cap",
+      "r-doc",
+      "r-hero ambar",
+      "r-hero-l",
+      "r-logo",
+      "r-marca",
+      "r-monto",
+      "r-pie",
+      "r-pie-d",
+      "r-quien",
+      "r-saldos",
+      "r-sec",
+      "r-sec r-credito",
+      "r-sec-t",
+      "r-sello",
+      "r-t",
+      "r-tar",
+      "r-tar ambar",
+      "r-tar-l",
+      "r-tar-s",
+      "r-tar-tag",
+      "r-tar-v",
+      "r-tip",
+      "r-tres",
+      "sub",
+      "viejo"
+    ]
+  }
+}

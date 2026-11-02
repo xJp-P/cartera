@@ -469,7 +469,7 @@ export function progresoCapital(loan, loanPays) {
 
 // ── Cálculo CENTRALIZADO de la liquidación (v1.19.0) ──────────────────────────
 // UNA sola fuente de verdad para el "Valor de liquidación": LiquidarModal, AbonoModal, la
-// tarjeta del perfil del deudor (DebtorModal) y los PDFs (cronograma + recibo de abono)
+// cifra "Liquidar hoy" del panel del deudor (DeudorPanel) y los PDFs (cronograma + recibo de abono)
 // llaman a este helper, así no pueden divergir. Regla de negocio:
 //   Total = Capital pendiente + Intereses en mora (+ la mora consolidada dentro de la
 //           cuota transitoria) − abonos parciales en curso (+ interés del próximo mes

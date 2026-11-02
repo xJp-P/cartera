@@ -1,511 +1,306 @@
-// public/js/pdf/recibo-cobro.js — Comprobante CONSOLIDADO de un cobro en cascada.
+// public/js/pdf/recibo-cobro.js — el RECIBO DE PAGO de un cobro en cascada.
 //
-// Un cobro en cascada son N movimientos contra endpoints distintos (`/partial` por
-// cada cuota vencida, `/abono` por el remanente), pero para el cliente fue UNA sola
-// entrega de dinero. Este documento es el papel que se le devuelve: cuanto entrego,
-// contra que se aplico y como quedo su credito.
+// Un cobro en cascada son N movimientos contra endpoints distintos (`/partial` por cada cuota
+// vencida, `/abono` por el remanente), pero para el cliente fue UNA sola entrega de dinero. Este
+// documento es el papel que se le devuelve: cuanto entrego, a que se fue y que le queda.
+//
+// ── EL DISENO (3.5.0, aprobado por el PO sobre un prototipo con un cobro real) ──────────────
+// El recibo anterior confundia al cliente: los intereses cobrados salian en ROJO como si fueran
+// deuda, "cuotas pendientes" no contaba las vencidas que la tabla si listaba, el "total por
+// pagar" aparecia junto a una cifra tachada sin decir cual valia, la misma cifra salia tres
+// veces (total recibido, el paso y "Total aplicado") y no decia lo primero que pregunta el
+// cliente: cuanto le falta para ponerse al dia. Ahora, en este orden:
+//   1. UNA cifra protagonista: lo que entro, de quien y cuando.
+//   2. "Como se aplico tu pago": una FRASE por movimiento (las cuotas saldadas seguidas, en una
+//      sola) y la barra de la cuota que quedo a medias (cuanto cubrio y cuanto le falta).
+//   3. "Lo que sigue": cuanto le falta para ponerse al dia, su proxima cuota y la suma exacta
+//      que lo deja al dia.
+//   4. "Asi va tu credito": la barra de cuotas y dos saldos con nombre propio.
+//   5. "Tus cuotas": 4 columnas, el estado en palabras; las cuotas lejanas en UNA fila.
+//   6. Un cierre que certifica el pago.
 //
 // ── POR QUE NO ALCANZABAN LOS RECIBOS QUE YA EXISTIAN ────────────────────────
-// `generateReciboAbono` cuelga de un unico call site (`_doAbono`) y describe UN
-// abono; una cascada lo dejaria declarando solo el ultimo paso y callando los
-// intereses de mora cobrados. `generateRecibo` documenta el pago de UNA cuota. Y
-// nada en el esquema ata los movimientos de un mismo cobro: `payments` no tiene
-// columna de correlacion, el id `-ab-` no existe si el cobro fue solo de mora, y
-// agrupar por fecha fusionaria dos cobros del mismo dia al mismo credito. Por eso
-// la correlacion se pasa aqui como parametro, desde quien acaba de ejecutarla.
+// `generateReciboAbono` describe UN abono y `generateRecibo` el pago de UNA cuota. Y nada en
+// el esquema ata los movimientos de un mismo cobro: `payments` no tiene columna de
+// correlacion, el id `-ab-` no existe si el cobro fue solo de mora, y agrupar por fecha
+// fusionaria dos cobros del mismo dia. Por eso la correlacion se pasa como parametro, desde
+// quien acaba de ejecutarla.
 //
 // ── DE DONDE SALEN LOS DATOS (regla que no se negocia) ───────────────────────
-// De `cobro.pasos`, que es `estado.hechos` del orquestador: lo que EFECTIVAMENTE
-// se aplico. NUNCA de `plan.pasos`, que es lo que se pretendia aplicar. Si un paso
-// falla, un recibo armado desde el plan declara dinero que no se registro — la
-// clase de falla del Bug #45. Los totales tambien se DERIVAN de los pasos, no se
-// copian de `plan.totales`, para que la regla se cumpla literalmente.
-//
-// Coherente con eso, `_doCobroCascada` solo llama aqui cuando la cadena entera
-// tuvo exito: en un fallo parcial la suma de caja de los pasos aplicados es MENOR
-// que lo que el cliente entrego, asi que el recibo declararia menos dinero del que
-// recibio y se volveria evidencia en su contra.
-//
-// DOCTRINA (v2.3.0): el papel no puede contradecir a la app. El saldo sale de
-// `saldoConCaja`, nunca del motor.
+// De `cobro.pasos`, que es `estado.hechos` del orquestador: lo que EFECTIVAMENTE se aplico.
+// NUNCA de `plan.pasos`. Si un paso falla, un recibo armado desde el plan declara dinero que no
+// se registro (Bug #45). Los totales tambien se DERIVAN de los pasos. Coherente con eso,
+// `_doCobroCascada` solo llama aqui cuando la cadena entera tuvo exito.
+// Lo que queda por pagar sale de las filas PERSISTIDAS y recargadas tras el cobro: si un abono
+// regenero el cronograma, esto ya refleja el nuevo. El saldo es `saldoConCaja`, nunca el del
+// motor (doctrina v2.3.0: el papel no puede contradecir a la app).
 
-import { fmt, fmtUSD, fmtD } from '../core/format.js';
-import { nowStr, properCase } from '../core/ui.js';
+import { fmt, fmtUSD } from '../core/format.js';
+import { nowStr } from '../core/ui.js';
 import { saldoConCaja, esDiario, pendCuota } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
+import { rbCss, rbPaleta, rbCabecera, rbLarga, rbMedia, rbCorta, rbEsc, rbCampoValido, rbPlural, rbPrimerNombre, rbIniciales,
+         rbMoneda, rbTarjeta, rbRejilla, rbBarraCuotas, rbLeyenda, rbEmitir, RB_ICONO_OK, RB_ICONO_TIP, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
-// ── Recibo de Cobro (consolidado) ────────────────────────────────────────────
 // `cobro` = { fecha, pasos, pre, observaciones }
-//   - pasos: los del orquestador ya aplicados. Cada uno trae `obligacionCOP`
-//     (deuda extinguida), `cajaCOP` (pesos reales que entraron), `interes` y
-//     `capital`; los `partial` ademas `cuotaN`, `fechaPago`, `salda` y
-//     `restanteCuota`, y en USD el `obligacionUSD` exacto.
-//   - pre: snapshot ANTERIOR al cobro (`_snapshotAbono`), para el antes/despues.
-//
+//   - pasos: los del orquestador ya aplicados. Cada uno trae `obligacionCOP` (deuda
+//     extinguida), `cajaCOP` (pesos reales que entraron), `interes` y `capital`; los `partial`
+//     ademas `payId`, `cuotaN`, `fechaPago`, `salda` y `restanteCuota`, y en USD el
+//     `obligacionUSD` exacto.
+//   - pre: snapshot ANTERIOR al cobro (`_snapshotAbono`), para el "antes de este pago".
 // 2 variantes: RECIBO (credito con saldo vivo) y PAZ Y SALVO (el cobro lo salda).
 export function generateReciboCobro(loan, allPays, cobro, opts) {
   cobro = cobro || {}; opts = opts || {};
   if (!loan) return;
-  // Un credito de interes diario no tiene cuotas y queda fuera de la cascada: su
-  // puerta es el CORTE y su comprobante `generateReciboCorte`. Inalcanzable hoy,
-  // pero si algun dia se alcanzara imprimiria un documento sin sentido.
+  // Un credito de interes diario no pasa por la cascada: su comprobante es el del CORTE.
   if (esDiario(loan)) return;
   var pasos = (cobro.pasos || []).filter(Boolean);
-  // Sin movimientos aplicados no hay nada que certificar. Emitir un recibo en
-  // blanco seria peor que no emitir ninguno.
+  // Sin movimientos aplicados no hay nada que certificar.
   if (!pasos.length) return;
 
-  var dark  = document.documentElement.getAttribute('data-theme') === 'dark';
-  var esUSD = loan.moneda === 'USD';
-  var trm   = +loan.trmAcordada || 1;
-  var pre   = cobro.pre || {};
-  var esCapInt = loan.modalidad === 'Capital + Intereses';
-  var esIndef  = loan.modalidad === 'Intereses';
-  var fechaCobro   = cobro.fecha || nowStr();
-  var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
+  var C = rbPaleta(document.documentElement.getAttribute('data-theme') === 'dark');
+  var mon = rbMoneda(loan), uni = mon.uni, fmtUni = mon.fmtUni, money = mon.money, esUSD = mon.esUSD;
+  var pre = cobro.pre || {};
+  var esIndef = loan.modalidad === 'Intereses';
+  var fechaCobro = cobro.fecha || nowStr();
+  var emision = nowStr();
+  var anio = emision.slice(0, 4);
 
-  function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function campoValido(v){ v = String(v == null ? '' : v).trim(); return v !== '' && v !== '0'; }
-
-  // ── Aritmetica en la unidad de la MONEDA VISIBLE ───────────────────────────
-  // Centavos de dolar en USD, pesos en COP. Reconciliar en COP y convertir despues
-  // descuadra un centavo (Bug #31): round(363.25)+round(96.74) != round(460.00).
-  // Todo lo que deba sumar se resta sobre valores YA redondeados a lo que se imprime.
-  function uni(cop){ return esUSD ? Math.round((cop || 0) / trm * 100) : Math.round(cop || 0); }
-  function fmtUni(u){ return esUSD ? fmtUSD((u || 0) / 100) : fmt(u || 0); }
-  function money(cop){ return fmtUni(uni(cop)); }
-
-  // ── Totales DERIVADOS de los pasos aplicados ───────────────────────────────
-  var partials = pasos.filter(function(p){ return p.tipo === 'partial'; });
-  var abonos   = pasos.filter(function(p){ return p.tipo === 'abono'; });
-  var oblPartialsU = partials.reduce(function(s,p){ return s + uni(p.obligacionCOP); }, 0);
-  var intU     = partials.filter(function(p){ return !p.esInteresMes; })
-                         .reduce(function(s,p){ return s + uni(p.interes); }, 0);
-  // El interes del PERIODO EN CURSO se declara aparte del vencido. Sumarlos hacia que el
-  // recibo rotulara "Intereses vencidos" un interes que aun no vencia: medido en una
-  // prueba real, un cobro del 3 de sept declaraba atrasada una cuota que vence el 19. El
-  // documento le imputaba al cliente una mora que no existio.
-  var mesU     = pasos.filter(function(p){ return p.esInteresMes; })
-                      .reduce(function(s,p){ return s + uni(p.interes); }, 0);
-  // El capital de mora se ANCLA al total de los pasos de mora (capital = cuota - interes,
-  // doctrina v1.18.0): asi absorbe el residuo de redondeo de las filas legacy (Bug #43)
-  // en vez de dejar un descuadre visible entre los rubros y el total.
-  var capMoraU = Math.max(0, oblPartialsU - intU - mesU);
-  var abonoU   = abonos.reduce(function(s,p){ return s + uni(p.obligacionCOP); }, 0);
-  var aplicadoU = intU + mesU + capMoraU + abonoU;
-  // CAJA: los pesos que entraron de verdad ese dia (doctrina CAJA vs OBLIGACION).
-  // El orquestador reparte la caja entre los pasos y el ultimo absorbe el residuo,
-  // asi que esta suma es EXACTAMENTE lo que el usuario declaro haber recibido.
-  var cajaCOP  = pasos.reduce(function(s,p){ return s + Math.round(p.cajaCOP || 0); }, 0);
-  var oblUSD   = esUSD ? pasos.reduce(function(s,p){ return s + (+p.obligacionUSD || 0); }, 0) : 0;
-  var trmImpl  = (esUSD && oblUSD > 0) ? Math.round(cajaCOP / oblUSD) : 0;
+  // CAJA: los pesos que entraron de verdad (doctrina CAJA vs OBLIGACION). El orquestador
+  // reparte la caja entre los pasos y el ultimo absorbe el residuo: la suma es EXACTAMENTE lo
+  // que el usuario declaro haber recibido.
+  var cajaCOP = pasos.reduce(function(s, p){ return s + Math.round(p.cajaCOP || 0); }, 0);
+  var oblUSD = esUSD ? pasos.reduce(function(s, p){ return s + (+p.obligacionUSD || 0); }, 0) : 0;
+  var trmImpl = (esUSD && oblUSD > 0) ? Math.round(cajaCOP / oblUSD) : 0;
+  // USD protagonista: el cliente entrego dolares y esa es la cifra que reconoce.
+  var recibidoTxt = esUSD ? fmtUSD(oblUSD) : fmt(cajaCOP);
 
   // ── Estado del credito DESPUES (datos ya persistidos y recargados) ─────────
   var lp = (allPays || []).filter(function(p){ return String(p.prestamoId) === String(loan.id); });
+  var regs = lp.filter(function(p){ return !esAbono(p); }).sort(function(a, b){ return a.cuotaN - b.cuotaN; });
+  var porId = {}; regs.forEach(function(p){ porId[p.id] = p; });
   var saldoDespues = saldoConCaja(loan, lp);
-  var esPazYSalvo  = saldoDespues <= 0 || loan.estado === 'Finalizado';
-  // Mismo blindaje que el Recibo de Abono: un "PAZ Y SALVO" con saldo > 0 seria un
-  // documento que se contradice a si mismo ante cualquier desfase de la formula.
+  var esPazYSalvo = saldoDespues <= 0 || loan.estado === 'Finalizado';
+  // Un "PAZ Y SALVO" con saldo > 0 seria un documento que se contradice a si mismo.
   if (esPazYSalvo) saldoDespues = 0;
-  var saldoAntes = (pre.saldoCaja != null) ? pre.saldoCaja
-                 : ((pre.saldo != null) ? pre.saldo : saldoDespues);
+  var saldoAntes = (pre.saldoCaja != null) ? pre.saldoCaja : ((pre.saldo != null) ? pre.saldo : saldoDespues);
+  var pend = regs.filter(function(p){ return p.estadoPago === 'Pendiente'; });
+  var vencidas = regs.filter(function(p){ return p.estadoPago === 'En Mora' && pendCuota(p) > 0; })
+    .sort(function(a, b){ return String(a.fechaPago).localeCompare(String(b.fechaPago)) || a.cuotaN - b.cuotaN; });
+  var moraViva = vencidas.reduce(function(s, p){ return s + pendCuota(p); }, 0);
+  // "cuota 3 de 10". En `Intereses` el plazo es indefinido y no hay "de".
+  var deN = esIndef ? '' : ' de ' + regs.length;
+  function cuotaDe(p){ return 'cuota ' + p.cuotaN + deN; }
 
-  var pend = lp.filter(function(p){ return !esAbono(p) && p.estadoPago === 'Pendiente'; })
-               .sort(function(a,b){ return a.cuotaN - b.cuotaN; });
-  var cuotaDespues = pend.length ? Math.round(pend[0].cuotaTotal) : 0;
-  var proxVence    = pend.length ? pend[0].fechaPago : null;
-  // Mora que SOBREVIVE al cobro: si el cliente pago solo una parte, el recibo tiene
-  // que decirlo. Sin esta linea el documento se leeria como "estas al dia".
-  var moraViva = lp.filter(function(p){ return !esAbono(p) && p.estadoPago === 'En Mora'; })
-                   .reduce(function(s,p){ return s + pendCuota(p); }, 0);
-
-  // Codigo: RC-[2 iniciales]-[3 ultimos del loanId]-[DDMM del cobro]
-  // Lista blanca CON dieresis y diacriticos (misma que estado-liquidacion): un
-  // apellido con dieresis o con enye conserva sus iniciales en vez de saltarse letras.
-  var ini = properCase(loan.nombre || '').replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g,'').slice(0,2);
-  var rcCode = 'RC-' + (ini || 'XX') + '-' + String(loan.id || '').slice(-3) + '-' +
-               String(fechaCobro).slice(8,10) + String(fechaCobro).slice(5,7);
-
-  var C = dark ? {
-    bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
-    green:'#3fb950', greenBg:'#0f2b19', greenBd:'#1b4332',
-    red:'#f85149', redBg:'#2d1214', redBd:'#5c2226',
-    amber:'#d29922', amberBg:'#2b2005', amberBd:'#3d2e08',
-    blue:'#58a6ff', blueBg:'#0d2136', blueBd:'#1f3d5c',
-    headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
-  } : {
-    bg:'#ffffff', text:'#1f2328', muted:'#656d76', bd:'#d0d7de', rowbd:'#eeeeee', panel:'#f6f8fa',
-    green:'#166534', greenBg:'#f0fdf4', greenBd:'#4ade80',
-    red:'#cf222e', redBg:'#ffebe9', redBd:'#ffcecb',
-    amber:'#9a6700', amberBg:'#fff8e1', amberBd:'#eac54f',
-    blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#54aeff',
-    headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
-  };
-
-  function row(l, v, color){
-    return '<div class="rc-row"><span class="rc-lab">' + l + '</span>' +
-           '<span class="rc-val"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</span></div>';
+  // ── 2. COMO SE APLICO TU PAGO ──────────────────────────────────────────────
+  // Una FRASE por movimiento, y las cuotas vencidas que se saldaron seguidas van en UNA sola
+  // ("Saldamos tus cuotas del 7 de marzo y 7 de abril..."): un cobro de cinco cuotas no puede
+  // costar cinco renglones. Los importes van en la MONEDA VISIBLE y con su clase (`r-i` interes
+  // vencido, `r-m` interes del mes, `r-k` capital, `r-a` abono): la prueba los suma y exige que
+  // el papel cuadre con la obligacion realmente extinguida. El capital de cada paso se ANCLA a su
+  // total (capital = obligacion - interes, doctrina v1.18.0): absorbe el residuo de redondeo de
+  // las filas legacy (Bug #43) y en USD no se pierde el centavo (Bug #31).
+  function cualDe(p){
+    var fila = p.payId ? porId[p.payId] : null;
+    return { fila: fila, fecha: p.fechaPago || (fila && fila.fechaPago) || fechaCobro, n: fila ? fila.cuotaN : p.cuotaN };
   }
-  function rowTot(l, v){
-    return '<div class="rc-row rc-row-tot"><span class="rc-lab">' + l + '</span><span class="rc-val">' + v + '</span></div>';
+  function partesDe(ps){
+    var iU = 0, kU = 0;
+    ps.forEach(function(p){ var t = uni(p.obligacionCOP), x = Math.min(t, uni(p.interes)); iU += x; kU += Math.max(0, t - x); });
+    var partes = [];
+    // El interes del PERIODO EN CURSO lleva su propia clase: no es interes vencido (una prueba
+    // real declaraba atrasada una cuota del 19 en un cobro del 3).
+    if (iU > 0) partes.push('<b class="' + (ps[0].esInteresMes ? 'r-m' : 'r-i') + '">' + fmtUni(iU) + '</b> de intereses');
+    if (kU > 0) partes.push('<b class="r-k">' + fmtUni(kU) + '</b> de capital');
+    return partes.join(' y ');
   }
-  function card(label, oldTxt, newTxt, nota){
-    return '<div class="rc-card"><div class="rc-cl">' + label + '</div>' +
-      (oldTxt ? '<div class="rc-old">' + oldTxt + '</div>' : '') +
-      '<div class="rc-new">' + newTxt + '</div>' +
-      (nota ? '<div class="rc-cnota">' + nota + '</div>' : '') + '</div>';
+  function enLista(xs){ return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' y ' + xs[xs.length - 1] : String(xs[0]); }
+  function cualesDe(ps){
+    var ns = ps.map(function(p){ return cualDe(p).n; });
+    var seguidas = ns.every(function(n, k){ return k === 0 || n === ns[k - 1] + 1; });
+    return ps.length === 1
+      ? 'tu <b>cuota del ' + rbMedia(cualDe(ps[0]).fecha) + '</b> (cuota ' + ns[0] + deN + ')'
+      : 'tus <b>cuotas del ' + enLista(ps.map(function(p){ return rbMedia(cualDe(p).fecha); })) + '</b> (cuotas ' +
+        (seguidas && ns.length > 2 ? ns[0] + ' a ' + ns[ns.length - 1] : enLista(ns)) + deN + ')';
   }
-  // Tarjeta unica a ancho completo. `.rc-imp` es un flex, asi que un solo hijo con
-  // `flex:1` ocupa toda la fila sin tocar el layout.
-  function cardHero(label, valor, nota){
-    return '<div class="rc-card rc-hero"><div class="rc-cl">' + label + '</div>' +
-      '<div class="rc-new rc-hnew">' + valor + '</div>' +
-      (nota ? '<div class="rc-cnota">' + nota + '</div>' : '') + '</div>';
-  }
-  // Fecha compacta para los ROTULOS de tarjeta ("A pagar el 19 sept"): el formato largo
-  // de `fmtD` parte el rotulo en tres lineas dentro de una tarjeta de ~150px. Mismo
-  // anclaje a mediodia que `fmtD`, por la misma razon de huso horario.
-  function fechaCorta(s){
-    if (!s) return '';
-    // es-CO devuelve "19 de ago" incluso con month:'short'; el rotulo necesita "19 ago".
-    return new Date(s + 'T12:00:00').toLocaleDateString('es-CO', {day:'2-digit', month:'short'})
-      .replace(/ de /g, ' ').replace(/\.$/, '');
-  }
-
-  // ── BLOQUE 3 — "Como se aplico tu pago" ────────────────────────────────────
-  // Es el mismo desglose que el modal muestra ANTES de cobrar, para que lo que el
-  // usuario aprobo y lo que el cliente se lleva sean el mismo documento.
-  var pasosHTML = pasos.map(function(p, i){
-    var totU  = uni(p.obligacionCOP);
-    var pIntU = uni(p.interes);
-    // Capital reconciliado en la moneda visible (nunca `p.capital` crudo).
-    var pCapU = Math.max(0, totU - pIntU);
-    var esMora = p.tipo === 'partial';
-    var titulo = p.esInteresMes ? ('Interes del mes &middot; cuota #' + p.cuotaN)
-               : esMora ? ('Cuota #' + p.cuotaN + ' vencida') : 'Abono extraordinario a capital';
-    var chip = p.esInteresMes
-      ? '<span class="rc-chip rc-chip-b">POR ADELANTADO</span>'
-      : esMora
-      ? (p.salda ? '<span class="rc-chip rc-chip-g">SE SALDA</span>'
-                 : '<span class="rc-chip rc-chip-a">ABONO PARCIAL</span>')
-      : '';
-    var det = [];
-    // El tiempo verbal importa: esta cuota NO vencio, se pago por adelantado.
-    if (p.esInteresMes && p.fechaPago) det.push('aun no vence (' + fmtD(p.fechaPago) + ')');
-    else if (esMora && p.fechaPago) det.push('vencia el ' + fmtD(p.fechaPago));
-    if (pIntU > 0) det.push('intereses <b style="color:' + C.red + '">' + fmtUni(pIntU) + '</b>');
-    if (pCapU > 0) det.push('capital <b>' + fmtUni(pCapU) + '</b>');
-    // OJO: `restanteCuota` se calcula al PLANEAR. Si despues viene un abono con recalculo,
-    // el cronograma se regenera y esa cifra deja de ser cierta — medido: el recibo decia
-    // "queda debiendo USD 243.38" cuando la cuota ya solo debia USD 117.65. Lo pendiente se
-    // declara UNA vez, con datos persistidos, en el bloque "Lo que queda por pagar".
-    if (esMora && !p.esInteresMes && !p.salda && p.restanteCuota > 0) det.push('queda debiendo <b style="color:' + C.amber + '">' + money(p.restanteCuota) + '</b>');
-    if (!esMora) det.push('reduce el capital vivo y no genera intereses futuros');
-    return '<div class="rc-paso"><div class="rc-paso-h">' +
-      '<span class="rc-n">' + (i + 1) + '</span>' +
-      '<span class="rc-paso-t">' + titulo + '</span>' + chip +
-      '<span class="rc-paso-v">' + fmtUni(totU) + '</span></div>' +
-      (det.length ? '<div class="rc-paso-d">' + det.join(' &nbsp;&middot;&nbsp; ') + '</div>' : '') +
-      '</div>';
+  var grupos = [];
+  pasos.forEach(function(p){
+    var saldaMora = p.tipo === 'partial' && p.salda && !p.esInteresMes;
+    var ult = grupos[grupos.length - 1];
+    if (saldaMora && ult && ult.saldaMora) ult.pasos.push(p); else grupos.push({ saldaMora: saldaMora, pasos: [p] });
+  });
+  var frases = grupos.map(function(g){
+    var p = g.pasos[0];
+    if (p.tipo === 'abono') return 'Abonamos <b class="r-a">' + fmtUni(uni(p.obligacionCOP)) + '</b> a tu capital: baja tu saldo y los intereses que vienen.';
+    // El tiempo verbal importa: la cuota del interes del mes NO vencio, se pago por adelantado.
+    if (p.esInteresMes) return 'Adelantamos el interés de ' + cualesDe(g.pasos) + ', que aún no vence: ' + partesDe(g.pasos) + '.';
+    if (p.salda) return 'Saldamos ' + cualesDe(g.pasos) + ': ' + partesDe(g.pasos) + '.';
+    // Lo que falta sale de la fila persistida, no de `restanteCuota`, que se calcula al PLANEAR:
+    // si despues un abono regenera el cronograma esa cifra deja de ser cierta.
+    var c = cualDe(p);
+    var falta = c.fila ? pendCuota(c.fila) : Math.max(0, p.restanteCuota || 0);
+    return 'Lo abonamos a ' + cualesDe(g.pasos) + ': cubrió ' + partesDe(g.pasos) + '.' + (falta > 0 ? ' De esa cuota te faltan <b>' + money(falta) + '</b>.' : '');
+  });
+  var pasosHTML = frases.map(function(f, k){
+    return '<div class="r-paso">' + (frases.length > 1 ? '<span class="r-n">' + (k + 1) + '</span>' : '') + '<div class="r-frase">' + f + '</div></div>';
   }).join('');
+  // La cuota que quedo a medias se dibuja con su barra: cuanto lleva y cuanto le falta.
+  var cuotaBarra = null;
+  pasos.forEach(function(p){
+    var c = cualDe(p);
+    if (p.tipo === 'partial' && c.fila && c.fila.estadoPago !== 'Pagado' && pendCuota(c.fila) > 0 && (c.fila.partialPaid || 0) > 0) cuotaBarra = { fila: c.fila, hoyU: uni(p.obligacionCOP) };
+  });
 
-  var totalesHTML = '<div class="rc-panel">' +
-    (intU     > 0 ? row('Intereses vencidos',             fmtUni(intU),     C.red)   : '') +
-    (mesU     > 0 ? row('Interes del mes en curso',       fmtUni(mesU),     C.blue)  : '') +
-    (capMoraU > 0 ? row('Capital de cuotas vencidas',     fmtUni(capMoraU), '')      : '') +
-    (abonoU   > 0 ? row('Abono extraordinario a capital', fmtUni(abonoU),   C.green) : '') +
-    rowTot('Total aplicado', fmtUni(aplicadoU)) +
-    // En USD la caja se declara aparte: es la unica cifra que registra el efecto
-    // cambiario del dia frente a la deuda valuada a la TRM pactada.
-    (esUSD ? row('Caja registrada en pesos', fmt(cajaCOP) +
-      (trmImpl > 0 ? ' <span style="font-size:10px;opacity:.8">(TRM ' + fmt(trmImpl) + ')</span>' : '')) : '') +
-    '</div>';
-
-  // ── BLOQUE 4 — "Tu credito despues de este pago" ───────────────────────────
-  // Resumen, NO el cronograma completo: el bloque 3 ya es de largo variable y el
-  // documento tiene que caber en una hoja. El cronograma es otro documento.
-  var despuesHTML = '', quedaHTML = '';
-  if (!esPazYSalvo) {
-    // ── LO QUE QUEDA POR PAGAR ──
-    // Se computa ANTES de las tarjetas porque la primera de ellas lidera con este total.
-    // OJO CON EL ORDEN: `var` es hoisted, asi que leerlo mas arriba no daria error, daria
-    // `undefined` — y la tarjeta desapareceria del PDF que va al cliente en silencio. Es
-    // literalmente el Bug #63, cometido en el modal de al lado.
-    //
-    // Sale de las filas PERSISTIDAS tras el cobro, no del plan: si el abono regenero el
-    // cronograma, esto ya refleja el nuevo. Incluye las vencidas —tambien son dinero por
-    // cobrar— marcadas en rojo mas abajo.
-    var porPagar = lp.filter(function(p){
-      return !esAbono(p) && (p.estadoPago === 'Pendiente' || p.estadoPago === 'En Mora') && pendCuota(p) > 0;
-    }).sort(function(a,b){
-      var d = String(a.fechaPago || '').localeCompare(String(b.fechaPago || ''));
-      return d !== 0 ? d : ((a.cuotaN || 0) - (b.cuotaN || 0));
-    });
-    var totalFalta = porPagar.reduce(function(s,p){ return s + pendCuota(p); }, 0);
-
-    // La PRIMERA tarjeta es "Total por pagar": la MISMA cifra con la que abre la Propuesta
-    // de Abono, el papel que se le manda al cliente ANTES de cobrar. Hasta aqui cada
-    // documento lideraba con algo distinto en el mismo lugar visual —la propuesta con el
-    // total, el recibo con el saldo de capital—. Las dos cifras eran correctas (una lleva
-    // los intereses de las cuotas que faltan y la otra no), pero puestas en el mismo sitio
-    // de dos papeles de la MISMA operacion se leian como una contradiccion. La nota es lo
-    // que las concilia, y por eso las dos tarjetas viajan juntas en vez de sustituirse.
-    //
-    // SOLO donde el cronograma CONTIENE toda la deuda, y esa condicion no es teorica:
-    //  - en modalidad `Intereses` las cuotas son de puro interes y el capital vence al
-    //    final, FUERA de la tabla. Sumarlas da un total MENOR que el capital adeudado, o
-    //    sea lo contrario de lo que el rotulo promete (medido sobre un credito real del
-    //    fixture: "Total por pagar 2.700.000" junto a "Saldo de capital 3.000.000"). Es
-    //    ademas donde la Propuesta lo omite sola, porque su preview del cronograma solo
-    //    existe en `Capital + Intereses` — asi que gatearlo aqui es lo que mantiene a los
-    //    dos papeles diciendo lo mismo, no una excepcion a esa regla.
-    //  - si la cifra COINCIDE con el saldo de capital tampoco se dibuja: en `Prestamo`
-    //    (0% interes) la cuota unica ES el capital, y dos tarjetas con el mismo numero se
-    //    leen como un error del documento. Se comparan los valores YA FORMATEADOS, que es
-    //    la condicion real ("el lector ve dos veces lo mismo"), no los COP subyacentes.
-    //
-    // La TABLA de abajo conserva su fila TOTAL POR PAGAR en todos los casos: alli es el
-    // total de las filas que se estan listando —con "Plazo: Indefinido" a la vista— y no
-    // un titular sobre la deuda entera.
-    var totalTxt = money(totalFalta);
-    var saldoTxt = money(saldoDespues);
-
-    // ── LO QUE HAY QUE GIRAR EN LA PROXIMA FECHA ──
-    // NO es `cuotaTotal`: esa es la obligacion CONTRACTUAL, y si esa cuota ya trae abono
-    // encima (p.ej. el cliente adelanto el interes del mes en este mismo cobro) el cliente
-    // gira menos. Hasta aqui la tarjeta gritaba el valor contractual —157.79 medido en una
-    // prueba real— cuando lo que iba a transferir eran 117.65, y la diferencia solo se
-    // explicaba en la letra chica. Se invierte: el titular es la CAJA y el contrato pasa a
-    // ser la explicacion.
-    var abonadoProx = pend.length ? Math.round(pend[0].partialPaid || 0) : 0;
-    var aPagarProx  = pend.length ? pendCuota(pend[0]) : 0;
-    // Se deriva igual que la columna A PAGAR de la tabla (`money(pendCuota(p))`, una sola
-    // conversion) para que la tarjeta y la fila no puedan diferir un centavo en USD.
-    var aPagarTxt   = money(aPagarProx);
-
-    // ── HERO UNICO: cuando toda la deuda ES el proximo pago ──
-    // Con una sola cuota viva y un parcial que ya cubrio su interes, las tres cifras
-    // COLAPSAN — y no por casualidad, es una identidad: total = cuota - abonado, y
-    // saldoConCaja = capital - (abonado - interes) = capital + interes - abonado. Tres
-    // tarjetas con el mismo numero se leen como un error del documento, asi que se
-    // reemplazan por una sola que dice lo unico que el cliente necesita saber.
-    // Se exige ADEMAS `porPagar.length === 1`: el rotulo promete "tu proximo pago", y eso
-    // solo es toda la verdad cuando no queda nada mas. Y se excluye `Intereses`, donde el
-    // capital vence fuera del cronograma y un "unico pago" seria falso.
-    var heroUnico = porPagar.length === 1 && pend.length === 1 && !esIndef &&
-                    aPagarProx > 0 && totalTxt === saldoTxt && aPagarTxt === totalTxt;
-
-    var cards;
-    if (heroUnico) {
-      // El titular NO explica la resta: la tabla "Lo que queda por pagar" ya la desglosa en
-      // sus columnas VALOR CUOTA / YA ABONADO / A PAGAR. Decirlo dos veces obligaba a
-      // comparar dos redacciones de lo mismo. Simetrico con la Propuesta, que delega la
-      // explicacion en la sub-linea de su fila.
-      cards = cardHero('Tu proximo pago', aPagarTxt,
-        proxVence ? 'el ' + fmtD(proxVence) : '');
-    } else {
-      // "Total por pagar" se calla tambien cuando coincide con "A pagar": con una sola
-      // cuota viva las dos son el mismo numero aunque el saldo de capital difiera —
-      // medido en un Pago Unico, 535.000 y 535.000 bajo un saldo de 500.000. La regla
-      // de fondo es una sola: NINGUNA tarjeta repite una cifra que otra ya muestra.
-      var muestraTotal = porPagar.length && !esIndef && totalTxt !== saldoTxt &&
-                         !(aPagarProx > 0 && totalTxt === aPagarTxt);
-      cards = muestraTotal
-        ? card('Total por pagar',
-            (pre.totalPorPagar > totalFalta) ? money(pre.totalPorPagar) : '', totalTxt,
-            'capital + intereses')
-        : '';
-      if (aPagarProx > 0) {
-        // Con mora viva el rotulo NO puede prometer un proximo pago: hay plata vencida
-        // que se debe ANTES de esa fecha (el pie la anuncia en rojo). Se degrada a
-        // "Proxima cuota", que sigue siendo cierto, y la fecha baja a la nota.
-        var conMora = moraViva > 0;
-        // El tachado del valor anterior solo tiene sentido cuando el titular ES la cuota
-        // (sin abono encima): comparar el neto de hoy contra la cuota vieja mezclaria dos
-        // cosas distintas — el recalculo del cronograma y el descuento del parcial.
-        // Idem que el hero: la resta vive en la tabla. La nota solo carga la fecha cuando
-        // el rotulo la perdio por la degradacion a "Proxima cuota".
-        var notaCuota = (conMora && proxVence) ? ('vence el ' + fmtD(proxVence)) : '';
-        cards += card(conMora ? 'Proxima cuota' : (proxVence ? ('A pagar el ' + fechaCorta(proxVence)) : 'A pagar'),
-          (abonadoProx === 0 && pre.cuota && Math.round(pre.cuota) !== cuotaDespues)
-            ? money(pre.cuota) : '',
-          aPagarTxt, notaCuota);
-      }
-      cards += card('Saldo de capital',
-        (saldoAntes > saldoDespues) ? money(saldoAntes) : '', saldoTxt);
-      if (esCapInt && pend.length) cards += card('Cuotas pendientes', '', String(pend.length));
-      else if (esIndef)            cards += card('Plazo', '', 'Indefinido');
-    }
-
-    var pie = [];
-    if (proxVence) pie.push('Proximo vencimiento: <b>' + fmtD(proxVence) + '</b>');
-    if (moraViva > 0) pie.push('<span style="color:' + C.red + '">Aun quedan <b>' + money(moraViva) + '</b> en cuotas vencidas</span>');
-
-    // La tarjeta de arriba RESUME el total; esta tabla lo DETALLA, cuota por cuota, con lo
-    // ya abonado en cada una. Hacia falta: sin ella el recibo mostraba "saldo de capital
-    // USD 117.65" junto a "valor de la cuota USD 157.79" y UNA cuota pendiente, sin forma
-    // de ver que la diferencia era el interes del mes que el cliente acababa de adelantar
-    // sobre esa misma cuota.
-    if (porPagar.length) {
-      var filasQ = porPagar.map(function(p){
-        var abonado = Math.max(0, Math.round(p.partialPaid || 0));
-        return '<tr class="' + (p.estadoPago === 'En Mora' ? 'v' : '') + '">' +
-          '<td class="l">' + p.cuotaN + (p.estadoPago === 'En Mora' ? ' &middot; vencida' : '') + '</td>' +
-          '<td class="l">' + fmtD(p.fechaPago) + '</td>' +
-          '<td>' + money(p.cuotaTotal) + '</td>' +
-          // Con signo: la fila tiene que leerse como una RESTA, no como tres cifras sueltas.
-          '<td>' + (abonado > 0 ? '&minus; ' + money(abonado) : '&mdash;') + '</td>' +
-          '<td><b>' + money(pendCuota(p)) + '</b></td></tr>';
-      }).join('');
-      quedaHTML = '<div class="rc-st">Lo que queda por pagar</div>' +
-        '<table class="rc-qt"><thead><tr>' +
-        '<th class="l">CUOTA</th><th class="l">VENCE</th><th>VALOR CUOTA</th><th>YA ABONADO</th><th>A PAGAR</th>' +
-        '</tr></thead><tbody>' + filasQ + '</tbody>' +
-        '<tfoot><tr><td class="l" colspan="4">TOTAL POR PAGAR</td><td>' + money(totalFalta) + '</td></tr></tfoot>' +
-        '</table>';
-    }
-
-    despuesHTML = '<div class="rc-st">Tu credito despues de este pago</div>' +
-      '<div class="rc-imp">' + cards + '</div>' +
-      (pie.length ? '<div class="rc-pie">' + pie.join(' &nbsp;&middot;&nbsp; ') + '</div>' : '') +
-      quedaHTML;
+  var barraCuotaHTML = '';
+  if (cuotaBarra) {
+    var f = cuotaBarra.fila;
+    // Las mismas cifras que la fila de esa cuota en "Tus cuotas" (una sola conversion cada una).
+    var abU = uni(f.partialPaid), pct = f.cuotaTotal > 0 ? Math.max(1, Math.min(99, Math.round(f.partialPaid / f.cuotaTotal * 100))) : 0;
+    barraCuotaHTML = '<div class="r-cuota"><div class="r-barra"><div class="pag" style="width:' + pct + '%"></div></div>' +
+      '<div class="r-ley"><span class="ok">' + (abU === cuotaBarra.hoyU ? 'Pagado hoy ' + fmtUni(abU) : 'Abonado ' + fmtUni(abU) + ' · hoy ' + fmtUni(cuotaBarra.hoyU)) + '</span>' +
+      '<span class="falta">Falta ' + money(pendCuota(f)) + ' · valor de la cuota ' + money(f.cuotaTotal) + '</span></div></div>';
   }
 
-  // CSS que solo se emite si el documento lo usa. Incondicional metia ~570 bytes muertos
-  // en cada recibo, incluidos los Paz y Salvo, que no llevan bloque 4 ni tabla.
-  var cssExtra = []
-    .concat(pasos.some(function(p){ return p.esInteresMes; })
-      ? ['.rc-chip-b{background:' + C.blueBg + ';color:' + C.blue + ';border:1px solid ' + C.blueBd + '}'] : [])
-    .concat(despuesHTML.indexOf('rc-hero') !== -1
-      ? ['.rc-hero{background:' + C.greenBg + ';border-color:' + C.greenBd + ';padding:13px 12px}',
-         '.rc-hero .rc-cl{color:' + C.green + '}',
-         '.rc-hero .rc-cnota{color:' + C.green + ';font-size:10px;margin-top:5px}',
-         '.rc-hnew{font-size:26px;margin-top:3px}'] : [])
-    .concat(quedaHTML
-      ? ['.rc-qt{width:100%;border-collapse:collapse;margin-top:5px;font-size:10.5px}',
-         '.rc-qt th{text-align:right;font-size:8.5px;letter-spacing:.4px;color:' + C.muted + ';font-weight:700;padding:3px 5px;border-bottom:1px solid ' + C.bd + ';white-space:nowrap}',
-         '.rc-qt th.l,.rc-qt td.l{text-align:left}',
-         '.rc-qt td{text-align:right;padding:4px 5px;border-bottom:1px solid ' + C.rowbd + ';white-space:nowrap}',
-         '.rc-qt tr.v td{color:' + C.red + '}',
-         '.rc-qt tfoot td{border-bottom:none;border-top:1px solid ' + C.bd + ';font-weight:700;padding-top:5px}'] : []);
+  // Sin panel de rubros con "Total aplicado": las frases ya dicen a donde fue cada peso, y el
+  // panel repetia por tercera vez la cifra del titular (uno de los defectos del recibo anterior).
 
+  // ── PAZ Y SALVO ────────────────────────────────────────────────────────────
   var pazHTML = esPazYSalvo
-    ? '<div class="rc-paz"><div class="rc-paz-t">PAZ Y SALVO</div>' +
-      '<div class="rc-paz-s">Con este pago queda <b>cancelada la totalidad</b> del credito. No queda saldo pendiente.</div></div>'
+    ? '<div class="r-paz"><div class="r-paz-t">PAZ Y SALVO</div><div>Con este pago queda <b>cancelada la totalidad</b> de tu crédito. No queda saldo pendiente.</div></div>'
     : '';
 
-  // La nota explica POR QUE el dinero fue a donde fue. Es la razon de ser del
-  // documento: un cobro en cascada reparte una sola entrega entre varias
-  // obligaciones, y sin esta linea el reparto parece arbitrario.
-  var notaHTML = (pasos.length > 1)
-    ? '<div class="rc-nota"><b>Como se imputa el pago:</b> primero a los intereses ya vencidos, ' +
-      'luego al capital de las cuotas vencidas y, si sobra, como abono extraordinario a capital ' +
-      '(articulo 1653 del Codigo Civil). Cada movimiento queda registrado por separado.</div>'
+  // ── 3-5. LO QUE SIGUE, ASI VA TU CREDITO, TUS CUOTAS ──────────────────────
+  var sigueHTML = '', creditoHTML = '', cuotasHTML = '';
+  if (!esPazYSalvo) {
+    var prox = pend[0] || null;
+    var moraU = uni(moraViva), proxU = prox ? uni(pendCuota(prox)) : 0;
+    var tarjetas = [];
+    if (moraViva > 0) {
+      tarjetas.push(rbTarjeta('ambar', 'Para ponerte al día', fmtUni(moraU),
+        rbPlural(vencidas.length, 'cuota vencida', 'cuotas vencidas') + ': ' +
+        vencidas.slice(0, 4).map(function(p){ return rbCorta(p.fechaPago, anio); }).join(', ') + (vencidas.length > 4 ? '…' : '')));
+    }
+    if (prox) {
+      var abProx = Math.round(prox.partialPaid || 0);
+      tarjetas.push(rbTarjeta('', 'Tu próxima cuota', fmtUni(proxU),
+        'vence el ' + rbLarga(prox.fechaPago) + ' (' + cuotaDe(prox) + ')' +
+        (abProx > 0 ? ' · ya abonaste ' + money(abProx) + ' de ' + money(prox.cuotaTotal) : '')));
+    }
+    sigueHTML = tarjetas.length ? '<div class="r-sec"><div class="r-sec-t">Lo que sigue</div>' + rbRejilla(tarjetas) +
+      ((moraViva > 0 && prox) ? '<div class="r-tip">' + RB_ICONO_TIP + '<span>Si pagas <b>' + fmtUni(moraU + proxU) + '</b> a más tardar el ' +
+        rbMedia(prox.fechaPago) + ', quedas completamente al día.</span></div>' : '') + '</div>' : '';
+
+    // Lo que queda: vencidas y por vencer, desde las filas persistidas.
+    var porPagar = regs.filter(function(p){ return p.estadoPago !== 'Pagado' && pendCuota(p) > 0; });
+    var totalFalta = porPagar.reduce(function(s, p){ return s + pendCuota(p); }, 0);
+    var totalTxt = money(totalFalta), saldoTxt = money(saldoDespues);
+
+    // La barra no aplica en `Intereses`: el plazo es indefinido y el capital vence fuera del
+    // cronograma, asi que "por venir" contaria solo las 3 cuotas que el sistema tiene generadas.
+    var nPag = regs.filter(function(p){ return p.estadoPago === 'Pagado'; }).length;
+    var nVen = regs.filter(function(p){ return p.estadoPago === 'En Mora'; }).length;
+    var barra = esIndef ? '' : rbBarraCuotas(regs, null);
+    var ley = '<div class="r-av-ley">' + rbLeyenda('green-2', rbPlural(nPag, 'pagada', 'pagadas')) +
+      (nVen ? rbLeyenda('red', rbPlural(nVen, 'vencida', 'vencidas')) : '') +
+      (esIndef ? '<span>plazo indefinido</span>' : rbLeyenda('track', (regs.length - nPag - nVen) + ' por venir')) + '</div>';
+    // Dos saldos con nombre propio, y ninguno repite una cifra que el otro ya muestra (en un
+    // `Prestamo` sin interes lo que falta ES el capital). En `Intereses` no hay "total por
+    // pagar": sus cuotas son de puro interes y el capital vence fuera de ellas, asi que la suma
+    // anunciaria MENOS deuda de la que hay (medido: 2.700.000 bajo un capital de 3.000.000).
+    var saldos;
+    if (esIndef) {
+      saldos = '<div>Saldo de capital<b class="r-cap">' + saldoTxt + '</b><span class="viejo">' +
+        (saldoAntes > saldoDespues ? 'antes de este pago: ' + money(saldoAntes) : 'se paga al final; cada mes pagas los intereses') + '</span></div>';
+    } else {
+      var antesTot = (pre.totalPorPagar > totalFalta) ? 'antes de este pago: ' + money(pre.totalPorPagar) : 'todas las cuotas que quedan';
+      saldos = totalTxt === saldoTxt
+        ? '<div>Te falta por pagar<b class="r-cap">' + totalTxt + '</b><span class="viejo">' + antesTot + '</span></div>'
+        : '<div>Te falta por pagar<b class="r-tot">' + totalTxt + '</b><span class="viejo">' + antesTot + '</span></div>' +
+          '<div>De eso, capital<b class="r-cap">' + saldoTxt + '</b><span class="viejo">el resto son los intereses de las cuotas que faltan</span></div>';
+    }
+    creditoHTML = '<div class="r-sec"><div class="r-sec-t">Así va tu crédito</div>' + barra + ley + '<div class="r-saldos">' + saldos + '</div></div>';
+
+    // Tabla: lo vencido y la proxima, fila por fila; lo que viene despues, en UNA fila (el
+    // cliente necesita el detalle de lo que debe ya, no de dentro de un anio). Con muchas
+    // vencidas, las mas viejas tambien se resumen: el recibo tiene que caber en una hoja.
+    function chip(cls, t){ return '<span class="chip ' + cls + '">' + t + '</span>'; }
+    function celdaFalta(p){
+      var ab = Math.round(p.partialPaid || 0);
+      return '<td class="n">' + (ab > 0 ? '<span class="sub">ya abonaste ' + money(ab) + ' de ' + money(p.cuotaTotal) + '</span>' : '') + '<b>' + money(pendCuota(p)) + '</b></td>';
+    }
+    function filaResumen(grupo, estadoHTML){
+      var a = grupo[0], z = grupo[grupo.length - 1];
+      var iguales = grupo.every(function(p){ return Math.round(pendCuota(p)) === Math.round(pendCuota(a)); });
+      return '<tr><td>' + a.cuotaN + ' a ' + z.cuotaN + '</td><td>' + rbCorta(a.fechaPago, anio) + ' a ' + rbCorta(z.fechaPago, anio) + '</td><td>' + estadoHTML + '</td>' +
+        '<td class="n">' + (iguales ? '<span class="sub">' + grupo.length + ' × ' + money(pendCuota(a)) + '</span>' : '') +
+        '<b>' + money(grupo.reduce(function(s, p){ return s + pendCuota(p); }, 0)) + '</b></td></tr>';
+    }
+    var filas = '';
+    var viejas = vencidas.length > 4 ? vencidas.slice(0, vencidas.length - 3) : [];
+    if (viejas.length) filas += filaResumen(viejas, chip('venc', 'Vencidas'));
+    vencidas.slice(viejas.length).forEach(function(p){
+      filas += '<tr><td>' + p.cuotaN + deN + '</td><td>' + rbMedia(p.fechaPago) + '</td><td>' + chip('venc', 'Vencida') + '</td>' + celdaFalta(p) + '</tr>';
+    });
+    var futuras = pend.filter(function(p){ return pendCuota(p) > 0; });
+    if (futuras[0]) filas += '<tr><td>' + futuras[0].cuotaN + deN + '</td><td>' + rbMedia(futuras[0].fechaPago) + '</td><td>' + chip('prox', 'Próxima') + '</td>' + celdaFalta(futuras[0]) + '</tr>';
+    var resto = futuras.slice(1);
+    if (resto.length === 1) filas += '<tr><td>' + resto[0].cuotaN + deN + '</td><td>' + rbMedia(resto[0].fechaPago) + '</td><td>' + chip('pend', 'Por vencer') + '</td>' + celdaFalta(resto[0]) + '</tr>';
+    else if (resto.length > 1) filas += filaResumen(resto, chip('pend', 'Por vencer'));
+    if (filas) {
+      cuotasHTML = '<div class="r-sec"><div class="r-sec-t">Tus cuotas</div><table class="r-t"><thead><tr><th>Cuota</th><th>Vence</th><th>Estado</th><th class="n">Te falta</th></tr></thead>' +
+        '<tbody>' + filas + '</tbody><tfoot><tr><td colspan="3">' + (esIndef ? 'Total de estas cuotas' : 'Total por pagar') + '</td><td class="n">' + totalTxt + '</td></tr></tfoot></table></div>';
+    }
+  }
+
+  // La nota explica POR QUE el dinero fue a donde fue: una entrega repartida entre varias
+  // obligaciones parece arbitraria sin ella.
+  var notaHTML = pasos.length > 1
+    ? '<div class="r-nota"><b>Cómo se imputa el pago:</b> primero a los intereses vencidos, luego al capital de las cuotas vencidas y, si sobra, ' +
+      'como abono a capital (artículo 1653 del Código Civil).</div>'
     : '';
+  var obsHTML = rbCampoValido(cobro.observaciones) ? '<div class="r-obs"><b>Observaciones:</b> ' + rbEsc(String(cobro.observaciones).trim()) + '</div>' : '';
 
-  var obsHTML = campoValido(cobro.observaciones)
-    ? '<div class="rc-obs"><b>Observaciones:</b> ' + esc(String(cobro.observaciones).trim()) + '</div>' : '';
-
-  var deudorMeta = [ campoValido(loan.cedula)   ? ('C.C. ' + esc(String(loan.cedula).trim()))   : '',
-                     campoValido(loan.telefono) ? ('Tel. ' + esc(String(loan.telefono).trim())) : '' ]
-                   .filter(Boolean).join(' &nbsp;&middot;&nbsp; ');
-  var titulo  = esPazYSalvo ? 'Paz y Salvo' : 'Recibo de Cobro';
-  // USD protagonista: en un credito en dolares el cliente entrego dolares, y esa es
-  // la cifra que reconoce. Los pesos van debajo, como caja del dia.
-  var heroTxt = esUSD ? fmtUSD(oblUSD) : fmt(cajaCOP);
-  var heroSub = esUSD ? ('Equivalen a ' + fmt(cajaCOP) +
-                (trmImpl > 0 ? ' &nbsp;&middot;&nbsp; TRM del dia ' + fmt(trmImpl) : '')) : '';
+  var codigo = 'RC-' + rbIniciales(loan.nombre) + '-' + String(loan.id || '').slice(-3) + '-' + String(fechaCobro).slice(8, 10) + String(fechaCobro).slice(5, 7);
+  var contacto = [rbCampoValido(loan.cedula) ? 'C.C. ' + rbEsc(String(loan.cedula).trim()) : '',
+                  rbCampoValido(loan.telefono) ? 'Tel. ' + rbEsc(String(loan.telefono).trim()) : ''].filter(Boolean);
+  var titulo = esPazYSalvo ? 'Paz y salvo' : 'Recibo de pago';
+  var nombre1 = rbEsc(rbPrimerNombre(loan.nombre));
 
   var html = [
-    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + titulo + '</title>',
-    '<style>',
-    '*{margin:0;padding:0;box-sizing:border-box}',
-    'body{font-family:Arial,Helvetica,sans-serif;padding:22px;max-width:640px;margin:0 auto;color:' + C.text + ';background:' + C.bg + ';line-height:1.3;font-variant-numeric:tabular-nums}',
-    '.rc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:10px;border-bottom:2px solid ' + C.headBd + '}',
-    '.rc-brand{display:flex;align-items:center;gap:10px}',
-    '.rc-wm{font-size:19px;font-weight:700;color:' + C.text + ';line-height:1.1}',
-    '.rc-sub{font-size:10px;color:' + C.muted + ';margin-top:2px}',
-    '.rc-meta{text-align:right}',
-    '.rc-type{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:' + C.muted + '}',
-    '.rc-num{font-size:15px;font-weight:700;color:' + C.text + ';margin-top:3px}',
-    '.rc-date{font-size:11px;color:' + C.muted + ';margin-top:3px}',
-    '.rc-st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:' + C.muted + ';margin:13px 0 5px}',
-    '.rc-name{font-size:16px;font-weight:700;color:' + C.text + '}',
-    '.rc-cc{font-size:12px;color:' + C.muted + ';margin-top:2px}',
-    '.rc-total{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.greenBg + ';border:2px solid ' + C.greenBd + ';border-radius:14px}',
-    '.rc-tl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:' + C.green + '}',
-    '.rc-ta{font-size:32px;font-weight:700;color:' + C.green + ';line-height:1.05;margin:3px 0 0;letter-spacing:-1px}',
-    '.rc-ts{font-size:11px;color:' + C.muted + ';margin-top:4px}',
-    '.rc-chipf{display:inline-block;margin-top:7px;background:' + C.bg + ';border:1px solid ' + C.greenBd + ';color:' + C.green + ';border-radius:20px;padding:3px 13px;font-size:11px;font-weight:700}',
-    '.rc-paso{border:1px solid ' + C.bd + ';border-radius:9px;padding:8px 11px;margin-top:6px;background:' + C.panel + '}',
-    '.rc-paso-h{display:flex;align-items:center;gap:7px}',
-    '.rc-n{width:17px;height:17px;border-radius:99px;background:' + C.greenBg + ';color:' + C.green + ';font-size:9.5px;font-weight:700;display:inline-block;text-align:center;line-height:17px;flex-shrink:0}',
-    '.rc-paso-t{font-size:12px;font-weight:700;color:' + C.text + '}',
-    '.rc-paso-v{margin-left:auto;font-size:13px;font-weight:700;color:' + C.text + ';white-space:nowrap}',
-    '.rc-paso-d{font-size:10.5px;color:' + C.muted + ';margin-top:3px;padding-left:24px;line-height:1.45}',
-    '.rc-chip{font-size:8.5px;font-weight:700;letter-spacing:.4px;padding:2px 6px;border-radius:5px}',
-    '.rc-chip-g{background:' + C.greenBg + ';color:' + C.green + ';border:1px solid ' + C.greenBd + '}',
-    '.rc-chip-a{background:' + C.amberBg + ';color:' + C.amber + ';border:1px solid ' + C.amberBd + '}',
-    '.rc-panel{background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:10px;padding:6px 14px;margin-top:9px}',
-    '.rc-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid ' + C.rowbd + '}',
-    '.rc-row:last-child{border-bottom:none}',
-    '.rc-lab{font-size:12px;color:' + C.muted + '}',
-    '.rc-val{font-size:13px;font-weight:600;color:' + C.text + ';text-align:right}',
-    '.rc-row-tot{border-top:1px solid ' + C.bd + ';padding-top:7px;margin-top:2px}',
-    '.rc-row-tot .rc-lab{font-weight:700;color:' + C.text + '}',
-    '.rc-row-tot .rc-val{color:' + C.green + ';font-size:15px;font-weight:700}',
-    '.rc-imp{display:flex;gap:8px;margin-top:4px}',
-    '.rc-card{flex:1;background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:9px;padding:9px 10px;text-align:center}',
-    '.rc-cl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:' + C.muted + '}',
-    '.rc-old{font-size:11px;color:' + C.muted + ';text-decoration:line-through;margin-top:3px}',
-    '.rc-new{font-size:15px;font-weight:700;color:' + C.green + ';margin-top:1px}',
-    '.rc-cnota{font-size:9px;color:' + C.muted + ';margin-top:3px;line-height:1.35}',
-    '.rc-pie{font-size:11px;color:' + C.muted + ';margin-top:6px;text-align:center;line-height:1.45}',
-    '.rc-paz{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.greenBg + ';border:2px solid ' + C.greenBd + ';border-radius:14px}',
-    '.rc-paz-t{font-size:20px;font-weight:700;letter-spacing:2px;color:' + C.green + '}',
-    '.rc-paz-s{font-size:12px;color:' + C.text + ';margin-top:5px}',
-    '.rc-nota{margin-top:10px;padding:8px 12px;background:' + C.amberBg + ';border:1px solid ' + C.amberBd + ';border-radius:9px;font-size:10.5px;line-height:1.45;color:' + C.amber + '}',
-    '.rc-obs{margin-top:8px;padding:7px 12px;background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:9px;font-size:11px;color:' + C.muted + ';line-height:1.4}',
-    '.rc-foot{margin-top:14px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:10px;line-height:1.5}',
-    '.rc-foot b{color:' + C.green + '}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:1.3cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:1.3cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-  ].concat(cssExtra).concat([
-    '</style></head><body>',
-    '<div class="rc-head"><div class="rc-brand">',
-    '<svg width="34" height="34" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="rc-wm">Cartera</div><div class="rc-sub">Gestion de cartera de credito</div></div></div>',
-    '<div class="rc-meta"><div class="rc-type">' + titulo + '</div><div class="rc-num">' + rcCode + '</div><div class="rc-date">Emision: ' + fechaEmision + '</div></div></div>',
-    '<div class="rc-st">Pago recibido de</div>',
-    '<div class="rc-name">' + esc(loan.nombre) + '</div>',
-    (deudorMeta ? '<div class="rc-cc">' + deudorMeta + '</div>' : ''),
-    '<div class="rc-total"><div class="rc-tl">Total recibido</div>',
-    '<div class="rc-ta">' + heroTxt + '</div>',
-    (heroSub ? '<div class="rc-ts">' + heroSub + '</div>' : ''),
-    '<div><span class="rc-chipf">Recibido el ' + fmtD(fechaCobro) + '</span></div></div>',
+    '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>' + titulo + '</title><style>'
+  ].concat(rbCss(C)).concat([
+    '.r-paso{display:flex;gap:9px;align-items:flex-start}',
+    '.r-paso+.r-paso{margin-top:6px}',
+    '.r-n{flex-shrink:0;width:19px;height:19px;margin-top:1px;border-radius:99px;background:var(--r-green-bg);color:var(--r-green);font-size:11px;font-weight:700;line-height:19px;text-align:center}',
+    '.r-frase{font-size:14px;line-height:1.42}',
+    '.r-cuota{margin-top:8px;padding:10px 14px;border:1px solid var(--r-bd);border-radius:12px}',
+    '.r-barra{display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--r-track)}',
+    '.r-barra .pag{background:var(--r-green-2)}',
+    '.r-ley{display:flex;justify-content:space-between;gap:12px;margin-top:7px;font-size:12px}',
+    '.r-ley .ok{color:var(--r-green);font-weight:600}',
+    '.r-ley .falta{color:var(--r-muted)}',
+    '.r-paz{margin-top:12px;padding:12px 18px;border-radius:14px;border:2px solid var(--r-green-2);font-size:14px}',
+    '.r-paz-t{font-size:18px;font-weight:800;letter-spacing:2px;color:var(--r-green);margin-bottom:2px}',
+    '.r-nota{margin-top:10px;padding:7px 14px;border-radius:12px;background:var(--r-soft);font-size:12px;color:var(--r-muted);line-height:1.45}',
+    '.r-nota b{color:var(--r-text)}',
+    '.r-obs{margin-top:8px;font-size:12px;color:var(--r-muted)}',
+    '</style></head><body>' + RB_MARCO_ABRE,
+    rbCabecera(esPazYSalvo ? 'Paz y salvo' : 'Recibo de pago', codigo, emision),
+    '<div class="r-hero"><div class="r-hero-l"><small>Recibimos tu pago</small><div class="r-monto">' + recibidoTxt + '</div>',
+    esUSD ? '<div class="r-equiv">Equivalen a ' + fmt(cajaCOP) + (trmImpl > 0 ? ' · TRM del día ' + fmt(trmImpl) : '') + '</div>' : '',
+    '<div class="r-quien"><b>' + rbEsc(loan.nombre) + '</b> <span>· ' + contacto.concat([rbLarga(fechaCobro)]).join(' · ') + '</span></div></div>',
+    '<div class="r-sello">' + RB_ICONO_OK + '</div></div>',
     pazHTML,
-    '<div class="rc-st">Como se aplico tu pago</div>',
-    pasosHTML,
-    totalesHTML,
-    despuesHTML,
-    notaHTML,
-    obsHTML,
-    '<div class="rc-foot">' + (esPazYSalvo
-        ? 'Este documento certifica que el credito fue cancelado en su totalidad.'
-        : 'Este documento certifica el dinero recibido y la forma en que se aplico al credito.') +
-      '<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + rcCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>'
+    '<div class="r-sec"><div class="r-sec-t">Cómo se aplicó tu pago</div>' + pasosHTML + barraCuotaHTML + '</div>',
+    sigueHTML, creditoHTML, cuotasHTML, notaHTML, obsHTML,
+    '<div class="r-pie"><div>' + (esPazYSalvo
+        ? '<b>¡Felicidades, ' + nombre1 + '!</b>Este documento certifica que recibimos ' + recibidoTxt + ' el ' + rbLarga(fechaCobro) + ' y que tu crédito quedó cancelado en su totalidad.'
+        : '<b>Gracias por tu pago, ' + nombre1 + '.</b>Este recibo certifica que recibimos ' + recibidoTxt + ' el ' + rbLarga(fechaCobro) + ' y cómo se aplicó a tu crédito.') +
+      '</div><div class="r-pie-d">' + codigo + '<br>Generado por Cartera</div></div>',
+    RB_MARCO_CIERRA + '</body></html>'
   ]).join('\n');
 
-  // El monto se formatea aparte: fmt() mete un espacio duro (U+00A0) tras el signo
-  // de pesos que ensuciaria el nombre del archivo.
+  // El monto se formatea aparte: fmt() mete un espacio duro (U+00A0) que ensuciaria el nombre.
   var montoFname = esUSD ? fmtUSD(oblUSD) : ('$' + Math.round(cajaCOP).toLocaleString('es-CO'));
-  var fname = esPazYSalvo ? ('Paz y Salvo ' + loan.nombre) : ('RC ' + loan.nombre + ' - ' + montoFname);
-  if (window.electronAPI && window.electronAPI.printPDF) {
-    window.electronAPI.printPDF(html, fname);
-  } else {
-    var w = window.open('', '_blank', 'width=680,height=800');
-    w.document.write(html); w.document.close();
-    w.onload = function() { w.print(); };
-  }
+  rbEmitir(html, esPazYSalvo ? ('Paz y Salvo ' + loan.nombre) : ('RC ' + loan.nombre + ' - ' + montoFname));
 }

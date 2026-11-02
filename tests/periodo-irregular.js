@@ -299,27 +299,56 @@ async function seccionB() {
     await recalcular(S);
     R.eq('B6 reabrir la app no la mueve', filaDe(S, L6, 1).interesPeriodo, 192000);
 
-    R.seccion('B7 — mora consolidada y cuotas ya pagadas');
+    R.seccion('B7 — cuotas en mora y cuotas ya pagadas (3.5.0: la mora no se toca)');
     const L7 = await crear(S, { nombre: 'B7', montoOrigen: 3000000, montoCOP: 3000000, tasaMensual: 5, plazoMeses: 6, modalidad: 'Capital + Intereses', fechaInicio: '2026-04-10', diaPago: 10 });
     await recalcular(S);   // auto-mora: vencen 10-may, 10-jun y 10-jul
     R.check('B7 ANTI-VACIO: tres cuotas En Mora al 31-jul', filasDe(S, L7).filter(p => p.estadoPago === 'En Mora').length === 3);
     await pagar(S, L7, 1); await pagar(S, L7, 2);
-    const moraEsperada = filaDe(S, L7, 3).interesPeriodo;
+    const mora7 = filaDe(S, L7, 3);
+    const regular5 = filaDe(S, L7, 5).cuotaTotal;
     const c7 = await pedir(S, 'POST', '/api/loans/' + L7 + '/cambiar-dia-pago', { nuevoDia: 5 });
-    R.check('B7 cambio de dia 10 -> 5 aceptado (nunca adelantar: la cuota pasa al 5-ago)', c7.status === 200 && filaDe(S, L7, 3).fechaPago === '2026-08-05', c7.json);
+    R.check('B7 cambio de dia 10 -> 5 aceptado: la cuota 3 sigue En Mora, intacta (capital e interes)',
+      c7.status === 200 && JSON.stringify(clave(filaDe(S, L7, 3))) === JSON.stringify(clave(mora7)), c7.json);
     const l7 = loanDe(S, L7);
-    R.check('B7 decision: cuota 3, desde la ultima pagada (10-jun), con la mora de la cuota vencida',
-      l7.periodoIrregularN === 3 && l7.periodoIrregularDesde === '2026-06-10' && l7.periodoIrregularMora === moraEsperada, l7);
-    const dias7 = diasISO('2026-06-10', '2026-08-05');
-    const f7 = filaDe(S, L7, 3);
-    R.eq('B7 cuota 3 = ' + dias7 + ' dias sobre su capital + la mora', f7.interesPeriodo, Math.round(f7.saldoInicial * 0.05 * dias7 / 30) + moraEsperada);
+    R.check('B7 decision: cuota 4, desde la ultima YA FACTURADA (la vencida del 10-jul), sin mora consolidada',
+      l7.periodoIrregularN === 4 && l7.periodoIrregularDesde === '2026-07-10' && l7.periodoIrregularMora === 0, l7);
+    const dias7 = diasISO('2026-07-10', '2026-09-05');
+    const f7 = filaDe(S, L7, 4);
+    R.check('B7 nunca adelantar: la cuota 4 iba el 10-ago; el 5 la deja el 5-sep', f7.fechaPago === '2026-09-05', clave(f7));
+    R.eq('B7 cuota 4 = ' + dias7 + ' dias sobre su capital', f7.interesPeriodo, Math.round(f7.saldoInicial * 0.05 * dias7 / 30));
+    // ±1 peso: la cuota se recalcula sobre el saldo que queda, con el redondeo de cualquier recalculo.
+    R.check('B7 el capital de la cuota vencida NO se re-amortiza: las cuotas regulares que siguen valen lo mismo (±1 peso)',
+      Math.abs(filaDe(S, L7, 5).cuotaTotal - regular5) <= 1, { antes: regular5, despues: filaDe(S, L7, 5).cuotaTotal });
     await pedir(S, 'POST', '/api/loans/' + L7 + '/abono', { monto: 500000, fecha: '2026-07-31', observaciones: '', recalcMode: 'mantener' });
-    const f7b = filaDe(S, L7, 3);
-    R.check('B7 tras el abono: el prorrateo baja con el capital y la MORA se queda igual',
+    const f7b = filaDe(S, L7, 4);
+    R.check('B7 tras el abono: el prorrateo baja con el capital y la cuota vencida se queda igual',
       f7b.saldoInicial === f7.saldoInicial - 500000 &&
-      f7b.interesPeriodo === Math.round(f7b.saldoInicial * 0.05 * dias7 / 30) + moraEsperada, { antes: clave(f7), despues: clave(f7b) });
+      f7b.interesPeriodo === Math.round(f7b.saldoInicial * 0.05 * dias7 / 30) &&
+      JSON.stringify(clave(filaDe(S, L7, 3))) === JSON.stringify(clave(mora7)), { antes: clave(f7), despues: clave(f7b) });
     await recalcular(S);
-    R.eq('B7 reabrir la app no la mueve', clave(filaDe(S, L7, 3)), clave(f7b));
+    R.eq('B7 reabrir la app no la mueve', clave(filaDe(S, L7, 4)), clave(f7b));
+
+    R.seccion('B7b — 3.5.0 (Bug #79): cambiar el dia despues de un abono no le devuelve el capital');
+    const L7b = await crear(S, Object.assign({ nombre: 'B7b' }, CI));
+    await pedir(S, 'POST', '/api/loans/' + L7b + '/abono', { monto: 2000000, fecha: '2026-07-31', observaciones: '', recalcMode: 'mantener' });
+    const saldoTrasAbono = filaDe(S, L7b, 1).saldoInicial;
+    const c7b = await pedir(S, 'POST', '/api/loans/' + L7b + '/cambiar-dia-pago', { nuevoDia: loanDe(S, L7b).diaPago === 20 ? 22 : 20 });
+    const cuotas7b = filasDe(S, L7b).filter(p => p.id.indexOf('-ab-') === -1);
+    R.check('B7b el cronograma nuevo arranca en el saldo que dejo el abono (antes volvia al capital original)',
+      c7b.status === 200 && cuotas7b[0].saldoInicial === saldoTrasAbono, { st: c7b.status, saldo: saldoTrasAbono, cuota1: clave(cuotas7b[0]) });
+    R.eq('B7b y amortiza exactamente ese saldo', cuotas7b.reduce((s, p) => s + p.abonoCapital, 0), saldoTrasAbono);
+    await recalcular(S);
+    R.eq('B7b reabrir la app no lo mueve (antes el arranque lo "arreglaba" y el cronograma cambiaba solo)',
+      filasDe(S, L7b).filter(p => p.id.indexOf('-ab-') === -1).map(clave), cuotas7b.map(clave));
+
+    R.seccion('B7c — si todo lo que se debe esta vencido no hay cuotas a las que mover el dia');
+    const L7c = await crear(S, { nombre: 'B7c', montoOrigen: 1000000, montoCOP: 1000000, tasaMensual: 5, plazoMeses: 2, modalidad: 'Capital + Intereses', fechaInicio: '2026-05-10', diaPago: 10 });
+    await recalcular(S);   // vencen 10-jun y 10-jul: ninguna por vencer
+    const antes7c = JSON.stringify(filasDe(S, L7c).map(clave)) + JSON.stringify(loanDe(S, L7c).diaPago);
+    const c7c = await pedir(S, 'POST', '/api/loans/' + L7c + '/cambiar-dia-pago', { nuevoDia: 20 });
+    R.check('B7c se rechaza con un 4xx que dice por que, y la BD queda intacta',
+      c7c.status >= 400 && c7c.status < 500 && /cuotas vencidas/.test((c7c.json && c7c.json.error) || '') &&
+      JSON.stringify(filasDe(S, L7c).map(clave)) + JSON.stringify(loanDe(S, L7c).diaPago) === antes7c, c7c.json);
 
     R.seccion('B8 — deshacer devuelve el agregado entero, decision incluida');
     const L8 = await crear(S, Object.assign({ nombre: 'B8' }, CI));
@@ -385,7 +414,19 @@ async function seccionC() {
     id = await crear(S, { nombre: 'C3', montoOrigen: 3000000, montoCOP: 3000000, tasaMensual: 5, plazoMeses: 6, modalidad: 'Capital + Intereses', fechaInicio: '2026-04-10', diaPago: 10 });
     await recalcular(S);
     await pagar(S, id, 1); await pagar(S, id, 2);
-    await pedir(S, 'POST', '/api/loans/' + id + '/cambiar-dia-pago', { nuevoDia: 5 });
+  } finally { await cerrar(S); }
+  // Lo que dejaba el cambio de dia 10 -> 5 ANTES de 3.5.0 (desde 3.5.0 la mora ya no se consolida,
+  // pero estos datos pueden existir): la cuota En Mora borrada y su interes dentro de la decision,
+  // con el periodo contado desde la ultima PAGADA y la base rodada un mes.
+  escribir(ruta3, d => {
+    const moraVieja = d.prepare('SELECT interesPeriodo FROM payments WHERE id = ?').get(id + '-3').interesPeriodo;
+    d.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND id NOT LIKE '%-ab-%'").run(id);
+    d.prepare("UPDATE loans SET diaPago = 5, fechaBaseCronograma = '2026-05-01', periodoIrregularN = 3, " +
+      "periodoIrregularDesde = '2026-06-10', periodoIrregularMora = ? WHERE id = ?").run(moraVieja, id);
+  });
+  S = await arrancar(ruta3);
+  try {
+    await recalcular(S);
     const l = loanDe(S, id);
     decision = { n: l.periodoIrregularN, desde: l.periodoIrregularDesde, mora: l.periodoIrregularMora };
     fila = filaDe(S, id, decision.n);
@@ -1582,26 +1623,59 @@ async function seccionJ() {
   };
   const HOY = '2026-07-31';
 
-  const S = await arrancar(bdVacia('periodo-irregular-j'));
+  const rutaJ = bdVacia('periodo-irregular-j');
+  let S = await arrancar(rutaJ);
   try {
-    R.seccion('J1 — cambiar el dia de cobro NO mueve el valor de liquidacion');
+    R.seccion('J0 — 3.5.0: cambiar el dia con una cuota en mora la deja TAL CUAL y no cobra dos veces');
     // Intereses 3.000.000 al 5%: cuotas redondas de 150.000 el 10 de cada mes. Al 31-jul hay
-    // tres vencidas; se pagan las dos primeras para que la transitoria caiga en el FUTURO
-    // (5-ago) y siga Pendiente, que es donde vivia el agujero.
-    const id = await crear(S, { nombre: 'J', montoOrigen: 3000000, montoCOP: 3000000, tasaMensual: 5,
-      plazoMeses: 0, modalidad: 'Intereses', fechaInicio: '2026-04-10', diaPago: 10 });
-    await recalcular(S);
-    await pagar(S, id, 1); await pagar(S, id, 2);
+    // tres vencidas; se pagan las dos primeras y queda una En Mora (la del 10-jul).
+    const nuevoJ = async nombre => {
+      const x = await crear(S, { nombre, montoOrigen: 3000000, montoCOP: 3000000, tasaMensual: 5,
+        plazoMeses: 0, modalidad: 'Intereses', fechaInicio: '2026-04-10', diaPago: 10 });
+      await recalcular(S);
+      await pagar(S, x, 1); await pagar(S, x, 2);
+      return x;
+    };
+    const id0 = await nuevoJ('J0');
+    const mora0 = filaDe(S, id0, 3);
+    const A0 = X.computeLiquidacion(loanDe(S, id0), filasDe(S, id0), { hasta: HOY });
+    const cd0 = await pedir(S, 'POST', '/api/loans/' + id0 + '/cambiar-dia-pago', { nuevoDia: 5 });
+    const l0 = loanDe(S, id0), f4 = filaDe(S, id0, 4);
+    R.check('J0 la cuota En Mora sigue ahi, intacta (no se borra ni se consolida)',
+      cd0.status === 200 && JSON.stringify(clave(filaDe(S, id0, 3))) === JSON.stringify(clave(mora0)) &&
+      filaDe(S, id0, 3).estadoPago === 'En Mora' && l0.periodoIrregularMora === 0, { st: cd0.status, mora: clave(filaDe(S, id0, 3)) });
+    R.check('J0 la transitoria es la cuota SIGUIENTE (4), desde el 10-jul (la ultima ya facturada), el 5-sep ("nunca adelantar")',
+      l0.periodoIrregularN === 4 && l0.periodoIrregularDesde === '2026-07-10' && f4.fechaPago === '2026-09-05', { n: l0.periodoIrregularN, desde: l0.periodoIrregularDesde, f4: clave(f4) });
+    // CADA DIA UNA VEZ: del 10-jun (ultima pagada) al 5-sep son 87 dias. La mora cubre 10-jun ->
+    // 10-jul (150.000) y la transitoria 10-jul -> 5-sep (57 dias). Hasta 3.4.1 eran 150.000 de mora
+    // MAS 56 dias desde el 10-jun: el mes en mora se cobraba dos veces.
+    R.eq('J0 CADA DIA SE COBRA UNA VEZ: mora + transitoria = 87 dias al 5% sobre 3.000.000',
+      mora0.interesPeriodo + f4.interesPeriodo, Math.round(3000000 * 0.05 * diasISO('2026-06-10', '2026-09-05') / 30));
+    R.eq('J0 LA PROPIEDAD: el valor de liquidacion no se mueve con el cambio de dia',
+      X.computeLiquidacion(l0, filasDe(S, id0), { hasta: HOY }).total, A0.total);
+
+    R.seccion('J1 — un prestamo que un cambio de dia ANTERIOR a 3.5.0 dejo con mora consolidada');
+    // Desde 3.5.0 el endpoint ya no consolida, pero la columna y su lectura siguen vivas para los
+    // prestamos que la traen. Se arma ese estado heredado escribiendo lo que dejaba el endpoint
+    // viejo: la fila En Mora borrada, el dia nuevo con la base rodada un mes ("nunca adelantar") y
+    // la decision con la mora dentro; el motor regenera la transitoria al recalcular.
+    const id = await nuevoJ('J');
     const antesL = loanDe(S, id), antesP = filasDe(S, id);
     const A = X.computeLiquidacion(antesL, antesP, { hasta: HOY });
     R.check('J1 ANTI-VACIO: antes del cambio hay 1 cuota En Mora de 150.000 y el total la suma',
       A.moraCount === 1 && A.intMora === 150000 && A.total === 3150000, A);
-
-    const cd = await pedir(S, 'POST', '/api/loans/' + id + '/cambiar-dia-pago', { nuevoDia: 5 });
+    await cerrar(S);
+    escribir(rutaJ, d => {
+      d.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente','En Mora') AND id NOT LIKE '%-ab-%'").run(id);
+      d.prepare("UPDATE loans SET diaPago = 5, fechaBaseCronograma = '2026-05-01', periodoIrregularN = 3, " +
+        "periodoIrregularDesde = '2026-06-10', periodoIrregularMora = 150000 WHERE id = ?").run(id);
+    });
+    S = await arrancar(rutaJ);
+    await recalcular(S);
     const l = loanDe(S, id), p = filasDe(S, id);
     const fila = filaDe(S, id, 3);
-    R.check('J1 el endpoint consolido la mora dentro de la cuota transitoria y borro su fila',
-      cd.status === 200 && l.periodoIrregularMora === 150000 && l.periodoIrregularN === 3 &&
+    R.check('J1 el estado heredado: la mora vive dentro de la cuota transitoria y su fila ya no existe',
+      l.periodoIrregularMora === 150000 && l.periodoIrregularN === 3 &&
       p.filter(x => x.estadoPago === 'En Mora').length === 0 && fila.fechaPago === '2026-08-05' &&
       fila.estadoPago === 'Pendiente', { mora: l.periodoIrregularMora, n: l.periodoIrregularN, fila: clave(fila) });
 
@@ -1708,11 +1782,13 @@ async function seccionJ() {
     R.check('J6 el Recibo de Abono: su bloque "liquidar hoy" la nombra y su cifra la incluye',
       CAP.pdfs.length === 1 && rec.indexOf('Quieres liquidar la deuda hoy') !== -1 &&
       rec.indexOf('+ mora consolidada ' + X.fmt(150000)) !== -1 && rec.indexOf(X.fmt(3150000)) !== -1, rec.length);
-    // La tarjeta del perfil vive dentro de un componente grande con su propio estado; se fija
-    // por guarda estatica, en la linea que arma su subtitulo.
-    const dm = fs.readFileSync(path.join(REPO, 'public', 'js', 'modales', 'DebtorModal.js'), 'utf8');
-    R.check('J6 la tarjeta "Liquidacion total" del perfil la nombra en su subtitulo',
-      /moraConsTotal>0\?' \+ mora consolidada':''/.test(dm) && /var moraConsTotal=_Lq\.moraConsolidada/.test(dm));
+    // 3.5.0: el perfil del deudor es ahora un panel lateral (DeudorPanel), y su cifra
+    // "Liquidar hoy" se lee del componente REAL, no de su codigo fuente.
+    const dp = montar(X.DeudorPanel, { deudor: { nombre: l.nombre, cedula: l.cedula, telefono: l.telefono },
+      loans: [l], pays: p, hoy: HOY, onPay: () => {}, onNewLoan: () => {} }, []);
+    R.check('J6 el panel del deudor: "Liquidar hoy" imprime el total con la mora y la nombra en su subtitulo',
+      dp.t.indexOf('Liquidar hoy') !== -1 && dp.t.indexOf(X.fmt(3150000)) !== -1 &&
+      dp.todo.indexOf('+ mora consolidada') !== -1, dp.todo.slice(0, 600));
   } finally { await cerrar(S); }
 
   R.seccion('J5 — el cable: la mora viaja al backend, pero no se suma dos veces en el papel');

@@ -41,6 +41,7 @@ const SUITES = [
   { nombre: 'condonacion',   archivo: 'condonacion.js',   desc: 'condonar intereses: la obligacion baja sin mover un peso de caja' },
   { nombre: 'periodo-irregular', archivo: 'periodo-irregular.js', desc: 'cuota transitoria derivada en el motor sobre el capital vivo (3.2.0)' },
   { nombre: 'resumen',       archivo: 'resumen.js',       desc: 'la pestana Resumen: modelo, meta del mes sin cortes, agenda y la vista real (3.4.0)' },
+  { nombre: 'operacion',     archivo: 'operacion.js',     desc: 'Cobros, Cartera y el panel del deudor; Cambiar dia contra el backend real (3.5.0)' },
 ];
 
 const args  = process.argv.slice(2);

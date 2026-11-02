@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "caso": "general-un-credito-mora",
+  "generador": "generateReciboGeneral",
+  "tema": "light",
+  "entradaHash": "93b1dc8092ccb636397f0fce9fa66c9c12648437",
+  "estructura": {
+    "docTitle": "Recibo de cobro general",
+    "h1": [],
+    "cabeceras": [
+      "Cuota",
+      "Venció",
+      "Mora",
+      "Te falta"
+    ],
+    "etiquetas": [
+      "Lo que está vencido",
+      "Tus opciones de pago",
+      "Ponerte al día",
+      "Al día + la próxima cuota",
+      "Liquidar el crédito",
+      "Así va tu crédito · $ #.#.# desde el # de M de #",
+      "Cómo pagar"
+    ]
+  },
+  "valores": {
+    "bytes": 10019,
+    "nFilas": 5,
+    "nCeldas": 20,
+    "celdasPorTr": [
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    "nMontos": 15,
+    "hashMontos": "95b7fec7ab93a410c80d65d3ae87a7f13c2337e3",
+    "hashFname": "0d711bf76428af260f41c4be5ec2a67912607f40",
+    "hashTexto": "a5d88a86e6cb2e885f1d2da0c114126904c414f8",
+    "clases": [
+      "",
+      "chip venc",
+      "n",
+      "pagada",
+      "proxima",
+      "r-av",
+      "r-av-ley",
+      "r-cab",
+      "r-cap",
+      "r-doc",
+      "r-hero ambar",
+      "r-hero-l",
+      "r-logo",
+      "r-marca",
+      "r-monto",
+      "r-pagar",
+      "r-pie",
+      "r-pie-d",
+      "r-quien",
+      "r-saldos",
+      "r-sec",
+      "r-sec r-credito",
+      "r-sec-t",
+      "r-sello",
+      "r-t",
+      "r-tar",
+      "r-tar ambar",
+      "r-tar-l",
+      "r-tar-s",
+      "r-tar-tag",
+      "r-tar-v",
+      "r-tip",
+      "r-tot",
+      "r-tres",
+      "sub",
+      "vencida",
+      "viejo"
+    ]
+  }
+}
