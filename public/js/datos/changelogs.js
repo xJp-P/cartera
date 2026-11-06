@@ -743,5 +743,12 @@ export const CHANGELOGS = {
     'El Resumen queda más liviano: el radar, la meta del mes y los últimos movimientos van lado a lado, y un enlace lleva al análisis del negocio en Rendimiento.',
     'Historial, renovado: todas tus acciones agrupadas por día, con un buscador que no distingue tildes y filtros por periodo (hoy, 7 días, 30 días, este mes o las fechas que elijas) y por tipo (cobros, préstamos, Mis Deudas, deshechos). Si una acción nombra a un deudor, la abres en Cartera de un toque. El botón Deshacer sigue igual.',
     'Al cambiar de pestaña, la nueva se abre siempre desde arriba.'
+  ],
+  '3.7.1': [
+    'El Resumen, terminado como en el diseño aprobado: el día se lee en tres puntos (lo que vence hoy, lo que entra en los próximos 7 días y lo vencido), y al tocar uno se abre Cobros justo ahí.',
+    'Tres cifras en una sola franja: lo que tienes en la calle (con cuánto de lo prestado ya volvió), lo cobrado en el mes y la ganancia del mes con la de los últimos 12.',
+    'Nueva tarjeta «Por cobrar»: lo vencido y lo de hoy, una fila por persona con sus días de atraso (si son muchas, la lista se desplaza como la de la meta del mes), y lo que entra esta semana, día por día. Al tocar una fila se abre esa persona en Cartera.',
+    'Por cobrar, la meta del mes y los últimos movimientos van lado a lado y a la misma altura. La agenda de cobro y el radar salen del Resumen: lo que mostraban vive ahora en Por cobrar, en Cobros y en Cartera.',
+    'En Rendimiento, debajo de la barra de «Recuperado» ahora ves cuánto capital te ha devuelto cada préstamo (y en dólares, si el crédito es en dólares): con el saldo de al lado, suman lo prestado.'
   ]
 };

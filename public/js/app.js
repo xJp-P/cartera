@@ -969,7 +969,7 @@ function App(){
           h('span',{style:{fontSize:12,color:'var(--green)',fontWeight:600}},'v'+globalUpdate.version+' lista para instalar')),
         h('button',{onClick:function(){window.electronAPI.installUpdate();},style:{background:'var(--green2)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},'Reiniciar e instalar')),
       h('div',{className:'main-content'},
-      view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,pays:pays,debts:debts,onNameClick:openDebtorByName,onNewLoan:function(){navTo('cartera');setLoanModal('new');}}),
+      view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,pays:pays,onNameClick:openDebtorByName,onNewLoan:function(){navTo('cartera');setLoanModal('new');}}),
       // 3.5.0 — Cobros (antes Pagos) y Cartera (antes Cartera + Deudores), con el panel del
       // deudor al lado. La `key` remonta la vista cuando llega un tramo o un foco nuevo.
       view==='cobros'     && h(CobrosView,{key:'cb'+(tramoCobros?tramoCobros.t:0),tramo:tramoCobros?tramoCobros.tramo:null,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,datosPago:cfg.datos_pago,showToast:showToast}),

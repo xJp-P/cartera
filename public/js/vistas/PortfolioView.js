@@ -162,10 +162,14 @@ export function PortfolioView(props){
             h('div', { className: 'rd-sub' }, opModalidad(l.modalidad, true) + ' · ' +
               (m.activo ? 'desde ' + fmtD(l.fechaInicio) : 'cerrado el ' + fmtD(m.fechaFin || l.fechaInicio)))))),
       h('td', { className: 'rd-n rd-col-capital' }, fmt(m.orig), r.esUSD && usdLinea(fmtUSD(r.capUSD))),
+      // 3.7.1 (aprobado por el PO): bajo la barra, el capital que ya volvio. Es el "Capital recuperado" del
+      // panel del deudor (`recCap`, capital imputado a la caja), asi que capital = recuperado + saldo.
       h('td', { className: 'rd-col-recuperado' },
         h('div', { className: 'rd-rec' },
           h('div', { className: 'rd-barra' }, h('div', { style: { width: m.pct + '%' } })),
-          h('span', { className: 'rd-rec-p' }, m.pct + ' %'))),
+          h('span', { className: 'rd-rec-p' }, m.pct + ' %')),
+        h('div', { className: 'rd-rec-v' }, fmt(m.recCap)),
+        r.esUSD && usdLinea(copToUsd(m.recCap, m.trm))),
       h('td', { className: 'rd-n rd-col-ganancia' },
         h('div', { className: 'rd-gan' + (m.gp.cop > 0 ? ' g' : '') }, (m.gp.cop > 0 ? '+' : '') + fmt(m.gp.cop)),
         r.esUSD && !m.esPrest && usdLinea((m.gp.usd > 0 ? '+' : '') + fmtUSD(m.gp.usd || 0)),
