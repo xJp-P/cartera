@@ -274,9 +274,13 @@ function metricsComoApp(X, loans, pays) {
     const t = textos(arbol), todo = t.join(' ');
     const tiene = s => todo.indexOf(s) !== -1;
     const cls = clases(arbol).join(' ').split(/\s+/);
-    R.check('D2 las ocho piezas estan: encabezado, cifras, agenda, meta, radar, flujo, composicion y movimientos',
-      ['rz-hero', 'rz-kpis', 'rz-agenda', 'rz-meta', 'rz-radar', 'rz-flujo', 'rz-comp', 'rz-mov'].every(c => cls.indexOf(c) !== -1),
-      ['rz-hero', 'rz-kpis', 'rz-agenda', 'rz-meta', 'rz-radar', 'rz-flujo', 'rz-comp', 'rz-mov'].filter(c => cls.indexOf(c) === -1));
+    R.check('D2 las seis piezas estan: encabezado, cifras, agenda, radar, meta y movimientos',
+      ['rz-hero', 'rz-kpis', 'rz-agenda', 'rz-meta', 'rz-radar', 'rz-mov'].every(c => cls.indexOf(c) !== -1),
+      ['rz-hero', 'rz-kpis', 'rz-agenda', 'rz-meta', 'rz-radar', 'rz-mov'].filter(c => cls.indexOf(c) === -1));
+    // 3.7.0 (decision del PO): el "Analisis del negocio" se mudo a Rendimiento; aqui queda el enlace.
+    R.check('D2 el flujo de caja y la composicion ya no estan en el Resumen, y en su lugar va el enlace al analisis',
+      cls.indexOf('rz-flujo') === -1 && cls.indexOf('rz-comp') === -1 && cls.indexOf('rz-analisis') !== -1 &&
+      tiene('Análisis del negocio') && tiene('ahora en Rendimiento'));
     R.check('D3 el encabezado dice el dia: "viernes 31 de julio"', tiene('viernes 31 de julio'));
     R.check('D4 "Capital en la calle" muestra ' + X.fmt(M.vivo), tiene('Capital en la calle') && t.indexOf(X.fmt(M.vivo)) !== -1);
     R.check('D4 "Cobrado en julio" muestra "Cobros del Mes" de App', tiene('Cobrado en julio') && t.indexOf(X.fmt(met.recibido)) !== -1);
@@ -316,7 +320,7 @@ function metricsComoApp(X, loans, pays) {
       t.filter(s => /por entrar/.test(s)));
     R.check('D8 el radar lista cada prestamo activo', activos.every(l => t.indexOf(X.properCase(l.nombre)) !== -1));
     // Ortografia: aprobada con tildes en toda la pestaña. Ningun rotulo vuelve a salir sin ellas.
-    const conTilde = ['Posición neta', 'Últimos movimientos', 'Dónde está tu capital', 'Préstamo', 'próximos', 'días'];
+    const conTilde = ['Posición neta', 'Últimos movimientos', 'Análisis del negocio', 'Préstamo', 'próximos', 'días'];
     R.check('D9 ortografia completa: ' + conTilde.join(' · '),
       conTilde.every(s => todo.toLowerCase().indexOf(s.toLowerCase()) !== -1), conTilde.filter(s => todo.toLowerCase().indexOf(s.toLowerCase()) === -1));
     const sinTilde = t.filter(s => /\b(dias|posicion|ultimos|donde esta|proximos|prestamos?|creditos?|interes|historico|unico|dolares)\b/i.test(s));
@@ -378,6 +382,145 @@ function metricsComoApp(X, loans, pays) {
   R.check('D12 sin prestamos: estado vacio con su llamado a crear el primero',
     !!vacio && textos(vacio).join(' ').indexOf('Tu cartera empieza aquí') !== -1, error && String(error));
 
+  // El enlace del Resumen lleva a Rendimiento.
+  {
+    const navs = [];
+    const arbolNav = pintar({ type: X.DashView, props: Object.assign({}, props, { onNav: (v, d) => navs.push(v) }), children: [] });
+    const enlaces = [];
+    const buscarE = n => { if (Array.isArray(n)) return n.forEach(buscarE); if (!n || !n.kids) return;
+      if (n.props && /\brz-analisis-h\b/.test(n.props.className || '')) enlaces.push(n); n.kids.forEach(buscarE); };
+    buscarE(arbolNav);
+    if (enlaces[0]) enlaces[0].props.onClick();
+    R.check('D16 el enlace "Análisis del negocio" abre Rendimiento', enlaces.length === 1 && navs.join() === 'rendimiento', navs);
+    // Ultimos movimientos comparte fila con la Meta y el Radar: su lista llena la tarjeta, sin tope en linea.
+    const movs = [];
+    const buscarM = n => { if (Array.isArray(n)) return n.forEach(buscarM); if (!n || !n.kids) return;
+      if (n.props && /\brz-mov-lista\b/.test(n.props.className || '')) movs.push(n); n.kids.forEach(buscarM); };
+    buscarM(arbolNav);
+    R.check('D17 la lista de Últimos movimientos lleva su clase y ningun tope de alto en linea',
+      movs.length === 1 && !(movs[0].props.style && movs[0].props.style.maxHeight != null), movs.map(m => m.props));
+  }
+
+  // ── R — RENDIMIENTO (3.7.0) ───────────────────────────────────────────────
+  // Rediseno aprobado por el PO: cuatro cifras, la tabla de prestamos (filtros, orden, clic a Cartera) y
+  // el analisis mudado del Resumen. Ninguna cifra nueva de dinero salvo el cociente de la rentabilidad.
+  R.seccion('R — Rendimiento: cifras, tabla, rentabilidad y el analisis mudado (3.7.0)');
+  const nodos = (n, pred, out) => {
+    out = out || [];
+    if (Array.isArray(n)) { n.forEach(x => nodos(x, pred, out)); return out; }
+    if (n && n.kids) { if (pred(n)) out.push(n); n.kids.forEach(x => nodos(x, pred, out)); }
+    return out;
+  };
+  const montarR = (comp, pr, estado) => {
+    const orig = X.useState; let i = 0;
+    X.useState = init => { const k = i++;
+      const v = (estado && k < estado.length && estado[k] !== undefined) ? estado[k] : (typeof init === 'function' ? init() : init);
+      return [v, () => {}]; };
+    try { return pintar({ type: comp, props: pr, children: [] }); } finally { X.useState = orig; }
+  };
+  const clicks = [];
+  const propsR = { loans, pays, onNav: () => {}, onNameClick: (n, id) => clicks.push([n, id]) };
+  let rend = null; error = null;
+  try { rend = montarR(X.PortfolioView, propsR, []); } catch (e) { error = e; }
+  R.check('R1 la vista se pinta sin excepciones', !!rend, error && (error.stack || String(error)));
+  if (rend) {
+    const tR = textos(rend), todoR = tR.join(' ');
+    const filasDe = arbol => nodos(arbol, n => n.tag === 'tr' && /\brd-fila\b/.test((n.props && n.props.className) || ''));
+    // Las cifras: la ganancia es la de la tarjeta del Resumen (Bug #68: tarjeta == Rendimiento), el saldo
+    // es el "Capital en la calle" del Resumen y el colocado es el capital original de los activos.
+    const origCOP = l => (l.moneda === 'USD' ? Math.round(l.montoOrigen * l.trmAcordada) : Math.round(l.montoOrigen));
+    R.check('R2 "Ganancia obtenida" = la ganancia historica de la app (' + X.fmt(met.totalInteresesRecibidos) + ')',
+      tR.indexOf(X.fmt(met.totalInteresesRecibidos)) !== -1, X.fmt(met.totalInteresesRecibidos));
+    R.check('R2 y debajo, los ultimos 12 meses del Resumen (' + X.fmt(M.ganancia12) + ')', tR.indexOf(X.fmt(M.ganancia12)) !== -1);
+    R.check('R3 "Saldo en la calle" = el "Capital en la calle" del Resumen (' + X.fmt(M.vivo) + ')', tR.indexOf(X.fmt(M.vivo)) !== -1);
+    R.check('R3 "Capital colocado" = el capital original de los prestamos activos',
+      tR.indexOf(X.fmt(suma(activos, origCOP))) !== -1, X.fmt(suma(activos, origCOP)));
+    const prestadoTodo = suma(loans, origCOP);
+    R.check('R3 "Rentabilidad de la cartera" = ganancia obtenida / todo lo prestado',
+      tR.indexOf(X.rdPct(met.totalInteresesRecibidos / prestadoTodo)) !== -1, X.rdPct(met.totalInteresesRecibidos / prestadoTodo));
+    // La tabla: por defecto los activos, una fila cada uno, y los filtros con su conteo.
+    const filasA = filasDe(rend);
+    R.eq('R4 por defecto lista los prestamos activos', filasA.length, activos.length);
+    const nUSD = loans.filter(l => l.moneda === 'USD').length;
+    R.check('R4 los filtros con su conteo: activos, finalizados, en dolares y todos',
+      ['Activos' + activos.length, 'Finalizados' + (loans.length - activos.length), 'En dólares' + nUSD, 'Todos' + loans.length]
+        .every(x => nodos(rend, n => n.tag === 'button' && /\brd-filtro\b/.test(n.props.className || '')).some(b => textos(b).join('') === x)));
+    // La rentabilidad, recalculada aparte: ganancia / capital, en dolares si el credito es en dolares.
+    const lpDe = id => pays.filter(p => p.prestamoId === id);
+    const esperadaR = l => { const g = X.gananciaDePrestamo(l, lpDe(l.id));
+      return l.moneda === 'USD' ? (g.usd || 0) / l.montoOrigen : g.cop / origCOP(l); };
+    const malasR = activos.filter(l => l.modalidad !== 'Prestamo').filter(l => !filasA.some(f => {
+      const t = textos(f).join(' ');
+      return t.indexOf(X.properCase(l.nombre)) !== -1 && t.indexOf(X.rdPct(esperadaR(l))) !== -1; }))
+      .map(l => l.nombre + ' ' + X.rdPct(esperadaR(l)));
+    R.check('R5 cada fila muestra su rentabilidad acumulada = ganancia obtenida / capital prestado', malasR.length === 0, malasR);
+    // La MENSUAL, recalculada aparte: la acumulada / los meses del prestamo (dias reales / 30 hasta hoy),
+    // nunca dividida por menos de 1. Con su propia cuenta de dias, sin `diasEntre`.
+    const hoyR = X.nowStr();
+    const mesesR = l => Math.round((new Date(hoyR + 'T12:00:00') - new Date(l.fechaInicio + 'T12:00:00')) / 86400000) / 30;
+    const mensualR = l => esperadaR(l) / Math.max(1, mesesR(l));
+    const celdas = (f, cls) => nodos(f, n => n.tag === 'td' && new RegExp('\\b' + cls + '\\b').test(n.props.className || ''));
+    const malasM = activos.filter(l => l.modalidad !== 'Prestamo').filter(l => !filasA.some(f => {
+      const t = textos(f).join(' ');
+      return t.indexOf(X.properCase(l.nombre)) !== -1 && celdas(f, 'rd-col-mes').some(c => textos(c).join(' ').indexOf(X.rdPct(mensualR(l))) === 0); }))
+      .map(l => l.nombre + ' ' + X.rdPct(mensualR(l)));
+    R.check('R5 cada fila muestra su rentabilidad MENSUAL = la acumulada / los meses del prestamo', malasM.length === 0, malasM);
+    const ana = X.rdFilas(loans, pays, hoyR).find(r => r.m.activo && /restrepo/i.test(r.l.nombre) && r.meses > 12);
+    R.check('R5 la mensual de un prestamo viejo es mucho menor que su acumulada (' + (ana ? X.rdPct(ana.mes) + ' frente a ' + X.rdPct(ana.rent) : 'sin caso') + ')',
+      !!ana && ana.mes > 0 && ana.mes < ana.rent / 12);
+    const todasR = X.rdFilas(loans, pays, hoyR).filter(r => !r.m.esPrest);
+    R.check('R5 la mensual nunca supera a la acumulada (con menos de un mes se divide por 1)',
+      todasR.every(r => r.mes <= r.rent + 1e-12 && r.mesCOP <= r.rentCOP + 1e-12));
+    R.check('R5 en un mes recien empezado la mensual es la acumulada', (() => {
+      const r = X.rdFila(Object.assign({}, todasR[0].m, { loan: Object.assign({}, todasR[0].l, { fechaInicio: X.addDays(hoyR, -10) }), activo: true }), hoyR);
+      return r.mes === r.rent && X.rdMeses(r.meses) === 'en menos de un mes'; })());
+    R.eq('R5 los meses se rotulan en espanol', [X.rdMeses(23.833), X.rdMeses(1), X.rdMeses(0.4)], ['en 23,8 meses', 'en 1 mes', 'en menos de un mes']);
+    // Las dos columnas, lado a lado y en este orden: primero la mensual, luego la acumulada.
+    const cab = nodos(rend, n => n.tag === 'th').map(th => textos(th).join('').replace(/[↑↓↕]/g, '').trim());
+    const iM = cab.indexOf('Rent. mensual'), iA = cab.indexOf('Rent. acumulada');
+    R.check('R5 las columnas "Rent. mensual" y "Rent. acumulada" van juntas, la mensual primero', iM !== -1 && iA === iM + 1, cab);
+    R.check('R5 debajo de la acumulada, cuanto lleva el prestamo', ana && filasA.some(f => celdas(f, 'rd-col-rent').some(c => textos(c).join(' ').indexOf(X.rdMeses(ana.meses)) !== -1)));
+    const lUSD = activos.find(l => l.moneda === 'USD' && l.id === '1773657323435hkkb');
+    if (lUSD) {
+      const g = X.gananciaDePrestamo(lUSD, lpDe(lUSD.id));
+      R.check('R5 un credito en dolares se mide en dolares (' + X.rdPct(g.usd / lUSD.montoOrigen) + ') y muestra debajo la de pesos (' + X.rdPct(g.cop / origCOP(lUSD)) + ')',
+        todoR.indexOf(X.rdPct(g.usd / lUSD.montoOrigen)) !== -1 && todoR.indexOf('en pesos ' + X.rdPct(g.cop / origCOP(lUSD))) !== -1);
+      const dv = Math.max(1, mesesR(lUSD));
+      R.check('R5 y su mensual tambien: en dolares (' + X.rdPct(g.usd / lUSD.montoOrigen / dv) + ') con la de pesos debajo',
+        todoR.indexOf(X.rdPct(g.usd / lUSD.montoOrigen / dv)) !== -1 && todoR.indexOf('en pesos ' + X.rdPct(g.cop / origCOP(lUSD) / dv)) !== -1);
+    }
+    // Orden: por rentabilidad de mayor a menor; sembrando el estado, por ganancia y por nombre.
+    const ordenFilas = arbol => filasDe(arbol).map(f => f.props.title);
+    const esperadoOrden = (k, dir) => X.rdFilas(loans, pays, X.nowStr()).filter(r => r.m.activo).sort((a, b) => {
+      const x = a.clave[k], y = b.clave[k]; const c = typeof x === 'string' ? x.localeCompare(y) : x - y;
+      return c * dir || a.clave.nombre.localeCompare(b.clave.nombre); }).map(r => 'Abrir ' + X.properCase(r.l.nombre) + ' en Cartera');
+    R.eq('R6 por defecto, de mayor a menor rentabilidad mensual', ordenFilas(rend), esperadoOrden('mes', -1));
+    R.eq('R6 ordenada por rentabilidad acumulada', ordenFilas(montarR(X.PortfolioView, propsR, [undefined, { k: 'rent', dir: -1 }])), esperadoOrden('rent', -1));
+    R.eq('R6 ordenada por ganancia', ordenFilas(montarR(X.PortfolioView, propsR, [undefined, { k: 'ganancia', dir: -1 }])), esperadoOrden('ganancia', -1));
+    R.eq('R6 ordenada por nombre (A-Z)', ordenFilas(montarR(X.PortfolioView, propsR, [undefined, { k: 'nombre', dir: 1 }])), esperadoOrden('nombre', 1));
+    // Filtros: finalizados y "con perdida" (condonacion por la via vieja y efecto TRM negativo de un Prestamo USD).
+    const fin = montarR(X.PortfolioView, propsR, ['finalizados']);
+    R.eq('R7 "Finalizados" lista los prestamos cerrados', filasDe(fin).length, loans.length - activos.length);
+    const per = montarR(X.PortfolioView, propsR, ['perdida']);
+    const tPer = textos(per).join(' ');
+    R.check('R7 "Con pérdida" incluye la condonacion y el efecto TRM negativo, con su nota',
+      filasDe(per).length >= 2 && /condonó \$/.test(tPer) && /efecto TRM −\$/.test(tPer), tPer.slice(0, 300));
+    // El clic en una fila abre ese prestamo en Cartera (el mismo `openDebtorByName` de los nombres del Resumen).
+    clicks.length = 0;
+    filasA[0].props.onClick();
+    const prim = X.rdFilas(loans, pays, X.nowStr()).find(r => 'Abrir ' + X.properCase(r.l.nombre) + ' en Cartera' === filasA[0].props.title && r.m.activo);
+    R.check('R8 un clic en la fila abre su deudor y ese prestamo en Cartera', clicks.length === 1 && !!prim && clicks[0][0] === prim.l.nombre && clicks[0][1] === prim.l.id, clicks);
+    // El analisis mudado: el flujo y la composicion viven aqui.
+    const clsR = clases(rend).join(' ').split(/\s+/);
+    R.check('R9 el analisis del negocio (flujo de caja y composicion) esta en Rendimiento',
+      clsR.indexOf('rz-flujo') !== -1 && clsR.indexOf('rz-comp') !== -1 && todoR.indexOf('Dónde está tu capital') !== -1 && todoR.indexOf('Flujo de caja') !== -1);
+    const sinTildeR = tR.filter(s => /\b(dias|posicion|ultimos|donde esta|proximos|prestamos?|creditos?|interes|unico|dolares|perdida|analisis|condono)\b/i.test(s));
+    R.check('R10 ningun texto de Rendimiento sale sin tilde', sinTildeR.length === 0, sinTildeR);
+  }
+  let rendVacio = null; error = null;
+  try { rendVacio = montarR(X.PortfolioView, { loans: [], pays: [] }, []); } catch (e) { error = e; }
+  R.check('R11 sin prestamos: un estado vacio, sin excepciones', !!rendVacio && textos(rendVacio).join(' ').indexOf('Todavía no hay préstamos') !== -1, error && String(error));
+
   // ── E — GUARDAS ESTATICAS ─────────────────────────────────────────────────
   R.seccion('E — el Inicio viejo no deja restos');
   const leerRepo = p => fs.readFileSync(path.join(REPO, p), 'utf8');
@@ -402,6 +545,14 @@ function metricsComoApp(X, loans, pays) {
   R.check('E5 Radar largo parte de 0 con el minimo de antes (460 px) y solo en su fila conserva ese tope',
     /\.rz-radar \.rz-radar-lista\.larga\{[^}]*flex-basis:0[^}]*min-height:460px/.test(reglas) &&
     /@media \(max-width:1180px\)\{[^@]*\.rz-radar \.rz-radar-lista,\.rz-radar \.rz-radar-lista\.larga\{[^}]*max-height:460px/.test(reglas));
+
+  R.check('E6 Ultimos movimientos (3.7.0): cuerpo flexible y lista que parte de 0 con minimo 240 px; sola en su fila, tope de 360 px',
+    /\.rz-mov > \.rz-body[,{][^}]*flex:1 1 auto[^}]*display:flex/.test(reglas) &&
+    /\.rz-mov \.rz-mov-lista\{flex:1 1 0;min-height:240px;max-height:none\}/.test(reglas) &&
+    /@media \(max-width:1180px\)\{[^@]*\.rz-mov \.rz-mov-lista\{[^}]*max-height:360px/.test(reglas));
+  R.check('E6 la fila de tres: radar 5 + meta 4 + movimientos 3 columnas',
+    /\.rz-radar\{grid-column:span 5\}\s*\.rz-meta\{grid-column:span 4\}\s*\.rz-mov\{grid-column:span 3\}/.test(reglas));
+  R.check('E7 App le pasa a Rendimiento la navegacion a Cartera', /h\(PortfolioView,\{[^}]*onNameClick:openDebtorByName/.test(app));
 
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

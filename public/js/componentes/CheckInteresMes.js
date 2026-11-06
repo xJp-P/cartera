@@ -19,8 +19,8 @@ import { periodoEnCursoDe } from '../core/dominio.js';
 // Con un periodo irregular en curso (3.2.0) no hay "mes": se cobran los dias elegidos.
 // En Semanal y Quincenal (3.3.0) el periodo en curso es una semana o una quincena.
 export function etiquetaInteresMes(L) {
-  if (L && L.periodoIrregular) return 'Interes de ' + L.diasCobrados + ' dias del periodo en curso';
-  return L && L.esDiario ? 'Interes del proximo mes' : 'Interes ' + periodoEnCursoDe(L && L.frecuencia);
+  if (L && L.periodoIrregular) return 'Interés de ' + L.diasCobrados + ' días del periodo en curso';
+  return L && L.esDiario ? 'Interés del próximo mes' : 'Interés ' + periodoEnCursoDe(L && L.frecuencia);
 }
 
 export function CheckInteresMes(props) {
@@ -41,8 +41,8 @@ export function CheckInteresMes(props) {
         h('span',{className:'mono',style:{fontSize:12,color:'var(--yellow)',whiteSpace:'nowrap'}},'+ '+fmt(L.intProxMes))),
       h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
         L.esDiario
-          ? 'El interes ya esta cobrado al dia de hoy. Activalo solo si pactaste cobrarle ademas el mes siguiente.'
-          : 'El credito se cierra antes del proximo vencimiento, asi que '+esePeriodo+' aun no se ha facturado. Activalo solo si lo pactaste con el deudor.')));
+          ? 'El interés ya está cobrado al día de hoy. Actívalo solo si pactaste cobrarle además el mes siguiente.'
+          : 'El crédito se cierra antes del próximo vencimiento, así que '+esePeriodo+' aún no se ha facturado. Actívalo solo si lo pactaste con el deudor.')));
 }
 
 // ── Dentro de los dias de gracia (3.3.0, Fase 3, regla del PO) ───────────────
@@ -52,11 +52,11 @@ function avisoGracia(L) {
   return h('div',{style:{display:'flex',alignItems:'flex-start',gap:10,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'11px 12px',marginBottom:12}},
     h('span',{style:{flex:1}},
       h('span',{style:{display:'flex',justifyContent:'space-between',gap:8}},
-        h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Dias de gracia: sin interes en curso'),
+        h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Días de gracia: sin interés en curso'),
         h('span',{className:'mono',style:{fontSize:12,color:'var(--text3)',whiteSpace:'nowrap'}},fmt(0))),
       h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
-        'Al crear el credito se perdonaron los dias muertos: el interes empieza a correr el '+fmtD(L.graciaHasta)+
-        '. Si el deudor liquida antes, no se cobra interes por adelantado.')));
+        'Al crear el crédito se perdonaron los días muertos: el interés empieza a correr el '+fmtD(L.graciaHasta)+
+        '. Si el deudor liquida antes, no se cobra interés por adelantado.')));
 }
 
 // ── Periodo irregular en curso: DIAS VARIABLES (3.2.0, Fase 3, regla del PO) ──
@@ -80,13 +80,13 @@ function casillaPeriodoIrregular(L, checked, onChange, onDias) {
       h('input',{type:'checkbox',checked:checked,onChange:onChange,style:{width:16,height:16,accentColor:'var(--yellow)',cursor:'pointer',margin:'1px 0 0',flex:'none'}}),
       h('span',{style:{flex:1}},
         h('span',{style:{display:'flex',justifyContent:'space-between',gap:8}},
-          h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Cobrar el interes del periodo en curso'),
+          h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Cobrar el interés del periodo en curso'),
           h('span',{className:'mono',style:{fontSize:12,color:'var(--yellow)',whiteSpace:'nowrap'}},'+ '+fmt(L.intProxMes))),
         h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
           'Este periodo no es de un mes: va del '+fmtD(L.periodoDesde)+' al '+fmtD(L.periodoHasta)+' ('+L.diasPeriodo+
-          ' dias) y hoy van '+L.diasTranscurridos+'. Activalo si pactaste cobrar el interes de esos dias.'))),
+          ' días) y hoy van '+L.diasTranscurridos+'. Actívalo si pactaste cobrar el interés de esos días.'))),
     checked&&h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',gap:8,marginTop:10,paddingLeft:26}},
-      h('span',{style:{fontSize:12,color:'var(--text2)'}},'Dias a cobrar'),
+      h('span',{style:{fontSize:12,color:'var(--text2)'}},'Días a cobrar'),
       h('input',{type:'number',min:0,max:L.diasPeriodo,step:1,value:L.diasCobrados,
         onChange:function(e){ setDias(e.target.value===''?'':parseInt(e.target.value,10)); },
         className:'inp mono',style:{width:72,padding:'6px 8px',textAlign:'center'}}),

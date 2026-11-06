@@ -108,7 +108,10 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
   var nombre1 = rbEsc(rbPrimerNombre(nombre));
   function rotulo(m){ return 'Crédito ' + (m.i + 1); }
   function montoPrestamo(m){ return m.mon.esUSD ? fmtUSD(+m.l.montoOrigen || 0) : fmt(m.l.montoOrigen); }
-  function monto(t){ return rbMixto(t); }
+  // 3.7.0 (decision del PO): un credito en dolares se imprime SOLO en dolares: un deudor sin
+  // creditos en pesos nunca ve un "$ 0" (rbMixto imprime los pesos cuando no hay dolares que sumar).
+  var soloUSD = mods.every(function(m){ return m.mon.esUSD; });
+  function monto(t){ return soloUSD ? fmtUSD((t.usd || 0) / 100) : rbMixto(t); }
   var mixto = vencT.cop && vencT.usd;
 
   // ── 1. HERO ────────────────────────────────────────────────────────────────

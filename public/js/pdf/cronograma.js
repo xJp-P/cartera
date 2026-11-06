@@ -228,7 +228,9 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {
-    var fname = 'Cronograma ' + fmt(loan.montoOrigen) + ' - ' + loan.nombre;
+    // 3.7.0 (decision del PO): un credito en dolares se imprime SOLO en dolares, tambien en el nombre
+    // del archivo (antes salia el monto en dolares con formato de pesos: 'Cronograma $ 1.600').
+    var fname = 'Cronograma ' + (esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) + ' - ' + loan.nombre;
     window.electronAPI.printPDF(html, fname);
   } else {
     var w = window.open('', '_blank', 'width=750,height=700');

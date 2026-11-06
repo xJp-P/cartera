@@ -71,7 +71,6 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
   // que el usuario declaro haber recibido.
   var cajaCOP = pasos.reduce(function(s, p){ return s + Math.round(p.cajaCOP || 0); }, 0);
   var oblUSD = esUSD ? pasos.reduce(function(s, p){ return s + (+p.obligacionUSD || 0); }, 0) : 0;
-  var trmImpl = (esUSD && oblUSD > 0) ? Math.round(cajaCOP / oblUSD) : 0;
   // USD protagonista: el cliente entrego dolares y esa es la cifra que reconoce.
   var recibidoTxt = esUSD ? fmtUSD(oblUSD) : fmt(cajaCOP);
 
@@ -287,7 +286,9 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     '</style></head><body>' + RB_MARCO_ABRE,
     rbCabecera(esPazYSalvo ? 'Paz y salvo' : 'Recibo de pago', codigo, emision),
     '<div class="r-hero"><div class="r-hero-l"><small>Recibimos tu pago</small><div class="r-monto">' + recibidoTxt + '</div>',
-    esUSD ? '<div class="r-equiv">Equivalen a ' + fmt(cajaCOP) + (trmImpl > 0 ? ' · TRM del día ' + fmt(trmImpl) : '') + '</div>' : '',
+    // 3.7.0 (decision del PO): un credito en dolares se imprime SOLO en dolares: el hero ya no lleva
+    // "Equivalen a $X · TRM del dia". La caja en pesos sigue registrada en la app (doctrina CAJA vs OBLIGACION).
+    '',   // (el elemento vacio conserva el separador: los documentos en pesos quedan identicos byte a byte)
     '<div class="r-quien"><b>' + rbEsc(loan.nombre) + '</b> <span>· ' + contacto.concat([rbLarga(fechaCobro)]).join(' · ') + '</span></div></div>',
     '<div class="r-sello">' + RB_ICONO_OK + '</div></div>',
     pazHTML,

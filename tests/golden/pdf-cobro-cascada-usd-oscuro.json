@@ -23,7 +23,7 @@
     ]
   },
   "valores": {
-    "bytes": 11021,
+    "bytes": 10949,
     "nFilas": 5,
     "nCeldas": 20,
     "celdasPorTr": [
@@ -33,10 +33,10 @@
       4,
       4
     ],
-    "nMontos": 17,
-    "hashMontos": "c4b2feba272c28e9fbd2cdc70894be9e6fea135f",
+    "nMontos": 15,
+    "hashMontos": "106f7a81d051445ea037fe93ebd93979337c4b43",
     "hashFname": "8df031a48dd0c5a6ac15bd29e83aa14c7bc4cca6",
-    "hashTexto": "d0586ed5bb7b6e9b926e08ac73a6dabeddcfa95d",
+    "hashTexto": "19fb013d7aec152f59c1cdd4bdb94a9d89274ada",
     "clases": [
       "",
       "chip pend",
@@ -51,7 +51,6 @@
       "r-cap",
       "r-doc",
       "r-dos",
-      "r-equiv",
       "r-frase",
       "r-hero",
       "r-hero-l",

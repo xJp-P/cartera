@@ -330,7 +330,7 @@ export function DebtsView(props){
             // RETROCEDE cuando entra un cargo. El rotulo ahora dice que mide.
             h('div',{style:{marginTop:11}},
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',fontSize:11,marginBottom:4}},
-                h('span',{style:{color:'var(--text3)'}},abonado>0?('Abonado '+fmt(abonado)+' de '+fmt(cargado)):'Sin abonos todavia'),
+                h('span',{style:{color:'var(--text3)'}},abonado>0?('Abonado '+fmt(abonado)+' de '+fmt(cargado)):'Sin abonos todavía'),
                 h('span',{className:'mono',style:{color:'var(--green)',fontWeight:700}},pct+'%')),
               barraProgreso(pct,5)))
           :null,
@@ -427,7 +427,7 @@ export function DebtsView(props){
     debts.length===0?
       h('div',{style:{textAlign:'center',padding:40,color:'var(--text3)'}},
         h(Ico,{name:'wallet',size:32,color:'var(--text3)'}),
-        h('p',{style:{marginTop:12,fontSize:13}},'No tienes deudas registradas aun'),
+        h('p',{style:{marginTop:12,fontSize:13}},'No tienes deudas registradas aún'),
         h('p',{style:{marginTop:4,fontSize:12,color:'var(--text3)'}},'Usa "Nueva Deuda" para agregar la primera'))
     :
       h('div',{style:{display:'flex',flexDirection:'column',gap:8}},perfiles));

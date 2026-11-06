@@ -458,7 +458,8 @@ const CASOS = [
   { nombre: 'reporte-activos-oscuro-parcial', gen: 'generateReportePrestamosPDF', tema: 'dark', celdas: 8,
     entrada: () => ({ todos: true, parcial: true, tema: 'dark', dark: true }),
     ejecutar: () => S.generateReportePrestamosPDF(loans, paysParcial, true),
-    contiene: ['Capital total en la calle', '#0d1117', 'abonado ', 'Incluye USD'] },
+    contiene: ['Capital total en la calle', '#0d1117', 'abonado ', ' + USD $', 'pesos y dólares por separado'],
+    noContiene: ['Incluye'] },
 
   // ── generateRecibo — pago completo, parcial y USD ─────────────────────────────────────
   // Se cobra una cuota PENDIENTE, no una ya Pagada: el recibo se emite ANTES de persistir
@@ -554,12 +555,12 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', cascada: true, tema: 'dark', dark: true }),
     ejecutar: () => S.generateReciboCobro(L('1782151590658w66y'), pays,
       cobroDe(L('1782151590658w66y'), pays)),
-    // USD protagonista con la caja del dia debajo; mora + abono = dos frases y la nota del
-    // orden de imputacion. El recibo viejo repetia la cifra en "Total aplicado": ya no existe.
+    // Solo dolares (3.7.0: sin la caja del dia en pesos ni la TRM debajo); mora + abono = dos frases
+    // y la nota del orden de imputacion. El recibo viejo repetia la cifra en "Total aplicado": ya no existe.
     contiene: ['Recibo de pago', 'Recibimos tu pago', 'Cómo se aplicó tu pago', 'Saldamos tu', 'Abonamos',
-               'class="r-a"', 'Equivalen a', 'USD $', 'RC-', '#0d1117', 'Así va tu crédito',
+               'class="r-a"', 'USD $', 'RC-', '#0d1117', 'Así va tu crédito',
                'Te falta por pagar', 'De eso, capital', 'Tus cuotas', 'Total por pagar', 'Cómo se imputa el pago'],
-    noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos'] },
+    noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos', 'Equivalen a', 'TRM'] },
 
   // ── generatePropuestaAbono — el papel que se manda ANTES de cobrar ────────────────────
   // Lo que este caso fija: que el documento NO se presente como comprobante. Un papel con
@@ -1122,6 +1123,181 @@ for (const caso of CASOS) {
   }
 }
 
+// ── 3.7.0 — un credito en dolares se imprime SOLO en dolares (decision del PO) ───────────
+// "A los clientes que pagan en USD no les interesa ver el valor en COP": todo documento cuyos
+// creditos son TODOS en dolares no puede llevar ni una cifra en pesos — ni equivalencias, ni la
+// TRM, ni el monto original convertido, ni la palabra "pesos". Se mira el TEXTO VISIBLE (sin CSS
+// ni etiquetas) y el nombre del archivo. Lo que delata un peso:
+//   - el formato de `fmt`: "$" + espacio + digitos ("$ 17.640.000", "$ 0"). `fmt` pone un espacio
+//     duro, pero `sinTags` lo normaliza a uno comun: por eso se busca CUALQUIER espacio. Un dolar
+//     nunca lo lleva ("USD $1,234.56", "$1,234.56" en las tablas);
+//   - un importe con miles en punto y SIN centavos ("17.640.000", "$1.234.567" de un nombre de
+//     archivo), que es el formato es-CO de los pesos y de la TRM; un dolar siempre trae ".dd";
+//   - las palabras COP, pesos y TRM.
+//   (una tasa como "7.931%" no es un importe: el numero seguido de % se excluye).
+// N1 recorre los casos golden cuyos creditos son todos en dolares; N3 el Reporte de Activos (las filas
+// en dolares van solo en dolares, y una cartera solo en dolares no lee ni un peso, tampoco en los totales);
+// N6 sus totales, separados por moneda (decision del PO), son la suma EXACTA de las filas impresas;
+// N4 el Recibo general de deudores solo en dolares, tambien al dia (sin un "$ 0" de rbMixto); N5 los
+// tres documentos del credito abierto, sobre una copia en dolares del credito diario del fixture.
+// N2 es el anti-vacio: los casos USD existen, cubren 8 generadores y de verdad imprimen dolares.
+const RE_PESO = [
+  [/\$\s\d/, 'importe con el formato de fmt ($ + espacio)'],
+  [/(^|[^\d.,])\d{1,3}(?:\.\d{3})+(?![\d.,]*\d)(?!\s*%)/, 'importe con miles en punto y sin centavos'],
+  [/\bCOP\b/, 'la palabra COP'],
+  [/\bpesos\b/i, 'la palabra pesos'],
+  [/\bTRM\b/, 'la TRM'],
+];
+function pesosEn(texto) {
+  const halladas = [];
+  for (const [re, que] of RE_PESO) {
+    const g = new RegExp(re.source, re.flags.indexOf('g') === -1 ? re.flags + 'g' : re.flags);
+    let m;
+    while ((m = g.exec(texto)) !== null) {
+      halladas.push(que + ': «…' + texto.slice(Math.max(0, m.index - 40), m.index + m[0].length + 25) + '…»');
+      if (halladas.length > 12) return halladas;
+    }
+  }
+  return halladas;
+}
+function loansDelCaso(caso) {
+  const e = caso.entrada();
+  return (e.loanIds || (e.loanId ? [e.loanId] : [])).map(L).filter(Boolean);
+}
+{
+  R.seccion('creditos en dolares · el documento no imprime ni una cifra en pesos (3.7.0)');
+  const usdCasos = CASOS.filter(c => { const ls = loansDelCaso(c); return ls.length && ls.every(l => l.moneda === 'USD'); });
+  const gensUSD = new Set();
+  for (const caso of usdCasos) {
+    let out;
+    try { out = generar(caso); } catch (e) { R.check(caso.nombre + ' · el generador produjo un PDF', false, String(e.message || e)); continue; }
+    gensUSD.add(caso.gen);
+    const visible = sinTags(out.html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<title>[\s\S]*?<\/title>/gi, ''));
+    const titulo = sinTags((/<title>([\s\S]*?)<\/title>/i.exec(out.html) || [, ''])[1]);
+    const malas = pesosEn(visible + ' ¦ ' + titulo + ' ¦ ' + out.fname);
+    R.check('N1 ' + caso.nombre + ' · solo dolares', malas.length === 0, malas.slice(0, 6).join('\n      '));
+    R.check('N2 ' + caso.nombre + ' · imprime dolares', /\d,?\d*\.\d{2}\b/.test(visible) && /US\$|USD/.test(visible), 'no se encontro ningun importe en dolares');
+  }
+  const GENS_USD = ['generateCronogramaPDF', 'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono', 'generateReciboCobro',
+                    'generatePropuestaAbono', 'generateReciboGeneral', 'generateEstadoLiquidacion'];
+  R.check('N2 los casos golden en dolares cubren ' + GENS_USD.length + ' generadores', GENS_USD.every(g => gensUSD.has(g)),
+          'faltan: ' + GENS_USD.filter(g => !gensUSD.has(g)).join(', '));
+
+  // Un documento emitido fuera de los casos golden: devuelve el texto visible + titulo + archivo.
+  function emitir(fn) {
+    CAP.pdfs.length = 0; fn();
+    if (CAP.pdfs.length !== 1) throw new Error('emitio ' + CAP.pdfs.length + ' documento(s), se esperaba 1');
+    const html = sinMarco(CAP.pdfs[0].html);
+    return { html, fname: CAP.pdfs[0].fname,
+             texto: sinTags(html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<title>[\s\S]*?<\/title>/gi, '')) + ' ¦ ' +
+                    sinTags((/<title>([\s\S]*?)<\/title>/i.exec(html) || [, ''])[1]) + ' ¦ ' + CAP.pdfs[0].fname };
+  }
+
+  // N3 — Reporte de Activos: cada fila (principal, mora y transitoria) de un prestamo en dolares.
+  ponerTema('light');
+  const usdActivos = loans.filter(l => l.estado === 'Activo' && l.moneda === 'USD');
+  for (const [etq, arr] of [['datos del fixture', pays], ['con un parcial sobre mora', paysParcial]]) {
+    const rep = emitir(() => S.generateReportePrestamosPDF(usdActivos, arr, false));
+    const filas = rep.html.match(/<tr class="(?:loan-row|mora-sub|tran-sub)[\s\S]*?<\/tr>/g) || [];
+    const malas = filas.map(tr => pesosEn(sinTags(tr))).filter(x => x.length).map(x => x[0]);
+    R.check('N3 reporte de activos (' + etq + ') · las ' + filas.length + ' filas de prestamos en dolares van solo en dolares',
+            filas.length >= usdActivos.length && malas.length === 0, malas.slice(0, 4).join('\n      '));
+    if (etq !== 'datos del fixture') {
+      R.check('N3 reporte de activos · un parcial en mora se explica en dolares ("abonado USD $X de USD $Y")',
+              /abonado USD \$[\d,]+\.\d{2} de USD \$[\d,]+\.\d{2}/.test(sinTags(rep.html)), 'sin la nota del abono en dolares');
+    }
+    R.check('N3 reporte de una cartera solo en dolares (' + etq + ') · ni un peso en todo el documento, totales incluidos',
+            pesosEn(rep.texto).length === 0, pesosEn(rep.texto).slice(0, 3).join('\n      '));
+  }
+  // Una cartera en dolares SIN mora: el total vencido es cero, y `rbMixto` lo escribiria "$ 0".
+  const usdAlDia = usdActivos.filter(l => !pays.some(p => p.prestamoId === l.id && p.estadoPago === 'En Mora'));
+  R.check('N3 ANTI-VACIO: el fixture tiene un prestamo en dolares al dia', usdAlDia.length >= 1, usdAlDia.length);
+  const repAlDia = emitir(() => S.generateReportePrestamosPDF(usdAlDia, pays, false));
+  R.check('N3 reporte de una cartera en dolares al dia · el total vencido es "USD $0.00", no "$ 0"',
+          /Total vencido: USD \$0\.00/.test(repAlDia.texto) && pesosEn(repAlDia.texto).length === 0,
+          (/Total vencido:[^·]{0,30}/.exec(repAlDia.texto) || [''])[0]);
+
+  // N6 — los totales del reporte MIXTO, separados por moneda: cada uno es la suma exacta de sus filas.
+  const pesoDe = t => { const m = /\$\s?([\d.]+)(?![\d,]*\.\d{2})/.exec(t); return m ? +m[1].replace(/\./g, '') : 0; };
+  const centDe = t => { const m = /USD \$([\d,]+\.\d{2})/.exec(t); return m ? Math.round(parseFloat(m[1].replace(/,/g, '')) * 100) : 0; };
+  for (const [etq, arr] of [['datos del fixture', pays], ['con un parcial sobre mora', paysParcial]]) {
+    const rep = emitir(() => S.generateReportePrestamosPDF(loans, arr, false));
+    const filas = rep.html.match(/<tr class="loan-row[\s\S]*?<\/tr>/g) || [];
+    const saldos = filas.map(tr => sinTags((tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || [])[6] || ''));
+    const moras = (rep.html.match(/<tr class="mora-sub">[\s\S]*?<\/tr>/g) || []).map(tr => sinTags((/<strong>([^<]*)<\/strong>/.exec(tr) || [, ''])[1]));
+    const suma = arr2 => ({ cop: arr2.filter(t => !/USD/.test(t)).reduce((a, t) => a + pesoDe(t), 0),
+                            usd: arr2.filter(t => /USD/.test(t)).reduce((a, t) => a + centDe(t), 0) });
+    const sS = suma(saldos), sV = suma(moras);
+    const totV = sinTags((/Total vencido: <strong>([^<]*)<\/strong>/.exec(rep.html) || [, ''])[1]);
+    const totS = sinTags((/font-size:24px;font-weight:700;color:[^"]*">([^<]*)<\/div>/.exec(rep.html) || [, ''])[1]);
+    R.check('N6 reporte mixto (' + etq + ') · ANTI-VACIO: hay filas en pesos y en dolares, y mora en las dos monedas',
+            sS.cop > 0 && sS.usd > 0 && sV.cop > 0 && sV.usd > 0, JSON.stringify({ sS, sV }));
+    R.eq('N6 reporte mixto (' + etq + ') · capital en la calle = suma de las ' + filas.length + ' filas, cada moneda por su lado',
+         { cop: pesoDe(totS), usd: centDe(totS), texto: / \+ USD \$/.test(totS) }, { cop: sS.cop, usd: sS.usd, texto: true });
+    R.eq('N6 reporte mixto (' + etq + ') · total vencido = suma de las ' + moras.length + ' cuotas en mora, cada moneda por su lado',
+         { cop: pesoDe(totV), usd: centDe(totV) }, { cop: sV.cop, usd: sV.usd });
+    R.check('N6 reporte mixto (' + etq + ') · avisa que las dos monedas no se suman, y ya no dice "Incluye"',
+            /pesos y dólares por separado: no se suman entre sí/.test(rep.texto) && !/Incluye/.test(rep.texto), totS);
+  }
+  // Una cartera solo en pesos queda como siempre: un solo total, sin el aviso de las dos monedas.
+  const repCOP = emitir(() => S.generateReportePrestamosPDF(loans.filter(l => l.moneda !== 'USD'), pays, false));
+  R.check('N6 una cartera solo en pesos: totales en pesos, sin "+ USD" ni el aviso',
+          /Total vencido: \$\s[\d.]+ /.test(repCOP.texto) && !/USD/.test(repCOP.texto) && !/no se suman/.test(repCOP.texto),
+          (/Total vencido:[^·]{0,30}/.exec(repCOP.texto) || [''])[0]);
+
+  // N4 — Recibo general de cada deudor con creditos SOLO en dolares, con mora y al dia.
+  const porDeudor = {};
+  loans.filter(l => l.estado === 'Activo').forEach(l => { (porDeudor[l.nombre] = porDeudor[l.nombre] || []).push(l); });
+  const soloUSD = Object.values(porDeudor).filter(ls => ls.every(l => l.moneda === 'USD') && ls.some(l => !S.esDiario(l)));
+  for (const ls of soloUSD) {
+    for (const hasta of ['2026-07-31', '2026-11-02']) {
+      const g = emitir(() => S.generateReciboGeneral(ls, pays, config.datos_pago, { hasta }));
+      const malas = pesosEn(g.texto);
+      R.check('N4 recibo general de un deudor en dolares (' + ls.length + ' credito(s), al ' + hasta + ') · solo dolares',
+              malas.length === 0, malas.slice(0, 4).join('\n      '));
+    }
+  }
+  R.check('N4 anti-vacio: el fixture tiene deudores solo en dolares', soloUSD.length >= 2, soloUSD.length);
+  // N4b — el total en CERO: rbMixto imprime los pesos cuando no hay dolares que sumar, asi que un deudor
+  // en dolares que ya devolvio TODO el capital y aun debe intereses vencidos leia "capital $ 0" en la
+  // tarjeta de liquidar. El fixture no tiene ese estado: se arma en memoria con el credito de Intereses
+  // en mora, pasado a dolares (misma deuda en pesos) y con un abono por todo el capital.
+  const iBase = L('1773655076017');
+  if (!iBase) abortar('el fixture ya no tiene el credito 1773655076017 (lo usa la seccion N4b).');
+  const origI = Math.round(iBase.montoOrigen);
+  const iUSD = Object.assign({}, iBase, { id: 'n4b-usd-intereses', moneda: 'USD', trmAcordada: 4000, montoOrigen: iBase.montoOrigen / 4000 });
+  const lpI = pays.filter(p => p.prestamoId === iBase.id).map(p => Object.assign({}, p, { prestamoId: iUSD.id }));
+  lpI.push({ id: iUSD.id + '-ab-1', prestamoId: iUSD.id, nombreCliente: iUSD.nombre, cuotaN: 99, fechaPago: '2026-07-01',
+             saldoInicial: origI, interesPeriodo: 0, abonoCapital: origI, cuotaTotal: origI, saldoFinal: 0, estadoPago: 'Pagado',
+             fechaRecaudo: '2026-07-01', montoCOPRecibido: origI, montoUSDRecibido: origI / 4000, partialPaid: origI, recibos: '[]', observaciones: '' });
+  ponerTema('light');
+  const g0 = emitir(() => S.generateReciboGeneral([iUSD], lpI, config.datos_pago, { hasta: '2026-11-02' }));
+  const tarjetaLiq = (/Liquidar el crédito[^·]{0,120}/.exec(g0.texto) || [''])[0];
+  R.check('N4b ANTI-VACIO: la tarjeta de liquidar lleva el capital en cero', /capital USD \$0\.00/.test(tarjetaLiq), tarjetaLiq);
+  R.check('N4b recibo general de un deudor en dolares con el capital en cero · solo dolares', pesosEn(g0.texto).length === 0,
+          pesosEn(g0.texto).slice(0, 3).join('\n      '));
+
+  // N5 — el credito abierto en dolares: una COPIA del diario del fixture, con la misma deuda en pesos.
+  const dBase = L('fixture-diario-01');
+  if (!dBase) abortar('el fixture ya no tiene fixture-diario-01 (lo usa la seccion N5).');
+  const TRM_N5 = 4000;
+  const dUSD = Object.assign({}, dBase, { moneda: 'USD', trmAcordada: TRM_N5, montoOrigen: dBase.montoOrigen / TRM_N5 });
+  const lpD = pays.filter(p => p.prestamoId === dBase.id);
+  const corteD = lpD.filter(p => S.esCorte(p)).sort((a, b) => a.cuotaN - b.cuotaN).pop();
+  if (!corteD) abortar('fixture-diario-01 no tiene cortes (los usa la seccion N5).');
+  ponerTema('dark');
+  for (const [etq, fn] of [
+    ['estado de cuenta', () => S.generateEstadoCuentaDiario(dUSD, lpD, { hasta: '2026-07-31' })],
+    ['recibo de corte', () => S.generateReciboCorte(dUSD, lpD, corteD, {})],
+    ['factura de interes', () => S.generateFacturaCobroDiario(dUSD, lpD, config.datos_pago, { hasta: '2026-07-31' })],
+  ]) {
+    const d = emitir(fn);
+    const malas = pesosEn(d.texto);
+    R.check('N5 credito abierto en dolares · ' + etq + ' · solo dolares', malas.length === 0, malas.slice(0, 4).join('\n      '));
+    R.check('N5 credito abierto en dolares · ' + etq + ' · imprime dolares', /USD \$[\d,]+\.\d{2}/.test(d.texto), 'sin importes en dolares');
+  }
+}
+
 // ── 3.1.0 — CronogramaPdfModal: compuerta, modal real, coherencia y cable ────────────────
 // Los dos casos golden `crono-*-con-mes` fijan el DOCUMENTO. Esto fija lo que lo rodea:
 //   M1 la compuerta: el modal solo se abre donde la pregunta tiene respuesta.
@@ -1210,7 +1386,7 @@ for (const caso of CASOS) {
   R.check('M2 el modal REAL se cargo y tiene su boton "Descargar PDF"', typeof S.CronogramaPdfModal === 'function' && !!conMes.boton);
   R.check('M2 la casilla compartida aparece, marcada segun su estado',
           !!conMes.casilla && conMes.casilla.props.checked === true && !!sinMes.casilla && sinMes.casilla.props.checked === false);
-  R.check('M2 la casilla usa el texto de Liquidar deuda', conMes.pantalla.indexOf('Cobrar el interes del mes en curso') !== -1);
+  R.check('M2 la casilla usa el texto de Liquidar deuda', conMes.pantalla.indexOf('Cobrar el interés del mes en curso') !== -1);
   R.check('M2 la pantalla muestra la cifra que va a imprimir (marcada)', conMes.pantalla.indexOf(S.fmt(liqCon.total)) !== -1, conMes.pantalla.slice(0, 400));
   R.check('M2 la pantalla muestra la cifra que va a imprimir (desmarcada)', sinMes.pantalla.indexOf(S.fmt(liqSin.total)) !== -1, sinMes.pantalla.slice(0, 400));
   R.check('M2 marcada: emite 1 PDF CON el interes del mes y su vigencia',
@@ -1275,7 +1451,8 @@ for (const c of CASOS) {
 }
 // 'Interes Diario' entra aqui con el Estado de Liquidacion: es el primer caso de
 // pdf-render que ejercita la 5a modalidad (los 2 generadores propios del credito
-// abierto, generateEstadoCuentaDiario y generateReciboCorte, siguen sin cubrir).
+// abierto, generateEstadoCuentaDiario y generateReciboCorte, siguen sin golden; desde 3.7.0 la
+// seccion N los renderiza en dolares y exige que no impriman pesos).
 const MODALIDADES = ['Capital + Intereses', 'Interes Diario', 'Intereses', 'Pago Unico', 'Prestamo'];
 R.eq('las ' + MODALIDADES.length + ' modalidades estan cubiertas', [...modsCubiertas].sort(), MODALIDADES);
 R.eq('COP y USD cubiertos', [...monedas].sort(), ['COP', 'USD']);

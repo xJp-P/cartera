@@ -11,7 +11,8 @@
 
 import { imputarCobros, pendCuota, computeLiquidacion, gananciaDePrestamo, esDiario, estadoDiario, progresoCapital, diasEntre, cobrosDe } from './dominio.js';
 import { esAbono, esCuotaRegular } from './ids.js';
-import { addDays } from './ui.js';
+import { addDays, contiene, facturaCode, fcCoincideDiario, payMatchesQuery, plegar } from './ui.js';
+import { fmt, fmtD } from './format.js';
 
 export var OP_MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 export var OP_DIAS = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
@@ -159,4 +160,38 @@ export function bandejaCobro(loans, pays, hoy){
   });
   filas.sort(function(a, b){ return a.p.fechaPago.localeCompare(b.p.fechaPago) || b.pend - a.pend; });
   return filas;
+}
+
+// 3.7.0 — la busqueda global (la lupa del encabezado), extraida de App para poder probarla. Ignora
+// tildes y mayusculas (`contiene`: "jose" encuentra a José). Si el texto empieza por "fc-" busca por
+// codigo de factura: la cuota, TAMBIEN pagada (es la que se rastrea con un papel viejo en la mano), o
+// el credito abierto. Como maximo 15 resultados, en el orden de siempre.
+export function opBuscarGlobal(q, deudores, loans, pays){
+  if (!q || String(q).trim().length < 2) return [];
+  var res = [];
+  if (plegar(q).trim().indexOf('fc-') === 0){
+    pays.forEach(function(p){
+      if (esCuotaRegular(p) && payMatchesQuery(p, q))
+        res.push({ type: 'factura', label: facturaCode(p) + ' · ' + p.nombreCliente, sub: 'Cuota ' + p.cuotaN + ' | ' + fmt(p.cuotaTotal) + ' | ' + p.estadoPago + ' | ' + fmtD(p.fechaPago), data: p });
+    });
+    loans.forEach(function(l){
+      if (esDiario(l) && fcCoincideDiario(l, q))
+        res.push({ type: 'prestamo', label: l.nombre + ' - ' + opModalidad(l.modalidad), sub: 'Factura de crédito abierto | ' + l.estado, data: l });
+    });
+    return res.slice(0, 15);
+  }
+  deudores.forEach(function(d){
+    if (contiene(d.nombre, q))
+      res.push({ type: 'deudor', label: d.nombre, sub: d.loans.length + ' préstamo' + (d.loans.length === 1 ? '' : 's') + ' - ' + fmt(d.totalSaldo), data: d });
+  });
+  loans.forEach(function(l){
+    if (contiene(l.nombre, q) || contiene(l.modalidad, q) || contiene(opModalidad(l.modalidad), q))
+      res.push({ type: 'prestamo', label: l.nombre + ' - ' + opModalidad(l.modalidad), sub: fmt(Math.round(l.montoOrigen * (l.moneda === 'USD' ? l.trmAcordada : 1))) + ' | ' + l.estado, data: l });
+  });
+  pays.forEach(function(p){
+    if (p.estadoPago === 'Pagado') return;
+    if (contiene(p.nombreCliente, q))
+      res.push({ type: 'pago', label: p.nombreCliente + ' - Cuota ' + p.cuotaN, sub: fmt(p.cuotaTotal) + ' | ' + p.estadoPago + ' | ' + fmtD(p.fechaPago), data: p });
+  });
+  return res.slice(0, 15);
 }

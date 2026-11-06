@@ -28,7 +28,7 @@ export function ConfirmUndoModal(props){
   var creada=e.created_at?new Date(String(e.created_at).replace(' ','T')):null;
   var horas=creada?Math.floor((Date.now()-creada.getTime())/36e5):0;
   var esVieja=horas>=24;
-  var antiguedad=!creada?'':(horas<1?'hace menos de una hora':(horas<24?'hace '+horas+' hora'+(horas!==1?'s':''):'hace '+Math.floor(horas/24)+' dia'+(Math.floor(horas/24)!==1?'s':'')));
+  var antiguedad=!creada?'':(horas<1?'hace menos de una hora':(horas<24?'hace '+horas+' hora'+(horas!==1?'s':''):'hace '+Math.floor(horas/24)+' día'+(Math.floor(horas/24)!==1?'s':'')));
   var afectaCaja=!!(+e.afecta_caja);
   var esDeuda=e.scope_tipo==='debt';
 
@@ -42,35 +42,35 @@ export function ConfirmUndoModal(props){
 
   return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:3,display:'flex',alignItems:'center',gap:8}},
-      h(Ico,{name:'refresh',size:16,color:'var(--purple)',sw:2.4}),'Deshacer operacion'),
-    h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:13}},'Se restaurara el estado exacto anterior a esta operacion.'),
+      h(Ico,{name:'refresh',size:16,color:'var(--purple)',sw:2.4}),'Deshacer operación'),
+    h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:13}},'Se restaurará el estado exacto anterior a esta operación.'),
 
     // Resumen de lo que se revierte
     h('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 14px'}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--text3)',letterSpacing:'.5px',marginBottom:6}},'SE VA A REVERTIR'),
-      h('div',{style:{fontSize:13,color:'var(--text)',lineHeight:1.5,fontWeight:500}},e.descripcion||'(sin descripcion)'),
+      h('div',{style:{fontSize:13,color:'var(--text)',lineHeight:1.5,fontWeight:500}},e.descripcion||'(sin descripción)'),
       creada&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:6,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'clock',size:11,color:'var(--text3)',sw:2.2}),
         String(e.created_at).slice(0,16)+' · '+antiguedad)),
 
     // ── CANDADO C — antigüedad ──
-    esVieja&&aviso('var(--yellow)','var(--yellow-bg)','var(--yellow)','alert','OPERACION ANTIGUA',
-      'Se registro '+antiguedad+'. Revisa que no hayas construido nada sobre ella (reportes enviados, cierres de caja o conciliaciones ya hechas).'),
+    esVieja&&aviso('var(--yellow)','var(--yellow-bg)','var(--yellow)','alert','OPERACIÓN ANTIGUA',
+      'Se registró '+antiguedad+'. Revisa que no hayas construido nada sobre ella (reportes enviados, cierres de caja o conciliaciones ya hechas).'),
 
     // ── CANDADO D — recibo probablemente entregado ──
     afectaCaja&&aviso('var(--red)','var(--red-bg)','var(--red-bd)','receipt','DINERO YA REGISTRADO',
       esDeuda
-        ? 'Este movimiento registro dinero real. Al revertirlo, el saldo de la deuda volvera a su valor anterior: confirma que el pago efectivamente no ocurrio.'
-        : 'Es probable que el cliente YA tenga en sus manos un recibo PDF con esta informacion. Si lo deshaces, tu sistema dejara de coincidir con ese documento. Asegurate de acordarlo con el deudor.'),
+        ? 'Este movimiento registró dinero real. Al revertirlo, el saldo de la deuda volverá a su valor anterior: confirma que el pago efectivamente no ocurrió.'
+        : 'Es probable que el cliente YA tenga en sus manos un recibo PDF con esta información. Si lo deshaces, tu sistema dejará de coincidir con ese documento. Asegúrate de acordarlo con el deudor.'),
 
     // Nota permanente: el historial es append-only
     h('div',{style:{fontSize:11,color:'var(--text3)',lineHeight:1.5,marginTop:12}},
-      'La operacion quedara marcada como revertida en el historial. El registro NO se borra: queda la huella de que ocurrio y de que se deshizo.'),
+      'La operación quedará marcada como revertida en el historial. El registro NO se borra: queda la huella de que ocurrió y de que se deshizo.'),
 
     h('div',{style:{display:'flex',gap:10,marginTop:16}},
       h('button',{onClick:function(){_submitGuard(sending,setSending,function(){return onConfirm(e);});},disabled:sending,
         style:{flex:1,background:sending?'var(--bg3)':'var(--purple-bg)',color:sending?'var(--text3)':'var(--purple)',
           border:'1px solid '+(sending?'var(--border)':'var(--purple)'),borderRadius:10,padding:'11px 0',fontSize:13,fontWeight:700,
-          cursor:sending?'not-allowed':'pointer',fontFamily:'inherit'}},sending?'Deshaciendo...':'Si, deshacer'),
+          cursor:sending?'not-allowed':'pointer',fontFamily:'inherit'}},sending?'Deshaciendo...':'Sí, deshacer'),
       h('button',{onClick:onClose,style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:10,padding:'11px 0',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancelar')));
 }

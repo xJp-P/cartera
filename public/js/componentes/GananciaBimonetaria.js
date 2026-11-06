@@ -14,16 +14,17 @@
 
 import { h } from '../core/react.js';
 import { fmt, fmtUSD } from '../core/format.js';
+import { usdPiezas } from './CifraUSD.js';
 
 // Nota bajo la cifra en pesos: dice POR QUE no coincide con los dolares, y solo cuando no coincide.
 //   - Prestamo (0%): la cifra en pesos es el EFECTO TRM de caja, con su signo.
 //   - piso aplicado: alguna cuota perdio por cambio mas que su interes, y eso NO se resto.
 //   - perdida por TRM dentro del interes: la cifra en pesos ya viene neta.
 export function notaCOPGanancia(gp, esPrestamo, efectoCOP){
-  if (esPrestamo) return efectoCOP < 0 ? 'Sin interes · TRM bajo al cobrar'
-                       : efectoCOP > 0 ? 'Sin interes · TRM subio al cobrar' : 'Sin interes · sin variacion TRM';
-  if (gp && gp.pisoAplicado) return 'La perdida por TRM solo descuenta hasta los intereses de cada cuota';
-  if (gp && gp.cop < gp.interes) return 'Neta de la perdida por TRM';
+  if (esPrestamo) return efectoCOP < 0 ? 'Sin interés · TRM bajo al cobrar'
+                       : efectoCOP > 0 ? 'Sin interés · TRM subió al cobrar' : 'Sin interés · sin variación TRM';
+  if (gp && gp.pisoAplicado) return 'La pérdida por TRM solo descuenta hasta los intereses de cada cuota';
+  if (gp && gp.cop < gp.interes) return 'Neta de la pérdida por TRM';
   return null;
 }
 
@@ -42,6 +43,6 @@ export function GananciaBimonetaria(props){
   return h('div', { style: props.style || null },
     props.titulo && h('div', { style: { fontSize: 11, color: props.colorTitulo || 'var(--text2)', fontWeight: 600, marginBottom: 5 } }, props.titulo),
     h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
-      celda('Recibido en USD', signo(usd) + fmtUSD(Math.abs(usd)), 'var(--blue)', props.notaUSD || null, false),
+      celda('Recibido en USD', usdPiezas(signo(usd) + fmtUSD(Math.abs(usd))), 'var(--text)', props.notaUSD || null, false),
       celda('Consolidado en COP', signo(cop) + fmt(Math.abs(cop)), colorCOP, props.notaCOP || null, true)));
 }

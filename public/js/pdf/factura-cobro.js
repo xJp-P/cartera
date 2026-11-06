@@ -15,7 +15,7 @@
 // `computeLiquidacion`, que resta el parcial APARTE; migrarlo lo restaria dos veces.
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
-import { nowStr, facturaCode } from '../core/ui.js';
+import { nowStr, facturaCode, fcCodigoDiario } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota, estadoDiario } from '../core/dominio.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
@@ -237,8 +237,7 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
   var dev = estadoDiario(loan, allPays, hasta);
   var interesDia = Math.round(dev.capitalVivo * (+loan.tasaMensual || 0) / 100 / 30);
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
-  var iniD = String(loan.nombre || '').trim().replace(/[^A-Za-z]/g,'').slice(0,2);
-  var fcCode = 'FC-' + (iniD || 'XX') + '-' + String(loan.id).slice(-3) + '-' + String(hasta).slice(8,10) + String(hasta).slice(5,7);
+  var fcCode = fcCodigoDiario(loan, hasta);
 
   var K = dark ? {
     bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', rowbd:'#21262d', panel:'#161b22',

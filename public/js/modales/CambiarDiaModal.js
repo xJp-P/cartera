@@ -27,6 +27,8 @@ import { pendCuota } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard } from '../core/ui.js';
+import { opModalidad } from '../core/operacion.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 function cdPayDate(startISO,cuotaN,dp){var d=new Date(startISO+'T12:00:00');d.setDate(1);d.setMonth(d.getMonth()+cuotaN);d.setDate(Math.min(dp,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));return d.toISOString().split('T')[0];}
 function cdAddMes(iso){var d=new Date(iso+'T12:00:00');d.setDate(1);d.setMonth(d.getMonth()+1);return d.toISOString().split('T')[0];}
@@ -106,7 +108,7 @@ export function CambiarDiaModal(props){
       h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
         h('div',{style:{width:32,height:32,borderRadius:99,background:'var(--green-bg)',display:'flex',alignItems:'center',justifyContent:'center'}},h(Ico,{name:'check',size:18,color:'var(--green)',sw:2.5})),
         h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},'Día de pago actualizado')),
-      h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},loan.nombre+' • '+loan.modalidad),
+      h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},loan.nombre+' • '+opModalidad(loan.modalidad)),
       h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'14px',marginBottom:12}},
         h('div',{style:{fontSize:10,color:'var(--green)',fontWeight:600,letterSpacing:.5,marginBottom:4}},'PRÓXIMA CUOTA'),
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:10}},
@@ -115,7 +117,7 @@ export function CambiarDiaModal(props){
             h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:2}},'Primer cobro · luego el día '+rs.nuevoDia+' de cada mes')),
           h('div',{style:{textAlign:'right'}},
             h('div',{className:'mono',style:{fontSize:22,fontWeight:700,color:'var(--green)'}},fmt(totalRs)),
-            esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(totalRs,loan.trmAcordada))))),
+            esUSD&&usdLinea(copToUsd(totalRs,loan.trmAcordada),{fontSize:11})))),
       h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',marginBottom:12,border:'1px solid var(--border)'}},
         h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5,padding:'10px 0 6px'}},'DESGLOSE DE LA CUOTA TRANSITORIA'),
         (rs.capitalCuota||0)>0&&h('div',{style:filaD},
@@ -155,7 +157,7 @@ export function CambiarDiaModal(props){
   return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'calendar',size:16,color:'var(--blue)',sw:2}),'Cambiar día de pago'),
-    h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},loan.nombre+' • '+loan.modalidad+' • '+pv.tasaMensual+'% mensual'),
+    h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},loan.nombre+' • '+opModalidad(loan.modalidad)+' • '+pv.tasaMensual+'% mensual'),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}},
       h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'10px 12px',border:'1px solid var(--border)'}},
         h('div',{style:{fontSize:10,color:'var(--text3)',fontWeight:600,letterSpacing:.5}},'DÍA ACTUAL'),
@@ -190,7 +192,7 @@ export function CambiarDiaModal(props){
         h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'A partir de la 2a cuota: '+fmt(pv.cuotaRecurrente)+' el día '+nuevoDia+' de cada mes')),
       h('div',{style:{textAlign:'right'}},
         h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--green)'}},fmt(pv.primeraCuotaTotal)),
-        esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(pv.primeraCuotaTotal,loan.trmAcordada)))),
+        esUSD&&usdLinea(copToUsd(pv.primeraCuotaTotal,loan.trmAcordada),{fontSize:11}))),
     h('button',{onClick:confirmar,disabled:!activo,className:'btn-primary',style:{background:activo?'var(--blue-bg)':'var(--bg3)',border:'1px solid '+(activo?'var(--blue-bd)':'var(--border)'),color:activo?'var(--blue)':'var(--text3)',marginBottom:6,cursor:activo?'pointer':'not-allowed'}},sending?'Procesando...':'Confirmar cambio'),
     h('button',{onClick:onClose,className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
 }

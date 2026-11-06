@@ -157,10 +157,10 @@ module.exports = function crearRutasLoans(ctx) {
     if (primerPeriodo && primerPeriodo.irregular && schedule.length > 0) {
       const graciaDias = diasEntre(loan.fechaInicio, loan.fechaInicioIntereses);
       detalleLog += ' [primer pago ' + schedule[0].fechaPago + (loan.periodoIrregularN
-        ? ', interes de ' + transitoriaDe(loan, schedule[0]).dias + ' dias'
-        : ', primer periodo completo' + (graciaDias > 0 ? ', ' + graciaDias + ' dias de gracia' : '')) + ']';
+        ? ', interés de ' + transitoriaDe(loan, schedule[0]).dias + ' días'
+        : ', primer periodo completo' + (graciaDias > 0 ? ', ' + graciaDias + ' días de gracia' : '')) + ']';
     }
-    logAction.run('prestamo', 'Nuevo prestamo: ' + loan.nombre + ' por ' + detalleLog);
+    logAction.run('prestamo', 'Nuevo préstamo: ' + loan.nombre + ' por ' + detalleLog);
     res.status(201).json(loan);
   });
 
@@ -287,7 +287,7 @@ module.exports = function crearRutasLoans(ctx) {
     restaurarCobros(schedule, partialMapEdit);
 
     return {
-      descripcion: 'Editaste prestamo de ' + loan.nombre,
+      descripcion: 'Editaste préstamo de ' + loan.nombre,
       payload: loan,
       aplicar: () => {
         db.prepare(`
@@ -326,7 +326,7 @@ module.exports = function crearRutasLoans(ctx) {
       // ofrece boton para ese estado y POST /api/undo/:id lo rechaza).
       db.prepare("UPDATE undo_journal SET estado = 'invalidado' WHERE scope_tipo = 'loan' AND scope_id = ? AND estado = 'disponible'").run(req.params.id);
     })();
-    if (loan) logAction.run('eliminacion', 'Eliminaste prestamo de ' + loan.nombre);
+    if (loan) logAction.run('eliminacion', 'Eliminaste préstamo de ' + loan.nombre);
     res.json({ ok: true });
   });
 
@@ -350,7 +350,7 @@ module.exports = function crearRutasLoans(ctx) {
     // cada dia. La ruta correcta es POST /api/loans/:id/corte, que registra el abono
     // Y el interes en el mismo evento.
     if (loan.modalidad === MODALIDAD_DIARIA) {
-      throw new ClientError('Este credito es de ' + MODALIDAD_DIARIA + ': los abonos se registran como un CORTE (POST /api/loans/:id/corte), que baja el capital y liquida el interes devengado en el mismo movimiento.');
+      throw new ClientError('Este crédito es de interés diario: los abonos se registran como un CORTE (POST /api/loans/:id/corte), que baja el capital y liquida el interés devengado en el mismo movimiento.');
     }
     // ── FASE 1: LECTURA + VALIDACION (sin escrituras) ────────────────────────
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
@@ -400,7 +400,7 @@ module.exports = function crearRutasLoans(ctx) {
       const capMoraMsg = Math.max(0, capitalPendienteLiq - saldoReal);
       throw new ClientError('El abono supera el capital amortizable ($' + Math.round(saldoReal).toLocaleString('es-CO') + ').' +
         (capMoraMsg > 0
-          ? ' Los $' + Math.round(capMoraMsg).toLocaleString('es-CO') + ' restantes son capital de cuotas En Mora: se cobran liquidando la deuda o pagando esas cuotas desde la seccion Pagos.'
+          ? ' Los $' + Math.round(capMoraMsg).toLocaleString('es-CO') + ' restantes son capital de cuotas En Mora: se cobran liquidando la deuda o pagando esas cuotas desde la pestaña Cobros.'
           : ''));
     }
     // En liquidacion el prestamo se salda por completo -> nuevoSaldo 0 (no hay recalculo de pendientes).
@@ -428,20 +428,20 @@ module.exports = function crearRutasLoans(ctx) {
     if (nuevoSaldo > 0) {
       if (esCapInt && recalcMode === 'modificarPlazo') {
         const nuevoN = parseInt(recalcValor, 10);
-        if (!nuevoN || nuevoN < 1) throw new ClientError('Numero de cuotas invalido. Debe ser >= 1.');
+        if (!nuevoN || nuevoN < 1) throw new ClientError('Número de cuotas inválido. Debe ser >= 1.');
         nuevasCuotas = buildSchedule(updatedLoan, nextRegularN, nuevoSaldo, nuevoN);
         nuevoPlazoMeses = regularConsumed + nuevoN;
         nuevaCuotaFija = 0; // limpiar (el usuario cambio de opinion)
         logRecalc = ' — plazo ajustado a ' + nuevoN + ' cuota' + (nuevoN > 1 ? 's' : '') + ' restantes (total: ' + nuevoPlazoMeses + ')';
       } else if (esCapInt && recalcMode === 'fijarCuota') {
         const cuotaDeseada = +recalcValor || 0;
-        if (cuotaDeseada <= 0) throw new ClientError('Cuota invalida. Debe ser > 0.');
+        if (cuotaDeseada <= 0) throw new ClientError('Cuota inválida. Debe ser > 0.');
         const r = tasaPeriodo((loan.tasaMensual || 0) / 100, loan.frecuencia || 'Mensual');
         const interesPrimerPeriodo = nuevoSaldo * r;
         if (cuotaDeseada <= interesPrimerPeriodo) {
           throw new ClientError('La cuota debe ser mayor a $' + Math.round(interesPrimerPeriodo).toLocaleString('es-CO') +
             ' (intereses del primer periodo). Con $' + Math.round(cuotaDeseada).toLocaleString('es-CO') +
-            ' nunca se saldaria la deuda.');
+            ' nunca se saldaría la deuda.');
         }
         try {
           nuevasCuotas = buildScheduleFixedPMT(updatedLoan, nextRegularN, nuevoSaldo, cuotaDeseada);
@@ -585,10 +585,10 @@ module.exports = function crearRutasLoans(ctx) {
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
     return mutacionAtomica(req, res, { accion: 'reestructuracion', endpoint: 'POST /api/loans/:id/reestructurar', scopeTipo: 'loan', scopeId: req.params.id }, () => {
-    if (loan.estado !== 'Activo') throw new ClientError('Solo se pueden reestructurar prestamos activos');
-    if (loan.modalidad !== 'Capital + Intereses') throw new ClientError('La reestructuracion solo aplica para prestamos de Capital + Intereses');
+    if (loan.estado !== 'Activo') throw new ClientError('Solo se pueden reestructurar préstamos activos');
+    if (loan.modalidad !== 'Capital + Intereses') throw new ClientError('La reestructuración solo aplica para préstamos de Capital + Intereses');
     if (recalcMode !== 'modificarPlazo' && recalcMode !== 'fijarCuota') {
-      throw new ClientError('Modo de recalculo invalido. Debe ser "modificarPlazo" o "fijarCuota".');
+      throw new ClientError('Modo de recálculo inválido. Debe ser "modificarPlazo" o "fijarCuota".');
     }
 
     // ── FASE 1: LECTURA + VALIDACION (sin escrituras) ────────────────────────
@@ -603,7 +603,7 @@ module.exports = function crearRutasLoans(ctx) {
       (p.estadoPago === 'En Mora' && !esAbono(p))
     ).reduce((s, p) => s + p.abonoCapital, 0);
     const saldoReal = Math.max(0, originalCOP - todoCapPagado);
-    if (saldoReal <= 0) throw new ClientError('El prestamo no tiene saldo de capital pendiente para reestructurar');
+    if (saldoReal <= 0) throw new ClientError('El préstamo no tiene saldo de capital pendiente para reestructurar');
 
     const regularConsumed = allPays.filter(p =>
       (p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') &&
@@ -619,7 +619,7 @@ module.exports = function crearRutasLoans(ctx) {
 
     if (recalcMode === 'modificarPlazo') {
       const nuevoN = parseInt(recalcValor, 10);
-      if (!nuevoN || nuevoN < 1) throw new ClientError('Numero de cuotas invalido. Debe ser >= 1.');
+      if (!nuevoN || nuevoN < 1) throw new ClientError('Número de cuotas inválido. Debe ser >= 1.');
       nuevasCuotas = buildSchedule(updatedLoan, nextRegularN, saldoReal, nuevoN);
       nuevoPlazoMeses = regularConsumed + nuevoN;
       nuevaCuotaFija = 0;
@@ -627,13 +627,13 @@ module.exports = function crearRutasLoans(ctx) {
     } else {
       // fijarCuota
       const cuotaDeseada = +recalcValor || 0;
-      if (cuotaDeseada <= 0) throw new ClientError('Cuota invalida. Debe ser > 0.');
+      if (cuotaDeseada <= 0) throw new ClientError('Cuota inválida. Debe ser > 0.');
       const r = tasaPeriodo((loan.tasaMensual || 0) / 100, loan.frecuencia || 'Mensual');
       const interesPrimerPeriodo = saldoReal * r;
       if (cuotaDeseada <= interesPrimerPeriodo) {
         throw new ClientError('La cuota debe ser mayor a $' + Math.round(interesPrimerPeriodo).toLocaleString('es-CO') +
           ' (intereses del primer periodo). Con $' + Math.round(cuotaDeseada).toLocaleString('es-CO') +
-          ' nunca se saldaria la deuda.');
+          ' nunca se saldaría la deuda.');
       }
       try {
         nuevasCuotas = buildScheduleFixedPMT(updatedLoan, nextRegularN, saldoReal, cuotaDeseada);
@@ -693,14 +693,14 @@ module.exports = function crearRutasLoans(ctx) {
     return mutacionAtomica(req, res, { accion: 'corte', logTipo: 'pago', endpoint: 'POST /api/loans/:id/corte', scopeTipo: 'loan', scopeId: req.params.id }, () => {
       // ── FASE 1: LECTURA + VALIDACION + COMPUTO (sin escrituras) ─────────────
       if (loan.modalidad !== MODALIDAD_DIARIA) {
-        throw new ClientError('Los cortes solo aplican a creditos de ' + MODALIDAD_DIARIA + ' (este es ' + loan.modalidad + ').');
+        throw new ClientError('Los cortes solo aplican a créditos de ' + MODALIDAD_DIARIA + ' (este es ' + loan.modalidad + ').');
       }
-      if (loan.estado !== 'Activo') throw new ClientError('Solo se pueden registrar cortes en creditos activos');
+      if (loan.estado !== 'Activo') throw new ClientError('Solo se pueden registrar cortes en créditos activos');
 
       const fechaCorte = fecha || hoyStr();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fechaCorte))) throw new ClientError('Fecha invalida: se espera YYYY-MM-DD');
-      if (fechaCorte > hoyStr()) throw new ClientError('No se puede registrar un corte con fecha futura: devengaria intereses aun no causados');
-      if (fechaCorte < loan.fechaInicio) throw new ClientError('El corte no puede ser anterior al inicio del credito (' + loan.fechaInicio + ')');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fechaCorte))) throw new ClientError('Fecha inválida: se espera YYYY-MM-DD');
+      if (fechaCorte > hoyStr()) throw new ClientError('No se puede registrar un corte con fecha futura: devengaría intereses aún no causados');
+      if (fechaCorte < loan.fechaInicio) throw new ClientError('El corte no puede ser anterior al inicio del crédito (' + loan.fechaInicio + ')');
 
       const cortes = cortesDe(req.params.id);
       const ultimaFecha = cortes.length ? cortes[cortes.length - 1].fechaPago : loan.fechaInicio;
@@ -708,7 +708,7 @@ module.exports = function crearRutasLoans(ctx) {
       // movimientos en una jornada), pero nunca antes: retroceder partiria los tramos
       // y haria que un periodo ya liquidado se recalculara sobre otra base.
       if (fechaCorte < ultimaFecha) {
-        throw new ClientError('El corte no puede ser anterior al ultimo registrado (' + ultimaFecha + ')');
+        throw new ClientError('El corte no puede ser anterior al último registrado (' + ultimaFecha + ')');
       }
 
       const dev = devengoDiario(loan, cortes, fechaCorte);
@@ -722,7 +722,7 @@ module.exports = function crearRutasLoans(ctx) {
       // futuro que cubrir en un credito sin cronograma. Se rechaza en vez de dejar
       // que `devengoDiario` lo clampe a 0 y el excedente desaparezca sin rastro.
       if (intPagado > dev.interesPendiente) {
-        throw new ClientError('El interes cobrado ($' + intPagado.toLocaleString('es-CO') + ') supera el devengado a la fecha ($' +
+        throw new ClientError('El interés cobrado ($' + intPagado.toLocaleString('es-CO') + ') supera el devengado a la fecha ($' +
           dev.interesPendiente.toLocaleString('es-CO') + ' al ' + fechaCorte + ').');
       }
       if (abonoCap > dev.capitalVivo) {
@@ -776,8 +776,8 @@ module.exports = function crearRutasLoans(ctx) {
       if (abonoCap  > 0) partes.push('abono a capital $' + abonoCap.toLocaleString('es-CO'));
 
       return {
-        descripcion: 'Corte de interes diario: ' + loan.nombre + ' — ' + partes.join(' + ') +
-          ' (' + fechaCorte + ')' + (saldado ? ' — credito SALDADO' : ''),
+        descripcion: 'Corte de interés diario: ' + loan.nombre + ' — ' + partes.join(' + ') +
+          ' (' + fechaCorte + ')' + (saldado ? ' — crédito SALDADO' : ''),
         afectaCaja: true,   // siempre entra dinero: el corte no existe sin movimiento
         payload: {
           ok: true,
@@ -873,14 +873,14 @@ module.exports = function crearRutasLoans(ctx) {
     return mutacionAtomica(req, res, { accion: 'condonacion', endpoint: 'POST /api/loans/:id/condonar-intereses', scopeTipo: 'loan', scopeId: req.params.id }, () => {
       // ── FASE 1: LECTURA + VALIDACION + COMPUTO (sin escrituras) ─────────────
       if (loan.estado !== 'Activo') {
-        throw new ClientError('Solo se pueden condonar intereses en creditos activos (este esta ' + loan.estado + ').');
+        throw new ClientError('Solo se pueden condonar intereses en créditos activos (este está ' + loan.estado + ').');
       }
       const PERMITIDAS = ['Intereses', 'Capital + Intereses', MODALIDAD_DIARIA];
       if (PERMITIDAS.indexOf(loan.modalidad) === -1) {
-        throw new ClientError('La condonacion de intereses no aplica a la modalidad ' + loan.modalidad +
+        throw new ClientError('La condonación de intereses no aplica a la modalidad ' + loan.modalidad +
           (loan.modalidad === 'Prestamo'
-            ? ': es un prestamo al 0%, no genera intereses.'
-            : ': la ganancia pactada vive en el propio prestamo, no en el interes de la cuota.'));
+            ? ': es un préstamo al 0%, no genera intereses.'
+            : ': la ganancia pactada vive en el propio préstamo, no en el interés de la cuota.'));
       }
       const fecha = hoyStr();
       const nota = String(observaciones || '').trim();
@@ -894,7 +894,7 @@ module.exports = function crearRutasLoans(ctx) {
       if (loan.modalidad === MODALIDAD_DIARIA) {
         const dev = devengoDiario(loan, cortesDe(req.params.id), fecha);
         if (dev.interesPendiente <= 0) {
-          throw new ClientError('Este credito no tiene interes devengado pendiente: no hay nada que condonar.');
+          throw new ClientError('Este crédito no tiene interés devengado pendiente: no hay nada que condonar.');
         }
         const condonado = Math.round(dev.interesPendiente);
         // Cierre estricto de la modalidad: sin capital vivo Y sin devengo, el credito
@@ -902,7 +902,7 @@ module.exports = function crearRutasLoans(ctx) {
         const saldado = dev.capitalVivo === 0;
         return {
           descripcion: 'Condonaste $' + condonado.toLocaleString('es-CO') + ' de intereses a ' + loan.nombre +
-            ' — interes devengado a la fecha' + (saldado ? ' — credito SALDADO' : '') + (nota ? ' (' + nota + ')' : ''),
+            ' — interés devengado a la fecha' + (saldado ? ' — crédito SALDADO' : '') + (nota ? ' (' + nota + ')' : ''),
           afectaCaja: false,   // no entro ni salio dinero: se redujo la deuda
           payload: { ok: true, condonado: condonado, cuotas: [], saldado: saldado, modalidad: loan.modalidad },
           aplicar: () => {
@@ -918,7 +918,7 @@ module.exports = function crearRutasLoans(ctx) {
       // ── RAMA CON CRONOGRAMA (Intereses / Capital + Intereses) ───────────────
       const mora = db.prepare("SELECT * FROM payments WHERE prestamoId = ? AND estadoPago = 'En Mora' ORDER BY cuotaN")
         .all(req.params.id).filter(p => !esAbono(p));
-      if (!mora.length) throw new ClientError('Este credito no tiene cuotas en mora: no hay intereses que condonar.');
+      if (!mora.length) throw new ClientError('Este crédito no tiene cuotas en mora: no hay intereses que condonar.');
 
       // Seleccion por cuota. Sin lista (o vacia) = todas las cuotas En Mora. Se valida
       // contra el conjunto real en vez de confiar en el cliente: un id de otra cuota
@@ -929,7 +929,7 @@ module.exports = function crearRutasLoans(ctx) {
         const porId = new Map(mora.map(p => [String(p.id), p]));
         const ajenas = pedidas.filter(id => !porId.has(id));
         if (ajenas.length) {
-          throw new ClientError('Estas cuotas no estan En Mora en este credito: ' + ajenas.join(', ') +
+          throw new ClientError('Estas cuotas no están En Mora en este crédito: ' + ajenas.join(', ') +
             '. Solo se pueden condonar intereses de cuotas vencidas.');
         }
         seleccion = pedidas.map(id => porId.get(id));
@@ -948,8 +948,8 @@ module.exports = function crearRutasLoans(ctx) {
       if (excedidas.length) {
         const c = excedidas[0];
         throw new ClientError('La cuota #' + c.cuotaN + ' ya tiene abonado $' + Math.round(c.partialPaid).toLocaleString('es-CO') +
-          ', mas que el capital que quedaria debiendo tras condonar ($' + Math.round(c.abonoCapital).toLocaleString('es-CO') +
-          '). Cobrala o revierte ese abono antes de condonar sus intereses.');
+          ', más que el capital que quedaría debiendo tras condonar ($' + Math.round(c.abonoCapital).toLocaleString('es-CO') +
+          '). Cóbrala o revierte ese abono antes de condonar sus intereses.');
       }
 
       const filas = seleccion.map(p => {
@@ -1033,18 +1033,18 @@ module.exports = function crearRutasLoans(ctx) {
     const freq = loan.frecuencia || 'Mensual';
     const nuevoDiaInt = parseInt(nuevoDia, 10);
     return mutacionAtomica(req, res, { accion: 'cambio-fecha', endpoint: 'POST /api/loans/:id/cambiar-dia-pago', scopeTipo: 'loan', scopeId: req.params.id }, () => {
-    if (loan.estado !== 'Activo') throw new ClientError('Solo se puede cambiar la fecha de prestamos activos');
+    if (loan.estado !== 'Activo') throw new ClientError('Solo se puede cambiar la fecha de préstamos activos');
     // WHITELIST, no blacklist. Antes esto rechazaba nombrando a 'Prestamo' y 'Pago Unico',
     // de modo que TODA modalidad futura entraba por defecto: el credito abierto —que no
     // tiene cuotas ni dia de pago— alcanzaba el endpoint, se le borraba la mora, se le
     // recalculaba un cronograma mensual y se le persistia `diaPago`/`fechaBaseCronograma`.
     // Una lista de exclusion hay que acordarse de ampliarla; una de admision falla sola.
     if (loan.modalidad !== 'Intereses' && loan.modalidad !== 'Capital + Intereses') {
-      throw new ClientError('No aplica para prestamos sin cuotas periodicas mensuales (modalidad: ' + loan.modalidad + ')');
+      throw new ClientError('No aplica para préstamos sin cuotas periódicas mensuales (modalidad: ' + loan.modalidad + ')');
     }
-    if (freq !== 'Mensual') throw new ClientError('Cambiar el dia de pago solo aplica a prestamos de frecuencia Mensual');
-    if (!nuevoDiaInt || nuevoDiaInt < 1 || nuevoDiaInt > 31) throw new ClientError('Dia invalido');
-    if (nuevoDiaInt === loan.diaPago) throw new ClientError('El nuevo dia debe ser distinto al actual');
+    if (freq !== 'Mensual') throw new ClientError('Cambiar el día de pago solo aplica a préstamos de frecuencia Mensual');
+    if (!nuevoDiaInt || nuevoDiaInt < 1 || nuevoDiaInt > 31) throw new ClientError('Día inválido');
+    if (nuevoDiaInt === loan.diaPago) throw new ClientError('El nuevo día debe ser distinto al actual');
 
     // ── FASE 1: LECTURA + VALIDACION + COMPUTO (sin escrituras) ───────────────
     const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN').all(req.params.id);
@@ -1083,8 +1083,8 @@ module.exports = function crearRutasLoans(ctx) {
     const saldoActual = Math.max(0, originalCOP - capAbonos - capConsumido);
     if (saldoActual <= 0) {
       throw new ClientError(moraCount > 0
-        ? 'Todo lo que queda por pagar esta en cuotas vencidas: no hay cuotas por vencer a las que cambiarles el dia. Cobralas con "Registrar cobro".'
-        : 'El prestamo no tiene saldo pendiente');
+        ? 'Todo lo que queda por pagar está en cuotas vencidas: no hay cuotas por vencer a las que cambiarles el día. Cóbralas con "Registrar cobro".'
+        : 'El préstamo no tiene saldo pendiente');
     }
 
     // CUOTA TRANSITORIA: prorratear el interes de la 1a cuota a los DIAS REALES de su periodo.
@@ -1170,8 +1170,8 @@ module.exports = function crearRutasLoans(ctx) {
     const netAdj = tr ? tr.ajuste : 0;
 
     // ── FASE 2: ESCRITURA — la ejecuta mutacionAtomica dentro de UNA transaccion.
-    const logMsg = 'Cambiaste dia de pago de ' + loan.nombre + ' del ' + loan.diaPago + ' al ' + nuevoDiaInt
-      + ' - 1a cuota transitoria de ' + diasReales + ' dias (interes $' + interesProrrateado.toLocaleString('es-CO') + ')'
+    const logMsg = 'Cambiaste día de pago de ' + loan.nombre + ' del ' + loan.diaPago + ' al ' + nuevoDiaInt
+      + ' - 1a cuota transitoria de ' + diasReales + ' días (interés $' + interesProrrateado.toLocaleString('es-CO') + ')'
       + (moraCount > 0 ? '; las ' + moraCount + ' cuota' + (moraCount > 1 ? 's' : '') + ' en mora ($' + moraPendiente.toLocaleString('es-CO') + ') siguen vencidas' : '');
 
     return {

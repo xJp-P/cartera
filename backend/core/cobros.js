@@ -68,8 +68,8 @@ function abortarSiHuerfanos(schedule, map) {
   if (h.length === 0) return;
   const det = h.map(x => 'cuota ' + x.cuotaN + ' ($' + Math.round(x.partialPaid).toLocaleString('es-CO') + ')').join(', ');
   throw new ClientError(
-    'La operacion eliminaria el registro de un pago parcial ya recibido: ' + det + '. ' +
-    'El nuevo cronograma no incluye esa(s) cuota(s), asi que el dinero quedaria sin donde figurar. ' +
+    'La operación eliminaría el registro de un pago parcial ya recibido: ' + det + '. ' +
+    'El nuevo cronograma no incluye esa(s) cuota(s), así que el dinero quedaría sin dónde figurar. ' +
     'Completa o revierte ese pago parcial antes de continuar.'
   );
 }

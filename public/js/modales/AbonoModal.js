@@ -15,7 +15,9 @@ import {
 } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
+import { opModalidad } from '../core/operacion.js';
 import { esAbono } from '../core/ids.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 export function AbonoModal(props){
   var loan=props.loan,allPays=props.pays||[],onSave=props.onSave,onClose=props.onClose,onRequestLiquidar=props.onRequestLiquidar;
@@ -115,14 +117,14 @@ export function AbonoModal(props){
     }
     if(recalcMode==='modificarPlazo'){
       var nN=parseInt(nuevoPlazo,10);
-      if(!nN||nN<1) return {modo:'modificarPlazo',cuota:0,nCuotas:0,interesP:interesPrimerPeriodo,error:'Ingresa un numero de cuotas valido (>= 1).',ultimaResidual:0};
+      if(!nN||nN<1) return {modo:'modificarPlazo',cuota:0,nCuotas:0,interesP:interesPrimerPeriodo,error:'Ingresa un número de cuotas válido (>= 1).',ultimaResidual:0};
       var pmtMod=Math.round(_pmt(r,nN,saldoTras));
       return {modo:'modificarPlazo',cuota:pmtMod,nCuotas:nN,interesP:interesPrimerPeriodo,error:null,ultimaResidual:0};
     }
     if(recalcMode==='fijarCuota'){
       var pmtFijo=cuotaFijaEfectivaCOP;
-      if(pmtFijo<=0) return {modo:'fijarCuota',cuota:0,nCuotas:0,interesP:interesPrimerPeriodo,error:'Ingresa una cuota valida (> 0).',ultimaResidual:0};
-      if(pmtFijo<=interesPrimerPeriodo) return {modo:'fijarCuota',cuota:pmtFijo,nCuotas:0,interesP:interesPrimerPeriodo,error:'La cuota debe ser mayor a '+fmt(interesPrimerPeriodo)+(esUSD?' ('+copToUsd(interesPrimerPeriodo,loan.trmAcordada)+')':'')+' que son los intereses del primer periodo. Con esta cuota nunca se saldaria la deuda.',ultimaResidual:0};
+      if(pmtFijo<=0) return {modo:'fijarCuota',cuota:0,nCuotas:0,interesP:interesPrimerPeriodo,error:'Ingresa una cuota válida (> 0).',ultimaResidual:0};
+      if(pmtFijo<=interesPrimerPeriodo) return {modo:'fijarCuota',cuota:pmtFijo,nCuotas:0,interesP:interesPrimerPeriodo,error:'La cuota debe ser mayor a '+fmt(interesPrimerPeriodo)+(esUSD?' ('+copToUsd(interesPrimerPeriodo,loan.trmAcordada)+')':'')+' que son los intereses del primer periodo. Con esta cuota nunca se saldaría la deuda.',ultimaResidual:0};
       var nCalc=_nper(r,pmtFijo,saldoTras);
       var nEnt=Math.ceil(nCalc);
       // Calcular saldo despues de (nEnt - 1) cuotas iguales para conocer la ultima residual
@@ -142,7 +144,7 @@ export function AbonoModal(props){
     if(esUSD){
       if(!(+montoUSD>0)){showError('Ingresa el monto del abono en USD (define el capital que se descuenta)');return;}
       if(!(copRecNum>0)){showError('Ingresa los COP realmente recibidos (miden el efecto de la TRM)');return;}
-    } else if(!monto||+monto<=0){showError('Ingresa un monto valido');return;}
+    } else if(!monto||+monto<=0){showError('Ingresa un monto válido');return;}
     // v2.0.0 — el techo es saldoAbonable (capital del cronograma futuro), NO saldoActual.
     // Defense-in-depth: el boton ya se deshabilita, pero si algo fallara el submit tampoco
     // debe enviar un monto que el backend rechazaria con 400.
@@ -150,8 +152,8 @@ export function AbonoModal(props){
       var _techo=esUSD?copToUsd(saldoAbonable,loan.trmAcordada):fmt(saldoAbonable);
       var _mora=esUSD?copToUsd(capEnMora,loan.trmAcordada):fmt(capEnMora);
       showError(capEnMora>0
-        ?'El abono maximo a capital es '+_techo+'. Los '+_mora+' restantes estan en '+moraCount+' cuota'+(moraCount!==1?'s':'')+' en mora: se cobran liquidando la deuda o pagando esas cuotas.'
-        :'El abono maximo es '+_techo+' (solo capital). Los intereses en mora se cobran por separado.');
+        ?'El abono máximo a capital es '+_techo+'. Los '+_mora+' restantes están en '+moraCount+' cuota'+(moraCount!==1?'s':'')+' en mora: se cobran liquidando la deuda o pagando esas cuotas.'
+        :'El abono máximo es '+_techo+' (solo capital). Los intereses en mora se cobran por separado.');
       return;
     }
     if(esCapInt&&preview&&preview.error){showError(preview.error);return;}
@@ -177,15 +179,15 @@ export function AbonoModal(props){
     saldoTras<=0
       ?(capEnMora>0
           ?'Cubre todo el capital amortizable ('+(moraCount===1?'queda 1 cuota':'quedan '+moraCount+' cuotas')+' en mora)'
-          :'El prestamo quedaria SALDADO')
+          :'El préstamo quedaría SALDADO')
       :'Saldo tras abono: '+fmt(saldoTras)+(esUSD?' ('+copToUsd(saldoTras,loan.trmAcordada)+')':''));
   return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},'Abono a Capital'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'13px 14px',marginBottom:16,border:'1px solid var(--border)'}},
       h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},loan.nombre),
-      h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},loan.modalidad),
+      h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},opModalidad(loan.modalidad)),
       h('div',{className:'mono',style:{fontWeight:700,fontSize:18,color:'var(--green)',marginTop:6}},'Saldo actual: '+fmt(saldoActual),
-        esUSD&&h('span',{style:{fontSize:13,fontWeight:600,color:'var(--blue)',marginLeft:8}},copToUsd(saldoActual,loan.trmAcordada))),
+        esUSD&&usdLinea(copToUsd(saldoActual,loan.trmAcordada),{fontSize:13,fontWeight:600,marginLeft:8},'span')),
       // v2.0.0 — cuando hay capital atrapado en mora, "Saldo actual" (capital total) y el techo
       // del abono NO coinciden: se desglosa para que el numero del tope no parezca arbitrario.
       capEnMora>0&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4}},
@@ -203,7 +205,7 @@ export function AbonoModal(props){
         h('div',null,'Saldo con esos pagos aplicados: ',
           h('span',{className:'mono',style:{fontWeight:700,color:'var(--text2)'}},fmt(saldoCajaModal)),
           h('span',{style:{color:'var(--text3)'}},' — es el que ves en el perfil'))),
-      (intMora>0||moraConsolidada>0)&&h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',marginTop:4}},'Valor de liquidacion: '+fmt(liquidacion)+(esUSD?' '+copToUsd(liquidacion,loan.trmAcordada):''),
+      (intMora>0||moraConsolidada>0)&&h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',marginTop:4}},'Valor de liquidación: '+fmt(liquidacion)+(esUSD?' '+copToUsd(liquidacion,loan.trmAcordada):''),
         h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:'var(--font)',marginTop:1}},
           moraConsolidada>0&&intMora===0?'(incluye la mora consolidada en la cuota en curso)':'(incluye intereses en mora)'))),
     function(){
@@ -213,36 +215,36 @@ export function AbonoModal(props){
       var esIntereses=loan.modalidad==='Intereses';
       var titulo,partes;
       if(hayMora&&esPrestamo){
-        titulo='Como se aplica este abono';
+        titulo='Cómo se aplica este abono';
         partes=[
-          {t:'Este abono reduce directamente el saldo del prestamo.'},
-          {t:'La cuota en mora se actualiza automaticamente al nuevo saldo (porque es un prestamo sin interes).'}
+          {t:'Este abono reduce directamente el saldo del préstamo.'},
+          {t:'La cuota en mora se actualiza automáticamente al nuevo saldo (porque es un préstamo sin interés).'}
         ];
       } else if(hayMora&&esPagoUnicoLocal){
-        titulo='Como se aplica este abono';
+        titulo='Cómo se aplica este abono';
         partes=[
-          {t:'Este abono reduce el capital del prestamo.'},
+          {t:'Este abono reduce el capital del préstamo.'},
           {t:'La ganancia pactada NO cambia: se conserva al mismo monto y se cobra junto con el capital restante en la fecha de pago.'},
           {t:'La cuota en mora se actualiza al nuevo saldo (capital + ganancia pactada).'}
         ];
       } else if(hayMora&&!esPrestamo){
-        titulo='Como se aplica este abono';
+        titulo='Cómo se aplica este abono';
         partes=[
           {t:'El monto se aplica 100% al ',b:'capital pendiente',t2:'. NO descuenta intereses en mora.'},
           {t:'Los intereses en mora ('+fmt(intMora)+') quedan como deuda independiente.'},
-          {t:'Para cobrar la mora usa el boton ',b:'Liquidar deuda',t2:' o paga cada cuota desde la seccion Pagos.'}
+          {t:'Para cobrar la mora usa el botón ',b:'Liquidar deuda',t2:' o paga cada cuota desde la sección Pagos.'}
         ];
       } else if(!hayMora&&esIntereses){
-        titulo='Como se aplica este abono';
+        titulo='Cómo se aplica este abono';
         partes=[
-          {t:'El monto reduce el ',b:'capital pendiente',t2:' del prestamo.'},
-          {t:'Las proximas cuotas de interes se calcularan sobre el nuevo saldo, por lo que el interes mensual baja.'}
+          {t:'El monto reduce el ',b:'capital pendiente',t2:' del préstamo.'},
+          {t:'Las próximas cuotas de interés se calcularán sobre el nuevo saldo, por lo que el interés mensual baja.'}
         ];
       } else {
-        titulo='Como se aplica este abono';
+        titulo='Cómo se aplica este abono';
         partes=[
-          {t:'El monto reduce el ',b:'capital pendiente',t2:' del prestamo.'},
-          {t:'Las cuotas futuras se recalculan automaticamente sobre el nuevo saldo.'}
+          {t:'El monto reduce el ',b:'capital pendiente',t2:' del préstamo.'},
+          {t:'Las cuotas futuras se recalculan automáticamente sobre el nuevo saldo.'}
         ];
       }
       return h('div',{style:{background:'rgba(88,166,255,.06)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'10px 12px',marginBottom:12,marginTop:-8}},
@@ -267,12 +269,12 @@ export function AbonoModal(props){
           h('div',{style:{fontSize:11,marginTop:3,color:'var(--text3)'}},
             (+montoUSD>0)
               ?'Descuenta '+fmt(montoCapCOP)+' de capital (TRM pactada $'+fmtN(loan.trmAcordada)+')'
-              :'Define el capital que se descuenta. Maximo '+copToUsd(saldoAbonable,loan.trmAcordada))),
+              :'Define el capital que se descuenta. Máximo '+copToUsd(saldoAbonable,loan.trmAcordada))),
         h(Fld,{label:'COP realmente recibidos *'},
           h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRecibido),onChange:function(e){setCopRecibido(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
-          h('div',{style:{fontSize:11,marginTop:3,color:'var(--text3)'}},'Caja real del dia. No altera el capital: mide el efecto de la TRM.')),
+          h('div',{style:{fontSize:11,marginTop:3,color:'var(--text3)'}},'Caja real del día. No altera el capital: mide el efecto de la TRM.')),
         trmImplicita>0&&h('div',{style:{fontSize:11,marginTop:7,paddingTop:7,borderTop:'1px solid var(--bg3)',color:efectoTRM<0?'var(--red)':'var(--green)'}},
-          'TRM implicita $'+fmtN(trmImplicita)+' vs pactada $'+fmtN(loan.trmAcordada)+'  →  efecto TRM '+(efectoTRM>=0?'+':'-')+fmt(Math.abs(efectoTRM))),
+          'TRM implícita $'+fmtN(trmImplicita)+' vs pactada $'+fmtN(loan.trmAcordada)+'  →  efecto TRM '+(efectoTRM>=0?'+':'-')+fmt(Math.abs(efectoTRM))),
         lineaSaldoTras)
       :h('div',{style:{background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
         h(Fld,{label:'Monto del abono (COP) *'},
@@ -292,17 +294,17 @@ export function AbonoModal(props){
         h('span',{style:{fontWeight:700,color:'var(--text)'}},fmt(saldoAbonable)),
         '. Los ',
         h('span',{style:{fontWeight:700,color:'var(--text)'}},fmt(capEnMora)),
-        ' restantes estan en ',
+        ' restantes están en ',
         h('span',{style:{fontWeight:700,color:'var(--text)'}},moraCount+' cuota'+(moraCount!==1?'s':'')+' en mora'),
         ', que se cobran aparte junto con sus intereses.'),
       h('div',{style:{fontSize:11,color:'var(--text3)',lineHeight:1.5,marginTop:7}},
-        'Para cobrar todo de una vez usa la liquidacion (capital + intereses en mora):'),
+        'Para cobrar todo de una vez usa la liquidación (capital + intereses en mora):'),
       onRequestLiquidar&&h('button',{onClick:function(){onRequestLiquidar(loan);},style:{width:'100%',marginTop:9,padding:'10px 12px',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontFamily:'inherit',background:'transparent',border:'1px solid var(--yellow)',color:'var(--yellow)',transition:'all .15s'}},
         h(Ico,{name:'dollar',size:14,color:'var(--yellow)',sw:2.4}),'Liquidar deuda ('+(esUSD?copToUsd(liquidacion,loan.trmAcordada):fmt(liquidacion))+')')),
     // ── OPCIONES DE RECALCULO (solo Capital + Intereses y con monto válido) ──
     esCapInt&&montoCapCOP>0&&saldoTras>0&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px',marginTop:4,marginBottom:4}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:8,display:'flex',alignItems:'center',gap:5}},
-        h(Ico,{name:'calc',size:11,color:'var(--blue)'}),' OPCIONES DE RECALCULO'),
+        h(Ico,{name:'calc',size:11,color:'var(--blue)'}),' OPCIONES DE RECÁLCULO'),
       // Radio: Mantener plazo
       h('label',{style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',cursor:'pointer'}},
         h('input',{type:'radio',name:'recalcMode',value:'mantener',checked:recalcMode==='mantener',onChange:function(){setRecalcMode('mantener');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
@@ -314,14 +316,14 @@ export function AbonoModal(props){
         h('input',{type:'radio',name:'recalcMode',value:'modificarPlazo',checked:recalcMode==='modificarPlazo',onChange:function(){setRecalcMode('modificarPlazo');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Modificar plazo'),
-          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tu eliges el nuevo numero de cuotas restantes.'),
+          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tú eliges el nuevo número de cuotas restantes.'),
           recalcMode==='modificarPlazo'&&h('input',{type:'text',inputMode:'numeric',value:nuevoPlazo,onChange:function(e){setNuevoPlazo(parseIntInput(e.target.value));},placeholder:'Ej: '+cuotasRestantesActuales,className:'inp',style:{marginTop:6,fontSize:13,border:'1px solid var(--blue)'}}))),
       // Radio: Fijar cuota
       h('label',{style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',cursor:'pointer'}},
         h('input',{type:'radio',name:'recalcMode',value:'fijarCuota',checked:recalcMode==='fijarCuota',onChange:function(){setRecalcMode('fijarCuota');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Fijar valor de cuota'),
-          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tu eliges cuanto pagar de cuota; el plazo se ajusta.'),
+          h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tú eliges cuánto pagar de cuota; el plazo se ajusta.'),
           recalcMode==='fijarCuota'&&(esUSD
             ?h('div',{style:{marginTop:6}},
                 h('input',{type:'text',inputMode:'decimal',value:nuevaCuotaFijaUSD,onChange:function(e){setNuevaCuotaFijaUSD(parseDecimalInput(e.target.value));},placeholder:'Cuota en USD (ej: 50.00)',className:'inp',style:{fontSize:13,border:'1px solid var(--blue)'}}),
@@ -338,22 +340,22 @@ export function AbonoModal(props){
             h('span',{style:{color:'var(--text2)'}},'Saldo restante'),
             h('div',{style:{textAlign:'right'}},
               h('div',{className:'mono',style:{color:'var(--text)',fontWeight:500}},fmt(saldoTras)),
-              esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(saldoTras,loan.trmAcordada)))),
+              esUSD&&usdLinea(copToUsd(saldoTras,loan.trmAcordada),{fontSize:10}))),
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',fontSize:12,borderTop:'1px solid var(--bg3)'}},
             h('span',{style:{color:'var(--text2)'}},'Nueva cuota mensual'),
             h('div',{style:{textAlign:'right'}},
               h('div',{className:'mono',style:{color:'var(--green)',fontWeight:500}},fmt(preview.cuota)),
-              esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(preview.cuota,loan.trmAcordada)))),
+              esUSD&&usdLinea(copToUsd(preview.cuota,loan.trmAcordada),{fontSize:10}))),
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',fontSize:12,borderTop:'1px solid var(--bg3)'}},
             h('span',{style:{color:'var(--text2)'}},'Cuotas restantes'),
             h('span',{style:{color:'var(--text)',fontWeight:500}},preview.nCuotas)),
           preview.ultimaResidual>0&&preview.ultimaResidual<preview.cuota&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'5px 0',fontSize:12,borderTop:'1px solid var(--bg3)'}},
             h('div',null,
-              h('div',{style:{color:'var(--text2)'}},'Ultima cuota (ajuste)'),
+              h('div',{style:{color:'var(--text2)'}},'Última cuota (ajuste)'),
               h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Saldo residual exacto')),
             h('div',{style:{textAlign:'right'}},
               h('div',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(preview.ultimaResidual)),
-              esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(preview.ultimaResidual,loan.trmAcordada))))))),
+              esUSD&&usdLinea(copToUsd(preview.ultimaResidual,loan.trmAcordada),{fontSize:10})))))),
     h(Fld,{label:'Fecha del abono'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
     h(Fld,{label:'Observaciones'},h('input',{value:obs,onChange:function(e){setObs(e.target.value);},placeholder:'Notas opcionales...',className:'inp'})),
     // v1.17.1 — el usuario decide si quiere el PDF (mismo patron que PayModal :4256)

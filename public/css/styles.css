@@ -132,20 +132,19 @@
 .rz{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;width:100%;animation:fadeIn .25s ease}
 .rz > *{min-width:0}
 .rz-full{grid-column:1 / -1}
-/* Fila 1: la agenda a lo ancho. Fila 2: meta del mes + radar. Fila 3: flujo + composicion + movimientos. */
+/* Fila 1: la agenda a lo ancho. Fila 2 (3.7.0): radar + meta del mes + movimientos, de la misma altura.
+   El flujo y la composicion se mudaron a Rendimiento (ver "RENDIMIENTO"), y alla tienen sus columnas. */
 .rz-agenda{grid-column:1 / -1}
-.rz-meta{grid-column:span 4}  .rz-radar{grid-column:span 8}
-.rz-flujo{grid-column:span 6} .rz-comp{grid-column:span 3} .rz-mov{grid-column:span 3}
+.rz-radar{grid-column:span 5} .rz-meta{grid-column:span 4} .rz-mov{grid-column:span 3}
 @media (max-width:1499px){
-  .rz-flujo{grid-column:1 / -1}
-  .rz-comp,.rz-mov{grid-column:span 6}
+  .rz-radar{grid-column:1 / -1}
+  .rz-meta,.rz-mov{grid-column:span 6}
 }
 @media (max-width:1180px){
-  .rz-meta,.rz-radar{grid-column:1 / -1}
+  .rz-meta,.rz-radar,.rz-mov{grid-column:1 / -1}
 }
 @media (max-width:760px){
   .rz{gap:12px}
-  .rz-meta,.rz-comp,.rz-mov{grid-column:1 / -1}
   .rz-kpi{padding:13px 14px 12px}
   .rz-kpi-val{font-size:16.5px;letter-spacing:-.6px}
   .rz-hero{padding:16px}
@@ -220,7 +219,6 @@
 .rz-chip .n{font-size:11.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .rz-chip .m{font-size:11px;color:var(--text2);white-space:nowrap}
 .rz-chip.hoy{border-left-color:var(--yellow)} .rz-chip.mora{border-left-color:var(--red)} .rz-chip.parcial{border-left-color:var(--blue)}
-.rz-chip.usd .m{color:var(--blue)}
 .rz-vacio{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px;opacity:.35}
 .rz-leyenda{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text3);margin-top:4px}
 .rz-leyenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
@@ -242,17 +240,26 @@
    de 0 con minimo 250 px: aporta a la fila lo mismo que antes y no la empuja con una lista larga.
    Sola en su fila (<=1180 px) no hay nada que llenar: vuelve a un tope propio. Dos clases para
    ganarle al max-height de .rz-scroll sin depender del orden del archivo. */
-.rz-meta > .rz-body,.rz-radar > .rz-body{flex:1 1 auto;display:flex;flex-direction:column}
+.rz-meta > .rz-body,.rz-radar > .rz-body,.rz-mov > .rz-body{flex:1 1 auto;display:flex;flex-direction:column}
 .rz-meta .rz-meta-lista{flex:1 1 auto;min-height:0;max-height:none}
 .rz-meta .rz-meta-lista.larga{flex-basis:0;min-height:250px}
 /* El Radar, igual, con su propio minimo: la tabla tenia un tope en linea de 460 px y, donde la Meta
    es la tarjeta mas alta de la fila (1.366 px), dejaba 35 px vacios bajo la tabla. */
 .rz-radar .rz-radar-lista{flex:1 1 auto;min-height:0;max-height:none}
 .rz-radar .rz-radar-lista.larga{flex-basis:0;min-height:460px}
+/* Ultimos movimientos (3.7.0, desde que comparte fila con la Meta y el Radar): parte de 0 con un minimo
+   de 240 px, asi que no empuja la fila, y llena el alto que le dan las otras dos. */
+.rz-mov .rz-mov-lista{flex:1 1 0;min-height:240px;max-height:none}
 @media (max-width:1180px){
   .rz-meta .rz-meta-lista,.rz-meta .rz-meta-lista.larga{flex:0 1 auto;min-height:0;max-height:360px}
   .rz-radar .rz-radar-lista,.rz-radar .rz-radar-lista.larga{flex:0 1 auto;min-height:0;max-height:460px}
+  .rz-mov .rz-mov-lista{flex:0 1 auto;min-height:0;max-height:360px}
 }
+/* El enlace al analisis, que vive en Rendimiento desde 3.7.0 */
+.rz-analisis{border-top:1px solid var(--border);padding-top:12px;margin-top:2px}
+.rz-analisis-h{display:flex;align-items:center;gap:8px;border:none;background:none;color:var(--text2);font:600 14px inherit;font-family:inherit;cursor:pointer;padding:4px 0}
+.rz-analisis-h:hover{color:var(--text)}
+.rz-analisis-s{font-weight:400;color:var(--text3);font-size:13px}
 .rz-li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--bg3);cursor:pointer}
 .rz-li:last-child{border-bottom:none}
 .rz-li:hover .rz-li-n{text-decoration:underline}
@@ -419,7 +426,8 @@
 .e-finalizado .dp-dot{background:var(--text3)}
 .e-cancelado .dp-dot{background:var(--red)}
 .e-condonado .dp-dot{background:var(--yellow)}
-.dp-usdtag{font-size:9.5px;font-weight:800;color:var(--blue);background:var(--blue-bg);padding:1px 5px;border-radius:5px}
+/* 3.7.0 (opcion A del PO): la marca de un prestamo en dolares es neutra, como su cifra */
+.dp-usdtag{font-size:9.5px;font-weight:800;color:var(--text2);background:var(--bg3);box-shadow:inset 0 0 0 1px var(--border2);padding:1px 5px;border-radius:5px}
 .dp-loan{border-top:1px solid var(--border);padding:16px 18px 18px}
 .dp-loan-h{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
 .dp-loan-t{font-size:18px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -441,7 +449,12 @@
 .dp-fig-l{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3)}
 .dp-fig-v{font-size:18px;font-weight:700;color:var(--text);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dp-fig-s{font-size:11px;color:var(--text3);margin-top:3px;line-height:1.4}
-.dp-usd{font-size:10.5px;color:var(--blue);font-weight:500}
+/* La cifra en dolares junto a los pesos (3.7.0, opcion A del PO, `componentes/CifraUSD.js`): tinta
+   secundaria y el codigo "US$" en terciaria. Sin color: el azul es de abonos, parciales, capital y enlaces. */
+.dp-usd{font-size:10.5px;color:var(--text2);font-weight:500}
+.usd-c{color:var(--text3);font-size:.88em;margin-right:.4em;letter-spacing:.02em;font-weight:inherit}
+.dp-crono-f.pagada .dp-usd{color:var(--text3)}
+.dp-crono-f.abono .dp-usd{color:inherit;opacity:.72}
 .dp-sub{font-size:10.5px;color:var(--text3);margin-top:1px;font-weight:500;font-family:inherit}
 .dp-cuerpo{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin-top:18px}
 @container (min-width:880px){ .dp-cuerpo{grid-template-columns:minmax(0,1fr) 290px} }
@@ -504,6 +517,8 @@
 .cb-nombre{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cb-vence{font-size:12.5px;color:var(--text2)}
 .cb-monto .mono{font-size:14.5px;font-weight:700}
+/* La sub-linea en dolares NO hereda el tamano de la cifra (hasta 3.6.0 salia tan grande y en negrita como los pesos) */
+.cb-monto .dp-usd{font-size:11px;font-weight:500;margin-top:1px}
 .cb-acc{display:flex;gap:6px;justify-content:flex-end;align-items:center;min-width:76px}
 .cb-grupo{background:var(--bg2);border:1px solid var(--red-bd);border-radius:14px;overflow:hidden}
 .cb-grupo.on{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
@@ -565,3 +580,147 @@
   .op-lado:not(.superpuesto){display:none}
   .op-lado.superpuesto{position:fixed;inset:0;z-index:90;max-height:none;border-radius:0;background:var(--bg);overflow-y:auto}
 }
+
+/* ══ RENDIMIENTO (3.7.0) ═══════════════════════════════════════════════════════════════════════════
+   Prototipo aprobado por el PO: franja de cifras, tabla de prestamos con filtros y orden, y el
+   "Analisis del negocio" que vivia en el Resumen. Prefijo .rd- (`vistas/PortfolioView.js`). La ventana
+   va de 1.000 a 1.600 px: la tabla se ajusta en vez de desplazarse de lado; lo que se esconde en
+   ventanas angostas (capital y recuperado) esta a un clic, en el panel del deudor. */
+.rd{display:flex;flex-direction:column;gap:18px;animation:fadeIn .25s ease}
+.rd-cab h1{font-size:22px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
+.rd-cab p{font-size:13.5px;color:var(--text2);margin-top:2px}
+.rd-cifras{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+.rd-cifra{padding:20px 24px 22px;border-left:1px solid var(--border);min-width:0}
+.rd-cifra:first-child{border-left:none}
+.rd-cifra-l{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
+.rd-cifra-v{font-size:26px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.rd-cifra-v.g{color:var(--green)}
+.rd-cifra-s{font-size:12.5px;color:var(--text2);margin-top:5px}
+.rd-cifra-s b{color:var(--text);font-variant-numeric:tabular-nums}
+.rd-cifra-barra{height:4px;border-radius:99px;background:var(--bg3);margin-top:10px;overflow:hidden}
+.rd-cifra-barra>div{height:100%;background:var(--blue);border-radius:99px}
+.rd-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.rd-card-h{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px 12px;border-bottom:1px solid var(--border)}
+.rd-filtros{display:flex;gap:6px;flex-wrap:wrap}
+.rd-filtro{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:none;color:var(--text2);border-radius:99px;padding:5px 12px;font:600 12.5px inherit;font-family:inherit;cursor:pointer;transition:all .12s}
+.rd-filtro span{font-size:11px;color:var(--text3);font-weight:700}
+.rd-filtro:hover{color:var(--text);border-color:var(--border2)}
+.rd-filtro.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+.rd-filtro.on span{color:var(--bg);opacity:.7}
+.rd-ayuda{font-size:12px;color:var(--text3)}
+.rd-tabla{overflow-x:auto}
+.rd-t{width:100%;border-collapse:collapse;font-size:13px}
+.rd-t th{padding:9px 16px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text3);white-space:nowrap;background:var(--bg2);text-align:left}
+.rd-t th button{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.rd-t th button:hover,.rd-t th.on button{color:var(--text)}
+.rd-flecha{font-size:11px;opacity:.55}
+.rd-t th.on .rd-flecha{opacity:1}
+.rd-t td{padding:10px 16px;border-top:1px solid var(--border);vertical-align:middle;color:var(--text)}
+.rd-t th.rd-r,.rd-t td.rd-n{text-align:right}
+.rd-t th.rd-c,.rd-t td.rd-c{text-align:center}
+.rd-t td.rd-n{font-family:'Cascadia Code','Consolas',monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rd-fila{cursor:pointer;transition:background .1s}
+.rd-fila:hover td{background:var(--bg3)}
+.rd-fila.cerrado .rd-nom{color:var(--text2)}
+.rd-quien{display:flex;align-items:center;gap:11px;min-width:0}
+.rd-av{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;background:var(--bg3);color:var(--text2);box-shadow:inset 0 0 0 1.5px var(--border2)}
+.rd-av.e-mora{color:var(--red);box-shadow:inset 0 0 0 1.5px var(--red)}
+.rd-av.e-hoy,.rd-av.e-semana{color:var(--yellow);box-shadow:inset 0 0 0 1.5px var(--yellow)}
+.rd-av.e-aldia{color:var(--green);box-shadow:inset 0 0 0 1.5px var(--green)}
+.rd-av.e-abierto{color:var(--blue);box-shadow:inset 0 0 0 1.5px var(--blue)}
+.rd-quien-c{min-width:0}
+.rd-nom{display:flex;align-items:center;gap:7px;font-weight:600;font-size:13.5px;white-space:nowrap}
+.rd-sub{font-size:11.5px;color:var(--text3);font-family:-apple-system,'Segoe UI',sans-serif;white-space:nowrap}
+.rd-rec{display:flex;align-items:center;gap:10px;min-width:150px}
+.rd-barra{flex:1;height:5px;border-radius:99px;background:var(--bg3);overflow:hidden;min-width:70px}
+.rd-barra>div{height:100%;background:var(--green);border-radius:99px}
+.rd-rec-p{font-size:12px;color:var(--text2);font-family:'Cascadia Code','Consolas',monospace;width:42px;text-align:right}
+.rd-gan{font-weight:600}
+.rd-gan.g{color:var(--green)}
+.rd-nota{font-size:11px;font-family:-apple-system,'Segoe UI',sans-serif;margin-top:2px}
+.rd-nota.y{color:var(--yellow)} .rd-nota.r{color:var(--red)}
+.rd-rent{font-weight:700;font-size:14px}
+.rd-rent.nada{color:var(--text3);font-weight:500}
+.rd-rent-b{height:3px;border-radius:99px;background:var(--bg3);margin:4px 0 2px auto;width:72px;overflow:hidden}
+.rd-rent-b>div{height:100%;background:var(--text2);border-radius:99px;margin-left:auto}
+.rd-chip{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap;background:var(--bg3);color:var(--text2)}
+.rd-chip.r{background:var(--red-bg);color:var(--red)} .rd-chip.y{background:var(--yellow-bg);color:var(--yellow)}
+.rd-chip.g{background:var(--green-bg);color:var(--green)} .rd-chip.b{background:var(--blue-bg);color:var(--blue)}
+.rd-vacio{padding:36px 16px;text-align:center;color:var(--text3);font-size:13px}
+.rd-pie{padding:10px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text3)}
+.rd-sec{display:flex;align-items:baseline;gap:10px;font-size:15px;font-weight:700;margin-top:6px;color:var(--text)}
+.rd-sec span{font-size:13px;font-weight:400;color:var(--text3)}
+.rd-analisis .rz-flujo{grid-column:span 8} .rd-analisis .rz-comp{grid-column:span 4}
+@media (max-width:1500px){ .rd-t th,.rd-t td{padding-left:11px;padding-right:11px} .rd-rec{min-width:118px} .rd-barra{min-width:48px} }
+@media (max-width:1280px){
+  .rd-cifras{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rd-cifra:nth-child(3){border-left:none}
+  .rd-cifra:nth-child(n+3){border-top:1px solid var(--border)}
+  .rd-col-recuperado .rd-barra{display:none} .rd-rec{min-width:0}
+}
+@media (max-width:1180px){ .rd-analisis .rz-flujo,.rd-analisis .rz-comp{grid-column:1 / -1} .rd-ayuda{display:none} }
+@media (max-width:1100px){ .rd-col-capital,.rd-col-recuperado{display:none} .rd-t th,.rd-t td{padding-left:8px;padding-right:8px} }
+/* Las dos columnas de rentabilidad (3.7.0): en ventanas angostas sus titulos y el subtitulo del
+   prestamo parten en dos lineas para que la tabla quepa sin desplazarse de lado. */
+@media (max-width:1366px){
+  .rd-t th{white-space:normal;line-height:1.3} .rd-t th button{display:inline-block}
+  .rd-col-nombre .rd-sub,.rd-col-rent .rd-sub,.rd-col-mes .rd-sub{white-space:normal}
+}
+
+/* ══ HISTORIAL (3.7.0) ═════════════════════════════════════════════════════════════════════════════
+   Todo lo que se hizo en la app, agrupado por dia, con busqueda, periodo y tipo. Prefijo .hs-
+   (`vistas/HistorialView.js`). */
+.hs{display:flex;flex-direction:column;gap:16px;animation:fadeIn .25s ease}
+.hs-cab{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.hs-cab h1{font-size:22px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
+.hs-cab p{font-size:13.5px;color:var(--text2);margin-top:2px}
+.hs-actualizar{display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:99px;padding:6px 14px;cursor:pointer;color:var(--text);font:600 12.5px inherit;font-family:inherit}
+.hs-actualizar:hover{border-color:var(--border2)}
+.hs-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.hs-barra{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px 10px}
+.hs-buscar{display:flex;align-items:center;gap:8px;flex:1 1 300px;max-width:440px;background:var(--bg3);border:1.5px solid var(--border2);border-radius:10px;padding:0 10px}
+.hs-buscar:focus-within{border-color:var(--green)}
+.hs-buscar input{flex:1;min-width:0;border:none;outline:none;background:none;color:var(--text);font:14px inherit;font-family:inherit;padding:8px 0}
+.hs-limpiar{display:flex;border:none;background:none;cursor:pointer;padding:2px}
+.hs-periodos{display:flex;gap:4px;flex-wrap:wrap;background:var(--bg3);border-radius:10px;padding:3px}
+.hs-chip{border:none;background:none;color:var(--text2);border-radius:7px;padding:5px 10px;font:600 12px inherit;font-family:inherit;cursor:pointer;white-space:nowrap}
+.hs-chip:hover{color:var(--text)}
+.hs-chip.on{background:var(--bg2);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.2),inset 0 0 0 1px var(--border2)}
+.hs-rango{display:flex;gap:10px;flex-wrap:wrap}
+.hs-rango label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2)}
+.hs-rango input{background:var(--bg3);border:1.5px solid var(--border2);border-radius:8px;color:var(--text);font:13px inherit;font-family:inherit;padding:5px 8px;color-scheme:dark}
+[data-theme="light"] .hs-rango input{color-scheme:light}
+.hs-tipos{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:2px 16px 12px;border-bottom:1px solid var(--border)}
+.hs-filtro{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:none;color:var(--text2);border-radius:99px;padding:4px 11px;font:600 12px inherit;font-family:inherit;cursor:pointer}
+.hs-filtro span{font-size:11px;color:var(--text3);font-weight:700}
+.hs-filtro:hover{color:var(--text);border-color:var(--border2)}
+.hs-filtro.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+.hs-filtro.on span{color:var(--bg);opacity:.7}
+.hs-resumen{margin-left:auto;font-size:12px;color:var(--text3)}
+.hs-lista{padding:4px 16px 14px}
+.hs-dia{display:flex;align-items:baseline;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:1;background:var(--bg2);padding:14px 2px 6px;border-bottom:1px solid var(--border);
+  font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text2)}
+.hs-dia-n{font-size:11px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--text3)}
+.hs-fila{display:grid;grid-template-columns:44px 30px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 2px;border-bottom:1px solid var(--bg3)}
+.hs-fila:last-child{border-bottom:none}
+.hs-fila.revertida .hs-msg{text-decoration:line-through;color:var(--text3)}
+.hs-hora{font-size:12px;color:var(--text3);padding-top:6px}
+.hs-ico{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--bg3)}
+.hs-ico.t-green{background:var(--green-bg)} .hs-ico.t-blue{background:var(--blue-bg)} .hs-ico.t-red{background:var(--red-bg)}
+.hs-ico.t-yellow{background:var(--yellow-bg)} .hs-ico.t-purple{background:var(--purple-bg)}
+.hs-c{min-width:0}
+.hs-tipo{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2)}
+.hs-tipo.t-green{color:var(--green)} .hs-tipo.t-blue{color:var(--blue)} .hs-tipo.t-red{color:var(--red)}
+.hs-tipo.t-yellow{color:var(--yellow)} .hs-tipo.t-purple{color:var(--purple)}
+.hs-revertida{font-size:10px;font-weight:700;letter-spacing:.03em;color:var(--purple);background:var(--purple-bg);border:1px solid var(--purple-bd);border-radius:5px;padding:0 6px;text-transform:none}
+.hs-msg{font-size:13.5px;color:var(--text);line-height:1.45;margin-top:2px;overflow-wrap:anywhere}
+.hs-motivo{display:flex;align-items:flex-start;gap:5px;font-size:11px;color:var(--text3);margin-top:5px;line-height:1.45}
+.hs-acc{display:flex;align-items:center;gap:10px;padding-top:2px}
+.hs-link{border:none;background:none;color:var(--text3);font:600 12px inherit;font-family:inherit;cursor:pointer;white-space:nowrap;padding:4px 0}
+.hs-link:hover{color:var(--text)}
+.hs-deshacer{display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:8px;font:600 12px inherit;font-family:inherit;background:transparent;border:1px solid var(--border);color:var(--text3);cursor:not-allowed;opacity:.6}
+.hs-deshacer.on{background:var(--purple-bg);border-color:var(--purple);color:var(--purple);cursor:pointer;opacity:1}
+.hs-mas{display:block;margin:12px auto 0;border:1px solid var(--border);background:none;color:var(--text2);border-radius:99px;padding:6px 16px;font:600 12.5px inherit;font-family:inherit;cursor:pointer}
+.hs-mas:hover{color:var(--text);border-color:var(--border2)}
+.hs-vacio{display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 16px;text-align:center;color:var(--text3);font-size:13px}
+@media (max-width:1100px){ .hs-resumen{display:none} .hs-fila{grid-template-columns:40px 28px minmax(0,1fr)} .hs-acc{grid-column:3;padding-top:0} }

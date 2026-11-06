@@ -13,6 +13,7 @@ import { generateEstadoLiquidacion } from '../pdf/estado-liquidacion.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
 import { CheckInteresMes, etiquetaInteresMes } from '../componentes/CheckInteresMes.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 // ── LiquidarModal (v2.0.0) ────────────────────────────────────────────────────
 // ELEVADO desde DebtorModal a nivel App. Antes su estado (confirmLiq) vivia dentro
@@ -50,7 +51,7 @@ export function LiquidarModal(props){
         sublabel&&h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},sublabel)),
       h('div',{style:{textAlign:'right'}},
         h('div',{className:'mono',style:{fontSize:13,fontWeight:600,color:color||'var(--text)'}},fmt(monto)),
-        cEsUSD&&monto>0&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)',fontWeight:400}},copToUsd(monto,cLoan.trmAcordada))));
+        cEsUSD&&monto>0&&usdLinea(copToUsd(monto,cLoan.trmAcordada),{fontSize:10,fontWeight:400})));
   }
   return h(Modal,{onClose:onClose},
     h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
@@ -63,15 +64,15 @@ export function LiquidarModal(props){
       // Va fuera de la casilla de abajo a proposito: no es un periodo por correr que se
       // pacta, es deuda ya causada, asi que se cobra siempre.
       L.moraConsolidada>0&&rowLine('Intereses atrasados consolidados',
-        'Vencidos antes del cambio de dia de cobro · quedaron dentro de la cuota del '+fmtD(L.moraConsolidadaFecha),
+        'Vencidos antes del cambio de día de cobro · quedaron dentro de la cuota del '+fmtD(L.moraConsolidadaFecha),
         L.moraConsolidada,'var(--yellow)'),
       // Credito abierto: su interes NO vive en ninguna fila (se deriva del tiempo), asi
       // que sin esta linea el TOTAL incluia un devengo que el desglose no explicaba.
-      L.esDiario&&L.interesDevengado>0&&rowLine('Interes acumulado',L.diasDevengados+' dia(s) a '+fmt(L.interesDia)+'/dia',L.interesDevengado,'var(--yellow)'),
+      L.esDiario&&L.interesDevengado>0&&rowLine('Interés acumulado',L.diasDevengados+' día(s) a '+fmt(L.interesDia)+'/día',L.interesDevengado,'var(--yellow)'),
       L.partialPend>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(L.partialPend),'var(--blue)'),
       L.incluyeProxMes&&rowLine(lblExtra,
         L.periodoIrregular
-          ? L.diasCobrados+' de '+L.diasPeriodo+' dias del periodo · '+cLoan.tasaMensual+'% mensual sobre el capital pendiente'
+          ? L.diasCobrados+' de '+L.diasPeriodo+' días del periodo · '+cLoan.tasaMensual+'% mensual sobre el capital pendiente'
           : detalleInteresEnCurso(L.frecuencia,cLoan.tasaMensual),
         L.intProxMes,'var(--yellow)')),
     // La casilla es compartida con CronogramaPdfModal (3.1.0): mismas palabras, misma cifra.
@@ -83,7 +84,7 @@ export function LiquidarModal(props){
         h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'Lo que debe entregarte el deudor')),
       h('div',{style:{textAlign:'right'}},
         h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--red)'}},fmt(L.total)),
-        cEsUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:500}},copToUsd(L.total,cLoan.trmAcordada)))),
+        cEsUSD&&usdLinea(copToUsd(L.total,cLoan.trmAcordada),{fontSize:11,fontWeight:500}))),
     // Documento PREVIO al cobro: se entrega, el deudor paga, y solo entonces se confirma.
     // SIN el monto en la etiqueta: el total ya esta destacado en rojo justo encima y
     // repetirlo aqui solo compite con el.
@@ -96,8 +97,8 @@ export function LiquidarModal(props){
         finally{ setTimeout(function(){setPdfBusy(false);},600); }
       },disabled:pdfBusy,className:'btn-primary',style:{background:'transparent',border:'1px solid var(--border)',color:'var(--text2)',cursor:pdfBusy?'wait':'pointer',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'center',gap:8}},
       h(Ico,{name:'receipt',size:15,color:'var(--text3)',sw:2}),
-      'Generar PDF de liquidacion'),
-    h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcaran como pagadas y el prestamo se cerrara.'),
-    h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){return onConfirm(cLoan.id,L.capitalPendiente,L.intExtra);});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidacion'),
+      'Generar PDF de liquidación'),
+    h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcarán como pagadas y el préstamo se cerrará.'),
+    h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){return onConfirm(cLoan.id,L.capitalPendiente,L.intExtra);});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidación'),
     h('button',{onClick:onClose,className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
 }

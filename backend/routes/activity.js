@@ -14,8 +14,13 @@ module.exports = function crearRutasActivity(ctx) {
   const router = express.Router();
 
   // ── API: Historial de acciones ────────────────────────────────────────────
-  router.get('/api/activity', (_req, res) => {
-    const rows = db.prepare('SELECT * FROM activity_log ORDER BY id DESC LIMIT 100').all();
+  // Sin parametros, las 100 mas recientes (lo de siempre). Con `?todo=1`, el historial COMPLETO: lo pide
+  // la pestana Historial desde 3.7.0, que filtra por fechas, busca y agrupa por dia en el cliente; con
+  // solo 100 filas, un filtro por fecha no veria mas alla de unas semanas y diria "no hubo nada" en
+  // meses que si tuvieron movimientos.
+  router.get('/api/activity', (req, res) => {
+    const todo = req.query && (req.query.todo === '1' || req.query.todo === 'true');
+    const rows = db.prepare('SELECT * FROM activity_log ORDER BY id DESC' + (todo ? '' : ' LIMIT 100')).all();
     res.json(rows);
   });
 

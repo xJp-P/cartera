@@ -20,6 +20,7 @@ import { estadoDiario } from '../core/dominio.js';
 import { copToUsd, fmt, fmtNumInput, parseNum } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 export function CorteModal(props){
   var loan=props.loan, allPays=props.pays||[], onSave=props.onSave, onClose=props.onClose;
@@ -53,12 +54,12 @@ export function CorteModal(props){
 
   // ── Validaciones, espejo exacto del backend ────────────────────────────────
   var err='';
-  if(fecha>hoy) err='No se puede registrar un corte con fecha futura: devengaria intereses aun no causados.';
-  else if(fecha<loan.fechaInicio) err='El corte no puede ser anterior al inicio del credito ('+loan.fechaInicio+').';
-  else if(fecha<ultimaFecha) err='El corte no puede ser anterior al ultimo registrado ('+ultimaFecha+').';
+  if(fecha>hoy) err='No se puede registrar un corte con fecha futura: devengaría intereses aún no causados.';
+  else if(fecha<loan.fechaInicio) err='El corte no puede ser anterior al inicio del crédito ('+loan.fechaInicio+').';
+  else if(fecha<ultimaFecha) err='El corte no puede ser anterior al último registrado ('+ultimaFecha+').';
   else if(intEfectivo<0||abnNum<0) err='Los montos no pueden ser negativos.';
   else if(intEfectivo===0&&abnNum===0) err='El corte debe registrar algo: intereses, abono a capital, o ambos.';
-  else if(intEfectivo>dev.interesPendiente) err='El interes cobrado supera el devengado a esa fecha ('+fmt(dev.interesPendiente)+').';
+  else if(intEfectivo>dev.interesPendiente) err='El interés cobrado supera el devengado a esa fecha ('+fmt(dev.interesPendiente)+').';
   else if(abnNum>dev.capitalVivo) err='El abono supera el capital vivo ('+fmt(dev.capitalVivo)+').';
   var btnOff=!!err||sending;
 
@@ -80,7 +81,7 @@ export function CorteModal(props){
         sub&&h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},sub)),
       h('div',{style:{textAlign:'right'}},
         h('div',{className:'mono',style:{color:color||'var(--text)',fontWeight:600}},fmt(v)),
-        esUSD&&h('div',{className:'mono',style:{fontSize:10,color:'var(--blue)'}},copToUsd(v,loan.trmAcordada))));
+        esUSD&&usdLinea(copToUsd(v,loan.trmAcordada),{fontSize:10})));
   };
 
   return h(Modal,{onClose:onClose,title:'Registrar corte'},
@@ -91,8 +92,8 @@ export function CorteModal(props){
       h('div',{style:{fontSize:11,fontWeight:700,color:'var(--text3)',marginBottom:6,letterSpacing:'.03em'}},'ESTADO AL '+fecha),
       fila('Capital vivo',dev.capitalVivo),
       h('div',{style:{borderTop:'1px solid var(--border)',margin:'4px 0'}}),
-      fila('Interes devengado por cobrar',dev.interesPendiente,'var(--blue)',
-        dev.diasDesdeUltimoCorte+' dia(s) x '+fmt(interesDia)+'/dia · ultimo corte '+(cortes.length?ultimaFecha:'sin cortes'))),
+      fila('Interés devengado por cobrar',dev.interesPendiente,'var(--blue)',
+        dev.diasDesdeUltimoCorte+' día(s) x '+fmt(interesDia)+'/día · último corte '+(cortes.length?ultimaFecha:'sin cortes'))),
 
     h(Fld,{label:'Fecha del corte'},
       h('input',{type:'date',value:fecha,max:hoy,min:loan.fechaInicio,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
@@ -104,26 +105,26 @@ export function CorteModal(props){
         className:'inp'}),
       h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)'}},
         intTocado&&intEfectivo<dev.interesPendiente
-          ? 'Quedaran '+fmt(dev.interesPendiente-intEfectivo)+' de interes sin cobrar (no se capitaliza: seguira devengando sobre el capital).'
-          : 'Por defecto se cobra todo el interes devengado.')),
+          ? 'Quedarán '+fmt(dev.interesPendiente-intEfectivo)+' de interés sin cobrar (no se capitaliza: seguirá devengando sobre el capital).'
+          : 'Por defecto se cobra todo el interés devengado.')),
 
     h(Fld,{label:'Abono a capital'},
       h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(abono),
         onChange:function(e){setAbono(parseNum(e.target.value));},placeholder:'0',className:'inp'}),
       h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)'}},
-        'Reduce la base del interes desde este mismo dia. Maximo '+fmt(dev.capitalVivo)+'.')),
+        'Reduce la base del interés desde este mismo día. Máximo '+fmt(dev.capitalVivo)+'.')),
 
     // ── Lo que quedara tras el corte ─────────────────────────────────────────
     total>0&&!err&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',margin:'12px 0'}},
-      h('div',{style:{fontSize:11,fontWeight:700,color:'var(--green)',marginBottom:6,letterSpacing:'.03em'}},'DESPUES DEL CORTE'),
+      h('div',{style:{fontSize:11,fontWeight:700,color:'var(--green)',marginBottom:6,letterSpacing:'.03em'}},'DESPUÉS DEL CORTE'),
       fila('Total que recibes',total,'var(--green)'),
       h('div',{style:{borderTop:'1px solid var(--green-bd)',margin:'4px 0'}},null),
       fila('Capital vivo',capitalDespues),
-      fila('Interes por cobrar',interesDespues,interesDespues>0?'var(--yellow)':'var(--text3)'),
+      fila('Interés por cobrar',interesDespues,interesDespues>0?'var(--yellow)':'var(--text3)'),
       abnNum>0&&capitalDespues>0&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:6}},
-        'A partir de hoy devengara '+fmt(Math.round(capitalDespues*(+loan.tasaMensual||0)/100/30))+' por dia (antes '+fmt(interesDia)+').'),
+        'A partir de hoy devengará '+fmt(Math.round(capitalDespues*(+loan.tasaMensual||0)/100/30))+' por día (antes '+fmt(interesDia)+').'),
       saldaCredito&&h('div',{style:{fontSize:12,color:'var(--green)',fontWeight:700,marginTop:8,display:'flex',alignItems:'center',gap:6}},
-        h(Ico,{name:'check',size:14,color:'var(--green)'}),'El credito quedara SALDADO y pasara a Finalizado.')),
+        h(Ico,{name:'check',size:14,color:'var(--green)'}),'El crédito quedará SALDADO y pasará a Finalizado.')),
 
     err&&h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,padding:'9px 11px',margin:'12px 0',fontSize:11.5,color:'var(--red)',lineHeight:1.45}},err),
 

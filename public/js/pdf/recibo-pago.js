@@ -169,7 +169,9 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="total-box">',
     '<div style="font-size:10px;color:' + (dark ? '#8b949e' : '#656d76') + ';margin-bottom:4px">' + (esParcial ? 'ABONO RECIBIDO' : 'MONTO RECIBIDO') + '</div>',
     '<div class="amount">' + (esUSD && usdRec ? fmtUSD(usdRec) : fv(montoRecibido)) + '</div>',
-    esUSD && usdRec ? '<div class="sub">' + fmt(montoRecibido) + ' COP</div>' : '',
+    // 3.7.0 (decision del PO): un credito en dolares se imprime SOLO en dolares: sin el equivalente en
+    // pesos debajo del monto recibido (la caja en COP vive en la app, no en el papel del cliente).
+    '',   // (el elemento vacio conserva el separador: los documentos en pesos quedan identicos byte a byte)
     '</div>',
     bannerHTML,
     esParcial ? '<div class="section"><div class="section-title">Estado de la cuota</div>' +
@@ -192,7 +194,7 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {
     var montoTxt = loan.moneda === 'USD'
-      ? 'USD $' + Math.round(loan.montoOrigen).toLocaleString('es-CO')
+      ? 'USD $' + Math.round(loan.montoOrigen).toLocaleString('en-US')   // con el formato del dolar, no el del peso
       : '$' + Math.round(loan.montoOrigen).toLocaleString('es-CO');
     var fname = 'Recibo Préstamo ' + montoTxt + ' - ' + pay.nombreCliente + ' - Cuota ' + pay.cuotaN;
     window.electronAPI.printPDF(html, fname);

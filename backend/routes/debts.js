@@ -51,7 +51,7 @@ module.exports = function crearRutasDebts(ctx) {
     const acreedor = (req.body.acreedor || '').trim();
     const concepto = (req.body.concepto || '').trim();
     const monto = Math.round(+req.body.monto_original || 0);
-    if (!titulo) return res.status(400).json({ error: 'El titulo es obligatorio' });
+    if (!titulo) return res.status(400).json({ error: 'El título es obligatorio' });
     if (!acreedor) return res.status(400).json({ error: 'El acreedor es obligatorio' });
     if (monto <= 0) return res.status(400).json({ error: 'El monto original debe ser mayor a 0' });
     // QA3: fecha_creacion editable. Si viene en el payload se usa; si no, el INSERT omite la
@@ -129,7 +129,7 @@ module.exports = function crearRutasDebts(ctx) {
     const concepto = (req.body.concepto || '').trim();
     const monto = Math.round(+req.body.monto_original || 0);
     return mutacionAtomica(req, res, { accion: 'deuda_editar', logTipo: 'deuda', endpoint: 'PUT /api/debts/:id', scopeTipo: 'debt', scopeId: req.params.id }, () => {
-      if (!titulo) throw new ClientError('El titulo es obligatorio');
+      if (!titulo) throw new ClientError('El título es obligatorio');
       if (!acreedor) throw new ClientError('El acreedor es obligatorio');
       if (monto <= 0) throw new ClientError('El monto original debe ser mayor a 0');
       // QA5: saldo = monto_original + SUM(cargos) - SUM(abonos). La proteccion impide bajar el monto

@@ -13,17 +13,38 @@
 // porque la vista se DESMONTA al cambiar de pestana; antes, al volver, el filtro regresaba a
 // "Activos" y el panel al primero de la lista. Se escribe en cada clic que cambia algo de eso (no
 // en un efecto: lo que se recuerda es lo que el usuario eligio, y asi lo prueba `operacion` G).
-// Dura lo que dura la sesion: al reabrir la app, la pestana arranca como siempre.
+// 3.7.0: ademas SOBREVIVE AL CIERRE de la app. Cada escritura avisa a `props.onMemoria`, que en App
+// es `ctGuardarMemoria` (localStorage, como el tema y el menu); App la lee una vez al arrancar con
+// `ctLeerMemoria`, que valida cada campo: un dato viejo o corrupto nunca rompe la vista.
 
 import { DeudorPanel } from '../componentes/DeudorPanel.js';
 import { Ico } from '../componentes/iconos.js';
 import { fmt, fmtN, fmtUSD } from '../core/format.js';
 import { modeloDeudor, opModalidad, opIniciales, opCorta, opRel, opPesoEstado } from '../core/operacion.js';
 import { h, useEffect, useMemo, useState } from '../core/react.js';
-import { addDays, properCase } from '../core/ui.js';
+import { addDays, contiene, properCase } from '../core/ui.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 var CT_FILTROS = [['activos', 'Activos'], ['mora', 'En mora'], ['semana', 'Cobran esta semana'], ['usd', 'En dólares'], ['inactivos', 'Sin préstamos activos'], ['todos', 'Todos']];
 var CT_ORDEN = [['prioridad', 'Lo urgente primero'], ['saldo', 'Mayor saldo'], ['nombre', 'Nombre'], ['recientes', 'Préstamo más reciente']];
+
+// La memoria en disco (3.7.0). Se guarda SOLO lo que la vista sabe restaurar, y al leerla se
+// descarta lo que ya no tiene sentido: un filtro u orden que no existe, un deudor que no es texto. Si
+// el deudor guardado ya no esta en la cartera, la vista abre el primero de la lista (como siempre).
+var CT_CLAVE = 'carteraMemoria';
+export function ctLeerMemoria(){
+  var m;
+  try { m = JSON.parse(localStorage.getItem(CT_CLAVE)); } catch (_) { return {}; }
+  if (!m || typeof m !== 'object') return {};
+  var out = {};
+  if (CT_FILTROS.some(function(f){ return f[0] === m.filtro; })) out.filtro = m.filtro;
+  if (CT_ORDEN.some(function(o){ return o[0] === m.orden; })) out.orden = m.orden;
+  if (m.sel === null || (typeof m.sel === 'string' && m.sel)){ out.sel = m.sel; out.loan = typeof m.loan === 'string' && m.loan ? m.loan : null; }
+  return out;
+}
+export function ctGuardarMemoria(mem){
+  try { localStorage.setItem(CT_CLAVE, JSON.stringify({ filtro: mem.filtro, orden: mem.orden, sel: mem.sel, loan: mem.loan })); } catch (_) {}
+}
 
 // Que deudores deja pasar cada filtro (sobre `modeloDeudor`).
 function ctPasa(hoy){
@@ -51,10 +72,11 @@ function ctFiltroInicial(foco, mem, deudores, loans, pays, hoy){
 export function CarteraView(props){
   var loans = props.loans, pays = props.pays, hoy = props.hoy, foco = props.foco;
   var mem = props.memoria || {};
+  function guardar(){ if (props.onMemoria) props.onMemoria(mem); }
   var _q = useState(''); var q = _q[0], setQ = _q[1];
   // El filtro con el que se abre queda en la memoria: si un foco lo cambio, al volver por el menu
   // la pestana no puede abrir un filtro que esconda al deudor del panel.
-  var _f = useState(function(){ var f = ctFiltroInicial(foco, mem, props.deudores, loans, pays, hoy); mem.filtro = f; return f; }); var filtro = _f[0], setFiltro = _f[1];
+  var _f = useState(function(){ var f = ctFiltroInicial(foco, mem, props.deudores, loans, pays, hoy); mem.filtro = f; guardar(); return f; }); var filtro = _f[0], setFiltro = _f[1];
   var _o = useState(mem.orden || 'prioridad'); var orden = _o[0], setOrden = _o[1];
   var _w = useState(window.innerWidth); var ancho = _w[0], setAncho = _w[1];
   useEffect(function(){
@@ -73,8 +95,7 @@ export function CarteraView(props){
   var filtroVivo = pasa[filtro] && (filtro === 'activos' || filtro === 'todos' || cuenta(pasa[filtro]) > 0) ? filtro : 'activos';
   var lista = todos.filter(pasa[filtroVivo]).filter(function(x){
     if (!q) return true;
-    var s = q.toLowerCase();
-    return x.nombre.toLowerCase().indexOf(s) !== -1 || (x.d.telefono || '').indexOf(q) !== -1;
+    return contiene(x.nombre, q) || (x.d.telefono || '').indexOf(q.trim()) !== -1;
   });
   lista.sort(function(a, b){
     if (orden === 'saldo') return b.saldo - a.saldo;
@@ -92,11 +113,11 @@ export function CarteraView(props){
   var loanIni = foco && foco.nombre ? (foco.loanId || null) : recuerda ? (mem.loan || null) : null;
   // Lo que se abre queda en la memoria, tambien el primero de la lista que la vista eligio sola:
   // es el perfil que el usuario tenia a la vista al irse.
-  var _s = useState(function(){ if (inicial !== null){ mem.sel = inicial; mem.loan = loanIni; } return inicial; }); var sel = _s[0], setSel = _s[1];
+  var _s = useState(function(){ if (inicial !== null){ mem.sel = inicial; mem.loan = loanIni; guardar(); } return inicial; }); var sel = _s[0], setSel = _s[1];
   var _fl = useState(foco && foco.loanId ? { loan: foco.loanId, pay: foco.payId } : loanIni ? { loan: loanIni } : null); var focoL = _fl[0], setFocoL = _fl[1];
   var deudorSel = sel ? props.deudores.filter(function(d){ return d.nombre === sel; })[0] : null;
-  function abrir(nombre, loanId){ setSel(nombre); setFocoL(loanId ? { loan: loanId } : null); mem.sel = nombre; mem.loan = loanId || null; }
-  function filtrar(f){ setFiltro(f); mem.filtro = f; }
+  function abrir(nombre, loanId){ setSel(nombre); setFocoL(loanId ? { loan: loanId } : null); mem.sel = nombre; mem.loan = loanId || null; guardar(); }
+  function filtrar(f){ setFiltro(f); mem.filtro = f; guardar(); }
 
   var activos = todos.filter(function(x){ return x.activos.length; });
   var calle = activos.reduce(function(s, x){ return s + x.saldo; }, 0);
@@ -117,7 +138,7 @@ export function CarteraView(props){
           h('span', { className: 'cb-nombre' }, properCase(x.nombre)),
           h('span', { className: 'ct-saldo mono' }, x.activos.length ? fmt(x.saldo) : '')),
         h('div', { className: 'ct-fila-2' }, linea,
-          x.saldoUSD > 0 && h('span', { className: 'dp-usd mono' }, fmtUSD(x.saldoUSD))),
+          x.saldoUSD > 0 && usdLinea(fmtUSD(x.saldoUSD), null, 'span')),
         x.activos.length > 0 && h('div', { className: 'ct-chips' },
           x.activos.map(function(m){
             return h('span', { key: m.loan.id, className: 'ct-chip e-' + m.estado, title: opModalidad(m.loan.modalidad) + ' · debe ' + fmt(m.saldo),
@@ -130,7 +151,7 @@ export function CarteraView(props){
 
   var panel = deudorSel && h(DeudorPanel, Object.assign({ key: sel + '|' + (focoL ? focoL.loan : ''), deudor: deudorSel, loans: loans, pays: pays, hoy: hoy,
     focoLoan: focoL ? focoL.loan : null, focoPay: focoL ? focoL.pay : null, superpuesto: superpuesto, datosPago: props.datosPago, showToast: props.showToast, onPay: props.onPay,
-    onLoan: function(id){ mem.loan = id; }, onClose: function(){ abrir(null, null); } }, props.acciones));
+    onLoan: function(id){ mem.loan = id; guardar(); }, onClose: function(){ abrir(null, null); } }, props.acciones));
 
   return h('div', { className: 'op' + (sel ? ' con-panel' : '') + ' ct' },
     h('div', { className: 'op-main ct-main' },
@@ -152,7 +173,7 @@ export function CarteraView(props){
           if (!n && f[0] !== 'activos' && f[0] !== 'todos') return null;
           return h('button', { key: f[0], className: 'op-filtro' + (filtroVivo === f[0] ? ' on' : ''), onClick: function(){ filtrar(f[0]); } }, f[1], h('span', null, n));
         }),
-        h('select', { className: 'ct-orden', value: orden, onChange: function(e){ setOrden(e.target.value); mem.orden = e.target.value; } },
+        h('select', { className: 'ct-orden', value: orden, onChange: function(e){ setOrden(e.target.value); mem.orden = e.target.value; guardar(); } },
           CT_ORDEN.map(function(o){ return h('option', { key: o[0], value: o[0] }, o[1]); }))),
       lista.length ? h('div', { className: 'ct-lista' }, lista.map(fila)) : h('div', { className: 'op-vacio' }, 'Nadie coincide con la búsqueda.')),
     panel ? h('div', { className: 'op-lado' + (superpuesto ? ' superpuesto' : '') }, panel)

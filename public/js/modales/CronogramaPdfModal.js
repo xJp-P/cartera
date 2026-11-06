@@ -23,7 +23,9 @@ import { computeLiquidacion, proximoVencimiento, periodoEnCursoDe } from '../cor
 import { copToUsd, fmt, fmtD } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { nowStr } from '../core/ui.js';
+import { opModalidad } from '../core/operacion.js';
 import { generateCronogramaPDF } from '../pdf/cronograma.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 export function CronogramaPdfModal(props){
   var loan=props.loan, pays=props.pays||[], onClose=props.onClose;
@@ -44,7 +46,7 @@ export function CronogramaPdfModal(props){
     (L.intMora>0?' + mora '+fmt(L.intMora):'')+
     (L.moraConsolidada>0?' + mora consolidada '+fmt(L.moraConsolidada):'')+
     (L.partialPend>0?' \u2212 parciales '+fmt(L.partialPend):'')+
-    (L.intExtra>0?(L.periodoIrregular?' + interes de '+L.diasCobrados+' dias':' + interes '+periodoEnCursoDe(L.frecuencia))+' '+fmt(L.intExtra):'');
+    (L.intExtra>0?(L.periodoIrregular?' + interés de '+L.diasCobrados+' días':' + interés '+periodoEnCursoDe(L.frecuencia))+' '+fmt(L.intExtra):'');
 
   function descargar(){
     if(busy) return;
@@ -61,22 +63,22 @@ export function CronogramaPdfModal(props){
     h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'download',size:16,color:'var(--blue)',sw:2.4}),props.titulo||'Descargar cronograma'),
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:props.mensaje?10:14}},
-      loan.nombre+' \u2022 '+loan.modalidad+' \u2022 '+loan.tasaMensual+'% mensual'),
+      loan.nombre+' \u2022 '+opModalidad(loan.modalidad)+' \u2022 '+loan.tasaMensual+'% mensual'),
     props.mensaje&&h('div',{style:{fontSize:13,color:'var(--text2)',marginBottom:12,lineHeight:1.5}},props.mensaje),
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:12,lineHeight:1.5}},
-      'El cronograma termina con el valor de liquidacion: lo que el deudor tendria que entregar para cancelar el credito.'),
+      'El cronograma termina con el valor de liquidación: lo que el deudor tendría que entregar para cancelar el crédito.'),
     h(CheckInteresMes,{L:L,checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},onDias:setDiasProxMes}),
     h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 14px',marginBottom:14}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}},
         h('div',null,
-          h('div',{style:{fontSize:10,color:'var(--yellow)',fontWeight:600,letterSpacing:.5}},'VALOR DE LIQUIDACION EN EL PDF'),
+          h('div',{style:{fontSize:10,color:'var(--yellow)',fontWeight:600,letterSpacing:.5}},'VALOR DE LIQUIDACIÓN EN EL PDF'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},detalle)),
         h('div',{style:{textAlign:'right'}},
           h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--yellow)'}},fmt(L.total)),
-          esUSD&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)',fontWeight:500}},copToUsd(L.total,loan.trmAcordada)))),
+          esUSD&&usdLinea(copToUsd(L.total,loan.trmAcordada),{fontSize:11,fontWeight:500}))),
       L.incluyeProxMes&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:8,lineHeight:1.45}},
-        pv ? 'El PDF dira que este valor es valido hasta el '+fmtD(pv)+(L.periodoIrregular?', hasta donde cubren los '+L.diasCobrados+' dias.':', la fecha de la proxima cuota.')
-           : 'El PDF dira que este valor esta calculado al dia de hoy.')),
+        pv ? 'El PDF dirá que este valor es válido hasta el '+fmtD(pv)+(L.periodoIrregular?', hasta donde cubren los '+L.diasCobrados+' días.':', la fecha de la próxima cuota.')
+           : 'El PDF dirá que este valor está calculado al día de hoy.')),
     h('button',{onClick:descargar,disabled:busy,className:'btn-primary',style:{marginBottom:6,display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:busy?'wait':'pointer'}},
       h(Ico,{name:'download',size:15,color:'#fff',sw:2.2}),props.okLabel||'Descargar PDF'),
     h('button',{onClick:onClose,className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));

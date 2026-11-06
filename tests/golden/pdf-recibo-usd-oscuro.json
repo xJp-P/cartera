@@ -35,14 +35,14 @@
     ]
   },
   "valores": {
-    "bytes": 4758,
+    "bytes": 4720,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
-    "nMontos": 10,
-    "hashMontos": "05b3794257127cf06b44ff762e419c1bfdf3b9f0",
-    "hashFname": "02d3e2a5602ae8aa2a28ae65aa1236a40b2c9942",
-    "hashTexto": "fe1058349738fa4e14cacdea2bbd26348ebeea96",
+    "nMontos": 9,
+    "hashMontos": "91474a748fc7f1410eae7b2d6721e7d60a1d5ccd",
+    "hashFname": "b227263f4d71a37e93e18af1550a15e5c652c46f",
+    "hashTexto": "cc557977bc7c27b172f0cde23b22b0d544952d6d",
     "clases": [
       "amount",
       "footer",
@@ -51,7 +51,6 @@
       "row",
       "section",
       "section-title",
-      "sub",
       "total-box",
       "value"
     ]

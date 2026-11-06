@@ -80,7 +80,7 @@ module.exports = function crearRutasPayments(ctx) {
     // vencido y contaminaria el KPI de mora, computeLiquidacion y el Reporte de Activos.
     // Deshacer un corte es competencia del undo (que restaura el agregado), no de un PUT.
     if (esCorte(payBefore)) {
-      throw new ClientError('Un corte de interes diario no cambia de estado: registra un movimiento ya ocurrido. Para revertirlo, usa Deshacer.');
+      throw new ClientError('Un corte de interés diario no cambia de estado: registra un movimiento ya ocurrido. Para revertirlo, usa Deshacer.');
     }
     // Al marcar Pagado: partialPaid = cuotaTotal (recibido completo); al revertir: partialPaid = 0 (historial se pierde)
     let newPartial;
@@ -171,7 +171,7 @@ module.exports = function crearRutasPayments(ctx) {
     // Un CORTE es un hecho consumado: registra dinero que YA entro, no una obligacion por
     // cobrar. Aceptar un parcial encima lo convertiria en algo a medio pagar y le sumaria un
     // evento al ledger `recibos`, inflando "Cobros del Mes" con plata que nunca se recibio.
-    if (esCorte(pay)) throw new ClientError('No se pueden aplicar pagos parciales sobre un corte de interes diario: ya es un movimiento consumado');
+    if (esCorte(pay)) throw new ClientError('No se pueden aplicar pagos parciales sobre un corte de interés diario: ya es un movimiento consumado');
     // ── CAJA vs OBLIGACION: dos magnitudes distintas que antes compartian variable ──
     // `montoNum` es la CAJA: los pesos que entraron de verdad, a la TRM del dia. Es lo que
     // va al ledger `recibos` y a montoCOPRecibido, y lo que miden "Cobros del Mes" y el
@@ -213,7 +213,7 @@ module.exports = function crearRutasPayments(ctx) {
     // cuota se ancla a cuotaTotal igual.
     if (obligacion > restante && !completaUSD) {
       throw new ClientError('El monto supera el saldo pendiente de la cuota ($' + Math.round(restante).toLocaleString() + ')'
-        + (esUSDLoan ? ' — en dolares: ' + Math.round((restante / loanPay.trmAcordada) * 100) / 100 : ''));
+        + (esUSDLoan ? ' — en dólares: ' + Math.round((restante / loanPay.trmAcordada) * 100) / 100 : ''));
     }
 
     const nuevoPartial = yaPagado + obligacion;

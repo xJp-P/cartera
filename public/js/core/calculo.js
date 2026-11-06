@@ -199,15 +199,15 @@ export function previewRecalculo(saldo, r, nActual, modo, valor){
   if(modo==='modificarPlazo'){
     var nN=parseInt(valor,10);
     if(!nN||nN<1) return {modo:modo,cuota:0,nCuotas:0,interesP:interesP,ultimaResidual:0,
-      error:'Ingresa un numero de cuotas valido (>= 1).'};
+      error:'Ingresa un número de cuotas válido (>= 1).'};
     return {modo:modo,cuota:Math.round(_pmt(r,nN,saldo)),nCuotas:nN,interesP:interesP,ultimaResidual:0,error:null};
   }
   if(modo==='fijarCuota'){
     var pmtFijo=Math.round(+valor||0);
     if(pmtFijo<=0) return {modo:modo,cuota:0,nCuotas:0,interesP:interesP,ultimaResidual:0,
-      error:'Ingresa una cuota valida (> 0).'};
+      error:'Ingresa una cuota válida (> 0).'};
     if(pmtFijo<=interesP) return {modo:modo,cuota:pmtFijo,nCuotas:0,interesP:interesP,ultimaResidual:0,
-      error:'La cuota debe superar los intereses del primer periodo. Con esta cuota la deuda nunca se saldaria.'};
+      error:'La cuota debe superar los intereses del primer periodo. Con esta cuota la deuda nunca se saldaría.'};
     var nEnt=Math.ceil(_nper(r,pmtFijo,saldo));
     // Saldo tras (nEnt-1) cuotas iguales: lo que queda es la ultima, residual.
     var sR=saldo, resid=0;

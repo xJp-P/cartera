@@ -27,15 +27,15 @@ module.exports = function crearRutasUndo(ctx) {
   // ── API: Deshacer ────────────────────────────────────────────────────────────
   router.post('/api/undo/:id', (req, res) => {
     const entry = db.prepare('SELECT * FROM undo_journal WHERE id = ?').get(req.params.id);
-    if (!entry) return res.status(404).json({ error: 'Operacion no encontrada en el historial' });
+    if (!entry) return res.status(404).json({ error: 'Operación no encontrada en el historial' });
     if (entry.estado !== 'disponible') {
-      return res.status(400).json({ error: 'Esta operacion ya fue ' + (entry.estado === 'deshecho' ? 'deshecha' : 'invalidada') + ' y no puede revertirse de nuevo' });
+      return res.status(400).json({ error: 'Esta operación ya fue ' + (entry.estado === 'deshecho' ? 'deshecha' : 'invalidada') + ' y no puede revertirse de nuevo' });
     }
     // Candado A — LIFO estricto por scope: solo la entrada disponible MAS reciente
     // de este agregado puede deshacerse.
     const top = db.prepare("SELECT id, descripcion, created_at FROM undo_journal WHERE scope_tipo=? AND scope_id=? AND estado='disponible' ORDER BY rowid DESC LIMIT 1").get(entry.scope_tipo, entry.scope_id);
     if (top && top.id !== entry.id) {
-      return res.status(409).json({ error: 'Primero debes deshacer la operacion mas reciente de este ' + (entry.scope_tipo === 'debt' ? 'registro' : 'prestamo') + ': "' + top.descripcion + '" (' + top.created_at + ')' });
+      return res.status(409).json({ error: 'Primero debes deshacer la operación más reciente de este ' + (entry.scope_tipo === 'debt' ? 'registro' : 'préstamo') + ': "' + top.descripcion + '" (' + top.created_at + ')' });
     }
     let snap;
     try { snap = JSON.parse(entry.snapshot); } catch (_) { return res.status(500).json({ error: 'Snapshot corrupto: no se puede deshacer con seguridad' }); }
@@ -56,7 +56,7 @@ module.exports = function crearRutasUndo(ctx) {
 
     res.json({
       ok: true, deshecho: entry.id, accion: entry.accion, scope_id: entry.scope_id,
-      warning: drift ? 'El estado habia cambiado desde esta operacion (housekeeping o una mutacion no journalizada). Se restauro el snapshot y se re-aplico el housekeeping; revisa el resultado.' : null
+      warning: drift ? 'El estado había cambiado desde esta operación (housekeeping o una mutación no journalizada). Se restauró el snapshot y se re-aplicó el housekeeping; revisa el resultado.' : null
     });
   });
 

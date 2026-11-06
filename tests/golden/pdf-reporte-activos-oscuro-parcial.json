@@ -22,7 +22,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 12556,
+    "bytes": 12150,
     "nFilas": 23,
     "nCeldas": 184,
     "celdasPorTr": [
@@ -50,10 +50,10 @@
       8,
       8
     ],
-    "nMontos": 50,
-    "hashMontos": "12a043d8e61defcc69099361f8c54c3e3ee40c3f",
+    "nMontos": 43,
+    "hashMontos": "70ac638990a20bd441c01ba0a1234c5872c5ed0c",
     "hashFname": "c1c1dc4e882e76218e5752b2ef2365ed0a1187df",
-    "hashTexto": "b0112cbfed5efb0e7b3ee281632ec59c102d854a",
+    "hashTexto": "0e47bf44a41df5c1e0d1063089603691828319a7",
     "clases": [
       "badge badge-mora",
       "badge badge-pagado",
@@ -66,9 +66,7 @@
       "mora-sub",
       "summary",
       "tran-detalle",
-      "tran-sub",
-      "usd-i",
-      "usd-sub"
+      "tran-sub"
     ]
   }
 }

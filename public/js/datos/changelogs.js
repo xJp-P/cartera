@@ -728,5 +728,20 @@ export const CHANGELOGS = {
     'Cuando una tabla sigue en la hoja siguiente, su fila de titulos se repite arriba, para que las columnas no queden sin nombre.',
     'Los documentos se imprimen con su ortografia completa: Cédula, Teléfono, Interés, Valor de liquidación, días... y la modalidad con su nombre completo (Préstamo sin interés, Pago único, Solo intereses, Interés diario).',
     'Se corrigio que un nombre u observacion con simbolos como < o & desacomodara el recibo de pago.'
+  ],
+  // 3.7.0: la primera entrada con ortografía completa, como el resto de la interfaz desde esta versión.
+  '3.7.0': [
+    'Cartera recuerda dónde la dejaste aunque cierres la aplicación: al volver a abrirla siguen elegidos el filtro, el orden y la persona (con su préstamo) que tenías abierta.',
+    'El buscador ya no distingue tildes ni mayúsculas: "jose", "José" y "JOSÉ" encuentran a la misma persona en Cartera, en Cobros y en la búsqueda general. Lo mismo al escribir el nombre de un cliente o de un acreedor.',
+    'La búsqueda general reconoce los códigos de factura (FC-…), escritos con o sin tilde: encuentra la cuota aunque ya esté pagada y te lleva directo a su préstamo.',
+    'Las facturas de los créditos abiertos ya no pierden en su código las letras con tilde del nombre, y las que ya entregaste se siguen encontrando con su código de siempre. Los códigos de las facturas de cuotas no cambian.',
+    'Toda la aplicación se escribe con su ortografía completa: ventanas, avisos, mensajes de error y el historial. La modalidad se muestra con su nombre completo (Solo intereses, Préstamo sin interés, Pago único, Interés diario).',
+    'Dos avisos que todavía mandaban a la antigua pestaña Pagos ahora indican Cobros.',
+    'Las cifras en dólares que acompañan a los pesos ya no van en azul: se muestran en gris, con el código «US$» más tenue, para que no compitan con el resto de la pantalla. En Cobros, además, ya no salen del mismo tamaño que la cifra en pesos.',
+    'Los documentos de un crédito en dólares se imprimen solo en dólares: cronogramas, facturas, recibos, propuestas de abono, liquidaciones y estados de cuenta ya no muestran equivalencias en pesos ni la TRM. En el reporte de préstamos activos, las filas de esos créditos también van solo en dólares, y los totales muestran los pesos y los dólares por separado («$ X + USD Y»), sin convertirlos ni sumarlos entre sí.',
+    'Rendimiento, renovado: arriba la ganancia obtenida, la rentabilidad de la cartera, el capital colocado y el saldo en la calle; debajo, una tabla con todos tus préstamos que puedes filtrar (activos, finalizados, en dólares, con pérdida) y ordenar por cualquier columna, con la rentabilidad de cada uno en dos columnas lado a lado: la mensual (cuánto rinde por mes, para comparar un préstamo viejo con uno nuevo) y la acumulada (cuánto ha rendido desde el inicio). Al tocar un préstamo se abre en Cartera. Y el análisis del negocio (flujo de caja y dónde está tu capital) ahora vive aquí.',
+    'El Resumen queda más liviano: el radar, la meta del mes y los últimos movimientos van lado a lado, y un enlace lleva al análisis del negocio en Rendimiento.',
+    'Historial, renovado: todas tus acciones agrupadas por día, con un buscador que no distingue tildes y filtros por periodo (hoy, 7 días, 30 días, este mes o las fechas que elijas) y por tipo (cobros, préstamos, Mis Deudas, deshechos). Si una acción nombra a un deudor, la abres en Cartera de un toque. El botón Deshacer sigue igual.',
+    'Al cambiar de pestaña, la nueva se abre siempre desde arriba.'
   ]
 };

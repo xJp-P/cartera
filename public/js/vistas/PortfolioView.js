@@ -1,232 +1,219 @@
-// public/js/vistas/PortfolioView.js — Rendimiento: ganancia por prestamo y KPIs globales.
+// public/js/vistas/PortfolioView.js — Rendimiento: cuanto rinde cada prestamo y como va el negocio (3.7.0).
 //
-// Extraido de `app.js` en la Etapa 3 (B7) del refactor. Codigo VERBATIM.
+// Rediseno aprobado por el PO sobre un prototipo navegable con los datos del fixture. Reemplaza a las
+// tarjetas de una columna (una por prestamo, pensadas para la ventana de 460 px) por:
+//   1. una franja de cuatro cifras (ganancia obtenida, rentabilidad de la cartera, capital colocado y
+//      saldo en la calle);
+//   2. una TABLA de prestamos con filtros (activos, finalizados, en dolares, con perdida, todos) y orden
+//      por columna; un clic en una fila abre el panel del deudor en Cartera (`onNameClick`, el mismo de
+//      los nombres del Resumen);
+//   3. el "Analisis del negocio" que vivia en el Resumen (decision del PO): `RzFlujo` y `RzComposicion`,
+//      importados de DashView sin tocarlos.
 //
-// El estado global sigue viviendo en `App` y baja por PROPS, igual que antes.
-// Sin Context API y sin store: eso seria rediseno, no refactor.
+// NINGUNA formula nueva de dinero: cada fila es el modelo del prestamo de Cartera (`modeloDeudor`), la
+// ganancia es `gananciaDePrestamo` (la del Resumen y el panel: la franja suma lo mismo que la tarjeta de
+// ganancias, Bug #68). Lo unico nuevo son los dos cocientes de la RENTABILIDAD (ver `rdFila`): la
+// mensual y la acumulada, en dos columnas lado a lado (decision del PO tras ver las dos sobre el fixture).
+// Nombres de nivel superior con prefijo rd/Rd/RD_ (el arnes aplana los modulos).
 
-import { Ico } from '../componentes/iconos.js';
-import { GananciaBimonetaria, notaCOPGanancia } from '../componentes/GananciaBimonetaria.js';
-import { imputarCobros, esDiario, progresoCapital, gananciaDePrestamo } from '../core/dominio.js';
-import { copToUsd, fmt, fmtD, fmtN } from '../core/format.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
+import { copToUsd, fmt, fmtD, fmtUSD } from '../core/format.js';
 import { h, useMemo, useState } from '../core/react.js';
-import { esAbono } from '../core/ids.js';
+import { diasEntre } from '../core/dominio.js';
+import { modeloDeudor, opModalidad, opIniciales, opPesoEstado } from '../core/operacion.js';
+import { nowStr, properCase } from '../core/ui.js';
+import { modeloResumen, RzFlujo, RzComposicion } from './DashView.js';
 
-// ── Rendimiento (Portfolio Performance) ───────────────────────────────────────
+var RD_FILTROS = [['activos', 'Activos'], ['finalizados', 'Finalizados'], ['usd', 'En dólares'], ['perdida', 'Con pérdida'], ['todos', 'Todos']];
+var RD_PASA = {
+  activos: function(r){ return r.m.activo; },
+  finalizados: function(r){ return !r.m.activo; },
+  usd: function(r){ return r.esUSD; },
+  perdida: function(r){ return r.perdida; },
+  todos: function(){ return true; }
+};
+var RD_ESTADO = { mora: ['En mora', 'r'], hoy: ['Vence hoy', 'y'], semana: ['Esta semana', 'y'], aldia: ['Al día', 'g'],
+  abierto: ['Crédito abierto', 'b'], finalizado: ['Finalizado', 'n'], cancelado: ['Cancelado', 'r'], condonado: ['Condonado', 'y'] };
+// [clave de orden, rotulo, alineacion]
+var RD_COLUMNAS = [['nombre', 'Préstamo', 'l'], ['capital', 'Capital prestado', 'r'], ['recuperado', 'Recuperado', 'l'],
+  ['ganancia', 'Ganancia', 'r'], ['mes', 'Rent. mensual', 'r'], ['rent', 'Rent. acumulada', 'r'], ['saldo', 'Saldo', 'r'], ['estado', 'Estado', 'c']];
+
+export function rdPct(x){
+  return (Math.round((x || 0) * 1000) / 10).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+}
+
+// "en 23,8 meses" / "en 1 mes" / "en menos de un mes": cuanto lleva el prestamo (dias reales / 30).
+export function rdMeses(meses){
+  if (meses < 1) return 'en menos de un mes';
+  var r = Math.round(meses * 10) / 10;
+  return 'en ' + r.toLocaleString('es-CO', { maximumFractionDigits: 1 }) + (r === 1 ? ' mes' : ' meses');
+}
+
+// Una fila de la tabla a partir del modelo del prestamo.
+// RENTABILIDAD, dos columnas lado a lado (decision del PO, 3.7.0):
+//   - ACUMULADA = GANANCIA OBTENIDA / CAPITAL PRESTADO, desde el inicio. Premia la antiguedad.
+//   - MENSUAL = la acumulada / los MESES que lleva el prestamo (dias reales / 30, la convencion de la
+//     app), hasta hoy o hasta su ultimo cobro si ya cerro. Permite comparar un prestamo viejo con uno
+//     nuevo y delata la mora (rinde menos que su tasa). Con menos de un mes se divide por 1: la mensual
+//     nunca supera a la acumulada (un cobro adelantado a los pocos dias daria cifras absurdas).
+// En un credito en dolares las dos se miden en DOLARES -ganancia nativa en USD sobre el capital en USD-:
+// es la moneda del credito, y en pesos la perdida por TRM la rebajaria (esa va debajo, en gris). Un
+// `Prestamo` (sin interes) no tiene rentabilidad: su ganancia es cero por regla.
+export function rdFila(m, hoy){
+  var l = m.loan, esUSD = m.esUSD;
+  var capUSD = esUSD ? (+l.montoOrigen || 0) : 0;
+  var rentCOP = m.orig > 0 ? m.gp.cop / m.orig : 0;
+  var rentUSD = esUSD && capUSD > 0 ? (m.gp.usd || 0) / capUSD : 0;
+  var rent = esUSD ? rentUSD : rentCOP;
+  var fin = m.activo ? (hoy || nowStr()) : (m.fechaFin || hoy || nowStr());
+  var meses = Math.max(0, diasEntre(l.fechaInicio, fin)) / 30;
+  var div = Math.max(1, meses);
+  var mes = rent / div, mesCOP = rentCOP / div;
+  var perdido = Math.round(+l.capitalPerdido || 0);
+  // Lo condonado: con el endpoint (2.9.0) va en su columna; por la via vieja (abono + cierre forzoso con
+  // capital recuperado al 100%) son los intereses "perdidos" de un prestamo que el modelo ya marca `condonado`.
+  var condonado = Math.round(+l.interesesCondonados || 0) + (m.condonado ? Math.round(+l.interesesPerdidos || 0) : 0);
+  var intPerdido = (l.estado === 'Cancelado' && !m.condonado) ? Math.round(+l.interesesPerdidos || 0) : 0;
+  // El efecto TRM de un `Prestamo` USD: el panel del deudor lo muestra con la misma cifra (`recTRM`).
+  var efTRM = (m.esPrest && esUSD) ? m.recTRM : 0;
+  return { m: m, l: l, esUSD: esUSD, capUSD: capUSD, rent: rent, rentCOP: rentCOP, mes: mes, mesCOP: mesCOP, meses: meses,
+    perdido: perdido, condonado: condonado,
+    intPerdido: intPerdido, efTRM: efTRM, perdida: perdido > 0 || intPerdido > 0 || condonado > 0 || efTRM < 0,
+    clave: { nombre: properCase(l.nombre), capital: m.orig, recuperado: m.pct, ganancia: m.gp.cop, mes: m.esPrest ? -1 : mes,
+             rent: m.esPrest ? -1 : rent, saldo: m.activo ? m.saldo : -1, estado: opPesoEstado(m.estado) } };
+}
+
+// Todos los prestamos, cada uno con el modelo de Cartera (se agrupan por deudor como en la app).
+export function rdFilas(loans, pays, hoy){
+  var nombres = [], out = [];
+  loans.forEach(function(l){ if (nombres.indexOf(l.nombre) === -1) nombres.push(l.nombre); });
+  nombres.forEach(function(n){ modeloDeudor({ nombre: n }, loans, pays, hoy).mods.forEach(function(m){ out.push(rdFila(m, hoy)); }); });
+  return out;
+}
+
+function RdCifra(p){
+  return h('div', { className: 'rd-cifra' },
+    h('div', { className: 'rd-cifra-l' }, p.l),
+    h('div', { className: 'rd-cifra-v' + (p.tono ? ' ' + p.tono : '') }, p.v),
+    p.s && h('div', { className: 'rd-cifra-s' }, p.s),
+    p.barra != null && h('div', { className: 'rd-cifra-barra' }, h('div', { style: { width: Math.max(0, Math.min(100, p.barra)) + '%' } })));
+}
+
 export function PortfolioView(props){
-  var loans=props.loans,pays=props.pays;
-  var ft=useState('Activo'); var filtro=ft[0]; var setFiltro=ft[1];
-  var loanMetrics=useMemo(function(){
-    return loans.map(function(loan){
-      var lp=pays.filter(function(p){return p.prestamoId===loan.id;});
-      var paid=lp.filter(function(p){return p.estadoPago==='Pagado';});
-      var esUSD=loan.moneda==='USD';
-      // Identificar abonos reales: predicado unico de core/ids.js
-      // Regulares = cuotas normales del cronograma (no abonos)
-      var regulares=lp.filter(function(p){return !esAbono(p);});
-      var regularesPaid=paid.filter(function(p){return !esAbono(p);});
-      var abonosPaid=paid.filter(function(p){return esAbono(p);});
+  var loans = props.loans || [], pays = props.pays || [];
+  var hoy = nowStr();
+  var onNameClick = props.onNameClick || function(){};
+  var onNav = props.onNav || function(){};
+  var filas = useMemo(function(){ return rdFilas(loans, pays, hoy); }, [loans, pays, hoy]);
+  var M = useMemo(function(){ return modeloResumen(loans, pays, hoy); }, [loans, pays, hoy]);
+  var _f = useState(function(){ return loans.some(function(l){ return l.estado === 'Activo'; }) ? 'activos' : 'todos'; });
+  var filtro = _f[0], setFiltro = _f[1];
+  var _o = useState({ k: 'mes', dir: -1 }); var orden = _o[0], setOrden = _o[1];
 
-      // ── GANANCIA REAL (regla del PO, 2026-09-13) ──
-      // `gananciaDe` sobre TODAS las filas del prestamo: el mismo helper del tablero, asi que la
-      // suma de estas tarjetas es el valor de la tarjeta "Ganancias" del Inicio. Ver su ficha en
-      // dominio.js: interes cobrado menos perdida cambiaria, con piso en cero por fila.
-      var gpLoan=gananciaDePrestamo(loan, lp);
-      var ganancia=gpLoan.cop;
-      // EFECTO TRM de un Prestamo USD (0% de interes). Por la regla NO es ganancia —sin
-      // interes, una perdida cambiaria aporta cero—, pero la tarjeta lo rotula aparte como
-      // "Efecto TRM" (Bug #25) y es la unica cifra que lo muestra, con su signo. Se conserva la
-      // formula de siempre, `caja - capital`, que en una cuota sin interes ES el efecto.
-      var efectoTRM=(esUSD&&loan.modalidad==='Prestamo')?regularesPaid.reduce(function(s,p){
-        return s+((p.montoCOPRecibido&&p.montoCOPRecibido>0)?(p.montoCOPRecibido-(p.cuotaTotal-p.interesPeriodo)):0);
-      },0):0;
+  if (!loans.length) return h('div', { className: 'rd' },
+    h('div', { className: 'rd-cab' }, h('h1', null, 'Rendimiento'), h('p', null, 'Cuánto rinde cada préstamo y cómo va el negocio.')),
+    h('div', { className: 'rd-card rd-vacio' }, 'Todavía no hay préstamos. Cuando registres el primero, aquí verás cuánto rinde.'));
 
-      // ── GANANCIA EN USD: dolares NATIVOS recibidos (regla bimonetaria del PO, Bug #25a) ──
-      // No es la cifra en pesos convertida: la TRM castiga solo los pesos. Sale del mismo helper, que
-      // ademas ya ve los parciales en vuelo y el interes de una liquidacion.
-      var gananciaUSD=gpLoan.usd;
+  // ── Las cifras de arriba ──────────────────────────────────────────────────
+  var activas = filas.filter(function(r){ return r.m.activo; });
+  var ganTotal = filas.reduce(function(s, r){ return s + r.m.gp.cop; }, 0);
+  var prestadoTodo = filas.reduce(function(s, r){ return s + r.m.orig; }, 0);
+  var colocado = activas.reduce(function(s, r){ return s + r.m.orig; }, 0);
+  var recuperado = activas.reduce(function(s, r){ return s + r.m.recCap; }, 0);
+  var saldo = activas.reduce(function(s, r){ return s + r.m.saldo; }, 0);
+  var pctRec = colocado > 0 ? recuperado / colocado * 100 : 0;
 
-      // ── CAPITAL RECUPERADO: via imputacion (Fase 3) ──────────────────────────
-      // Incluye el capital que ya cubrio un pago parcial en curso, ademas del de las cuotas
-      // saldadas y los abonos. Antes solo contaba cuotas con estadoPago==='Pagado'.
-      var capRec=Math.round(lp.reduce(function(s,p){return s+imputarCobros(p).totales.capital;},0));
-      // Se conservan para las filas INFORMATIVAS de la tarjeta ("Abonos a capital recibidos" y
-      // "Abonos parciales recibidos"); ya NO participan del saldo, que sale del capital imputado.
-      var capitalAbonos=abonosPaid.reduce(function(s,p){return s+p.abonoCapital;},0);
-      var parcialesPend=regulares.filter(function(p){return p.estadoPago!=='Pagado';}).reduce(function(s,p){return s+(p.partialPaid||0);},0);
+  // ── La tabla ──────────────────────────────────────────────────────────────
+  var vis = filas.filter(RD_PASA[filtro]).slice().sort(function(a, b){
+    var x = a.clave[orden.k], y = b.clave[orden.k];
+    var c = typeof x === 'string' ? x.localeCompare(y) : x - y;
+    return c * orden.dir || a.clave.nombre.localeCompare(b.clave.nombre);
+  });
+  var maxRent = vis.reduce(function(s, r){ return r.m.esPrest ? s : Math.max(s, r.rent); }, 0) || 1;
+  var maxMes = vis.reduce(function(s, r){ return r.m.esPrest ? s : Math.max(s, r.mes); }, 0) || 1;
+  function ordenar(k){ setOrden(orden.k === k ? { k: k, dir: -orden.dir } : { k: k, dir: k === 'nombre' ? 1 : -1 }); }
 
-      // ── SALDO PENDIENTE: monto original - capital efectivamente recuperado ────
-      // Antes restaba ADEMAS `parcialesPend` (el parcial COMPLETO), lo que rompia la identidad
-      // documentada "Colocado = Recuperado + Saldo": el interes contenido en el parcial
-      // desaparecia de los dos lados. Con el capital imputado la identidad se cumple exacta.
-      var saldo;
-      if(loan.estado!=='Activo'){
-        saldo=0;
-      } else {
-        var origR=loan.moneda==='USD'?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
-        saldo=Math.max(0,origR-capRec);
-      }
-
-      // ── CUOTAS: solo regulares ──
-      var cuotasPaid=regularesPaid.length;
-      var cuotasTotal=regulares.length||1;
-
-      // ── Progreso por MONTO (incluye abonos parciales) ──
-      var totEspRec=regulares.reduce(function(s,p){return s+p.cuotaTotal;},0);
-      var totCobRec=regulares.reduce(function(s,p){
-        if(p.estadoPago==='Pagado') return s+p.cuotaTotal;
-        return s+(p.partialPaid||0);
-      },0);
-      // Misma trampa que en Cartera: en un credito abierto cobrado == esperado por
-      // construccion (todo corte nace 'Pagado') y la barra marcaria 100% con el capital
-      // vivo. Se mide el capital devuelto.
-      var pctMonto=esDiario(loan)?progresoCapital(loan,lp):(totEspRec>0?Math.round(totCobRec/totEspRec*100):0);
-
-      // ── MORA: tiene cuotas en mora? ──
-      var enMora=lp.some(function(p){return p.estadoPago==='En Mora';});
-
-      // ── FECHA DE FINALIZACION (derivada): ultimo pago registrado ──
-      // No hay columna fechaFinalizado; se infiere del pago mas reciente:
-      // paidAt (timestamp real v1.11.1) > fechaRecaudo > fechaPago; fallback fechaInicio.
-      var fechaFin=paid.reduce(function(mx,p){var d=p.paidAt||p.fechaRecaudo||p.fechaPago||'';return d>mx?d:mx;},'')||loan.fechaInicio;
-
-      return {loan:loan,gp:gpLoan,ganancia:Math.round(ganancia),efectoTRM:Math.round(efectoTRM),capRec:Math.round(capRec),saldo:saldo,
-        cuotasPaid:cuotasPaid,cuotasTotal:cuotasTotal,enMora:enMora,capitalAbonos:Math.round(capitalAbonos),
-        pctMonto:pctMonto,parcialesPend:Math.round(parcialesPend),fechaFin:fechaFin,gananciaUSD:gananciaUSD};
-    }).sort(function(a,b){
-      var aAct=a.loan.estado==='Activo',bAct=b.loan.estado==='Activo';
-      if(aAct!==bAct) return aAct?-1:1;
-      // Activos: por fecha de inicio desc. Finalizados/Cancelados: por fecha de finalizacion desc
-      // (el ultimo finalizado arriba), con fechaInicio como desempate.
-      if(aAct) return b.loan.fechaInicio.localeCompare(a.loan.fechaInicio);
-      return b.fechaFin.localeCompare(a.fechaFin)||b.loan.fechaInicio.localeCompare(a.loan.fechaInicio);
-    });
-  },[loans,pays]);
-  // Ganancia Obtenida: historica (incluye finalizados/cancelados — ya realizada).
-  var totalGanancia=loanMetrics.reduce(function(s,m){return s+m.ganancia;},0);
-  // Capital Colocado / Recuperado: SOLO prestamos Activos, para coincidir con el KPI
-  // "Capital Original" del Dashboard (misma formula+filtro) y cumplir la identidad contable
-  // Colocado = Recuperado + Saldo. Saldo ya esta acotado a activos (saldo=0 si no Activo).
-  var activosR=loans.filter(function(l){return l.estado==='Activo';});
-  var totalColocado=activosR.reduce(function(s,l){return s+(l.moneda==='USD'?Math.round(l.montoOrigen*l.trmAcordada):Math.round(l.montoOrigen));},0);
-  var totalCapRec=loanMetrics.reduce(function(s,m){return m.loan.estado==='Activo'?s+m.capRec:s;},0);
-  var totalSaldo=loanMetrics.reduce(function(s,m){return s+m.saldo;},0);
-
-  function kpi(label,val,sub,color,bd){
-    return h('div',{style:{background:'var(--bg2)',borderRadius:12,padding:'12px 14px',border:'1px solid '+bd}},
-      h('div',{style:{fontSize:11,color:color,fontWeight:700,marginBottom:4}},label),
-      h('div',{className:'mono',style:{fontWeight:700,fontSize:17,color:color}},val),
-      h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:3}},sub));
+  // Una celda de rentabilidad (mensual o acumulada): el porcentaje, su barra relativa a su columna y,
+  // debajo, cuanto lleva el prestamo (solo en la acumulada) y, en dolares, la cifra medida en pesos.
+  function rentCelda(r, k, v, vCOP, max, nota){
+    var m = r.m;
+    return h('td', { className: 'rd-n rd-col-' + k },
+      h('div', { className: 'rd-rent' + (m.esPrest ? ' nada' : '') }, m.esPrest ? '—' : rdPct(v)),
+      !m.esPrest && h('div', { className: 'rd-rent-b' }, h('div', { style: { width: Math.max(0, v / max * 100) + '%' } })),
+      m.esPrest ? h('div', { className: 'rd-sub' }, 'sin interés') : [
+        nota && h('div', { key: 'n', className: 'rd-sub' }, nota),
+        r.esUSD && Math.abs(v - vCOP) >= 0.0005 && h('div', { key: 'p', className: 'rd-sub' }, 'en pesos ' + rdPct(vCOP))]);
   }
 
-  return h('div',{className:'fade-in',style:{padding:16}},
-    h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:6}},h(Ico,{name:'trending',size:16,color:'var(--green)'}),' Rendimiento del Portafolio'),
-    h('div',{style:{fontSize:13,color:'var(--text2)',marginBottom:14}},'Ganancias obtenidas y estado del capital'),
-    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}},
-      kpi('GANANCIA OBTENIDA',fmt(totalGanancia),'Intereses cobrados','var(--green)','var(--green-bd)'),
-      kpi('CAP. COLOCADO (ACTIVOS)',fmt(totalColocado),'Total invertido · solo activos','var(--blue)','var(--blue-bd)'),
-      kpi('CAP. RECUPERADO (ACTIVOS)',fmt(totalCapRec),'Capital + abonos · solo activos','var(--blue)','var(--blue-bd)'),
-      kpi('SALDO PENDIENTE',fmt(totalSaldo),'Capital expuesto','var(--yellow)','var(--border)')),
-    h('div',{style:{display:'flex',gap:0,marginBottom:12,background:'var(--bg2)',borderRadius:10,border:'1px solid var(--border)',overflow:'hidden'}},
-      [['Activo','Activo'],['Finalizados','Finalizados']].map(function(t){
-        var val=t[0],label=t[1];
-        var active=filtro===val;
-        var cnt=loanMetrics.filter(function(m){return val==='Activo'?m.loan.estado==='Activo':(m.loan.estado==='Finalizado'||m.loan.estado==='Cancelado');}).length;
-        return h('button',{key:val,onClick:function(){setFiltro(val);},style:{flex:1,padding:'9px 0',fontSize:13,fontWeight:700,cursor:'pointer',border:'none',
-          background:active?'var(--green)':'transparent',color:active?'#fff':'var(--text3)',transition:'all .15s'}},
-          label+' ('+cnt+')');
-      })),
-    loanMetrics.filter(function(m){return filtro==='Activo'?m.loan.estado==='Activo':(m.loan.estado==='Finalizado'||m.loan.estado==='Cancelado');}).length===0&&h('div',{style:{textAlign:'center',padding:'40px 0',color:'var(--text3)'}},
-      h('div',{style:{marginBottom:10}},h(Ico,{name:filtro==='Activo'?'briefcase':'check',size:36,color:'var(--text3)'})),
-      h('p',null,filtro==='Activo'?'Sin prestamos activos':'Sin prestamos finalizados')),
-    h('div',{style:{display:'flex',flexDirection:'column',gap:10}},
-      loanMetrics.filter(function(m){return filtro==='Activo'?m.loan.estado==='Activo':(m.loan.estado==='Finalizado'||m.loan.estado==='Cancelado');}).map(function(m){
-        var l=m.loan;
-        var esUSD=l.moneda==='USD';
-        var pct=m.cuotasTotal>0?Math.round(m.cuotasPaid/m.cuotasTotal*100):0;
-        var esCancelado=l.estado==='Cancelado';
-        // CONDONACION HECHA POR LA VIA VIEJA (abono + cierre forzoso), reconocible sin
-        // migracion ni columna nueva: capital perdido CERO con intereses perdidos > 0
-        // solo puede significar que se recupero el 100% del capital y se perdono el
-        // redito. Llamar a eso "Perdida total" —en rojo— es exactamente al reves de lo
-        // que paso. Los creditos condonados con el endpoint nuevo NO pasan por aqui:
-        // cierran como 'Finalizado' y llevan su monto en `loans.interesesCondonados`.
-        // Se declara ANTES que los colores porque los tres lo consumen.
-        var capPerd=Math.round(l.capitalPerdido||0), intPerd=Math.round(l.interesesPerdidos||0);
-        var esCondonadoViejo=esCancelado&&capPerd===0&&intPerd>0;
-        var condonados=Math.round(l.interesesCondonados||0);
-        var perdidaReal=esCancelado&&!esCondonadoViejo;
-        var stColor=l.estado==='Activo'?'var(--green)':perdidaReal?'var(--red)':'var(--text3)';
-        var stBg=l.estado==='Activo'?'var(--green-bg)':perdidaReal?'var(--red-bg)':'var(--bg3)';
-        // Color del saldo: naranja si hay mora, amarillo si activo, rojo si hubo perdida
-        // real, ambar si fue una condonacion, gris si finalizado
-        var saldoColor=esCancelado?(esCondonadoViejo?'var(--yellow)':'var(--red)'):l.estado!=='Activo'?'var(--text3)':m.enMora?'var(--red)':'var(--yellow)';
-        var perdidaTotal=esCancelado?Math.round(capPerd+intPerd):0;
-        return h('div',{key:l.id,style:{background:'var(--bg2)',borderRadius:14,padding:'13px 14px',border:'1px solid '+(m.enMora&&l.estado==='Activo'?'var(--red-bd)':'var(--border)')}},
-          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}},
-            h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},l.nombre),
-            h('div',{style:{display:'flex',gap:5,alignItems:'center'}},
-              m.enMora&&l.estado==='Activo'&&h('span',{style:{background:'var(--red-bg)',color:'var(--red)',fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:99}},'MORA'),
-              h('span',{style:{background:stBg,color:stColor,fontSize:10,fontWeight:700,padding:'2px 9px',borderRadius:99}},l.estado))),
-          h('div',{style:{display:'flex',gap:5,flexWrap:'wrap',fontSize:12,color:'var(--text3)',marginBottom:4}},
-            h('span',null,fmtD(l.fechaInicio)),
-            h('span',null,'\u2022'),
-            h('span',null,l.modalidad),
-            l.tasaMensual>0&&h('span',null,'\u2022'),
-            l.tasaMensual>0&&h('span',null,l.tasaMensual+'% mensual')),
-          h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:10}},
-            'Capital: '+(esUSD?'USD $'+fmtN(l.montoOrigen)+' ('+fmt(Math.round(l.montoOrigen*l.trmAcordada))+')':fmt(Math.round(l.montoOrigen)))),
-          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}},
-            // En USD la ganancia ocupa las DOS columnas: lo recibido en dolares y lo consolidado en
-            // pesos lado a lado (regla bimonetaria del PO). En un Prestamo USD la cifra en pesos es el
-            // EFECTO TRM de caja, con su signo: por la regla su ganancia es cero y el rotulo existe
-            // para mostrar ese efecto. En COP no hay nada que desdoblar.
-            esUSD?(function(){ var vTRM=l.modalidad==='Prestamo', v=vTRM?m.efectoTRM:m.ganancia;
-                return h(GananciaBimonetaria,{style:{gridColumn:'1/3'},
-                  titulo:vTRM?'Efecto TRM':'Ganancia obtenida', colorTitulo:v<0?'var(--red)':'var(--green)',
-                  usd:m.gananciaUSD, cop:v,
-                  notaUSD:vTRM?'Sin interes pactado':'Intereses pagados en dolares',
-                  notaCOP:notaCOPGanancia(m.gp, vTRM, m.efectoTRM)});
-              })()
-            : h('div',null,
-                h('div',{style:{fontSize:11,color:m.ganancia<0?'var(--red)':'var(--green)',fontWeight:600}},'Ganancia obtenida'),
-                h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:m.ganancia<0?'var(--red)':'var(--green)'}},fmt(m.ganancia))),
-            h('div',null,
-              h('div',{style:{fontSize:11,color:saldoColor,fontWeight:600}},esCancelado?(esCondonadoViejo?'Intereses condonados':'Perdida total'):'Saldo pendiente'),
-              h('div',{className:'mono',style:{fontSize:15,fontWeight:600,color:saldoColor}},l.estado==='Activo'?fmt(m.saldo):esCancelado?'-'+fmt(perdidaTotal):'Saldado'),
-              esUSD&&l.estado==='Activo'&&h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},copToUsd(m.saldo,l.trmAcordada)),
-              esCancelado&&(function(){
-                var capP=Math.round(l.capitalPerdido||0),intP=Math.round(l.interesesPerdidos||0);
-                if(capP>0&&intP>0) return h('div',{style:{marginTop:3,fontSize:9,lineHeight:1.6}},
-                  h('div',{style:{color:'var(--text3)'}},'Capital ',h('span',{className:'mono',style:{color:'var(--red)'}},'-'+fmt(capP))),
-                  h('div',{style:{color:'var(--text3)'}},'Intereses ',h('span',{className:'mono',style:{color:'var(--red)'}},'-'+fmt(intP))));
-                if(capP>0) return h('div',{style:{marginTop:2,fontSize:9,color:'var(--text3)',fontStyle:'italic'}},'Solo capital no recuperado');
-                if(intP>0) return h('div',{style:{marginTop:2,fontSize:9,color:'var(--text3)',fontStyle:'italic'}},'Capital recuperado al 100%');
-                return null;
-              })()),
-            condonados>0&&h('div',{style:{gridColumn:'1/3',marginTop:2}},
-              h('div',{style:{fontSize:11,color:'var(--yellow)',fontWeight:600}},'Intereses condonados'),
-              h('div',{className:'mono',style:{fontSize:14,fontWeight:500,color:'var(--yellow)'}},'-'+fmt(condonados),
-                h('span',{style:{fontSize:9,fontWeight:400,marginLeft:6,color:'var(--text3)',fontStyle:'italic'}},'perdonados por acuerdo'))),
-            m.capitalAbonos>0&&h('div',{style:{gridColumn:'1/3',marginTop:2}},
-              h('div',{style:{fontSize:11,color:'var(--blue)',fontWeight:600}},'Abonos a capital'),
-              h('div',{className:'mono',style:{fontSize:14,fontWeight:500,color:'var(--blue)'}},fmt(m.capitalAbonos),
-                esUSD&&h('span',{style:{fontSize:11,fontWeight:400,marginLeft:6}},copToUsd(m.capitalAbonos,l.trmAcordada)))),
-            m.parcialesPend>0&&h('div',{style:{gridColumn:'1/3',marginTop:2}},
-              h('div',{style:{fontSize:11,color:'var(--blue)',fontWeight:600}},'Abonos parciales recibidos'),
-              h('div',{className:'mono',style:{fontSize:13,fontWeight:500,color:'var(--blue)'}},fmt(m.parcialesPend)),
-              // Desde la regla del PO (2026-09-13) el interes que un parcial ya cubrio SI cuenta en
-              // la ganancia: decir "pendiente de completar cuota" seria falso.
-              h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1,fontStyle:'italic'}},'La parte que cubrio intereses ya suma a la ganancia'))),
-          l.modalidad==='Intereses'?h('div',{style:{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--text3)'}},
-            h('span',null,m.cuotasPaid+' cuotas pagadas'),
-            h('span',{style:{color:'var(--blue)'}},'\u221E')):h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-            h('div',{style:{flex:1,height:6,background:'var(--bg3)',borderRadius:3,overflow:'hidden',position:'relative'}},
-              h('div',{style:{width:m.pctMonto+'%',height:'100%',background:m.enMora&&l.estado==='Activo'?'var(--red)':'var(--green)',borderRadius:3,transition:'width .3s'}})),
-            // "N/M cuotas" no existe en un credito abierto: se rotula el capital devuelto,
-            // que es lo que la barra esta midiendo de verdad.
-            h('span',{style:{fontSize:11,color:'var(--text3)',whiteSpace:'nowrap'}},
-              esDiario(l)?(fmt(m.capRec)+' de '+fmt(m.loan.moneda==='USD'?Math.round(m.loan.montoOrigen*m.loan.trmAcordada):Math.round(m.loan.montoOrigen))+' ('+m.pctMonto+'%)')
-                         :(m.cuotasPaid+'/'+m.cuotasTotal+' ('+m.pctMonto+'%)'))));
-      })));
+  function fila(r){
+    var m = r.m, l = r.l, est = RD_ESTADO[m.estado] || ['', 'n'];
+    var notas = [];
+    if (r.condonado > 0) notas.push(h('div', { key: 'c', className: 'rd-nota y' }, 'condonó ' + fmt(r.condonado)));
+    if (r.intPerdido > 0) notas.push(h('div', { key: 'i', className: 'rd-nota r' }, 'perdió ' + fmt(r.intPerdido) + ' de intereses'));
+    if (r.perdido > 0) notas.push(h('div', { key: 'k', className: 'rd-nota r' }, 'perdió ' + fmt(r.perdido) + ' de capital'));
+    if (r.efTRM < 0) notas.push(h('div', { key: 't', className: 'rd-nota r' }, 'efecto TRM −' + fmt(-r.efTRM)));
+    return h('tr', { key: l.id, className: 'rd-fila' + (m.activo ? '' : ' cerrado'), title: 'Abrir ' + properCase(l.nombre) + ' en Cartera',
+        onClick: function(){ onNameClick(l.nombre, l.id); } },
+      h('td', { className: 'rd-col-nombre' },
+        h('div', { className: 'rd-quien' },
+          h('div', { className: 'rd-av e-' + m.estado }, opIniciales(l.nombre)),
+          h('div', { className: 'rd-quien-c' },
+            h('div', { className: 'rd-nom' }, properCase(l.nombre), r.esUSD && h('span', { className: 'dp-usdtag' }, 'USD')),
+            h('div', { className: 'rd-sub' }, opModalidad(l.modalidad, true) + ' · ' +
+              (m.activo ? 'desde ' + fmtD(l.fechaInicio) : 'cerrado el ' + fmtD(m.fechaFin || l.fechaInicio)))))),
+      h('td', { className: 'rd-n rd-col-capital' }, fmt(m.orig), r.esUSD && usdLinea(fmtUSD(r.capUSD))),
+      h('td', { className: 'rd-col-recuperado' },
+        h('div', { className: 'rd-rec' },
+          h('div', { className: 'rd-barra' }, h('div', { style: { width: m.pct + '%' } })),
+          h('span', { className: 'rd-rec-p' }, m.pct + ' %'))),
+      h('td', { className: 'rd-n rd-col-ganancia' },
+        h('div', { className: 'rd-gan' + (m.gp.cop > 0 ? ' g' : '') }, (m.gp.cop > 0 ? '+' : '') + fmt(m.gp.cop)),
+        r.esUSD && !m.esPrest && usdLinea((m.gp.usd > 0 ? '+' : '') + fmtUSD(m.gp.usd || 0)),
+        notas),
+      rentCelda(r, 'mes', r.mes, r.mesCOP, maxMes, null),
+      rentCelda(r, 'rent', r.rent, r.rentCOP, maxRent, rdMeses(r.meses)),
+      h('td', { className: 'rd-n rd-col-saldo' }, m.activo
+        ? [fmt(m.saldo), r.esUSD && h('div', { key: 'u' }, usdLinea(copToUsd(m.saldo, m.trm)))]
+        : h('span', { className: 'rd-sub' }, '—')),
+      h('td', { className: 'rd-c rd-col-estado' }, h('span', { className: 'rd-chip ' + est[1] }, est[0])));
+  }
+
+  return h('div', { className: 'rd' },
+    h('div', { className: 'rd-cab' },
+      h('h1', null, 'Rendimiento'),
+      h('p', null, 'Cuánto rinde cada préstamo y cómo va el negocio.')),
+
+    h('div', { className: 'rd-cifras' },
+      h(RdCifra, { l: 'Ganancia obtenida', v: fmt(ganTotal), tono: 'g', s: ['Últimos 12 meses: ', h('b', { key: 'b' }, fmt(M.ganancia12))] }),
+      h(RdCifra, { l: 'Rentabilidad de la cartera', v: rdPct(prestadoTodo > 0 ? ganTotal / prestadoTodo : 0),
+        s: ['Ganancia sobre ', h('b', { key: 'b' }, fmt(prestadoTodo)), ' prestados en total'] }),
+      h(RdCifra, { l: 'Capital colocado', v: fmt(colocado), barra: pctRec,
+        s: [h('b', { key: 'b' }, activas.length), ' préstamo' + (activas.length === 1 ? '' : 's') + ' activo' + (activas.length === 1 ? '' : 's') + ' · ',
+            h('b', { key: 'c' }, Math.round(pctRec) + ' %'), ' recuperado'] }),
+      h(RdCifra, { l: 'Saldo en la calle', v: fmt(saldo), s: 'Lo que falta por recuperar de los activos' })),
+
+    h('div', { className: 'rd-card' },
+      h('div', { className: 'rd-card-h' },
+        h('div', { className: 'rd-filtros' }, RD_FILTROS.map(function(f){
+          var n = filas.filter(RD_PASA[f[0]]).length;
+          return h('button', { key: f[0], className: 'rd-filtro' + (filtro === f[0] ? ' on' : ''), onClick: function(){ setFiltro(f[0]); } },
+            f[1], h('span', null, n));
+        })),
+        h('div', { className: 'rd-ayuda' }, 'Rent. mensual = la acumulada ÷ los meses del préstamo · Rent. acumulada = ganancia obtenida ÷ capital prestado')),
+      vis.length ? h('div', { className: 'rd-tabla' },
+        h('table', { className: 'rd-t' },
+          h('thead', null, h('tr', null, RD_COLUMNAS.map(function(c){
+            var on = orden.k === c[0];
+            return h('th', { key: c[0], className: 'rd-' + c[2] + ' rd-col-' + c[0] + (on ? ' on' : '') },
+              h('button', { onClick: function(){ ordenar(c[0]); } }, c[1],
+                h('span', { className: 'rd-flecha' }, on ? (orden.dir > 0 ? '↑' : '↓') : '↕')));
+          }))),
+          h('tbody', null, vis.map(fila))))
+        : h('div', { className: 'rd-vacio' }, 'Ningún préstamo en este filtro.'),
+      h('div', { className: 'rd-pie' }, vis.length + ' préstamo' + (vis.length === 1 ? '' : 's') + ' · Toca uno para abrirlo en Cartera')),
+
+    h('div', { className: 'rd-sec' }, 'Análisis del negocio', h('span', null, 'Flujo de caja de 12 meses y dónde está tu capital')),
+    h('div', { className: 'rz rd-analisis' },
+      h(RzFlujo, { M: M, hoy: hoy, pays: pays, onNav: onNav, onNameClick: onNameClick }),
+      h(RzComposicion, { M: M, hoy: hoy, pays: pays, onNav: onNav, onNameClick: onNameClick })));
 }

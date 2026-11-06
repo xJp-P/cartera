@@ -15,6 +15,7 @@ import { h, useEffect, useState } from '../core/react.js';
 import { properCase, payMatchesQuery } from '../core/ui.js';
 import { generateFacturaCobro } from '../pdf/factura-cobro.js';
 import { generateReciboGeneral } from '../pdf/recibo-general.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 var CB_TRAMOS = [
   ['vencido', 'Vencido', 'red', 'alert'],
@@ -24,7 +25,7 @@ var CB_TRAMOS = [
   ['despues', 'Más adelante', 'text3', 'clock']
 ];
 function cbMes(key, delta){ var d = new Date(+key.slice(0, 4), +key.slice(5, 7) - 1 + delta, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
-function cbUsd(l, cop){ return l && l.moneda === 'USD' ? h('div', { className: 'dp-usd mono' }, copToUsd(cop, l.trmAcordada)) : null; }
+function cbUsd(l, cop){ return l && l.moneda === 'USD' ? usdLinea(copToUsd(cop, l.trmAcordada)) : null; }
 
 export function CobrosView(props){
   var loans = props.loans, pays = props.pays, hoy = props.hoy;
@@ -163,7 +164,7 @@ export function CobrosView(props){
           x.e.capital > 0 && h('span', null, 'capital ', h('b', { className: 'mono' }, fmt(x.e.capital)))),
         h('div', { className: 'cb-monto r' }, h('div', { className: 'mono', style: { color: 'var(--green)' } }, '+ ' + fmt(x.e.cop)),
           x.l.moneda === 'USD' && (x.p.montoUSDRecibido > 0 && eventos.filter(function(y){ return y.p.id === x.p.id; }).length === 1
-            ? h('div', { className: 'dp-usd mono' }, fmtUSD(x.p.montoUSDRecibido)) : cbUsd(x.l, x.e.cop))),
+            ? usdLinea(fmtUSD(x.p.montoUSDRecibido)) : cbUsd(x.l, x.e.cop))),
         h('div', { className: 'cb-acc' })));
     });
     cobrado = h('div', null,

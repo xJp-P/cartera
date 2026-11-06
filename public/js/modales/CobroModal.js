@@ -275,14 +275,14 @@ export function CobroModal(props){
         h('div',{style:{display:'flex',alignItems:'center',gap:7,marginBottom:5}},
           h('span',{style:{width:18,height:18,borderRadius:99,background:esMora?'var(--red-bg)':'var(--green-bg)',color:esMora?'var(--red)':'var(--green)',fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},String(i+1)),
           h('span',{style:{fontSize:12,fontWeight:700,color:'var(--text)'}},
-            p.esInteresMes?('Interes del mes · cuota #'+p.cuotaN)
+            p.esInteresMes?('Interés del mes · cuota #'+p.cuotaN)
               :esMora?('Cuota #'+p.cuotaN+' vencida'):'Abono extraordinario a capital'),
           p.esInteresMes?chip('POR ADELANTADO','var(--blue)','var(--blue-bg)')
             :esMora&&(p.salda?chip('SE SALDA','var(--green)','var(--green-bg)'):chip('PARCIAL','var(--yellow)','var(--yellow-bg)')),
           h('span',{style:{flex:1}}),
           h('span',{className:'mono',style:{fontSize:12,fontWeight:800,color:'var(--text)'}},fmtUni(totU))),
         p.esInteresMes&&h('div',{style:{fontSize:11,color:'var(--text3)',paddingLeft:25,lineHeight:1.6}},
-          'aun no vence (',fmtD(p.fechaPago),') · se cobra por adelantado, antes del abono a capital'),
+          'aún no vence (',fmtD(p.fechaPago),') · se cobra por adelantado, antes del abono a capital'),
         esMora&&!p.esInteresMes&&h('div',{style:{fontSize:11,color:'var(--text3)',paddingLeft:25,lineHeight:1.6}},
           'venció el ',fmtD(p.fechaPago),
           pIntU>0&&h('span',null,'  •  intereses ',h('b',{style:{color:'var(--red)'}},fmtUni(pIntU))),
@@ -304,7 +304,7 @@ export function CobroModal(props){
       // TAL COMO ESTA HOY, y el desglose muestra el que se cobra, que con abono se liquida
       // sobre el capital reducido y es menor. Con el mismo rotulo el modal mostraba dos
       // montos distintos bajo el mismo nombre.
-      cob.interesMes>0&&linea('Interes pendiente de la cuota en curso', fmtUni(uni(cob.interesMes)), 'var(--text3)'),
+      cob.interesMes>0&&linea('Interés pendiente de la cuota en curso', fmtUni(uni(cob.interesMes)), 'var(--text3)'),
       linea('Capital amortizable', fmtUni(cobAbonableU), 'var(--text2)'),
       h('div',{style:{height:1,background:'var(--border)',margin:'5px 0'}}),
       // El interes del mes suma al techo SOLO si el usuario lo activo: es opcional, y
@@ -353,7 +353,7 @@ export function CobroModal(props){
           h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:2,lineHeight:1.5}},
             // Con abono, el interes que se cobra es el de la cuota REGENERADA, no el de hoy:
             // el rotulo muestra la cifra del plan para no prometer una distinta de la del recibo.
-            'Cobra por adelantado el interes del periodo en curso (',
+            'Cobra por adelantado el interés del periodo en curso (',
             fmtUni(uni((plan&&plan.totales.interesMes>0)?plan.totales.interesMes:cob.interesMes)),
             ') antes de abonar a capital',
             cob.ctx.interesRecalculable?'. Si hay abono, se liquida sobre el capital que quede.':'.'))),
@@ -367,7 +367,7 @@ export function CobroModal(props){
             'No cobrar las cuotas vencidas — destinar todo a capital'),
           h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:2,lineHeight:1.5}},
             omitMora
-              ? 'Las cuotas vencidas siguen debiendose con sus intereses. Es una imputacion que decides vos como acreedor (art. 1653).'
+              ? 'Las cuotas vencidas siguen debiéndose con sus intereses. Es una imputación que decides tú como acreedor (art. 1653).'
               : 'Por defecto el dinero cubre primero los intereses vencidos. Marca esto solo si pactaste imputar todo a capital.')))),
 
     h('div',{style:{display:'flex',gap:10}},
@@ -384,7 +384,7 @@ export function CobroModal(props){
       pasosUI,
       h('div',{style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'9px 12px',marginTop:9}},
         vis.intU>0&&linea('Intereses vencidos', fmtUni(vis.intU),'var(--red)'),
-        vis.mesU>0&&linea('Interes del mes en curso', fmtUni(vis.mesU),'var(--blue)'),
+        vis.mesU>0&&linea('Interés del mes en curso', fmtUni(vis.mesU),'var(--blue)'),
         vis.capMoraU>0&&linea('Capital de cuotas vencidas', fmtUni(vis.capMoraU),'var(--text2)'),
         vis.abonoU>0&&linea('Abono extraordinario a capital', fmtUni(vis.abonoU),'var(--green)'),
         h('div',{style:{height:1,background:'var(--border)',margin:'5px 0'}}),
@@ -404,12 +404,12 @@ export function CobroModal(props){
     // no baja, el cronograma no se regenera y estos radios no decidirian nada.
     aplicaRecalc&&h('div',{style:{background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',borderRadius:10,padding:'11px 12px'}},
       h('div',{style:{fontSize:11,fontWeight:800,color:'var(--blue)',letterSpacing:.5,marginBottom:3}},
-        'QUE HACER CON EL CRONOGRAMA'),
+        'QUÉ HACER CON EL CRONOGRAMA'),
       h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:6,lineHeight:1.5}},
-        'El abono baja el capital. Elige como se reparte lo que queda.'),
+        'El abono baja el capital. Elige cómo se reparte lo que queda.'),
       [['mantener','Mantener plazo','Conserva las cuotas restantes. La cuota mensual baja.'],
-       ['modificarPlazo','Modificar plazo','Tu eliges el nuevo numero de cuotas restantes.'],
-       ['fijarCuota','Fijar valor de cuota','Tu eliges cuanto pagar de cuota; el plazo se ajusta.']]
+       ['modificarPlazo','Modificar plazo','Tú eliges el nuevo número de cuotas restantes.'],
+       ['fijarCuota','Fijar valor de cuota','Tú eliges cuánto pagar de cuota; el plazo se ajusta.']]
       .map(function(op){
         return h('label',{key:op[0],style:{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 0',cursor:'pointer'}},
           h('input',{type:'radio',name:'cobroRecalc',checked:recalcMode===op[0],
@@ -421,7 +421,7 @@ export function CobroModal(props){
       }),
       recalcMode==='modificarPlazo'&&h('input',{type:'text',inputMode:'numeric',value:recalcInput,
         onChange:function(e){ setRecalcInput(parseIntInput(e.target.value)); },
-        placeholder:'Nuevo numero de cuotas (ej: 3)',className:'inp mono',style:{marginTop:5}}),
+        placeholder:'Nuevo número de cuotas (ej: 3)',className:'inp mono',style:{marginTop:5}}),
       recalcMode==='fijarCuota'&&h('div',null,
         h('input',{type:'text',inputMode:'decimal',value:recalcInput,
           onChange:function(e){ setRecalcInput(esUSD?parseDecimalInput(e.target.value):parseNum(e.target.value)); },
@@ -482,7 +482,7 @@ export function CobroModal(props){
                       h('span',{style:{display:'inline-block',background:'var(--green-bg)',
                         border:'1px solid var(--green-bd)',color:'var(--green)',borderRadius:6,
                         padding:'2px 8px',fontSize:10}},
-                        'esta cuota quedaria con ',money(proxPago.abonado),' abonado → a pagar ',
+                        'esta cuota quedaría con ',money(proxPago.abonado),' abonado → a pagar ',
                         h('b',null,money(proxPago.neto)))))];
                 })))),
             cronoPreview.filas.length>0&&cronoPreview.filas[0].antes>0&&

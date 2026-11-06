@@ -39,10 +39,10 @@ if (prefs.dbPath) {
   } else if (fs.existsSync(path.dirname(prefs.dbPath))) {
     // La carpeta existe pero el archivo no
     DB_PATH = prefs.dbPath;
-    dbError = 'No se encontro la base de datos en:\n' + prefs.dbPath + '\n\nSe creara una nueva base de datos en esa ubicacion.';
+    dbError = 'No se encontró la base de datos en:\n' + prefs.dbPath + '\n\nSe creará una nueva base de datos en esa ubicación.';
   } else {
     // La carpeta no existe (USB desconectado, iCloud inaccesible, etc.)
-    dbError = 'No se puede acceder a la carpeta:\n' + path.dirname(prefs.dbPath) + '\n\nSe usara la base de datos local por defecto.';
+    dbError = 'No se puede acceder a la carpeta:\n' + path.dirname(prefs.dbPath) + '\n\nSe usará la base de datos local por defecto.';
     DB_PATH = defaultDB;
   }
 }
@@ -61,7 +61,7 @@ function waitForServer(url, retries = 30, delay = 300) {
     function attempt(n) {
       http.get(url, res => { res.resume(); resolve(); })
         .on('error', () => {
-          if (n <= 0) return reject(new Error('Servidor no respondio'));
+          if (n <= 0) return reject(new Error('Servidor no respondió'));
           setTimeout(() => attempt(n - 1), delay);
         });
     }
@@ -169,7 +169,7 @@ async function createWindow() {
     await win.loadURL(`http://127.0.0.1:${PORT}`);
   } catch(err) {
     // Si el servidor no arrancó, mostrar error nativo
-    dialog.showErrorBox('Error de arranque', 'El servidor interno no pudo iniciar.\n\n' + err.message + '\n\nLa aplicacion se cerrara.');
+    dialog.showErrorBox('Error de arranque', 'El servidor interno no pudo iniciar.\n\n' + err.message + '\n\nLa aplicación se cerrará.');
     app.quit();
     return null;
   }
@@ -329,7 +329,7 @@ function macDownloadAndInstall(version) {
         execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
         const extractedApp = path.join(tmpDir, 'Cartera.app');
         if (!fs.existsSync(extractedApp)) {
-          sendUpdateStatus('error', { message: 'No se encontro la app en el zip' });
+          sendUpdateStatus('error', { message: 'No se encontró la app en el zip' });
           return;
         }
         // Quitar restricción de macOS
@@ -688,7 +688,7 @@ async function macDownloadAndInstallAtBoot(version) {
   updateSplashMessage('Instalando v' + version, 100);
   execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
   const extractedApp = path.join(tmpDir, 'Cartera.app');
-  if (!fs.existsSync(extractedApp)) throw new Error('No se encontro la app en el zip');
+  if (!fs.existsSync(extractedApp)) throw new Error('No se encontró la app en el zip');
   execSync(`xattr -cr "${extractedApp}"`);
   const appPath = path.dirname(path.dirname(path.dirname(app.getAppPath())));
   const scriptPath = path.join(tmpDir, 'update.sh');

@@ -27,7 +27,8 @@ import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js'
 
 // `propuesta` = { fecha, plan, cajaCOP, proyeccion }
 //   - plan       : resultado de `planCascada` (pasos + totales). NO aplicado.
-//   - cajaCOP    : los pesos que el cliente entregaria (solo informativo en USD).
+//   - cajaCOP    : los pesos que el cliente entregaria. Desde 3.7.0 NO se imprime: un credito en
+//                  dolares se imprime solo en dolares (decision del PO).
 //   - proyeccion : { filas, n, saldado, totalAntes, totalDespues, abonadoProxima,
 //                  cuotaAntes }. `filas` puede venir vacia (modalidades sin cronograma
 //                  amortizable): el documento se emite igual, sin tabla ni total.
@@ -80,7 +81,6 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
   var abonoU   = abonos.reduce(function(s,p){ return s + uni(p.obligacionCOP); }, 0);
   var totalU   = intU + mesU + capMoraU + abonoU;
   var oblUSD   = esUSD ? pasos.reduce(function(s,p){ return s + (+p.obligacionUSD || 0); }, 0) : 0;
-  var cajaCOP  = Math.round((propuesta && propuesta.cajaCOP) || 0);
 
   var totalAntes   = Math.max(0, Math.round(proy.totalAntes || 0));
   var totalDespues = (proy.totalDespues === null || proy.totalDespues === undefined)
@@ -167,7 +167,6 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     (abonoU > 0 ? row('Abono extraordinario a capital', fmtUni(abonoU), C.green) : '') +
     '<div class="pa-row pa-row-tot"><span class="pa-lab">Total que se aplicaría</span>' +
       '<span class="pa-val">' + fmtUni(totalU) + '</span></div>' +
-    (esUSD && cajaCOP > 0 ? row('Equivalente en pesos', fmt(cajaCOP)) : '') +
     '</div>';
 
   // ── Como quedaria ──────────────────────────────────────────────────────────
@@ -267,7 +266,8 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
                      campoValido(loan.telefono) ? ('Tel. ' + esc(String(loan.telefono).trim())) : '' ]
                    .filter(Boolean).join(' &nbsp;&middot;&nbsp; ');
   var heroTxt = esUSD ? fmtUSD(oblUSD) : fmtUni(totalU);
-  var heroSub = (esUSD && cajaCOP > 0) ? ('Equivalen a ' + fmt(cajaCOP)) : '';
+  // 3.7.0 (decision del PO): un credito en dolares se imprime SOLO en dolares. El hero ya no lleva
+  // "Equivalen a $X" ni el desglose la fila "Equivalente en pesos".
 
   var html = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Propuesta de Abono</title>',
@@ -343,7 +343,7 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     (deudorMeta ? '<div class="pa-cc">' + deudorMeta + '</div>' : ''),
     '<div class="pa-total"><div class="pa-tl">Si abonas</div>',
     '<div class="pa-ta">' + heroTxt + '</div>',
-    (heroSub ? '<div class="pa-ts">' + heroSub + '</div>' : ''),
+    '',   // (aqui iba "Equivalen a $X"; el elemento vacio conserva el separador: los documentos en pesos quedan identicos byte a byte)
     '</div>',
     '<div class="pa-st">Así se aplicaría tu pago</div>',
     pasosHTML,

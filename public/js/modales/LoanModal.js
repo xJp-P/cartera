@@ -16,7 +16,9 @@ import {
   copToUsd, fmt, fmtD, fmtN, fmtNumInput, fmtUSD, parseDecimalInput, parseIntInput, parseNum,
 } from '../core/format.js';
 import { h, useMemo, useState } from '../core/react.js';
-import { addDays, freqCuotaLabel, nowStr } from '../core/ui.js';
+import { addDays, contiene, freqCuotaLabel, nowStr } from '../core/ui.js';
+import { opModalidad } from '../core/operacion.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 // ── LoanModal ─────────────────────────────────────────────────────────────────
 export function LoanModal(props){
@@ -120,7 +122,7 @@ export function LoanModal(props){
   // esta vacio o coincide exacto con un cliente (mismo patron que DebtModal).
   var cliQ=(f.nombre||'').trim(), cliQL=cliQ.toLowerCase();
   var cliExact=clientes.some(function(c){return (c.nombre||'').toLowerCase()===cliQL;});
-  var clientesMatch=(cliQ&&!cliExact)?clientes.filter(function(c){return (c.nombre||'').toLowerCase().indexOf(cliQL)!==-1;}).slice(0,8):[];
+  var clientesMatch=(cliQ&&!cliExact)?clientes.filter(function(c){return contiene(c.nombre,cliQ);}).slice(0,8):[];
   var cliOpen=clientOpen&&clientesMatch.length>0;
   // Compras fraccionadas de USD
   var comprasIniciales=function(){
@@ -194,20 +196,20 @@ export function LoanModal(props){
   // Los textos del primer periodo se arman con el periodo de la frecuencia, para que la misma
   // pregunta se lea igual en semanal, quincenal y mensual.
   var PERIODO_PP=({
-    Semanal:{un:'una semana',completo:'la semana completa',nota:' (7 dias)',regular:'Una semana despues del inicio'},
-    Quincenal:{un:'una quincena',completo:'la quincena completa',nota:' (14 dias)',regular:'Dos semanas despues del inicio'},
-    Mensual:{un:'un mes',completo:'el mes completo',nota:'',regular:'Un mes despues del inicio'}
-  })[freqPP]||{un:'un mes',completo:'el mes completo',nota:'',regular:'Un mes despues del inicio'};
-  function nDias(n){ return n+(n===1?' dia':' dias'); }
-  function losDias(n){ return n===1?'1 dia':'los '+n+' dias'; }
-  var DIAS_SEMANA=['domingo','lunes','martes','miercoles','jueves','viernes','sabado'];
+    Semanal:{un:'una semana',completo:'la semana completa',nota:' (7 días)',regular:'Una semana después del inicio'},
+    Quincenal:{un:'una quincena',completo:'la quincena completa',nota:' (14 días)',regular:'Dos semanas después del inicio'},
+    Mensual:{un:'un mes',completo:'el mes completo',nota:'',regular:'Un mes después del inicio'}
+  })[freqPP]||{un:'un mes',completo:'el mes completo',nota:'',regular:'Un mes después del inicio'};
+  function nDias(n){ return n+(n===1?' día':' días'); }
+  function losDias(n){ return n===1?'1 día':'los '+n+' días'; }
+  var DIAS_SEMANA=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
   // Como siguen las cuotas despues del primer pago: el mismo dia de la semana o del mes.
   var luegoPP=(function(){
     if(!f.primerPago) return '';
     var dSem=DIAS_SEMANA[new Date(f.primerPago+'T12:00:00').getDay()], dMes=+f.primerPago.slice(8,10);
     if(freqPP==='Semanal') return 'cada '+dSem;
-    if(freqPP==='Quincenal') return 'un '+dSem+' de por medio (cada 14 dias)';
-    return 'el '+dMes+' de cada mes'+(dMes>28?' (o el ultimo dia)':'');
+    if(freqPP==='Quincenal') return 'un '+dSem+' de por medio (cada 14 días)';
+    return 'el '+dMes+' de cada mes'+(dMes>28?' (o el último día)':'');
   })();
   // Fecha corta para la linea de la gracia: el año solo si el periodo cruza de año.
   function fCortaPP(iso){
@@ -217,14 +219,14 @@ export function LoanModal(props){
   }
   var conGracia=infoPP.caso==='gracia';
   var preguntaPP=conGracia
-    ?'El primer pago llega '+nDias(infoPP.dias)+' despues del inicio: mas que '+PERIODO_PP.un+' normal'+PERIODO_PP.nota+'. ¿Que hacer con los dias de mas?'
+    ?'El primer pago llega '+nDias(infoPP.dias)+' después del inicio: más que '+PERIODO_PP.un+' normal'+PERIODO_PP.nota+'. ¿Qué hacer con los días de más?'
     :(infoPP.dias<infoPP.diasRegular
-      ?'El primer pago llega '+nDias(infoPP.dias)+' despues del inicio: antes de completar '+PERIODO_PP.un+PERIODO_PP.nota+'. ¿Cuanto interes cobra la primera cuota?'
-      :'El primer pago no cae '+PERIODO_PP.un+' despues del inicio. ¿Cuanto interes cobra la primera cuota?');
+      ?'El primer pago llega '+nDias(infoPP.dias)+' después del inicio: antes de completar '+PERIODO_PP.un+PERIODO_PP.nota+'. ¿Cuánto interés cobra la primera cuota?'
+      :'El primer pago no cae '+PERIODO_PP.un+' después del inicio. ¿Cuánto interés cobra la primera cuota?');
   // [modo, titulo, detalle, interes]. La opcion por defecto del caso va primero.
   var opcionesPP=conGracia
-    ?[['completo','Perdonar '+nDias(infoPP.graciaDias)+' (dar dias de gracia)','La primera cuota cobra '+PERIODO_PP.un+' de interes; los dias de gracia no se cobran nunca',infoPP.interesCompleto],
-      ['proporcional','Cobrar '+losDias(infoPP.dias),'La primera cuota cobra el interes de todo el tiempo',infoPP.interesProporcional]]
+    ?[['completo','Perdonar '+nDias(infoPP.graciaDias)+' (dar días de gracia)','La primera cuota cobra '+PERIODO_PP.un+' de interés; los días de gracia no se cobran nunca',infoPP.interesCompleto],
+      ['proporcional','Cobrar '+losDias(infoPP.dias),'La primera cuota cobra el interés de todo el tiempo',infoPP.interesProporcional]]
     :[['proporcional','Cobrar '+(infoPP.dias<infoPP.diasRegular?'solo ':'')+losDias(infoPP.dias),null,infoPP.interesProporcional],
       ['completo','Cobrar '+PERIODO_PP.completo,null,infoPP.interesCompleto]];
   var preview=useMemo(function(){
@@ -278,8 +280,8 @@ export function LoanModal(props){
     if(!f.montoOrigen||+f.montoOrigen<=0) errores.push('Monto');
     if(needsPlazo&&(!f.plazoMeses||+f.plazoMeses<=0)) errores.push('Plazo');
     if(errores.length>0){showError('Falta completar: '+errores.join(', '));return;}
-    if(aplicaFracc&&comprasValidas.length===0){showError('Agrega al menos una compra valida o desactiva las compras fraccionadas');return;}
-    if(aplicaFracc&&excedeMonto){showError('El total de compras ('+Math.round(totalUSDComprado).toLocaleString('es-CO')+' USD) excede el monto del prestamo');return;}
+    if(aplicaFracc&&comprasValidas.length===0){showError('Agrega al menos una compra válida o desactiva las compras fraccionadas');return;}
+    if(aplicaFracc&&excedeMonto){showError('El total de compras ('+Math.round(totalUSDComprado).toLocaleString('es-CO')+' USD) excede el monto del préstamo');return;}
     var esPrestamo=f.modalidad==='Prestamo';
     var esPagoUnico=f.modalidad==='Pago Unico';
     var esUnaCuotaSubmit=esPrestamo||esPagoUnico;
@@ -342,13 +344,13 @@ export function LoanModal(props){
     setTimeout(function(){setIsSubmitting(false);},5000);
   }
   return h(Modal,{onClose:onClose,tall:true,wide:true},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},!isNew?'Editar Prestamo':'Nuevo Prestamo'),
+    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},!isNew?'Editar Préstamo':'Nuevo Préstamo'),
     // v1.9.0 — Banner de campos bloqueados (solo en edicion con actividad)
     lockSens&&h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:10,padding:'10px 12px',marginBottom:10,display:'flex',alignItems:'flex-start',gap:8}},
       h(Ico,{name:'alert',size:14,color:'var(--yellow)',sw:2.4}),
       h('div',{style:{flex:1}},
-        h('div',{style:{fontSize:12,color:'var(--yellow)',fontWeight:700,marginBottom:2}},'Algunos campos estan bloqueados'),
-        h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4}},'Este prestamo ya registra pagos, abonos o cuotas en mora. Para preservar la integridad del cronograma pactado, los campos que afectan a la amortizacion no se pueden modificar.'))),
+        h('div',{style:{fontSize:12,color:'var(--yellow)',fontWeight:700,marginBottom:2}},'Algunos campos están bloqueados'),
+        h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4}},'Este préstamo ya registra pagos, abonos o cuotas en mora. Para preservar la integridad del cronograma pactado, los campos que afectan a la amortización no se pueden modificar.'))),
     // QA7 — Cliente: input unico con autocompletado hibrido (reemplaza las pestañas nuevo/existente).
     // Texto libre = cliente nuevo; elegir una sugerencia prefilla nombre/cedula/telefono (existente)
     // y el backend lo consolida por nombre (saveLoan auto-vincula). Misma estetica que DebtModal.
@@ -365,8 +367,8 @@ export function LoanModal(props){
                 sub?h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},sub):null));
           })):null)),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-      h(Fld,{label:'Cedula / ID'},h('input',{value:f.cedula,  onChange:function(e){set('cedula',  e.target.value);},placeholder:'0000000',className:'inp'})),
-      h(Fld,{label:'Telefono'},   h('input',{value:f.telefono,onChange:function(e){set('telefono',e.target.value);},placeholder:'+57...',  className:'inp'}))),
+      h(Fld,{label:'Cédula / ID'},h('input',{value:f.cedula,  onChange:function(e){set('cedula',  e.target.value);},placeholder:'0000000',className:'inp'})),
+      h(Fld,{label:'Teléfono'},   h('input',{value:f.telefono,onChange:function(e){set('telefono',e.target.value);},placeholder:'+57...',  className:'inp'}))),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Moneda'},h('select',{value:f.moneda,onChange:function(e){set('moneda',e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}},h('option',null,'COP'),h('option',null,'USD'))),
       h(Fld,{label:f.moneda==='USD'?'Monto original (USD) *':'Monto (COP) *'},h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.montoOrigen),onChange:function(e){if(!lockSens)syncMonto(e.target.value);},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
@@ -377,9 +379,9 @@ export function LoanModal(props){
       h(Fld,{label:'Total pagado en COP'},
         h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(totalCOPInput),onChange:function(e){if(!lockSens)syncSimpleFromTotal(parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
     // Modo fraccionado: la tasa es la promedio ponderada (solo lectura)
-    f.moneda==='USD'&&aplicaFracc&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD) — calculada automaticamente'},
+    f.moneda==='USD'&&aplicaFracc&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD) — calculada automáticamente'},
       h('input',{type:'text',inputMode:'numeric',value:tasaPromedio>0?fmtNumInput(tasaPromedio):'',onChange:function(){},className:'inp',disabled:true,placeholder:'Llena el desglose abajo',style:{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}})),
-    f.moneda==='USD'&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4,marginBottom:8,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP)),
+    f.moneda==='USD'&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:4,marginBottom:8,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP)),
     f.moneda==='USD'&&h('label',{style:{display:'flex',alignItems:'center',gap:10,background:'var(--bg3)',border:'1px solid '+(compraFrac?'var(--blue)':'var(--border)'),borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:lockSens?'not-allowed':'pointer',transition:'border-color .2s',opacity:lockSens?.5:1}},
       h('input',{type:'checkbox',checked:compraFrac,onChange:function(){if(!lockSens)setCompraFrac(!compraFrac);},disabled:lockSens,style:{width:16,height:16,accentColor:'var(--blue)',cursor:lockSens?'not-allowed':'pointer',margin:0}}),
       h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Compraste el USD en varias partes/tasas?')),
@@ -403,7 +405,7 @@ export function LoanModal(props){
         h(Ico,{name:'plus',size:12,color:'var(--blue)',sw:2.4}),' Añadir otra compra'),
       h('div',{style:{borderTop:'1px solid var(--blue-bd)',paddingTop:10,marginTop:4}},
         excedeMonto&&h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:8,padding:'8px 10px',marginBottom:8,fontSize:11,color:'var(--red)',display:'flex',alignItems:'center',gap:6}},
-          h(Ico,{name:'alert',size:12,color:'var(--red)',sw:2.4}),' El total de compras excede el monto del prestamo'),
+          h(Ico,{name:'alert',size:12,color:'var(--red)',sw:2.4}),' El total de compras excede el monto del préstamo'),
         faltaUSD&&h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:8,padding:'8px 10px',marginBottom:8,fontSize:11,color:'var(--yellow)'}},
           'Faltan '+fmtN(Math.max(0,(+f.montoOrigen||0)-totalUSDComprado))+' USD por registrar'),
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:12}},
@@ -420,21 +422,18 @@ export function LoanModal(props){
         h('span',{style:{display:'inline-flex',alignItems:'center',justifyContent:'center',width:16,height:16,borderRadius:'50%',border:'1.5px solid var(--text3)',fontSize:10,fontWeight:700,color:'var(--text3)',cursor:'help',lineHeight:1}},'i'),
         h('span',{className:'tooltip-box'},
           h('b',null,'Intereses:'),' Solo paga intereses mensuales. El capital se devuelve al final. Plazo indefinido.',h('br',null),h('br',null),
-          h('b',null,'Capital + Intereses:'),' Cuota fija mensual (amortizacion francesa). Cada cuota incluye intereses + parte del capital. Plazo fijo.',h('br',null),h('br',null),
-          h('b',null,'Prestamo:'),' Sin intereses. Se presta un monto y se paga en una sola cuota.',h('br',null),h('br',null),
-          h('b',null,'Pago Unico:'),' Una sola cuota en fecha exacta + ganancia personalizable (por % o monto fijo). Ideal para negocios cortos.',h('br',null),h('br',null),
-          h('b',null,'Interes Diario:'),' Credito abierto: el interes se genera cada dia sobre el capital vivo, sin cuotas ni plazo. El cliente paga intereses o abona capital cuando quiera. La fecha de inicio puede ser pasada: se devengan los dias transcurridos.',h('br',null),h('br',null),
-          h('span',{style:{color:'var(--text3)',fontStyle:'italic'}},'En todas las modalidades se pueden hacer abonos a capital para reducir el saldo. En Interes Diario el abono se registra como un CORTE, que baja el capital y liquida el interes en el mismo movimiento.'))))},
+          h('b',null,'Capital + Intereses:'),' Cuota fija mensual (amortización francesa). Cada cuota incluye intereses + parte del capital. Plazo fijo.',h('br',null),h('br',null),
+          h('b',null,'Préstamo:'),' Sin intereses. Se presta un monto y se paga en una sola cuota.',h('br',null),h('br',null),
+          h('b',null,'Pago Único:'),' Una sola cuota en fecha exacta + ganancia personalizable (por % o monto fijo). Ideal para negocios cortos.',h('br',null),h('br',null),
+          h('b',null,'Interés Diario:'),' Crédito abierto: el interés se genera cada día sobre el capital vivo, sin cuotas ni plazo. El cliente paga intereses o abona capital cuando quiera. La fecha de inicio puede ser pasada: se devengan los días transcurridos.',h('br',null),h('br',null),
+          h('span',{style:{color:'var(--text3)',fontStyle:'italic'}},'En todas las modalidades se pueden hacer abonos a capital para reducir el saldo. En Interés Diario el abono se registra como un CORTE, que baja el capital y liquida el interés en el mismo movimiento.'))))},
       h('select',{value:f.modalidad,onChange:function(e){var m=e.target.value;set('modalidad',m);
         if(m==='Prestamo'||m==='Pago Unico'){set('tasaMensual','0');set('plazoMeses','1');}
         // El credito abierto no tiene plazo: se normaliza al centinela 0, que es lo que
         // el backend espera y lo que deja `buildSchedule` inerte.
         if(m===MODALIDAD_DIARIA){set('plazoMeses','0');}},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}},
-      h('option',null,'Intereses'),
-      h('option',null,'Capital + Intereses'),
-      h('option',null,'Prestamo'),
-      h('option',null,'Pago Unico'),
-      h('option',null,MODALIDAD_DIARIA))),
+      // El valor es el de la BD; el texto, su rotulo (opModalidad).
+      ['Intereses','Capital + Intereses','Prestamo','Pago Unico',MODALIDAD_DIARIA].map(function(m){ return h('option',{key:m,value:m},opModalidad(m)); }))),
     !esUnaCuota&&!esDiarioF&&h(Fld,{label:'Frecuencia de cobro'},h('select',{value:f.frecuencia,onChange:function(e){setFrecuencia(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}},
       h('option',null,'Semanal'),h('option',null,'Quincenal'),h('option',null,'Mensual'))),
     // Credito abierto: solo TASA. No hay plazo que pedir, y dejar el campo visible
@@ -442,16 +441,16 @@ export function LoanModal(props){
     esDiarioF&&h(Fld,{label:'Tasa mensual (%)'},
       h('input',{type:'text',inputMode:'decimal',value:f.tasaMensual,onChange:function(e){set('tasaMensual',parseDecimalInput(e.target.value));},placeholder:'0.00',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
       (+f.tasaMensual)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},
-        'Se aplicara: '+(+f.tasaMensual)+'% mensual — '+fmt(Math.round(montoCOP*(+f.tasaMensual||0)/100/30))+' por dia')),
+        'Se aplicará: '+(+f.tasaMensual)+'% mensual — '+fmt(Math.round(montoCOP*(+f.tasaMensual||0)/100/30))+' por día')),
     !esUnaCuota&&!esDiarioF&&h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Tasa mensual (%)'},
         h('input',{type:'text',inputMode:'decimal',value:f.tasaMensual,onChange:function(e){set('tasaMensual',parseDecimalInput(e.target.value));},placeholder:'0.00',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
-        (+f.tasaMensual)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},'Se aplicara: '+(+f.tasaMensual)+'% mensual')),
+        (+f.tasaMensual)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},'Se aplicará: '+(+f.tasaMensual)+'% mensual')),
       h(Fld,{label:f.modalidad==='Capital + Intereses'?(f.frecuencia==='Semanal'?'Plazo (semanas) *':f.frecuencia==='Quincenal'?'Plazo (quincenas) *':'Plazo (meses) *'):'\u221E Plazo indefinido'},
         h('input',{type:'text',inputMode:'numeric',value:f.plazoMeses,onChange:function(e){set('plazoMeses',parseIntInput(e.target.value));},placeholder:f.modalidad==='Capital + Intereses'?'12':'\u221E',className:'inp',disabled:lockSens||f.modalidad==='Intereses',style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
     esUnaCuota?h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-      h(Fld,{label:f.modalidad==='Pago Unico'?'Fecha del prestamo':'Fecha del prestamo'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
-      h(Fld,{label:f.modalidad==='Pago Unico'?'Fecha exacta de pago':'Fecha de devolucion'},h('input',{type:'date',value:f.fechaDevolucion||'',onChange:function(e){set('fechaDevolucion',e.target.value);},className:'inp',min:f.fechaInicio,disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})))
+      h(Fld,{label:f.modalidad==='Pago Unico'?'Fecha del préstamo':'Fecha del préstamo'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
+      h(Fld,{label:f.modalidad==='Pago Unico'?'Fecha exacta de pago':'Fecha de devolución'},h('input',{type:'date',value:f.fechaDevolucion||'',onChange:function(e){set('fechaDevolucion',e.target.value);},className:'inp',min:f.fechaInicio,disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})))
     :muestraPrimerPago?h('div',null,
       // 3.2.0 — PRIMER PAGO junto a la fecha de inicio. Sin `max`: el negocio da "tiempos
       // muertos" de varios meses (regla del PO). El `min` solo evita elegir el inicio o antes.
@@ -461,13 +460,13 @@ export function LoanModal(props){
           h('input',{type:'date',value:f.primerPago||'',min:f.fechaInicio?addDays(f.fechaInicio,1):undefined,onChange:function(e){setPrimerPago(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
           h('div',{style:{fontSize:11,marginTop:4,lineHeight:1.4,color:primerPagoInvalido?'var(--red)':'var(--text3)'}},
             primerPagoInvalido?'Debe ser posterior a la fecha de inicio'
-              :(infoPP.irregular?'Primer periodo de '+nDias(infoPP.dias):PERIODO_PP.regular)+' · despues, '+luegoPP),
+              :(infoPP.irregular?'Primer periodo de '+nDias(infoPP.dias):PERIODO_PP.regular)+' · después, '+luegoPP),
           // Aviso SUAVE, no un tope: una fecha a mas de un año casi siempre es un error de
           // tecleo, pero un tiempo muerto largo es legitimo.
           !primerPagoInvalido&&infoPP.dias>366&&h('div',{style:{fontSize:11,marginTop:2,color:'var(--yellow)',fontWeight:600}},
-            'Mas de un año hasta el primer pago: revisa la fecha'))),
+            'Más de un año hasta el primer pago: revisa la fecha'))),
       ofrecePrimerPeriodo&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px 14px',marginBottom:8}},
-        h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:4}},'PRIMER PERIODO: '+infoPP.dias+' DIAS'),
+        h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:4}},'PRIMER PERIODO: '+infoPP.dias+' DÍAS'),
         h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4,marginBottom:10}},preguntaPP),
         opcionesPP.map(function(op){
           var sel=modoPP===op[0];
@@ -476,7 +475,7 @@ export function LoanModal(props){
             h('span',{style:{flex:1,minWidth:0}},
               h('span',{style:{display:'block',fontSize:12,color:'var(--text)',fontWeight:500}},op[1]),
               op[2]?h('span',{style:{display:'block',fontSize:10.5,color:'var(--text3)',marginTop:2,lineHeight:1.35}},op[2]):null),
-            h('span',{className:'mono',style:{fontSize:12,color:sel?'var(--blue)':'var(--text3)',fontWeight:sel?700:400,whiteSpace:'nowrap'}},'(interes '+fmt(op[3])+')'));
+            h('span',{className:'mono',style:{fontSize:12,color:sel?'var(--blue)':'var(--text3)',fontWeight:sel?700:400,whiteSpace:'nowrap'}},'(interés '+fmt(op[3])+')'));
         }),
         // La gracia a la vista: los dias que no corre interes y el periodo que si se cobra.
         conGracia&&modoPP==='completo'&&h('div',{style:{margin:'2px 0 8px'}},
@@ -484,14 +483,14 @@ export function LoanModal(props){
             h('div',{style:{flex:infoPP.graciaDias}}),
             h('div',{style:{flex:Math.max(1,infoPP.dias-infoPP.graciaDias),background:'var(--blue)'}})),
           h('div',{style:{display:'flex',justifyContent:'space-between',gap:8,fontSize:10.5,marginTop:4,lineHeight:1.4}},
-            h('span',{style:{color:'var(--text3)'}},'Sin interes: '+fCortaPP(f.fechaInicio)+' al '+fCortaPP(infoPP.inicioIntereses)),
-            h('span',{style:{color:'var(--blue)',textAlign:'right'}},'Con interes: '+fCortaPP(infoPP.inicioIntereses)+' al '+fCortaPP(f.primerPago)))),
+            h('span',{style:{color:'var(--text3)'}},'Sin interés: '+fCortaPP(f.fechaInicio)+' al '+fCortaPP(infoPP.inicioIntereses)),
+            h('span',{style:{color:'var(--blue)',textAlign:'right'}},'Con interés: '+fCortaPP(infoPP.inicioIntereses)+' al '+fCortaPP(f.primerPago)))),
         preview.rows&&preview.rows.length>0&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.5}},
           'Primera cuota: ',h('b',{className:'mono'},fmt(preview.rows[0].cuota)),
-          preview.rows.length>1?' · las demas: '+fmt(preview.rows[1].cuota):'',
+          preview.rows.length>1?' · las demás: '+fmt(preview.rows[1].cuota):'',
           // Tiempo muerto: que se lea que el interes de TODOS esos dias va a la primera cuota.
           prorrateaPrimero&&infoPP.dias>infoPP.diasRegular?h('div',{style:{color:'var(--text3)',marginTop:2}},
-            'El interes de los '+infoPP.dias+' dias se cobra completo en la primera cuota.'):null)))
+            'El interés de los '+infoPP.dias+' días se cobra completo en la primera cuota.'):null)))
     :h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
     // v1.10.0 — Bloque Ganancia para modalidad Pago Unico: toggle %/monto + indicador de equivalencia
     f.modalidad==='Pago Unico'&&h('div',{style:{background:'rgba(63,185,80,.04)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px',marginBottom:8}},
@@ -521,42 +520,42 @@ export function LoanModal(props){
     preview.cuota>0&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px'}},
       h('div',{style:{fontSize:11,color:'var(--green)',fontWeight:700,marginBottom:8}},'Resumen'),
       h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:5}},
-        h('span',{style:{fontSize:12,color:'var(--text2)'}},f.modalidad==='Prestamo'?'Monto a devolver':f.modalidad==='Pago Unico'?'Total a cobrar (capital + ganancia)':f.modalidad==='Intereses'?'Cuota de interes'+(f.frecuencia==='Semanal'?' semanal':f.frecuencia==='Quincenal'?' quincenal':' mensual'):'Cuota '+(f.frecuencia==='Semanal'?'semanal':f.frecuencia==='Quincenal'?'quincenal':'mensual')),
+        h('span',{style:{fontSize:12,color:'var(--text2)'}},f.modalidad==='Prestamo'?'Monto a devolver':f.modalidad==='Pago Unico'?'Total a cobrar (capital + ganancia)':f.modalidad==='Intereses'?'Cuota de interés'+(f.frecuencia==='Semanal'?' semanal':f.frecuencia==='Quincenal'?' quincenal':' mensual'):'Cuota '+(f.frecuencia==='Semanal'?'semanal':f.frecuencia==='Quincenal'?'quincenal':'mensual')),
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:f.modalidad==='Prestamo'?'var(--blue)':'var(--green)'}},fmt(preview.cuota))),
       // 3.2.0 — con un primer pago irregular la cuota 1 no vale lo mismo que las demas.
       muestraPrimerPago&&infoPP.irregular&&!primerPagoInvalido&&preview.rows&&preview.rows.length>0&&
         h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:5}},
-          h('span',{style:{fontSize:12,color:'var(--text2)'}},'Primera cuota ('+fmtD(f.primerPago)+', '+infoPP.dias+' dias)'),
+          h('span',{style:{fontSize:12,color:'var(--text2)'}},'Primera cuota ('+fmtD(f.primerPago)+', '+infoPP.dias+' días)'),
           h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--green)'}},fmt(preview.rows[0].cuota))),
       f.moneda==='USD'&&trmEfectiva>0&&h('div',{style:{display:'flex',justifyContent:'space-between'}},
         h('span',{style:{fontSize:12,color:'var(--text2)'}},'Cuota '+freqCuotaLabel(f.frecuencia)+' en USD'),
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},fmtUSD(preview.cuota/(trmEfectiva||1)))),
       f.modalidad==='Intereses'&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:6}},'\u221E Plazo indefinido - paga intereses hasta abonar todo el capital'),
       esDiarioF&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:6,lineHeight:1.5}},
-        'Sin cuotas ni plazo: el interes se devenga cada dia sobre el capital vivo. El cliente paga intereses o abona capital cuando quiera, y cada movimiento se registra como un CORTE.',
+        'Sin cuotas ni plazo: el interés se devenga cada día sobre el capital vivo. El cliente paga intereses o abona capital cuando quiera, y cada movimiento se registra como un CORTE.',
         f.fechaInicio&&f.fechaInicio<nowStr()&&h('div',{style:{marginTop:4,color:'var(--yellow)',fontWeight:600}},
-          'Fecha de inicio en el pasado: al crearlo ya traera '+diasEntre(f.fechaInicio,nowStr())+' dia(s) de interes devengado ('+fmt(Math.round(montoCOP*(+f.tasaMensual||0)/100/30*diasEntre(f.fechaInicio,nowStr())))+').')),
-      f.modalidad==='Prestamo'&&f.fechaDevolucion&&h('div',{style:{fontSize:11,color:'var(--yellow)',marginTop:6}},'Sin intereses - devolucion: '+fmtD(f.fechaDevolucion)),
+          'Fecha de inicio en el pasado: al crearlo ya traerá '+diasEntre(f.fechaInicio,nowStr())+' día(s) de interés devengado ('+fmt(Math.round(montoCOP*(+f.tasaMensual||0)/100/30*diasEntre(f.fechaInicio,nowStr())))+').')),
+      f.modalidad==='Prestamo'&&f.fechaDevolucion&&h('div',{style:{fontSize:11,color:'var(--yellow)',marginTop:6}},'Sin intereses - devolución: '+fmtD(f.fechaDevolucion)),
       f.modalidad==='Pago Unico'&&f.fechaDevolucion&&h('div',{style:{fontSize:11,color:'var(--green)',marginTop:6}},'Vence el '+fmtD(f.fechaDevolucion)+' \u2014 capital '+fmt(montoCOP)+' + ganancia '+fmt(gananciaCOPCalc)),
       preview.rows&&preview.rows.length>0&&h('button',{onClick:function(){setShowCronoLoan(!showCronoLoan);},style:{marginTop:10,background:'none',border:'none',cursor:'pointer',color:'var(--green)',fontSize:12,fontWeight:600,display:'flex',alignItems:'center',gap:4,padding:0}},
         showCronoLoan?'Ocultar cronograma':'Ver cronograma tentativo'),
       showCronoLoan&&preview.rows&&preview.rows.length>0&&h('div',{style:{marginTop:10,borderTop:'1px solid var(--green-bd)',paddingTop:10,overflowX:'auto'}},
         h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
           h('thead',null,h('tr',{style:{background:'rgba(63,185,80,.1)'}},
-            ['#','Interes','Abono a capital','Valor cuota','Saldo'].map(function(hd){
+            ['#','Interés','Abono a capital','Valor cuota','Saldo'].map(function(hd){
               return h('th',{key:hd,style:{padding:'6px 8px',textAlign:hd==='#'?'center':'right',fontWeight:600,color:'var(--text2)',whiteSpace:'nowrap'}},hd);}))),
           h('tbody',null,preview.rows.map(function(r){
             var t=trmEfectiva||1;
             return h('tr',{key:r.n,style:{borderTop:'1px solid rgba(63,185,80,.12)'}},
               h('td',{style:{padding:'5px 8px',textAlign:'center',color:'var(--text3)'}},r.n),
               h('td',{className:'mono',style:{padding:'5px 8px',textAlign:'right',color:'var(--yellow)'}},fmtN(r.interes),
-                f.moneda==='USD'&&h('div',{style:{fontSize:9,color:'var(--blue)'}},copToUsd(r.interes,t))),
+                f.moneda==='USD'&&usdLinea(copToUsd(r.interes,t),{fontSize:9})),
               h('td',{className:'mono',style:{padding:'5px 8px',textAlign:'right',color:'var(--blue)'}},fmtN(r.capital),
-                f.moneda==='USD'&&h('div',{style:{fontSize:9,color:'var(--blue)'}},copToUsd(r.capital,t))),
+                f.moneda==='USD'&&usdLinea(copToUsd(r.capital,t),{fontSize:9})),
               h('td',{className:'mono',style:{padding:'5px 8px',textAlign:'right',color:'var(--green)',fontWeight:600}},fmtN(r.cuota),
-                f.moneda==='USD'&&h('div',{style:{fontSize:9,color:'var(--blue)',fontWeight:400}},copToUsd(r.cuota,t))),
+                f.moneda==='USD'&&usdLinea(copToUsd(r.cuota,t),{fontSize:9,fontWeight:400})),
               h('td',{className:'mono',style:{padding:'5px 8px',textAlign:'right',color:'var(--text3)',fontSize:10}},fmtN(r.saldo),
-                f.moneda==='USD'&&h('div',{style:{fontSize:9,color:'var(--blue)'}},copToUsd(r.saldo,t))));
+                f.moneda==='USD'&&usdLinea(copToUsd(r.saldo,t),{fontSize:9})));
           }))))),
-    h('button',{onClick:submit,disabled:isSubmitting,className:'btn-primary',style:{marginTop:8,opacity:isSubmitting?.6:1,cursor:isSubmitting?'not-allowed':'pointer'}},isSubmitting?(isNew?'Creando...':'Guardando...'):(!isNew?'Guardar cambios':'Crear prestamo')));
+    h('button',{onClick:submit,disabled:isSubmitting,className:'btn-primary',style:{marginTop:8,opacity:isSubmitting?.6:1,cursor:isSubmitting?'not-allowed':'pointer'}},isSubmitting?(isNew?'Creando...':'Guardando...'):(!isNew?'Guardar cambios':'Crear préstamo')));
 }

@@ -22,6 +22,7 @@ import { generateCronogramaPDF } from '../pdf/cronograma.js';
 import { generateEstadoCuentaDiario } from '../pdf/estado-cuenta.js';
 import { generateFacturaCobroDiario } from '../pdf/factura-cobro.js';
 import { generateReciboGeneral, puedeReciboGeneral } from '../pdf/recibo-general.js';
+import { usdLinea } from './CifraUSD.js';
 
 var DP_EST = {
   mora: ['En mora', 'red'], hoy: ['Cobra hoy', 'yellow'], semana: ['Cobra esta semana', 'yellow'], aldia: ['Al día', 'green'],
@@ -32,7 +33,7 @@ function dpChip(estado, extra){
   var e = DP_EST[estado] || DP_EST.aldia;
   return h('span', { className: 'op-chip', style: { color: 'var(--' + e[1] + ')', background: e[1] === 'text3' ? 'var(--bg3)' : 'var(--' + e[1] + '-bg)' } }, e[0] + (extra || ''));
 }
-function dpUsd(m, cop){ return m.esUSD ? h('div', { className: 'dp-usd mono' }, copToUsd(cop, m.trm)) : null; }
+function dpUsd(m, cop){ return m.esUSD ? usdLinea(copToUsd(cop, m.trm)) : null; }
 function dpMonto(m){ return m.esUSD ? 'USD ' + fmtN(m.loan.montoOrigen) : fmt(m.loan.montoOrigen); }
 
 // ── Cronograma: las 7 columnas universales, abonos intercalados ────────────────────
@@ -65,7 +66,7 @@ function DpCronograma(p){
           x.id === proxId && h('div', { className: 'dp-sub', style: { color: 'var(--yellow)' } }, opRel(hoy, x.fechaPago)),
           est === 'Pagado' && x.fechaRecaudo && x.fechaRecaudo !== x.fechaPago && h('div', { className: 'dp-sub' }, 'cobrada ' + opCorta(x.fechaRecaudo))),
         h('span', { className: 'r mono' }, fmt(x.interesPeriodo), m.esUSD && x.interesPeriodo > 0 ? dpUsd(m, x.interesPeriodo) : null),
-        h('span', { className: 'r mono' }, fmt(capRec), m.esUSD && capRec > 0 ? h('div', { className: 'dp-usd mono' }, fmtUSD(capUSD)) : null),
+        h('span', { className: 'r mono' }, fmt(capRec), m.esUSD && capRec > 0 ? usdLinea(fmtUSD(capUSD)) : null),
         h('span', { className: 'r mono strong' }, fmt(x.cuotaTotal),
           parcial && h('div', { className: 'dp-sub', style: { color: 'var(--blue)' } }, 'abonó ' + fmt(x.partialPaid) + ' · falta ' + fmt(pendCuota(x))),
           dpUsd(m, x.cuotaTotal)),
@@ -90,9 +91,9 @@ function DpRecaudado(p){
     h('div', { className: 'dp-card-t' }, 'Recaudado a la fecha'),
     h('div', { className: 'dp-hero-mini' },
       h('span', null, 'Total recibido'),
-      h('div', { className: 'r' }, h('div', { className: 'mono' }, fmt(m.recTotal)), m.esUSD && h('div', { className: 'dp-usd mono' }, fmtUSD(m.recTotalUSD)))),
+      h('div', { className: 'r' }, h('div', { className: 'mono' }, fmt(m.recTotal)), m.esUSD && usdLinea(fmtUSD(m.recTotalUSD)))),
     dpFila(l.estado === 'Cancelado' ? 'Capital recuperado' : 'Capital recuperado', fmt(m.recCap), dpUsd(m, m.recCap)),
-    dpFila('Intereses cobrados', (m.recInt > 0 ? '+' : '') + fmt(m.recInt), m.esUSD && m.recInt > 0 ? h('div', { className: 'dp-usd mono' }, fmtUSD(m.gp.usd)) : null, m.recInt > 0 ? 'var(--green)' : 'var(--text3)'),
+    dpFila('Intereses cobrados', (m.recInt > 0 ? '+' : '') + fmt(m.recInt), m.esUSD && m.recInt > 0 ? usdLinea(fmtUSD(m.gp.usd)) : null, m.recInt > 0 ? 'var(--green)' : 'var(--text3)'),
     m.esUSD && dpFila('Efecto TRM', (m.recTRM > 0 ? '+' : m.recTRM < 0 ? '-' : '') + fmt(Math.abs(m.recTRM)), null,
       m.recTRM > 0 ? 'var(--green)' : m.recTRM < 0 ? 'var(--red)' : 'var(--text3)',
       m.recTRM === 0 ? 'sin datos de TRM al cobro' : m.recTRM > 0 ? 'la TRM subió al cobrar' : 'la TRM bajó al cobrar'),
@@ -222,7 +223,7 @@ export function DeudorPanel(props){
     var cancel = l.estado === 'Cancelado', perd = Math.round((l.capitalPerdido || 0) + (l.interesesPerdidos || 0));
     figuras = h('div', { className: 'dp-figs' },
       h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Capital prestado'), h('div', { className: 'dp-fig-v mono' }, dpMonto(m)), m.esUSD && h('div', { className: 'dp-fig-s' }, fmt(m.orig) + ' · TRM ' + fmtN(m.trm))),
-      h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Total recibido'), h('div', { className: 'dp-fig-v mono' }, fmt(m.recTotal)), m.esUSD && h('div', { className: 'dp-usd mono' }, fmtUSD(m.recTotalUSD))),
+      h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Total recibido'), h('div', { className: 'dp-fig-v mono' }, fmt(m.recTotal)), m.esUSD && usdLinea(fmtUSD(m.recTotalUSD))),
       m.condonado
         ? h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Intereses condonados'), h('div', { className: 'dp-fig-v mono', style: { color: 'var(--yellow)' } }, fmt(Math.round(l.interesesPerdidos || 0))),
             h('div', { className: 'dp-fig-s' }, 'capital recuperado al 100%'))
@@ -230,12 +231,12 @@ export function DeudorPanel(props){
         ? h('div', { className: 'dp-fig mal' }, h('div', { className: 'dp-fig-l' }, 'Pérdida'), h('div', { className: 'dp-fig-v mono', style: { color: 'var(--red)' } }, '-' + fmt(perd)))
         : h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, m.esPrest && m.esUSD ? 'Efecto TRM' : 'Ganancia'),
             h('div', { className: 'dp-fig-v mono', style: { color: m.recGan < 0 ? 'var(--red)' : 'var(--green)' } }, (m.recGan > 0 ? '+' : '') + fmt(m.recGan)),
-            m.esUSD && !m.esPrest && h('div', { className: 'dp-usd mono' }, '+' + fmtUSD(m.gp.usd))),
+            m.esUSD && !m.esPrest && usdLinea('+' + fmtUSD(m.gp.usd))),
       h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, cancel ? 'Cerrado el' : 'Pagado el'), h('div', { className: 'dp-fig-v' }, m.fechaFin ? opCortaAnio(m.fechaFin) : '—'),
         meses != null && h('div', { className: 'dp-fig-s' }, 'duró ' + (meses < 1 ? 'menos de un mes' : meses + (meses === 1 ? ' mes' : ' meses')))));
   }
 
-  var deudaUSD = M.saldoUSD > 0 ? h('div', { className: 'dp-usd mono' }, 'incluye ' + fmtUSD(M.saldoUSD)) : null;
+  var deudaUSD = M.saldoUSD > 0 ? usdLinea('incluye ' + fmtUSD(M.saldoUSD)) : null;
   return h('aside', { className: 'dp' + (props.superpuesto ? ' superpuesto' : '') },
     h('div', { className: 'dp-head' },
       props.superpuesto && h('button', { className: 'dp-x', onClick: props.onClose, title: 'Volver' }, h(Ico, { name: 'chevleft', size: 18, color: 'var(--text2)', sw: 2.4 })),
@@ -261,7 +262,7 @@ export function DeudorPanel(props){
         M.moraN > 0 && h('div', { className: 'dp-fig-s' }, M.moraN + ' cuota' + (M.moraN > 1 ? 's' : ''))),
       h('div', { className: 'dp-kpi' }, h('div', { className: 'dp-fig-l' }, 'Te ha pagado'), h('div', { className: 'dp-kpi-v mono' }, fmt(M.cobrado)), h('div', { className: 'dp-fig-s' }, 'en toda la relación')),
       h('div', { className: 'dp-kpi' }, h('div', { className: 'dp-fig-l' }, 'Ganancia'), h('div', { className: 'dp-kpi-v mono', style: { color: 'var(--green)' } }, (M.ganancia > 0 ? '+' : '') + fmt(M.ganancia)),
-        M.gananciaUSD > 0 && h('div', { className: 'dp-usd mono' }, '+' + fmtUSD(M.gananciaUSD) + ' en dólares'))),
+        M.gananciaUSD > 0 && usdLinea('+' + fmtUSD(M.gananciaUSD) + ' en dólares'))),
     todos.length > 0 && h('div', { className: 'dp-tabs' },
       M.activos.map(tab),
       M.cerrados.length > 0 && h('button', { className: 'dp-tab hist' + (verHist ? ' abierto' : ''), onClick: function(){ setVerHist(!verHist); } },

@@ -47,17 +47,52 @@ export function nowStr()    { var d=new Date(); return d.getFullYear()+'-'+Strin
 
 export function addDays(s,n){ var d=new Date(s+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().split('T')[0]; }
 
-// Codigo de Factura de Cobro: FC-[2 primeras letras del deudor]-[ultimos 3 del loanId]-[cuota 2 digitos]
+// 3.7.0 — Texto PLEGADO para buscar: sin tildes ni dieresis, la enie como n y en minusculas, asi que
+// "jose", "Jose" y "JOSE" (con o sin tilde) dan lo mismo. Solo sirve para COMPARAR: nunca se guarda
+// ni se muestra. NFD separa la letra de su marca y el rango U+0300-U+036F son las marcas.
+export function plegar(s){ return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+// Todo buscador de la app pasa por aqui: `texto` contiene lo que se escribio, sin mirar tildes.
+export function contiene(texto, q){ return plegar(texto).indexOf(plegar(q).trim()) !== -1; }
+
+// ── CODIGO DE FACTURA DE COBRO (FC) ────────────────────────────────────────────
+// El codigo NO se guarda en ningun lado: se recalcula cada vez que se imprime o se busca. Por eso
+// la regla de las iniciales de una CUOTA esta CONGELADA tal como se imprime desde v1.16.0 (las 2
+// primeras letras del deudor en Proper Case, con su tilde: "Án" para Ángela). Cambiarla cambiaria el
+// codigo de facturas que ya estan en manos de los clientes. Lo que si cambio en 3.7.0 es BUSCARLO:
+// el buscador pliega tildes, asi que "fc-an-465-21" encuentra la factura FC-Án-465-21.
+function fcIniciales(nombre){ return properCase(String(nombre||'')).replace(/\s+/g,'').slice(0,2); }
+// FC-[2 primeras letras del deudor]-[ultimos 3 del loanId]-[cuota 2 digitos]
 export function facturaCode(p){
   if(!p) return '';
-  var ini=properCase(String(p.nombreCliente||'')).replace(/\s+/g,'').slice(0,2);
-  return 'FC-'+ini+'-'+String(p.prestamoId||'').slice(-3)+'-'+String(p.cuotaN||0).padStart(2,'0');
+  return 'FC-'+fcIniciales(p.nombreCliente)+'-'+String(p.prestamoId||'').slice(-3)+'-'+String(p.cuotaN||0).padStart(2,'0');
+}
+// Credito abierto (Interes Diario): FC-[iniciales]-[ultimos 3 del loanId]-[DDMM de emision]. Hasta
+// 3.6.0 sus iniciales salian de `[A-Za-z]` sin Proper Case, asi que perdian las letras con tilde
+// ("ng" para Ángela) y no coincidian con las del mismo deudor en sus otras facturas. Desde 3.7.0
+// usan la regla de las cuotas. No rompe ningun codigo ya emitido: este lleva la fecha de emision,
+// asi que nunca se reimprimio igual; y el buscador acepta las dos formas (`fcCoincideDiario`).
+function fcInicialesDiario36(nombre){ return String(nombre||'').trim().replace(/[^A-Za-z]/g,'').slice(0,2); }
+export function fcCodigoDiario(loan, hasta){
+  return 'FC-'+(fcIniciales(loan.nombre)||'XX')+'-'+String(loan.id).slice(-3)+'-'+String(hasta).slice(8,10)+String(hasta).slice(5,7);
+}
+// ¿El texto buscado es el codigo FC (o su comienzo) de este credito abierto? La parte estable del
+// codigo es FC-iniciales-loanId; la fecha del final es opcional. Vale con las iniciales de 3.7.0 o
+// con las de antes, para que un papel viejo se siga encontrando.
+export function fcCoincideDiario(loan, q){
+  var ql=plegar(q).trim();
+  if(ql.indexOf('fc-')!==0) return false;
+  var id3=String(loan.id||'').slice(-3);
+  return [fcIniciales(loan.nombre), fcInicialesDiario36(loan.nombre)].some(function(ini){
+    var base=plegar('FC-'+(ini||'XX')+'-'+id3);
+    return base.indexOf(ql)===0 || (ql.indexOf(base)===0 && /^-\d{0,4}$/.test(ql.slice(base.length)));
+  });
 }
 
-// Match del buscador de Pagos: si el texto empieza por "fc-" filtra por codigo de factura; si no, por nombre.
+// Match del buscador de Cobros: si el texto empieza por "fc-" filtra por codigo de factura; si no, por
+// nombre. Las dos comparaciones ignoran tildes y mayusculas.
 export function payMatchesQuery(p,q){
   if(!q) return true;
-  var ql=String(q).toLowerCase().trim();
-  if(ql.indexOf('fc-')===0) return facturaCode(p).toLowerCase().indexOf(ql)!==-1;
-  return String(p.nombreCliente||'').toLowerCase().indexOf(ql)!==-1;
+  var ql=plegar(q).trim();
+  if(ql.indexOf('fc-')===0) return plegar(facturaCode(p)).indexOf(ql)!==-1;
+  return plegar(p.nombreCliente).indexOf(ql)!==-1;
 }

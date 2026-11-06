@@ -21,6 +21,13 @@
 //   G. LA MEMORIA DE CARTERA (3.6.0): al volver a la pestana se conservan el filtro, el orden, el
 //      deudor abierto y el prestamo elegido. "Volver" es montar la vista otra vez con la MISMA
 //      memoria, que es exactamente lo que hace App (la vista se desmonta al cambiar de pestana).
+//      3.7.0: la memoria sobrevive al CIERRE de la app (localStorage). "Reiniciar" es leerla de
+//      nuevo con `ctLeerMemoria` en un objeto nuevo, que es lo que hace App al arrancar.
+//   H. EL BUSCADOR IGNORA TILDES (3.7.0) y los codigos FC: los de las cuotas NO cambian (se comparan
+//      contra la regla de 3.6.0 copiada aqui), los de los creditos abiertos dejan de perder letras y
+//      los papeles viejos se siguen encontrando.
+//   I. ORTOGRAFIA (3.7.0): los modales y vistas viejos, renderizados de verdad, no muestran palabras
+//      sin su tilde (el guardian D9 de `resumen`, extendido al resto de la interfaz).
 //
 // Se ejecuta:
 //   ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron tests/operacion.js
@@ -96,11 +103,15 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
 (async () => {
   const dbPath = copiaDeProduccion('operacion');
   const S = await arrancar(dbPath);
-  let loans, pays;
+  let loans, pays, historial, journal, historial100;
   try {
     // GET /api/payments corre la auto-mora a la fecha congelada: es el estado que ve la app.
     loans = await traer(S, '/api/loans');
     pays  = await traer(S, '/api/payments');
+    // El historial COMPLETO, como lo pide App desde 3.7.0 (seccion K), y el de siempre para comparar.
+    historial = await traer(S, '/api/activity?todo=1');
+    historial100 = await traer(S, '/api/activity');
+    journal = await traer(S, '/api/undo');
   } catch (e) { await cerrar(S); throw e; }
 
   // El frontend real, con `fetch` apuntando al server de esta suite: el modal de Cambiar dia
@@ -649,14 +660,361 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.check('G8 si el deudor del foco SI pasa el filtro recordado, el filtro se conserva', filtroOn(v8).join() === 'En dólares' && memF2.filtro === 'usd', filtroOn(v8));
   }
 
+  // G10 — 3.7.0: la memoria SOBREVIVE AL CIERRE de la app. Se escribe a disco en cada clic
+  // (`onMemoria`, que en App es `ctGuardarMemoria`) y al arrancar se lee de nuevo.
+  const LS = X.localStorage, CLAVE = 'carteraMemoria';
+  LS.removeItem(CLAVE);
+  if (elegido && enPesos) {
+    const act = elegido.activos.map(m => m.loan.id);
+    const persistente = memoria => visita(memoria, { onMemoria: X.ctGuardarMemoria });
+    const memA = X.ctLeerMemoria();
+    R.eq('G10 sin nada guardado, la memoria arranca vacia (Cartera abre como siempre)', JSON.stringify(memA), '{}');
+    const va = persistente(memA);
+    conClase(va.arbol, 'op-filtro').filter(n => textos(n)[0] === 'En dólares')[0].props.onClick();
+    nodos(va.arbol, n => n.tag === 'select')[0].props.onChange({ target: { value: 'saldo' } });
+    const filaE = conClase(va.arbol, 'ct-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0];
+    conClase(filaE, 'ct-chip').filter(n => n.props.className.indexOf('cerrado') === -1)[1].props.onClick({ stopPropagation: () => {} });
+    let disco = null; try { disco = JSON.parse(LS.getItem(CLAVE)); } catch (_) {}
+    R.check('G10 cada clic queda en disco: filtro, orden, deudor y prestamo',
+      !!disco && disco.filtro === 'usd' && disco.orden === 'saldo' && disco.sel === elegido.nombre && disco.loan === act[1], disco);
+    // EL REINICIO: un objeto NUEVO leido de disco, como al abrir la app.
+    const memB = X.ctLeerMemoria();
+    R.check('G10 al reiniciar, la memoria se lee de disco: objeto nuevo, mismos datos',
+      memB !== memA && JSON.stringify(memB) === JSON.stringify({ filtro: 'usd', orden: 'saldo', sel: elegido.nombre, loan: act[1] }), memB);
+    const vb = persistente(memB);
+    R.check('G10 tras reiniciar, Cartera abre donde se dejo: "En dólares", "Mayor saldo", el deudor y su prestamo',
+      filtroOn(vb).join() === 'En dólares' && ordenDe(vb) === 'saldo' && filaOn(vb).join() === PC(elegido.nombre) && tabOn(vb) === 1,
+      [filtroOn(vb), ordenDe(vb), filaOn(vb), tabOn(vb)]);
+    nodos(vb.arbol, n => n.tag === 'button' && n.props.title === 'Cerrar panel')[0].props.onClick();
+    const vc = persistente(X.ctLeerMemoria());
+    R.check('G10 el panel cerrado tambien sobrevive al reinicio', filaOn(vc).length === 0 && vc.todo.indexOf('Elige un deudor de la lista.') !== -1 &&
+      filtroOn(vc).join() === 'En dólares', [filaOn(vc), filtroOn(vc)]);
+  }
+  // G11 — lo que se lee de disco se VALIDA: un dato viejo o corrupto nunca rompe la vista.
+  LS.setItem(CLAVE, '{esto no es json');
+  R.eq('G11 memoria corrupta: se ignora', JSON.stringify(X.ctLeerMemoria()), '{}');
+  LS.setItem(CLAVE, JSON.stringify({ filtro: 'inexistente', orden: 'raro', sel: 42, loan: 7 }));
+  R.eq('G11 valores que no existen o no son del tipo esperado: se descartan', JSON.stringify(X.ctLeerMemoria()), '{}');
+  LS.setItem(CLAVE, JSON.stringify({ filtro: 'mora', orden: 'nombre', sel: 'NADIE CON ESTE NOMBRE', loan: { x: 1 } }));
+  const memD = X.ctLeerMemoria();
+  R.check('G11 un prestamo guardado invalido cae a null; el resto se conserva',
+    memD.filtro === 'mora' && memD.orden === 'nombre' && memD.sel === 'NADIE CON ESTE NOMBRE' && memD.loan === null, memD);
+  const vd = visita(memD, { onMemoria: X.ctGuardarMemoria });
+  let discoD = null; try { discoD = JSON.parse(LS.getItem(CLAVE)); } catch (_) {}
+  R.check('G11 si el deudor guardado ya no esta en la cartera, se abre el primero de la lista y eso queda en disco',
+    filtroOn(vd).join() === 'En mora' && filaOn(vd).length === 1 && filaOn(vd)[0] === filasDe(vd)[0] && !!discoD && PC(discoD.sel) === filasDe(vd)[0],
+    [filtroOn(vd), filaOn(vd), discoD]);
+  LS.removeItem(CLAVE);
+
   // G9 — el cableado en App: la memoria vive por encima de la vista y por encima del return del
   // spinner (Bug #40: ningun hook por debajo de un return condicional).
-  const iMem = app.indexOf('var memCartera=React.useRef({});'), iLoad = app.indexOf('if(loading) return');
+  const iMem = app.indexOf('var memCartera=React.useRef(null);'), iLoad = app.indexOf('if(loading) return');
+  const iLee = app.indexOf('if(memCartera.current===null) memCartera.current=ctLeerMemoria();');
   R.check('G9 App guarda la memoria de Cartera en un useRef, ANTES del return del spinner', iMem !== -1 && iLoad !== -1 && iMem < iLoad, { iMem, iLoad });
-  R.check('G9 ...y se la pasa a la vista', /h\(CarteraView,\{[^}]*memoria:memCartera\.current/.test(app));
+  R.check('G9 ...la lee de disco UNA vez, en el primer render y tambien antes del spinner (3.7.0)', iLee > iMem && iLee < iLoad, { iLee });
+  R.check('G9 ...y se la pasa a la vista con el guardado a disco', /h\(CarteraView,\{[^}]*memoria:memCartera\.current,onMemoria:ctGuardarMemoria/.test(app));
   R.check('G9 el panel avisa del prestamo elegido (onLoan) y Cartera lo recuerda',
     /if \(props\.onLoan\) props\.onLoan\(x\.loan\.id\)/.test(leer('public/js/componentes/DeudorPanel.js')) &&
-    /onLoan: function\(id\)\{ mem\.loan = id; \}/.test(leer('public/js/vistas/CarteraView.js')));
+    /onLoan: function\(id\)\{ mem\.loan = id; guardar\(\); \}/.test(leer('public/js/vistas/CarteraView.js')));
+
+  // ── H — EL BUSCADOR IGNORA TILDES Y LOS CODIGOS FC ─────────────────────────
+  R.seccion('H — el buscador ignora tildes: "jose" = "José" (3.7.0)');
+  R.eq('H1 plegar: sin tildes, sin dieresis, la enie como n y en minusculas',
+    [X.plegar('José'), X.plegar('MUÑOZ'), X.plegar('Güiza'), X.plegar('ÁÉÍÓÚ'), X.plegar(null)].join('|'), 'jose|munoz|guiza|aeiou|');
+  R.check('H1 "jose", "José", "JOSÉ" y "josé" encuentran a José Muñoz; "munoz" tambien',
+    ['jose', 'José', 'JOSÉ', 'josé', '  jose '].every(q => X.contiene('José Muñoz', q)) && X.contiene('José Muñoz', 'munoz'));
+  R.check('H1 y al reves: "José" encuentra a un "Jose" guardado sin tilde', X.contiene('Jose Munoz', 'José') && X.contiene('Jose Munoz', 'MUÑOZ'));
+  R.check('H1 ANTI-TRIVIAL: no encuentra lo que no esta', !X.contiene('José Muñoz', 'maria') && !X.contiene('Ana Restrepo', 'jose'));
+  // Dos deudores del fixture renombrados EN MEMORIA con tildes (el fixture es ASCII a proposito).
+  const renom = { [elegido ? elegido.nombre : '']: 'José Muñoz', [enPesos ? enPesos.nombre : '']: 'Ángela Ruiz' };
+  const loansT = loans.map(l => renom[l.nombre] ? Object.assign({}, l, { nombre: renom[l.nombre] }) : l);
+  const paysT = pays.map(p => renom[p.nombreCliente] ? Object.assign({}, p, { nombreCliente: renom[p.nombreCliente] }) : p);
+  const deudoresT = deudores.map(d => renom[d.nombre] ? Object.assign({}, d, { nombre: renom[d.nombre] }) : d);
+  const propsT = Object.assign({}, propsCartera, { loans: loansT, pays: paysT, deudores: deudoresT });
+  const enCartera = q => filasDe(montar(X.CarteraView, propsT, [q]));
+  const busq = ['jose', 'José', 'JOSÉ', 'josé', 'munoz'].map(q => enCartera(q).join('|'));
+  R.check('H2 Cartera: las cinco busquedas dan EXACTAMENTE el mismo perfil, José Muñoz',
+    busq.every(b => b === 'José Muñoz'), busq);
+  R.check('H2 Cartera: "angela" encuentra a Ángela Ruiz', enCartera('angela').join('|') === 'Ángela Ruiz', enCartera('angela'));
+  const cuotasDe = q => paysT.filter(p => X.payMatchesQuery(p, q)).map(p => p.id).sort().join('|');
+  const deJose = paysT.filter(p => p.nombreCliente === 'José Muñoz').map(p => p.id).sort().join('|');
+  R.check('H3 Cobros: "jose" y "JOSÉ" filtran las mismas cuotas, todas de José Muñoz',
+    deJose.length > 0 && cuotasDe('jose') === deJose && cuotasDe('JOSÉ') === deJose, [cuotasDe('jose').split('|').length, deJose.split('|').length]);
+  const global = q => X.opBuscarGlobal(q, deudoresT.map(d => Object.assign({ loans: loansT.filter(l => l.nombre === d.nombre), totalSaldo: 0 }, d)), loansT, paysT)
+    .map(r => r.type + ':' + r.label).join('|');
+  const gs = ['jose', 'José', 'JOSÉ', 'josé'].map(global);
+  R.check('H4 busqueda global: las cuatro formas devuelven lo mismo, y empieza por el deudor José Muñoz',
+    gs.every(g => g === gs[0]) && gs[0].indexOf('deudor:José Muñoz') === 0, gs[0].slice(0, 120));
+  R.check('H4 busqueda global: la modalidad tambien, con o sin tilde ("prestamo sin interes")',
+    global('préstamo sin interés') === global('prestamo sin interes') && global('prestamo sin interes').indexOf('Préstamo sin interés') !== -1);
+  R.check('H4 los autocompletados (cliente del prestamo, acreedor de la deuda) usan el mismo `contiene`',
+    /clientes\.filter\(function\(c\)\{return contiene\(c\.nombre,cliQ\);\}\)/.test(leer('public/js/modales/LoanModal.js')) &&
+    /existingAcreedores\.filter\(function\(n\)\{return contiene\(n,acrQ\);\}\)/.test(leer('public/js/modales/DebtModal.js')));
+
+  R.seccion('H — codigos FC: los emitidos no cambian, los nuevos no pierden letras');
+  // La regla de las cuotas COPIADA de 3.6.0. Si alguien la cambia, un papel ya entregado dejaria de
+  // coincidir con lo que imprime la app.
+  const fc36 = p => 'FC-' + X.properCase(String(p.nombreCliente || '')).replace(/\s+/g, '').slice(0, 2) + '-' +
+    String(p.prestamoId || '').slice(-3) + '-' + String(p.cuotaN || 0).padStart(2, '0');
+  const regulares = paysT.filter(p => X.esCuotaRegular(p));
+  R.check('H5 el codigo de TODAS las cuotas (' + regulares.length + ') es identico al de 3.6.0, tambien con tildes',
+    regulares.length > 100 && regulares.every(p => X.facturaCode(p) === fc36(p)), regulares.filter(p => X.facturaCode(p) !== fc36(p)).slice(0, 2));
+  const pA = paysT.filter(p => p.nombreCliente === 'Ángela Ruiz' && X.esCuotaRegular(p))[0];
+  const idA = pA ? String(pA.prestamoId).slice(-3) : '';
+  R.check('H5 la cuota de Ángela conserva su tilde en el codigo: FC-Án-…', !!pA && X.facturaCode(pA).indexOf('FC-Án-' + idA) === 0, pA && X.facturaCode(pA));
+  R.check('H5 y se encuentra escribiendola como sea: "fc-an-", "FC-ÁN-" o "fc-án"',
+    !!pA && ['fc-an-' + idA, 'FC-ÁN-' + idA, 'fc-án'].every(q => X.payMatchesQuery(pA, q)));
+  R.check('H5 ANTI-TRIVIAL: otro codigo no la encuentra', !!pA && !X.payMatchesQuery(pA, 'fc-ng-' + idA) && !X.payMatchesQuery(pA, 'fc-an-zzz'));
+  const pagada = paysT.filter(p => X.esCuotaRegular(p) && p.estadoPago === 'Pagado')[0];
+  const rPag = X.opBuscarGlobal(fc36(pagada), [], loansT, paysT);
+  R.check('H5 la busqueda global encuentra por codigo una cuota YA PAGADA (rastrear un papel viejo)',
+    rPag.some(r => r.type === 'factura' && r.data.id === pagada.id), rPag.map(r => r.label));
+  // Credito abierto: el codigo lleva la fecha de emision; sus iniciales salian sin tilde.
+  const ld = loansT.filter(l => X.esDiario(l))[0];
+  const ldA = Object.assign({}, ld, { nombre: 'Ángela Ruiz' }), idD = String(ld.id).slice(-3), H = '2026-11-06';
+  const diario36 = (l, hasta) => 'FC-' + (String(l.nombre || '').trim().replace(/[^A-Za-z]/g, '').slice(0, 2) || 'XX') + '-' +
+    String(l.id).slice(-3) + '-' + hasta.slice(8, 10) + hasta.slice(5, 7);
+  R.eq('H6 credito abierto: el codigo NUEVO conserva la tilde', X.fcCodigoDiario(ldA, H), 'FC-Án-' + idD + '-0611');
+  R.eq('H6 ...el de 3.6.0 la perdia (es el que esta en los papeles viejos)', diario36(ldA, H), 'FC-ng-' + idD + '-0611');
+  R.check('H6 los dos se encuentran: el papel viejo, el nuevo, y escrito sin tilde o sin fecha',
+    [diario36(ldA, H), X.fcCodigoDiario(ldA, H), 'fc-an-' + idD, 'FC-ÁN-' + idD + '-06', 'fc-ng-' + idD].every(q => X.fcCoincideDiario(ldA, q)));
+  R.check('H6 ANTI-TRIVIAL: no coincide con otro credito ni con una fecha mal formada',
+    !X.fcCoincideDiario(ldA, 'fc-an-zzz') && !X.fcCoincideDiario(ldA, 'fc-an-' + idD + '-061199') && !X.fcCoincideDiario(ldA, 'jose'));
+  R.eq('H6 sin tildes en el nombre, el codigo del credito abierto no cambia', X.fcCodigoDiario(ld, H), diario36(ld, H));
+  FE.captura.pdfs.length = 0;
+  X.generateFacturaCobroDiario(ldA, paysT, '', { hasta: H });
+  const htmlD = FE.captura.pdfs[0] ? FE.captura.pdfs[0].html : '';
+  R.check('H6 la factura del credito abierto imprime el codigo nuevo', htmlD.indexOf('FC-Án-' + idD + '-0611') !== -1 && htmlD.indexOf('FC-ng-') === -1, htmlD.length);
+  const rD = X.opBuscarGlobal(diario36(ldA, H), [], [ldA], []);
+  R.check('H6 la busqueda global lleva del papel viejo al credito', rD.length === 1 && rD[0].type === 'prestamo' && rD[0].data.id === ld.id, rD.map(r => r.label));
+
+  // ── I — ORTOGRAFIA EN EL RESTO DE LA INTERFAZ ──────────────────────────────
+  R.seccion('I — ortografia: modales y vistas sin palabras sin tilde (3.7.0)');
+  // Las formas SIN tilde de palabras que siempre la llevan en la interfaz. `\b` es ASCII: "días" no la
+  // dispara (la í no es letra para el regex), "dias" si.
+  const SIN_TILDE = /\b(dias?|creditos?|prestamos?|interes|despues|proxim[oa]s?|ultim[oa]s?|numero|telefono|cedula|liquidacion|operacion|condonacion|reestructuracion|accion|informacion|automaticamente|tambien|ademas|version|validos?|invalid[oa]s?|dolares|maximo|minimo|saldaria|quedaria|podra|codigo|titulo|seccion|ubicacion|boton|imputacion|amortizacion|unico|descripcion|transaccion|configuracion|edicion|eliminacion|recalculo)\b/i;
+  const lC = mods.filter(m => m.activo && m.loan.modalidad === 'Capital + Intereses' && m.enMora.length > 0)[0].loan;
+  const lpC = lpDe(lC.id), cuotaC = lpC.filter(p => X.esCuotaRegular(p) && p.estadoPago !== 'Pagado')[0];
+  const deuda = { id: 'd1', titulo: 'Compra del carro', acreedor: 'Banco', concepto: 'Cuota inicial', monto_original: 1000000,
+    saldo_pendiente: 500000, estado: 'Activa', fecha_creacion: '2026-07-01', total_cargos: 0, total_abonos: 500000 };
+  const nada = () => {};
+  const PANTALLAS = [
+    ['LoanModal (nuevo)', X.LoanModal, { loan: null, trm: 4000, pays: [], clientes: [], onSave: nada, onClose: nada }],
+    ['LoanModal (editar)', X.LoanModal, { loan: lC, trm: 4000, pays: lpC, clientes: [], onSave: nada, onClose: nada }],
+    ['PayModal', X.PayModal, { pay: cuotaC, loan: lC, allPays: pays, onMark: nada, onPartial: nada, onClose: nada }],
+    ['AbonoModal', X.AbonoModal, { loan: lC, pays: lpC, onSave: nada, onClose: nada, onRequestLiquidar: nada }],
+    ['CobroModal', X.CobroModal, { loan: lC, pays: lpC, onConfirm: nada, onClose: nada, onRequestLiquidar: nada }],
+    ['CronogramaPdfModal', X.CronogramaPdfModal, { loan: lC, pays: lpC, onClose: nada }],
+    ['CambiarDiaModal', X.CambiarDiaModal, { loan: lC, pays: lpC, onReload: nada, onClose: nada }],
+    ['DeudorPanel', X.DeudorPanel, Object.assign({ deudor: deudores.filter(d => d.nombre === lC.nombre)[0], loans, pays, hoy: HOY, focoLoan: lC.id,
+      datosPago: '', showToast: nada, onPay: nada }, acciones)],
+    ['LiquidarModal', X.LiquidarModal, { loan: lC, pays: lpC, datosPago: '', onConfirm: nada, onClose: nada }],
+    ['RestructureModal', X.RestructureModal, { loan: lC, pays: lpC, onSave: nada, onClose: nada }],
+    ['CondonarModal', X.CondonarModal, { loan: lC, pays: lpC, onConfirm: nada, onClose: nada }],
+    ['CorteModal', X.CorteModal, { loan: ld, pays: lpDe(ld.id), onSave: nada, onClose: nada }],
+    ['PreflightMoraModal', X.PreflightMoraModal, { loan: lC, cuotas: [cuotaC], onCancel: nada, onContinue: nada, onMarkMora: nada }],
+    ['DebtModal', X.DebtModal, { debt: null, existingAcreedores: ['Banco'], onSave: nada, onClose: nada }],
+    ['DebtPayModal', X.DebtPayModal, { debt: deuda, onSave: nada, onClose: nada }],
+    ['DeleteDebtModal', X.DeleteDebtModal, { debt: deuda, onConfirm: nada, onClose: nada }],
+    ['ConfirmUndoModal', X.ConfirmUndoModal, { entry: { id: 'u1', accion: 'abono', descripcion: 'Abono de prueba', created_at: '2026-07-29 10:00:00',
+      afecta_caja: 1, scope_tipo: 'loan', estado: 'disponible' }, onConfirm: nada, onClose: nada }],
+    ['HistorialView', X.HistorialView, { actLog: ['prestamo', 'edicion', 'eliminacion', 'abono', 'reestructuracion', 'cambio-fecha', 'condonacion', 'deuda']
+      .map((t, i) => ({ id: i, fecha: '2026-07-30 10:00:00', tipo: t, mensaje: 'Movimiento de prueba', undo_id: null })), undoLog: [], onRefresh: nada, onUndo: nada }],
+    ['PortfolioView', X.PortfolioView, { loans, pays }],
+    ['CalcView', X.CalcView, { onConfirm: nada }],
+    ['DevView', X.DevView, { loans, pays, datosPago: '', isMac: false, showToast: nada, onSaveConfig: nada, onSync: nada, onConfirm: nada, onNeedsRestart: nada }],
+    ['DebtsView', X.DebtsView, { debts: [deuda], onNew: nada, onEdit: nada, onPay: nada, onDelete: nada, onReload: nada }],
+  ];
+  const malas = [];
+  let vistas = 0, textosI = '';
+  for (const [nom, Comp, pr] of PANTALLAS) {
+    let v = null, err = null;
+    try { v = montar(Comp, pr, []); } catch (e) { err = e; }
+    if (!v) { malas.push(nom + ': ' + (err && err.message)); continue; }
+    vistas++;
+    textosI += ' ' + v.t.join(' ');
+    v.t.filter(s => SIN_TILDE.test(s)).forEach(s => malas.push(nom + ': "' + s.trim().slice(0, 80) + '"'));
+  }
+  R.check('I1 las ' + PANTALLAS.length + ' pantallas se renderizan sin excepciones', vistas === PANTALLAS.length, malas.filter(m => /: (?!")/.test(m)));
+  R.check('I2 ninguna muestra una palabra sin su tilde', malas.length === 0, malas.slice(0, 12));
+  R.check('I2 ANTI-VACIO: el guardian leyo texto de verdad (rotulos con tilde de las pantallas viejas)',
+    ['Cédula', 'Teléfono', 'Tú eliges', 'Edición', 'Reestructuración', 'Valor de liquidación'].every(w => textosI.indexOf(w) !== -1),
+    ['Cédula', 'Teléfono', 'Tú eliges', 'Edición', 'Reestructuración', 'Valor de liquidación'].filter(w => textosI.indexOf(w) === -1));
+  R.check('I2 ANTI-TRIVIAL: el guardian detecta "Interes Diario" y "credito", y deja pasar "Interés diario"',
+    SIN_TILDE.test('Interes Diario') && SIN_TILDE.test('el credito') && !SIN_TILDE.test('Interés diario · días · crédito · Más'));
+
+  // ── J — LA CIFRA EN DOLARES (3.7.0, opcion A del PO) ──────────────────────
+  // El dolar junto a los pesos va en tinta secundaria (`.dp-usd`) con su codigo "US$" en terciaria
+  // (`.usd-c`, de `componentes/CifraUSD.js`). Se montan las pantallas de un prestamo EN DOLARES y se exige:
+  //   J1 ningun importe "USD $" pintado con el azul en linea (el de abonos, parciales y enlaces);
+  //   J2 toda sub-linea `.dp-usd` lleva el codigo "US$" en su pieza y ya no dice "USD $";
+  //   J3 el anti-vacio: las pantallas de verdad tienen cifras en dolares;
+  //   J4 la hoja de estilos: la sub-linea no es azul y en Cobros no hereda el tamano de los pesos;
+  //   J5 el ayudante: parte el importe sin perder lo que lo rodea, y no toca un texto que no lo es.
+  R.seccion('J — la cifra en dolares: tinta secundaria y "US$" tenue, sin azul (3.7.0)');
+  const lU = loans.filter(l => l.id === '1782151590658w66y')[0];
+  R.check('J0 ANTI-VACIO: el fixture tiene el C+I en dolares con mora', !!lU && lU.moneda === 'USD');
+  if (lU) {
+    const lpU = lpDe(lU.id);
+    const moraU = lpU.filter(p => X.esCuotaRegular(p) && p.estadoPago === 'En Mora')[0] || lpU.filter(p => X.esCuotaRegular(p) && p.estadoPago !== 'Pagado')[0];
+    const nadaJ = () => {};
+    const USD_PANTALLAS = [
+      ['DeudorPanel', X.DeudorPanel, propsPanel(lU)],
+      ['CarteraView', X.CarteraView, propsCartera],
+      ['CobrosView', X.CobrosView, propsCobros],
+      ['PortfolioView', X.PortfolioView, { loans, pays }],
+      ['PayModal', X.PayModal, { pay: moraU, loan: lU, allPays: pays, onMark: nadaJ, onPartial: nadaJ, onClose: nadaJ }],
+      ['AbonoModal', X.AbonoModal, { loan: lU, pays: lpU, onSave: nadaJ, onClose: nadaJ, onRequestLiquidar: nadaJ }],
+      ['RestructureModal', X.RestructureModal, { loan: lU, pays: lpU, onSave: nadaJ, onClose: nadaJ }],
+      ['LiquidarModal', X.LiquidarModal, { loan: lU, pays: lpU, datosPago: '', onConfirm: nadaJ, onClose: nadaJ }],
+      ['CronogramaPdfModal', X.CronogramaPdfModal, { loan: lU, pays: lpU, onClose: nadaJ }],
+      ['CambiarDiaModal', X.CambiarDiaModal, { loan: lU, pays: lpU, onReload: nadaJ, onClose: nadaJ }],
+      ['PreflightMoraModal', X.PreflightMoraModal, { loan: lU, cuotas: [moraU], onCancel: nadaJ, onContinue: nadaJ, onMarkMora: nadaJ }],
+    ];
+    const azules = [], subMalas = [], porPantalla = {};
+    let errores = [];
+    for (const [nom, Comp, pr] of USD_PANTALLAS) {
+      let v = null;
+      try { v = montar(Comp, pr, []); } catch (e) { errores.push(nom + ': ' + e.message); continue; }
+      nodos(v.arbol, n => !!(n.props && n.props.style && n.props.style.color === 'var(--blue)'))
+        .filter(n => /USD \$\d/.test(n.kids.filter(k => typeof k === 'string').join('')))
+        .forEach(n => azules.push(nom + ': ' + n.kids.filter(k => typeof k === 'string').join('').slice(0, 40)));
+      const subs = conClase(v.arbol, 'dp-usd');
+      porPantalla[nom] = subs.length;
+      subs.forEach(n => {
+        const cod = nodos(n, x => !!(x.props && x.props.className === 'usd-c'));
+        const txt = textos(n).join('');
+        if (cod.length !== 1 || textos(cod[0]).join('') !== 'US$' || /USD \$/.test(txt)) subMalas.push(nom + ': "' + txt.slice(0, 40) + '"');
+      });
+    }
+    R.check('J0 las ' + USD_PANTALLAS.length + ' pantallas de un prestamo en dolares se renderizan', errores.length === 0, errores);
+    R.check('J1 ningun importe "USD $" queda pintado de azul', azules.length === 0, azules.slice(0, 8));
+    R.check('J2 toda sub-linea en dolares lleva el codigo "US$" en su pieza (y ya no "USD $")', subMalas.length === 0, subMalas.slice(0, 8));
+    R.check('J3 ANTI-VACIO: el panel muestra 20+ cifras en dolares y Cartera, Cobros y Rendimiento las suyas',
+      porPantalla.DeudorPanel >= 20 && porPantalla.CarteraView >= 1 && porPantalla.CobrosView >= 1 && porPantalla.PortfolioView >= 1, porPantalla);
+    // (Cambiar dia de pago solo muestra dolares cuando ya hay un dia elegido: entra en J1/J2, no aqui.)
+    R.check('J3 ANTI-VACIO: los modales del prestamo tambien (abono, reestructurar, liquidar, cronograma, pre-flight, pago)',
+      ['AbonoModal', 'RestructureModal', 'LiquidarModal', 'CronogramaPdfModal', 'PreflightMoraModal', 'PayModal'].every(k => porPantalla[k] >= 1), porPantalla);
+  }
+  const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'css', 'styles.css'), 'utf8');
+  const regla = sel => { const m = new RegExp('(^|\\n)' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}').exec(css); return m ? m[2] : null; };
+  R.check('J4 la sub-linea en dolares y la marca USD no usan el azul', !!regla('.dp-usd') && !/--blue/.test(regla('.dp-usd')) &&
+    !!regla('.dp-usdtag') && !/--blue/.test(regla('.dp-usdtag')) && !/\.rz-chip\.usd/.test(css), [regla('.dp-usd'), regla('.dp-usdtag')]);
+  R.check('J4 en Cobros la sub-linea no hereda el tamano ni la negrita de los pesos (venia a 14,5 px)',
+    /font-size:11px/.test(regla('.cb-monto .dp-usd') || '') && /font-weight:500/.test(regla('.cb-monto .dp-usd') || '') &&
+    css.indexOf('.cb-monto .dp-usd{') > css.indexOf('.cb-monto .mono{'), regla('.cb-monto .dp-usd'));
+  const pz = X.usdPiezas('+USD $1,647.22 en dólares');
+  R.check('J5 el ayudante parte el importe y conserva el signo y lo que sigue',
+    Array.isArray(pz) && pz[0] === '+' && pz[1].props.className === 'usd-c' && pz[2] === '1,647.22 en dólares', pz);
+  R.check('J5 ANTI-TRIVIAL: un texto que no es un importe en dolares queda intacto',
+    X.usdPiezas('$ 1.200.000') === '$ 1.200.000' && X.usdPiezas(null) === '');
+
+  // ── K — HISTORIAL (3.7.0) ────────────────────────────────────────────────
+  // Rediseno pedido por el PO: el historial completo, agrupado por dia, con busqueda (sin tildes) y
+  // filtros por periodo y tipo. El candado LIFO del boton Deshacer no cambia.
+  R.seccion('K — Historial: dia por dia, busqueda, periodo, tipo y el candado de Deshacer (3.7.0)');
+  R.check('K0 ANTI-VACIO: el historial completo trae mas que las 100 de siempre, y las incluye',
+    historial.length > 100 && historial100.length === 100 && historial100.every((r, i) => r.id === historial[i].id), historial.length);
+  const diaK = it => String(it.fecha).slice(0, 10);
+  const navK = [];
+  const propsK = { actLog: historial, undoLog: journal, loans, onUndo: () => {}, onRefresh: () => {}, onNameClick: n => navK.push(n) };
+  // Clase exacta: `\b` corta en el guion, y `hs-dia` tambien encontraria a `hs-dia-n`.
+  const conClaseK = c => n => ((n.props && typeof n.props.className === 'string') ? n.props.className.split(/\s+/) : []).indexOf(c) !== -1;
+  const filasK = arbol => nodos(arbol, conClaseK('hs-fila'));
+  const diasK = arbol => nodos(arbol, conClaseK('hs-dia')).map(d => textos(d)[0]);
+  // Estado sembrado por posicion: q, periodo, desde, hasta, grupo, limite.
+  const hist = (estado) => montar(X.HistorialView, propsK, estado || []);
+  let hk = null, errK = null;
+  try { hk = hist(); } catch (e) { errK = e; }
+  R.check('K1 la vista se renderiza con el historial completo', !!hk, errK && (errK.stack || String(errK)));
+  if (hk) {
+    const f0 = filasK(hk.arbol);
+    R.eq('K2 muestra de a 120 acciones, y avisa cuantas quedan', f0.length, Math.min(120, historial.length));
+    R.check('K2 "Ver más" con las restantes', hk.todo.indexOf('Ver más (' + (historial.length - 120) + ' restantes)') !== -1);
+    const diasEsperados = []; historial.slice(0, 120).forEach(it => { if (diasEsperados.indexOf(diaK(it)) === -1) diasEsperados.push(diaK(it)); });
+    R.eq('K3 agrupa por dia, del mas reciente al mas viejo (un encabezado por dia)', diasK(hk.arbol), diasEsperados.map(d => X.hsDia(d, HOY)));
+    R.check('K3 los rotulos del dia: Hoy, Ayer, el dia de la semana y el año si no es el actual',
+      X.hsDia(HOY, HOY) === 'Hoy' && X.hsDia('2026-07-30', HOY) === 'Ayer' && X.hsDia('2026-07-28', HOY) === 'martes 28 de julio' &&
+      X.hsDia('2025-12-01', HOY) === 'lunes 1 de diciembre de 2025');
+    R.check('K3 cada accion lleva su hora', f0.slice(0, 5).every((f, i) => textos(f)[0] === historial[i].fecha.slice(11, 16)), f0.slice(0, 3).map(f => textos(f)[0]));
+    // Busqueda sin tildes ni mayusculas: "PRÉSTAMO" encuentra "Nuevo prestamo: ...".
+    const hq = hist(['PRÉSTAMO', undefined, undefined, undefined, undefined, 1000]);
+    R.check('K4 la busqueda ignora tildes y mayusculas: todo lo que muestra "PRÉSTAMO" lo contiene',
+      filasK(hq.arbol).length > 0 && filasK(hq.arbol).every(f => X.contiene(textos(f).join(' '), 'prestamo')), filasK(hq.arbol).length);
+    const sinTildeK = historial.filter(it => /prestamo/i.test(it.mensaje));
+    R.check('K4 ANTI-VACIO: hay ' + sinTildeK.length + ' mensajes guardados con "prestamo" SIN tilde, y la busqueda los encuentra todos',
+      sinTildeK.length > 0 && sinTildeK.every(it => hq.todo.indexOf(it.mensaje) !== -1), sinTildeK.length);
+    const hNada = hist(['zzzz-no-existe']);
+    R.check('K4 sin coincidencias: lo dice y ofrece volver a todo el historial',
+      filasK(hNada.arbol).length === 0 && hNada.todo.indexOf('Nada coincide') !== -1 && hNada.todo.indexOf('Ver todo el historial') !== -1);
+    // Periodo.
+    const enRango = (a, b) => historial.filter(it => diaK(it) >= a && diaK(it) <= b);
+    const casosP = [['hoy', HOY, HOY], ['7', X.addDays(HOY, -6), HOY], ['30', X.addDays(HOY, -29), HOY], ['mes', HOY.slice(0, 8) + '01', HOY]];
+    const malasP = casosP.filter(c => filasK(hist([undefined, c[0], undefined, undefined, undefined, 5000]).arbol).length !== enRango(c[1], c[2]).length)
+      .map(c => c[0] + ': ' + enRango(c[1], c[2]).length);
+    R.check('K5 los periodos (hoy, 7 dias, 30 dias, este mes) cuentan exactamente las acciones de esas fechas', malasP.length === 0, malasP);
+    R.check('K5 ANTI-VACIO: cada periodo de prueba tiene acciones', casosP.every(c => enRango(c[1], c[2]).length > 0), casosP.map(c => enRango(c[1], c[2]).length));
+    const hR = hist([undefined, 'rango', '2026-04-01', '2026-04-30', undefined, 5000]);
+    R.eq('K5 un rango de fechas elegido (abril) muestra solo esas acciones', filasK(hR.arbol).length, enRango('2026-04-01', '2026-04-30').length);
+    R.check('K5 y sus dias quedan dentro del rango', diasK(hR.arbol).length > 0 && diasK(hR.arbol).every(d => / de abril$/.test(d)), diasK(hR.arbol));
+    // Los BORDES de cada periodo: el fixture no tiene acciones justo el dia que separa "entra" de "no entra"
+    // (un "7 dias" que tomara 8 pasaba en verde). Se arma un historial con una accion en el primer dia que
+    // entra y otra en el primero que no, para cada periodo.
+    const bordes = [['hoy', HOY, X.addDays(HOY, -1)], ['7', X.addDays(HOY, -6), X.addDays(HOY, -7)],
+      ['30', X.addDays(HOY, -29), X.addDays(HOY, -30)], ['mes', HOY.slice(0, 8) + '01', X.addDays(HOY.slice(0, 8) + '01', -1)]];
+    const malasB = bordes.filter(bd => {
+      const log = [{ id: 2, fecha: bd[1] + ' 08:00:00', tipo: 'pago', mensaje: 'Entra', undo_id: null },
+                   { id: 1, fecha: bd[2] + ' 23:59:00', tipo: 'pago', mensaje: 'No entra', undo_id: null }];
+      const v = montar(X.HistorialView, { actLog: log, undoLog: [], onUndo: () => {}, onRefresh: () => {} }, [undefined, bd[0]]);
+      const t = filasK(v.arbol).map(f => textos(f).join(' '));
+      return !(t.length === 1 && t[0].indexOf('Entra') !== -1);
+    }).map(bd => bd[0]);
+    R.check('K5 los bordes: el primer dia del periodo entra y el anterior no (hoy, 7 dias, 30 dias, este mes)', malasB.length === 0, malasB);
+    // Tipo.
+    const GRUPO = { pago: 'cobros', abono: 'cobros', deuda: 'deudas', deshacer: 'deshacer' };
+    const grupoDe = it => GRUPO[it.tipo] || 'prestamos';
+    const casosT = ['cobros', 'prestamos', 'deudas', 'deshacer'];
+    const malasT = casosT.filter(g => filasK(hist([undefined, undefined, undefined, undefined, g, 5000]).arbol).length !== historial.filter(it => grupoDe(it) === g).length)
+      .map(g => g + ': ' + historial.filter(it => grupoDe(it) === g).length);
+    R.check('K6 el filtro por tipo (cobros, prestamos, mis deudas, deshechos) muestra solo ese tipo', malasT.length === 0, malasT);
+    const chips = nodos(hk.arbol, n => n.tag === 'button' && /\bhs-filtro\b/.test(n.props.className || '')).map(b => textos(b).join(''));
+    R.check('K6 cada tipo con su conteo', casosT.every((g, i) => chips.indexOf(['Cobros', 'Préstamos', 'Mis deudas', 'Deshechos'][i] + historial.filter(it => grupoDe(it) === g).length) !== -1) &&
+      chips.indexOf('Todo' + historial.length) !== -1, chips);
+    // "Ver en Cartera" cuando la accion nombra a un deudor (no en Mis Deudas).
+    const conDeudor = f0.filter(f => nodos(f, n => n.tag === 'button' && /Ver en Cartera/.test(textos(n).join(''))).length);
+    R.check('K7 "Ver en Cartera" aparece en las acciones que nombran a un deudor', conDeudor.length > 0, conDeudor.length);
+    const iDeuda = historial.slice(0, 120).findIndex(it => it.tipo === 'deuda');
+    R.check('K7 y no en las de Mis Deudas (alli el nombre es un acreedor)', iDeuda === -1 ||
+      nodos(f0[iDeuda], n => n.tag === 'button' && /Ver en Cartera/.test(textos(n).join(''))).length === 0);
+    navK.length = 0;
+    const btnC = nodos(conDeudor[0], n => n.tag === 'button' && /Ver en Cartera/.test(textos(n).join('')))[0];
+    btnC.props.onClick();
+    R.check('K7 el clic abre a ese deudor en Cartera', navK.length === 1 && loans.some(l => l.nombre === navK[0]) &&
+      X.contiene(textos(conDeudor[0]).join(' '), navK[0]), navK);
+  }
+  // El candado LIFO: dos acciones del mismo prestamo -> solo la mas reciente se puede deshacer; la otra
+  // explica por que; una ya deshecha sale tachada con "Revertida".
+  const actL = [
+    { id: 3, fecha: '2026-07-31 10:00:00', tipo: 'abono', mensaje: 'Registraste abono de $50,000 a prueba', undo_id: 'u3' },
+    { id: 2, fecha: '2026-07-31 09:00:00', tipo: 'pago', mensaje: 'Registraste pago de prueba', undo_id: 'u2' },
+    { id: 1, fecha: '2026-07-30 09:00:00', tipo: 'abono', mensaje: 'Abono revertido de prueba', undo_id: 'u1' }];
+  const undoL = [
+    { id: 'u3', estado: 'disponible', scope_tipo: 'loan', scope_id: 'L1', descripcion: 'Abono de $50.000' },
+    { id: 'u2', estado: 'disponible', scope_tipo: 'loan', scope_id: 'L1', descripcion: 'Pago de prueba' },
+    { id: 'u1', estado: 'deshecho', scope_tipo: 'loan', scope_id: 'L1', descripcion: 'Abono viejo' }];
+  const deshechos = [];
+  const hL = montar(X.HistorialView, { actLog: actL, undoLog: undoL, onUndo: u => deshechos.push(u.id), onRefresh: () => {} }, []);
+  const fl = filasK(hL.arbol);
+  const btnD = f => nodos(f, n => n.tag === 'button' && /Deshacer/.test(textos(n).join('')))[0];
+  R.check('K8 solo la accion mas reciente del prestamo se puede deshacer', !!btnD(fl[0]) && !btnD(fl[0]).props.disabled && !!btnD(fl[1]) && btnD(fl[1]).props.disabled);
+  btnD(fl[0]).props.onClick();
+  R.check('K8 el boton activo pide deshacer esa misma accion', deshechos.join() === 'u3', deshechos);
+  R.check('K8 la bloqueada explica cual deshacer primero', textos(fl[1]).join(' ').indexOf('Primero debes deshacer la operación más reciente de este préstamo: "Abono de $50.000"') !== -1);
+  R.check('K8 la ya deshecha sale con "Revertida" y sin boton', /\brevertida\b/.test(fl[2].props.className) && textos(fl[2]).join(' ').indexOf('Revertida') !== -1 && !btnD(fl[2]));
+  // App le pasa el historial completo y la navegacion.
+  const appK = fs.readFileSync(path.join(REPO, 'public', 'js', 'app.js'), 'utf8');
+  R.check('K9 App pide el historial completo y le pasa a la vista los prestamos y la navegacion a Cartera',
+    appK.indexOf("fetch('/api/activity?todo=1')") !== -1 && /h\(HistorialView,\{[^}]*loans:loans,onNameClick:openDebtorByName/.test(appK));
 
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

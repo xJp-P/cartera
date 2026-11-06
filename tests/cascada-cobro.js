@@ -99,7 +99,7 @@ function cargarCascada() {
   vm.runInContext(orden.join('\n'), ctx);
   const api = vm.runInContext(
     '({planCascada,cobrableTotal,contextoCascada,proyeccionCobro,filasPreview,previewRecalculo,aplicarTransitoriaPreview,' +
-    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros,rbMedia})', ctx);
+    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros,cobrosDe,rbMedia})', ctx);
   api.pdfs = pdfs;
   return api;
 }
@@ -177,7 +177,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
 
 (async function main() {
   const { planCascada, cobrableTotal, proyeccionCobro, filasPreview, previewRecalculo, aplicarTransitoriaPreview, _pmt, _tasaPeriodo,
-          generateReciboCobro, generatePropuestaAbono, saldoConCaja, imputarCobros, rbMedia, pdfs } = cargarCascada();
+          generateReciboCobro, generatePropuestaAbono, saldoConCaja, imputarCobros, cobrosDe, rbMedia, pdfs } = cargarCascada();
   // La seccion J necesita el mismo buzon de PDFs con otro nombre, porque comparte
   // scope con la G y alli `pdfs` ya esta en uso.
   const pdfsCascada = pdfs;
@@ -641,12 +641,21 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
 
       // 1. EL HERO DECLARA LO QUE EL CLIENTE ENTREGO.
       if (esUSD) {
-        // En USD el protagonista es el dolar, y los pesos van en la sub-linea: son la
-        // CAJA, y tienen que cuadrar al peso o "Cobros del Mes" queda descuadrado.
+        // En USD el protagonista es el dolar. Desde 3.7.0 (decision del PO) es lo UNICO: el
+        // recibo de un credito en dolares no lleva ni una cifra en pesos ni la TRM.
         R.check(et + 'el hero declara los dolares entregados',
           Math.abs(numDe(heroDe(html)) - oblUSD) <= 0.05,
           'hero=' + heroDe(html) + ' esperado=' + oblUSD);
-        R.eq(et + 'la sub-linea declara la caja en pesos, exacta', numDe(heroSub(html)), cajaCOP);
+        const visible = html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]*>/g, ' ');
+        R.check(et + 'el recibo no imprime pesos ni la TRM (3.7.0: solo dolares)',
+          !heroSub(html) && !/\$\u00a0\d/.test(visible) && !/\bTRM\b|\bpesos\b|\bCOP\b/.test(visible),
+          (/[^.]{0,40}(?:\$\u00a0\d|TRM|pesos|COP)[^.]{0,30}/.exec(visible) || [''])[0]);
+        // La CAJA en pesos no desaparece: deja de imprimirse, pero sigue registrada al peso en el
+        // ledger, que es de donde sale "Cobros del Mes". Es la cifra que antes cuadraba el papel.
+        const cajaDelDia = filas => filas.reduce((s, p) => s + cobrosDe(p).filter(e => e.fecha === hoy)
+          .reduce((a, e) => a + Math.round(e.cop), 0), 0);
+        R.eq(et + 'la caja en pesos queda registrada en el ledger, exacta',
+          cajaDelDia(lpPost) - cajaDelDia(lpAntes), cajaCOP);
       } else {
         R.eq(et + 'el hero declara la caja recibida, exacta', numDe(heroDe(html)), cajaCOP);
       }
@@ -1049,11 +1058,11 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
 
         // (b) incluirInteresMes: paso propio y rubro propio.
         const vMes = correrFusion(grande, 1500000, true, false);
-        const tieneMes = hayTexto(vMes.txts, /^Interes del mes · cuota #\d+$/);
+        const tieneMes = hayTexto(vMes.txts, /^Interés del mes · cuota #\d+$/);
         R.check('H (fusion) con `incluirInteresMes` aparece el paso del periodo en curso',
-          tieneMes, vMes.txts.filter(t => /Interes del mes/.test(t)).join(' | '));
+          tieneMes, vMes.txts.filter(t => /Interés del mes/.test(t)).join(' | '));
         if (tieneMes) {
-          const rMes = trasEtiqueta(vMes.txts, /^Interes del mes en curso$/);
+          const rMes = trasEtiqueta(vMes.txts, /^Interés del mes en curso$/);
           const rIntV = trasEtiqueta(vMes.txts, /^Intereses vencidos$/);
           const rTotV = trasEtiqueta(vMes.txts, /^Total aplicado$/);
           const rCapV = trasEtiqueta(vMes.txts, /^Capital de cuotas vencidas$/);
@@ -1066,13 +1075,13 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         }
         // ANTI-TRIVIAL: sin el check, ese paso NO puede aparecer.
         R.check('H ANTI-TRIVIAL: sin el check no hay paso de interes del mes',
-          !hayTexto(correrFusion(grande, 1500000, false, false).txts, /^Interes del mes · cuota #\d+$/));
+          !hayTexto(correrFusion(grande, 1500000, false, false).txts, /^Interés del mes · cuota #\d+$/));
 
         // (c) las opciones de recalculo dependen de que HAYA abono.
         const soloMora = r2H(cobH.mora / trmH).toFixed(2);
         const vSinAbono = correrFusion(soloMora, 1300000, false, false);
         const vConAbono = correrFusion(grande, 1500000, false, false);
-        const tieneRecalc = txts => hayTexto(txts, /^QUE HACER CON EL CRONOGRAMA$/);
+        const tieneRecalc = txts => hayTexto(txts, /^QUÉ HACER CON EL CRONOGRAMA$/);
         R.check('H (fusion) sin abono extraordinario NO se ofrecen opciones de recalculo',
           !tieneRecalc(vSinAbono.txts));
         R.check('H (fusion) con abono extraordinario SI se ofrecen',
@@ -1093,7 +1102,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         // el modal tiene que decirlo y NO dejar confirmar.
         const vMal = correrFusion(grande, 1500000, false, false, 'fijarCuota', '1');
         R.check('H (fusion) una cuota fija imposible se rechaza con un aviso',
-          hayTexto(vMal.txts, /nunca se saldaria/i), vMal.txts.filter(t => /cuota/i.test(t)).slice(0, 3).join(' | '));
+          hayTexto(vMal.txts, /nunca se saldaría/i), vMal.txts.filter(t => /cuota/i.test(t)).slice(0, 3).join(' | '));
 
         // ── 4b-bis. LA FILA QUE YA TRAE DINERO ADENTRO LO DICE ──────────────────
         // La franja anuncia el NETO y la tabla, por doctrina, sigue mostrando la cuota
@@ -1110,10 +1119,10 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
             const n = nodos(v.arbol, tag).filter(x => re.test(textos(x).join('')));
             return n.length ? textos(n[n.length - 1]).join('') : '';
           };
-          const linea  = juntar('tr',  /esta cuota quedaria con/);
+          const linea  = juntar('tr',  /esta cuota quedaría con/);
           const franja = juntar('div', /Tu cliente pagará/);
           R.check('H (4b-bis) la primera fila declara lo que ya lleva abonado',
-            !!linea, v.txts.filter(t => /quedaria|abonado/.test(t)).slice(0, 3).join(' | '));
+            !!linea, v.txts.filter(t => /quedaría|abonado/.test(t)).slice(0, 3).join(' | '));
 
           // Las tres cifras de la sub-linea salen del MISMO `proxPago` que alimenta la
           // franja, asi que tienen que cerrar: cuota - abonado = neto.
@@ -1132,7 +1141,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           // sub-linea NO debe dibujarse. Si apareciera siempre seria ruido en cada cobro.
           const sinMes = correrFusion(grande, Math.round(+grande * trmH), false, false, 'mantener', '');
           R.check('H (4b-bis) ANTI-TRIVIAL: sin adelanto la sub-linea no aparece',
-            !sinMes.txts.some(t => /esta cuota quedaria con/.test(t)));
+            !sinMes.txts.some(t => /esta cuota quedaría con/.test(t)));
         }
       }
 

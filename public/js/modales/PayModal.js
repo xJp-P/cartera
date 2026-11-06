@@ -15,6 +15,7 @@ import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
 import { generateRecibo } from '../pdf/recibo-pago.js';
 import { esAbono } from '../core/ids.js';
+import { usdLinea } from '../componentes/CifraUSD.js';
 
 // ── PayModal ──────────────────────────────────────────────────────────────────
 export function PayModal(props){
@@ -41,9 +42,9 @@ export function PayModal(props){
       h('div',{style:{fontWeight:700,color:'var(--text)',marginBottom:4}},pay.nombreCliente),
       h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:8}},fmtD(pay.fechaRecaudo||pay.fechaPago)),
       h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--blue)',marginBottom:4}},'Abono: '+fmt(pay.abonoCapital),
-        esUSD&&h('span',{style:{fontSize:13,fontWeight:600,marginLeft:8}},copToUsd(pay.abonoCapital,loan.trmAcordada))),
+        esUSD&&usdLinea(copToUsd(pay.abonoCapital,loan.trmAcordada),{fontSize:13,fontWeight:600,marginLeft:8},'span')),
       h('div',{className:'mono',style:{fontSize:13,color:'var(--text2)'}},'Saldo tras abono: '+fmt(pay.saldoFinal),
-        esUSD&&h('span',{style:{marginLeft:6}},copToUsd(pay.saldoFinal,loan.trmAcordada))),
+        esUSD&&usdLinea(copToUsd(pay.saldoFinal,loan.trmAcordada),{marginLeft:6,fontSize:'inherit'},'span')),
       pay.observaciones&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:8,fontStyle:'italic'}},pay.observaciones)));
 
   // v1.18.1 — GUARDA ANTI DOBLE-SUBMIT (misma doctrina del Bug #29 en AbonoModal). Aqui el
@@ -61,7 +62,7 @@ export function PayModal(props){
     // (se valua a la TRM pactada). Sin el, el backend cae a los COP de caja y la deuda baja
     // de menos cuando la TRM del dia esta por debajo de la pactada — el cliente entrega los
     // dolares pactados y le queda deuda fantasma. Misma doctrina que AbonoModal (v2.0.0).
-    if(esUSD&&(+parcialUSD||0)<=0){showError('Ingresa los USD recibidos: en prestamos en dolares son los que definen cuanta deuda se abona');return;}
+    if(esUSD&&(+parcialUSD||0)<=0){showError('Ingresa los USD recibidos: en préstamos en dólares son los que definen cuánta deuda se abona');return;}
     // La obligacion se mide en la MISMA moneda que el restante (ambos a TRM pactada).
     if(esUSD){
       if(Math.round((+parcialUSD||0)*loan.trmAcordada)>restante+1){showError('Los USD ingresados superan el saldo pendiente ('+copToUsd(restante,loan.trmAcordada)+')');return;}
@@ -77,10 +78,10 @@ export function PayModal(props){
   }
   function submitCompleto(){
     if(sending) return;
-    if(esUSD&&(!copRec||+copRec<=0)){showError('Ingresa el monto COP recibido para prestamos en USD');return;}
+    if(esUSD&&(!copRec||+copRec<=0)){showError('Ingresa el monto COP recibido para préstamos en USD');return;}
     // Mismo motivo que en el parcial: sin el dolar declarado, el efecto cambiario de este
     // cobro es irregistrable y la cuota se valua con los COP del dia.
-    if(esUSD&&(+usdRec||0)<=0){showError('Ingresa los USD recibidos: son los que confirman que la cuota quedo cubierta en dolares');return;}
+    if(esUSD&&(+usdRec||0)<=0){showError('Ingresa los USD recibidos: son los que confirman que la cuota quedó cubierta en dólares');return;}
     if(yaPagado>0){
       // Habia pagos parciales: el recibo es "Pago final" que completa la cuota
       _run(function(){return onPartial(pay.id,restante,fecha,obs,+usdRec||0).then(function(r){
@@ -101,11 +102,11 @@ export function PayModal(props){
       h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},pay.nombreCliente),
       h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},'Cuota '+pay.cuotaN+' - '+fmtD(pay.fechaPago)),
       h('div',{className:'mono',style:{fontWeight:700,fontSize:20,color:'var(--green)',marginTop:6}},fmt(pay.cuotaTotal),
-        esUSD&&h('span',{style:{fontSize:13,fontWeight:600,color:'var(--blue)',marginLeft:8}},copToUsd(pay.cuotaTotal,loan.trmAcordada))),
+        esUSD&&usdLinea(copToUsd(pay.cuotaTotal,loan.trmAcordada),{fontSize:13,fontWeight:600,marginLeft:8},'span')),
       yaPagado>0&&pay.estadoPago!=='Pagado'&&h('div',{style:{marginTop:8,padding:'8px 10px',background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:8}},
         h('div',{className:'mono',style:{fontSize:12,color:'var(--green)',fontWeight:700}},'Ya abonado: '+fmt(yaPagado)+' / '+fmt(pay.cuotaTotal)),
         h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',fontWeight:700,marginTop:2}},'Pendiente: '+fmt(restante))),
-      esUSD&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:4}},'Prestamo USD (TRM $'+fmtN(loan.trmAcordada)+') - ingresa COP recibidos'),
+      esUSD&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:4}},'Préstamo USD (TRM $'+fmtN(loan.trmAcordada)+') - ingresa COP recibidos'),
       h('div',{style:{marginTop:8}},h('span',{style:{background:so.bg,color:so.color,fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:99}},so.icon+' '+pay.estadoPago))),
 
     // Toggle Completo / Parcial — solo si la cuota no esta Pagada
@@ -120,7 +121,7 @@ export function PayModal(props){
       h(Fld,{label:'Monto del pago parcial (COP) *'},
         h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(montoParcial),onChange:function(e){setMontoParcial(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--yellow)'}}),
         montoParcial>0&&h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:+montoParcial>=restante?'var(--green)':'var(--text2)'}},
-          +montoParcial>=restante?'Con este pago la cuota quedaria COMPLETA':'Quedarian pendientes: '+fmt(restante-(+montoParcial||0)))),
+          +montoParcial>=restante?'Con este pago la cuota quedaría COMPLETA':'Quedarían pendientes: '+fmt(restante-(+montoParcial||0)))),
       esUSD&&h(Fld,{label:'USD recibidos *'},
         h('input',{type:'text',inputMode:'decimal',value:parcialUSD,onChange:function(e){setParcialUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 120.00',className:'inp',style:{border:'1px solid var(--blue)'}})),
       // Doble entrada visible: el dolar define la deuda que se extingue, los COP son la caja
@@ -131,9 +132,9 @@ export function PayModal(props){
         var trmImp=Math.round((+montoParcial)/(+parcialUSD));
         return h('div',{style:{fontSize:10.5,color:'var(--text3)',marginTop:6,lineHeight:1.5}},
           'Abona '+fmt(oblig)+' de deuda (TRM pactada $'+fmtN(loan.trmAcordada)+'). ',
-          'TRM implicita $'+fmtN(trmImp)+' — ',
+          'TRM implícita $'+fmtN(trmImp)+' — ',
           h('span',{style:{color:efecto<0?'var(--red)':'var(--green)',fontWeight:600}},
-            (efecto<0?'perdida':'ganancia')+' por TRM '+fmt(Math.abs(efecto))));
+            (efecto<0?'pérdida':'ganancia')+' por TRM '+fmt(Math.abs(efecto))));
       })()),
 
     // ── Modo Completo (USD fields) ──

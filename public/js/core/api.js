@@ -30,7 +30,7 @@ export function showError(msg) {
   else console.error(msg);
 }
 export function handleApiError(err) {
-  showError(err && err.message ? err.message : 'Error de conexion con el servidor');
+  showError(err && err.message ? err.message : 'Error de conexión con el servidor');
 }
 export function handleRes(r) {
   if (!r.ok) return r.text().then(function(t) { try { var j=JSON.parse(t); throw new Error(j.error||'Error del servidor'); } catch(e) { if(e.message) throw e; throw new Error('Error del servidor ('+r.status+')'); }});

@@ -111,7 +111,7 @@ function buildSchedule(loan, startN, startSaldo, numCuotas) {
   // `mutacionAtomica` responden 4xx con la BD intacta en vez de un 500.
   if (!loan || MODALIDADES_CONOCIDAS.indexOf(loan.modalidad) === -1) {
     throw new ClientError('Modalidad no reconocida por el motor: "' + (loan && loan.modalidad) +
-      '". Las validas son: ' + MODALIDADES_CONOCIDAS.join(', ') + ' y ' + MODALIDAD_DIARIA + '.');
+      '". Las válidas son: ' + MODALIDADES_CONOCIDAS.join(', ') + ' y ' + MODALIDAD_DIARIA + '.');
   }
 
   startN = startN || 1;
@@ -260,7 +260,7 @@ function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
   // Validacion: cuota debe cubrir al menos el interes del primer periodo
   if (cuotaFija <= interesInicial) {
     throw new Error('Cuota insuficiente: $' + Math.round(cuotaFija).toLocaleString('es-CO') +
-      ' no cubre el interes del primer periodo ($' + Math.round(interesInicial).toLocaleString('es-CO') + ').');
+      ' no cubre el interés del primer periodo ($' + Math.round(interesInicial).toLocaleString('es-CO') + ').');
   }
   const rows = [];
   // v2.2.0 — pesos enteros, misma doctrina que buildSchedule: lo persistido ES lo computado
@@ -311,7 +311,7 @@ function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
     cuotaN++;
     i++;
   }
-  if (i >= MAX_ITER) throw new Error('Cuota demasiado baja: requiere mas de ' + MAX_ITER + ' cuotas para saldar.');
+  if (i >= MAX_ITER) throw new Error('Cuota demasiado baja: requiere más de ' + MAX_ITER + ' cuotas para saldar.');
   // Tambien aqui: un abono o una reestructura con "fijar cuota" regenera la transitoria por
   // este generador, no por `buildSchedule`.
   return aplicarPeriodoIrregular(loan, rows);
@@ -567,7 +567,7 @@ function aplicarPeriodoIrregular(loan, rows) {
   // `extraConsolidado` es la marca que ya leen el Recibo de Pago, la Factura de Cobro y el
   // Reporte de Activos para rotular la cuota como transitoria. Mismo valor que antes.
   row.extraConsolidado = t.ajuste;
-  row.observaciones = 'Cuota transitoria: interes de ' + t.dias + ' dias prorrateado'
+  row.observaciones = 'Cuota transitoria: interés de ' + t.dias + ' días prorrateado'
     + (t.mora > 0 ? ' + mora consolidada $' + t.mora.toLocaleString('es-CO') : '');
   return rows;
 }
@@ -630,17 +630,17 @@ const FRECUENCIAS = ['Mensual', 'Semanal', 'Quincenal'];
 function resolverPrimerPago(loan, primerPago, primerPeriodo) {
   const modo = (primerPeriodo === undefined || primerPeriodo === null || primerPeriodo === '') ? 'proporcional' : primerPeriodo;
   if (modo !== 'proporcional' && modo !== 'completo') {
-    throw new ClientError('Primer periodo invalido: "' + primerPeriodo + '". Debe ser "proporcional" o "completo".');
+    throw new ClientError('Primer periodo inválido: "' + primerPeriodo + '". Debe ser "proporcional" o "completo".');
   }
   if (loan.modalidad !== 'Intereses' && loan.modalidad !== 'Capital + Intereses') {
-    throw new ClientError('La fecha del primer pago solo aplica a creditos de Intereses o Capital + Intereses (modalidad: ' + loan.modalidad + ').');
+    throw new ClientError('La fecha del primer pago solo aplica a créditos de Intereses o Capital + Intereses (modalidad: ' + loan.modalidad + ').');
   }
   const freq = loan.frecuencia || 'Mensual';
   if (FRECUENCIAS.indexOf(freq) === -1) {
-    throw new ClientError('Frecuencia invalida para el primer pago: "' + freq + '". Debe ser Mensual, Quincenal o Semanal.');
+    throw new ClientError('Frecuencia inválida para el primer pago: "' + freq + '". Debe ser Mensual, Quincenal o Semanal.');
   }
-  if (!fechaIsoValida(loan.fechaInicio)) throw new ClientError('Fecha de inicio invalida: "' + loan.fechaInicio + '".');
-  if (!fechaIsoValida(primerPago)) throw new ClientError('Fecha del primer pago invalida: "' + primerPago + '".');
+  if (!fechaIsoValida(loan.fechaInicio)) throw new ClientError('Fecha de inicio inválida: "' + loan.fechaInicio + '".');
+  if (!fechaIsoValida(primerPago)) throw new ClientError('Fecha del primer pago inválida: "' + primerPago + '".');
   if (primerPago <= loan.fechaInicio) throw new ClientError('El primer pago debe ser posterior a la fecha de inicio.');
   const sinTransitoria = { periodoIrregularN: null, periodoIrregularDesde: null, periodoIrregularMora: 0 };
   if (primerPago === primerPagoRegular(loan.fechaInicio, freq)) {

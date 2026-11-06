@@ -148,7 +148,7 @@ export function planCascada(loan, allPays, entrada, opts){
   var restante=esUSD ? r2(entrada.obligacionUSD) : r0(entrada.obligacionCOP);
   var totalObl=restante;
   if(!(totalObl>0)) return vacio(ctx, 'El monto debe ser mayor a 0');
-  if(esUSD&&!(trm>0)) return vacio(ctx, 'El credito no tiene TRM pactada valida');
+  if(esUSD&&!(trm>0)) return vacio(ctx, 'El crédito no tiene TRM pactada válida');
 
   var aUSD=function(cop){ return r2(cop/trm); };
   var aCOP=function(usd){ return r0(usd*trm); };
@@ -321,7 +321,7 @@ export function planCascada(loan, allPays, entrada, opts){
   // ── Sobrante: dinero que no cabe en ninguna obligacion viva ────────────────
   var sobranteCOP=restante>EPS?(esUSD?aCOP(restante):r0(restante)):0;
   if(sobranteCOP>0){
-    err='El monto supera todo lo que este credito debe hoy. Sobran '+
+    err='El monto supera todo lo que este crédito debe hoy. Sobran '+
         (esUSD?('USD '+r2(restante).toFixed(2)):('$'+sobranteCOP.toLocaleString('es-CO')))+
         '. Revisa el valor recibido o usa Liquidar deuda.';
   }

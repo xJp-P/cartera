@@ -375,6 +375,14 @@ async function faseLectura() {
     R.check('GET /api/activity viene ordenado por id DESC',
       (rAct.json || []).every((r, i, a) => i === 0 || a[i - 1].id > r.id));
     golden('GET_api_activity', rAct.json);
+    // 3.7.0: `?todo=1` devuelve el historial COMPLETO (la pestana Historial filtra por fechas en el
+    // cliente). Sin el parametro, todo sigue igual: el golden de arriba no se movio.
+    const rTodo = await pedir(S, 'GET', '/api/activity?todo=1');
+    R.check('GET /api/activity?todo=1 responde 200', rTodo.status === 200, 'status=' + rTodo.status);
+    R.check('GET /api/activity?todo=1 trae MAS de 100 filas (el fixture tiene historial de sobra)', (rTodo.json || []).length > 100, 'n=' + (rTodo.json || []).length);
+    R.check('GET /api/activity?todo=1 viene ordenado por id DESC y sus primeras 100 son las de siempre',
+      (rTodo.json || []).every((r, i, a) => i === 0 || a[i - 1].id > r.id) &&
+      (rAct.json || []).every((r, i) => rTodo.json[i] && rTodo.json[i].id === r.id));
 
     // undo -----------------------------------------------------------------
     const rUndo = await pedir(S, 'GET', '/api/undo');

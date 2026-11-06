@@ -67,7 +67,7 @@ export function DevView(props){
 
   function resetPath(){
     if(!hasAPI) return;
-    props.onConfirm({title:'Restaurar ubicacion',message:'Volver a la ruta por defecto? La app usara la carpeta nativa del sistema.',okLabel:'Restaurar',okColor:'var(--yellow)',onConfirm:function(){
+    props.onConfirm({title:'Restaurar ubicación',message:'Volver a la ruta por defecto? La app usará la carpeta nativa del sistema.',okLabel:'Restaurar',okColor:'var(--yellow)',onConfirm:function(){
       window.electronAPI.resetDbPath().then(function(res){
         if(res && res.ok){
           setDbPath(res.path);
@@ -81,36 +81,36 @@ export function DevView(props){
 
   return h('div',{className:'fade-in',style:{padding:'16px 14px'}},
     h('div',{style:{fontWeight:700,fontSize:18,color:'var(--text)',marginBottom:4,display:'flex',alignItems:'center',gap:6}},h(Ico,{name:'settings',size:18,color:'var(--text2)'}),' Desarrollador'),
-    h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:16}},'Configuracion avanzada'),
+    h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:16}},'Configuración avanzada'),
 
     h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)',marginBottom:12}},
       h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
         h(Ico,{name:'folder',size:18,color:'var(--blue)'}),
-        h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Ubicacion de la base de datos')),
+        h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Ubicación de la base de datos')),
       h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:12}},'Puedes guardar tu base de datos en cualquier carpeta (ej: iCloud Drive, OneDrive, Dropbox). Solo la BD se mueve, los archivos de la app quedan en su lugar.'),
       h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'10px 12px',border:'1px solid var(--border)',marginBottom:12,wordBreak:'break-all'}},
         h('div',{style:{fontSize:9,color:'var(--text3)',fontWeight:600,marginBottom:3}},'RUTA ACTUAL'),
         h('div',{className:'mono',style:{fontSize:11,color:'var(--blue)'}},dbPath||'Cargando...')),
       h('div',{style:{display:'flex',gap:8}},
         h('button',{onClick:pickFolder,disabled:loading||!hasAPI,style:{flex:1,background:'var(--blue-bg)',color:'var(--blue)',border:'1px solid var(--blue-bd)',borderRadius:10,padding:'10px',fontSize:12,fontWeight:600,cursor:hasAPI?'pointer':'not-allowed',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
-          h(Ico,{name:'folder',size:13,color:'var(--blue)'}),loading?'Moviendo...':'Cambiar ubicacion'),
+          h(Ico,{name:'folder',size:13,color:'var(--blue)'}),loading?'Moviendo...':'Cambiar ubicación'),
         h('button',{onClick:resetPath,disabled:!hasAPI,style:{background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 14px',fontSize:12,fontWeight:600,cursor:hasAPI?'pointer':'not-allowed',fontFamily:'inherit'}},'Restaurar')),
-      !hasAPI&&h('div',{style:{marginTop:10,fontSize:11,color:'var(--yellow)',background:'var(--yellow-bg)',borderRadius:8,padding:'8px 10px',border:'1px solid var(--yellow)'}},'Esta funcion solo esta disponible en la app de escritorio (Electron). En el navegador no se puede acceder al sistema de archivos.')),
+      !hasAPI&&h('div',{style:{marginTop:10,fontSize:11,color:'var(--yellow)',background:'var(--yellow-bg)',borderRadius:8,padding:'8px 10px',border:'1px solid var(--yellow)'}},'Esta función solo está disponible en la app de escritorio (Electron). En el navegador no se puede acceder al sistema de archivos.')),
 
     h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)',marginBottom:12}},
       h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
         h(Ico,{name:'alert',size:16,color:'var(--yellow)'}),
         h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Importante')),
       h('ul',{style:{fontSize:12,color:'var(--text2)',margin:0,paddingLeft:20,lineHeight:1.8}},
-        h('li',null,'Al cambiar la ubicacion, la BD actual se ',h('strong',null,'copia'),' a la nueva carpeta.'),
-        h('li',null,'Debes ',h('strong',null,'reiniciar la app'),' despues de cambiar la ruta.'),
-        h('li',null,'Si usas una carpeta en la nube (iCloud, OneDrive), tu BD se sincroniza automaticamente.'),
+        h('li',null,'Al cambiar la ubicación, la BD actual se ',h('strong',null,'copia'),' a la nueva carpeta.'),
+        h('li',null,'Debes ',h('strong',null,'reiniciar la app'),' después de cambiar la ruta.'),
+        h('li',null,'Si usas una carpeta en la nube (iCloud, OneDrive), tu BD se sincroniza automáticamente.'),
         h('li',null,'No abras la app en dos dispositivos al mismo tiempo.'))),
 
     h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)',marginBottom:12}},
       h('div',{style:{fontWeight:600,fontSize:13,color:'var(--text)',marginBottom:8}},'Info del sistema'),
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}},
-        h('div',{style:{fontSize:10,color:'var(--text3)'}},'Version'),
+        h('div',{style:{fontSize:10,color:'var(--text3)'}},'Versión'),
         h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},appVersion||'...'),
         h('div',{style:{fontSize:10,color:'var(--text3)'}},'Motor'),
         h('div',{className:'mono',style:{fontSize:10,color:'var(--text2)'}},'Electron + Express'),
@@ -126,7 +126,7 @@ export function DevView(props){
 
       !updateInfo||updateInfo.status==='not-available'?
         h('div',null,
-          h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:10}},'Tu app esta al dia.'),
+          h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:10}},'Tu app está al día.'),
           h('button',{onClick:function(){if(hasAPI)window.electronAPI.checkForUpdates();setUpdateInfo({status:'checking'});},disabled:!hasAPI,style:{background:'var(--bg3)',color:'var(--text)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
             h(Ico,{name:'refresh',size:13,color:'var(--text2)'}),'Buscar actualizaciones')):
 
@@ -140,9 +140,9 @@ export function DevView(props){
 
       updateInfo.status==='available'?
         h('div',null,
-          h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'Nueva version disponible: v'+updateInfo.version),
+          h('div',{style:{fontSize:12,color:'var(--green)',marginBottom:10,fontWeight:600}},'Nueva versión disponible: v'+updateInfo.version),
           h('button',{onClick:function(){window.electronAPI.downloadUpdate();},style:{background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green-bd)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
-            h(Ico,{name:'download',size:13,color:'var(--green)'}),'Descargar actualizacion')):
+            h(Ico,{name:'download',size:13,color:'var(--green)'}),'Descargar actualización')):
 
       updateInfo.status==='downloading'?
         h('div',null,
@@ -164,20 +164,20 @@ export function DevView(props){
     h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)',marginBottom:12}},
       h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
         h(Ico,{name:'download',size:18,color:'var(--green)'}),
-        h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Reporte de prestamos')),
-      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:12}},'Descarga un PDF con todos los prestamos activos (deudor, modalidad, tasa, saldo pendiente y estado). Las cuotas en mora se detallan bajo cada prestamo y al final se totaliza el capital en la calle.'),
+        h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Reporte de préstamos')),
+      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:12}},'Descarga un PDF con todos los préstamos activos (deudor, modalidad, tasa, saldo pendiente y estado). Las cuotas en mora se detallan bajo cada préstamo y al final se totaliza el capital en la calle.'),
       h('button',{onClick:function(){
         var activos=(props.loans||[]).filter(function(l){return l.estado==='Activo';});
-        if(activos.length===0){showToast('No hay prestamos activos para el reporte','error');return;}
+        if(activos.length===0){showToast('No hay préstamos activos para el reporte','error');return;}
         generateReportePrestamosPDF(props.loans,props.pays,document.documentElement.getAttribute('data-theme')==='dark');
       },style:{background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green-bd)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
-        h(Ico,{name:'download',size:13,color:'var(--green)'}),'Descargar Reporte de Prestamos (PDF)')),
+        h(Ico,{name:'download',size:13,color:'var(--green)'}),'Descargar Reporte de Préstamos (PDF)')),
 
     h('div',{style:{background:'var(--bg2)',borderRadius:14,padding:'16px',border:'1px solid var(--border)',marginBottom:12}},
       h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
         h(Ico,{name:'receipt',size:18,color:'var(--blue)'}),
         h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Datos de pago (recibo de cobro)')),
-      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:10}},'Este texto aparece en el bloque "Como pagar" del Recibo de Cobro (Factura) que generas desde la vista Pagos. Ej: cuentas, Nequi/Daviplata, a nombre de quien. Si lo dejas vacio, el bloque no se muestra.'),
+      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:10}},'Este texto aparece en el bloque "Cómo pagar" del Recibo de Cobro (Factura) que generas desde la vista Cobros. Ej: cuentas, Nequi/Daviplata, a nombre de quién. Si lo dejas vacío, el bloque no se muestra.'),
       h('textarea',{value:datosPago,onChange:function(e){setDatosPago(e.target.value);},rows:4,placeholder:'Transferencia / Nequi / Daviplata\nA nombre de ...\nCel. ...',style:{width:'100%',resize:'vertical',fontFamily:'inherit',fontSize:12,color:'var(--text)',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 12px',boxSizing:'border-box'}}),
       h('button',{onClick:saveDatosPago,disabled:savingPago,style:{marginTop:10,background:'var(--blue-bg)',color:'var(--blue)',border:'1px solid var(--blue-bd)',borderRadius:10,padding:'10px 16px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}},
         h(Ico,{name:'check',size:13,color:'var(--blue)'}),savingPago?'Guardando...':'Guardar datos de pago')),
@@ -186,7 +186,7 @@ export function DevView(props){
       h('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
         h(Ico,{name:'refresh',size:18,color:'var(--yellow)'}),
         h('span',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},'Sincronizar datos')),
-      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:12}},'Recalcula todos los cronogramas activos. Se ejecuta automaticamente al abrir la app. Usa este boton solo si notas inconsistencias.'),
+      h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:12}},'Recalcula todos los cronogramas activos. Se ejecuta automáticamente al abrir la app. Usa este botón solo si notas inconsistencias.'),
       // El toast lo emite `recalculate` en App, que es quien conoce el resultado. Antes se
       // mostraba aqui uno fijo de "Cronogramas recalculados" ANTES de saber si habia ido bien.
       h('button',{onClick:function(){
@@ -202,8 +202,8 @@ export function DevView(props){
       omitidos&&omitidos.length>0&&h('div',{style:{marginTop:12,background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:10,padding:'10px 12px'}},
         h('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:6}},
           h(Ico,{name:'alert',size:14,color:'var(--red)'}),
-          h('span',{style:{fontWeight:700,fontSize:12,color:'var(--red)'}},omitidos.length+' prestamo'+(omitidos.length===1?'':'s')+' no se pudo'+(omitidos.length===1?'':'ieron')+' recalcular')),
-        h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:8}},'Quedaron EXACTAMENTE como estaban (su transaccion revirtio sola). El resto si se sincronizo.'),
+          h('span',{style:{fontWeight:700,fontSize:12,color:'var(--red)'}},omitidos.length+' préstamo'+(omitidos.length===1?'':'s')+' no se pudo'+(omitidos.length===1?'':'ieron')+' recalcular')),
+        h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:8}},'Quedaron EXACTAMENTE como estaban (su transacción revirtió sola). El resto sí se sincronizó.'),
         omitidos.map(function(o,i){
           return h('div',{key:o.id||i,style:{fontSize:11.5,color:'var(--text2)',padding:'6px 0',borderTop:i>0?'1px solid var(--red-bd)':'none'}},
             h('div',{style:{fontWeight:600,color:'var(--text)'}},o.nombre||o.id),

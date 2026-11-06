@@ -18,7 +18,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 9364,
+    "bytes": 9203,
     "nFilas": 3,
     "nCeldas": 18,
     "celdasPorTr": [
@@ -26,10 +26,10 @@
       6,
       6
     ],
-    "nMontos": 22,
-    "hashMontos": "ebbc9e3ee85d693efbb8cfe08129239cf8ac6262",
+    "nMontos": 20,
+    "hashMontos": "cbbfe362b560db535eb871894a3dca84f32153ae",
     "hashFname": "1deada24f48f577648157d585cb0af415c46f32a",
-    "hashTexto": "7a77dcf197eebc453cd85baaed4e1e25eff253d5",
+    "hashTexto": "e8cddeb3553c8268f38f5c4bfad0ba1263ee7784",
     "clases": [
       "ab",
       "l",
@@ -66,7 +66,6 @@
       "pa-tb",
       "pa-tl",
       "pa-total",
-      "pa-ts",
       "pa-type",
       "pa-val",
       "pa-wm"
