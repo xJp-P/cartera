@@ -5,13 +5,13 @@
   "tema": "light",
   "entradaHash": "91219226ff1d964645af64fe1ee3d7528cdd0150",
   "estructura": {
-    "docTitle": "Estado de Liquidacion - Karina Lozano",
+    "docTitle": "Estado de Liquidación - Karina Lozano",
     "h1": [],
     "cabeceras": [
       "#",
       "Vence",
       "Valor cuota",
-      "Interes",
+      "Interés",
       "Abono a capital",
       "Pagado",
       "Recaudado",
@@ -20,7 +20,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 8076,
+    "bytes": 8458,
     "nFilas": 6,
     "nCeldas": 48,
     "celdasPorTr": [
@@ -33,8 +33,8 @@
     ],
     "nMontos": 22,
     "hashMontos": "0076c21e33fd72c75b85cac1d08c5b3398fbb7c4",
-    "hashFname": "bd3f04180e2ae666f613c3412cd401dad66509fd",
-    "hashTexto": "c9769a83bd747c7e18f896d5056002069e0c0eec",
+    "hashFname": "3ff0c891c5862d50fc94bcbb6cf71f28d8f71cfc",
+    "hashTexto": "790af86eefba909014207c808dd10c0b078a9434",
     "clases": [
       "ab",
       "b",

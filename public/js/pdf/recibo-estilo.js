@@ -69,19 +69,41 @@ export function rbPaleta(dark){
         amber: '#9a6700', amberBg: '#fff6dc', amberBd: '#eed58a', red: '#cf222e', redBg: '#ffebe9', blue: '#0969da', blueBg: '#ddf4ff', track: '#e6eaef' };
 }
 
-// La hoja: 816 px de ancho (carta) con 1,3 cm de margen, en pantalla y al imprimir, que es
-// exactamente la hoja sobre la que se midieron los prototipos. `@page` fija el tamano carta y
-// el margen en cero para que el fondo llegue a sangre en tema oscuro (doctrina v1.12.3).
+// ── EL MARCO Y LA IMPRESION DE TODOS LOS DOCUMENTOS (3.5.0 los recibos; 3.6.0 los 12) ──
+// Carta (816 px) con 1,3 cm de margen y `@page{margin:0}`, para que el fondo llegue a sangre en
+// tema oscuro (doctrina v1.12.3).
 //
 // EL MARGEN DE ARRIBA Y DE ABAJO NO LO DA EL `body`: lo dan el thead y el tfoot de una tabla que
 // envuelve el documento (`RB_MARCO_*`), y Chromium los REPITE en cada hoja impresa. Con el
-// padding del body, una segunda hoja arrancaba pegada al filo del papel (el defecto anotado en el
-// backlog para los 10 generadores viejos: medido en Electron, el texto de la hoja 2 empezaba a
-// 0,2 pt del borde); con `@page{margin}` el fondo oscuro dejaba de llegar a sangre (margen
-// blanco, medido). Con el marco, la hoja 2 arranca a 38,5 pt y el fondo sigue a sangre. Lo
-// normal es que estos recibos quepan en una hoja; el marco es lo que hace bien el caso que no.
+// padding del body, una segunda hoja arrancaba pegada al filo del papel (medido en Electron: el
+// texto de la hoja 2 empezaba a 0,2 pt del borde); con `@page{margin}` el fondo oscuro dejaba
+// margenes blancos (medido). Con el marco, la hoja 2 arranca a 38,5 pt y el fondo sigue a sangre.
+// Tiene que ser una <table> real: con DIVs `display:table-header-group` no se repite (medido).
 export var RB_MARCO_ABRE = '<table class="r-marco"><thead><tr><td class="r-esp"></td></tr></thead><tfoot><tr><td class="r-esp"></td></tr></tfoot><tbody><tr><td class="r-hoja">';
 export var RB_MARCO_CIERRA = '</td></tr></tbody></table>';
+// Cada documento trae sus propias reglas GENERICAS de tabla (`td{white-space:nowrap;
+// text-align:right}`, `table{font-size:10px}`, `tr:nth-child(even){background}`...). El marco
+// es una tabla, asi que sin esto se las heredaria y se las pasaria a TODO el documento (texto
+// en una sola linea, alineado a la derecha, con fondo de fila). Las CELDAS se dejan neutras con
+// `all:unset`; la tabla y las filas, con reseteos explicitos. OJO: `all:unset` en thead, tbody o
+// tr hace que Chromium deje de REPETIR el thead/tfoot en cada hoja (medido en Electron: la hoja 2
+// del cronograma volvia a arrancar a 9,7 pt del filo), asi que no se extiende a ellos.
+var RB_CSS_MARCO = 'table.r-marco{width:100%;border-collapse:collapse;margin:0;border:0;background:none;font-size:inherit}' +
+  '.r-marco>thead>tr,.r-marco>tfoot>tr,.r-marco>tbody>tr{background:none}' +
+  '.r-marco>thead>tr>td,.r-marco>tfoot>tr>td,.r-marco>tbody>tr>td{all:unset;display:table-cell;vertical-align:top}';
+var RB_PCA = '-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important';
+// El bloque de impresion, UNO solo para los 12 generadores: el mismo margen, el mismo papel y el
+// mismo fondo a sangre en todos. Va AL FINAL de cada <style>, para ganar los empates de
+// especificidad. `cuerpo` agrega declaraciones al body impreso (p. ej. `font-size:11px;`) y
+// `extra`, reglas propias de un documento dentro del @media print.
+export function rbImpresion(dark, cuerpo, extra){
+  var bg = dark ? '#0d1117' : '#ffffff', tx = dark ? '#e6edf3' : '#1f2328';
+  return RB_CSS_MARCO + '@media print{html,body{' + RB_PCA + '}*{' + RB_PCA + '}@page{size:letter;margin:0}' +
+    'html{background:' + bg + '!important}body{max-width:none;padding:0 1.3cm;' + (cuerpo || '') +
+    'background:' + bg + '!important;color:' + tx + '!important;min-height:100vh}' +
+    '.r-marco>thead>tr>td,.r-marco>tfoot>tr>td{height:1.3cm}' + (extra || '') + '}';
+}
+
 export function rbCss(C){
   return [
     ':root{--r-bg:' + C.bg + ';--r-text:' + C.text + ';--r-muted:' + C.muted + ';--r-soft:' + C.soft + ';--r-bd:' + C.bd +
@@ -89,11 +111,8 @@ export function rbCss(C){
       ';--r-amber-bd:' + C.amberBd + ';--r-red:' + C.red + ';--r-red-bg:' + C.redBg + ';--r-blue:' + C.blue + ';--r-blue-bg:' + C.blueBg + ';--r-track:' + C.track + '}',
     '*{margin:0;padding:0;box-sizing:border-box}',
     'html{background:var(--r-bg)}',
-    "body{max-width:816px;margin:0 auto;padding:0 1.3cm;font-family:'Segoe UI',-apple-system,Roboto,Arial,sans-serif;font-size:13px;font-variant-numeric:tabular-nums;" +
+    "body{max-width:816px;margin:0 auto;padding:1.3cm;font-family:'Segoe UI',-apple-system,Roboto,Arial,sans-serif;font-size:13px;font-variant-numeric:tabular-nums;" +
       'background:var(--r-bg);color:var(--r-text);line-height:1.35}',
-    'table.r-marco{width:100%;border-collapse:collapse}',
-    '.r-marco>thead>tr>td,.r-marco>tfoot>tr>td{height:1.3cm;padding:0}',
-    '.r-hoja{padding:0;vertical-align:top}',
     '.r-cab{display:flex;justify-content:space-between;align-items:center;padding-bottom:11px;border-bottom:1px solid var(--r-bd)}',
     '.r-marca{display:flex;align-items:center;gap:10px}',
     '.r-logo{width:34px;height:34px;border-radius:9px;background:var(--r-green-2);color:#fff;font-weight:800;font-size:19px;display:flex;align-items:center;justify-content:center}',
@@ -153,8 +172,7 @@ export function rbCss(C){
     '.r-pie{margin-top:13px;padding-top:11px;break-inside:avoid;border-top:1px solid var(--r-bd);display:flex;justify-content:space-between;gap:16px;font-size:12px;color:var(--r-muted)}',
     '.r-pie b{color:var(--r-text);font-size:13.5px;display:block;margin-bottom:2px}',
     '.r-pie-d{text-align:right;white-space:nowrap}',
-    '@media print{html,body,*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}' +
-      '@page{size:letter;margin:0}html{background:' + C.bg + '!important}body{max-width:none;background:' + C.bg + '!important;color:' + C.text + '!important;min-height:100vh}}'
+    rbImpresion(C.bg === '#0d1117')
   ];
 }
 

@@ -164,7 +164,7 @@ export function DeudorPanel(props){
   }
   function tab(x){
     var on = x.loan.id === sel;
-    return h('button', { key: x.loan.id, className: 'dp-tab' + (on ? ' on' : '') + ' e-' + x.estado, onClick: function(){ setSel(x.loan.id); setMenu(false); } },
+    return h('button', { key: x.loan.id, className: 'dp-tab' + (on ? ' on' : '') + ' e-' + x.estado, onClick: function(){ setSel(x.loan.id); setMenu(false); if (props.onLoan) props.onLoan(x.loan.id); } },
       h('div', { className: 'dp-tab-1' }, h('i', { className: 'dp-dot' }), h('span', { className: 'mono' }, dpMonto(x)), x.esUSD && h('span', { className: 'dp-usdtag' }, 'USD')),
       h('div', { className: 'dp-tab-2' }, opModalidad(x.loan.modalidad, true) + ' · ' + opCorta(x.loan.fechaInicio)),
       x.activo

@@ -16,8 +16,9 @@
 // la app no pueden contradecirse (Bug #45).
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
-import { nowStr, properCase } from '../core/ui.js';
+import { nowStr } from '../core/ui.js';
 import { estadoDiario } from '../core/dominio.js';
+import { rbImpresion, rbIniciales, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
 function campoValido(v){
@@ -49,8 +50,8 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
     });
 
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
-  var ini = properCase(loan.nombre || '').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'').slice(0,2);
-  var ecCode = 'EC-' + (ini || 'XX') + '-' + String(loan.id).slice(-3) + '-' + String(hasta).slice(8,10) + String(hasta).slice(5,7);
+  // Iniciales con la lista blanca comun (con dieresis): antes un apellido con "ü" perdia esa letra.
+  var ecCode = 'EC-' + rbIniciales(loan.nombre) + '-' + String(loan.id).slice(-3) + '-' + String(hasta).slice(8,10) + String(hasta).slice(5,7);
   var interesDia = Math.round(dev.capitalVivo * (+loan.tasaMensual || 0) / 100 / 30);
   var tasaDia = Math.round((+loan.tasaMensual || 0) / 30 * 1000) / 1000;
 
@@ -83,14 +84,14 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
     var c = cortes[i];
     if (c) {
       var det = [];
-      if (Math.round(+c.interesPeriodo || 0) > 0) det.push('pago intereses');
+      if (Math.round(+c.interesPeriodo || 0) > 0) det.push('pago de intereses');
       if (Math.round(+c.abonoCapital || 0) > 0) det.push('abono a capital ' + money(Math.round(+c.abonoCapital)));
       filas.push('<tr class="ev"><td colspan="4">Corte #' + c.cuotaN + ' &nbsp;&middot;&nbsp; ' +
         fmtD(c.fechaPago) + ' &nbsp;&middot;&nbsp; ' + (det.join(' + ') || 'sin movimiento') + '</td>' +
         '<td class="n">&minus;' + money(Math.round(+c.interesPeriodo || 0)) + '</td></tr>');
     }
   });
-  filas.push('<tr class="tot"><td colspan="3">Total devengado</td><td class="n">' + dev.diasTotales + ' dias</td>' +
+  filas.push('<tr class="tot"><td colspan="3">Total devengado</td><td class="n">' + dev.diasTotales + ' días</td>' +
              '<td class="n">' + money(dev.interesDevengado) + '</td></tr>');
   filas.push('<tr class="tot"><td colspan="4">Total cobrado</td><td class="n">&minus;' + money(dev.interesCobrado) + '</td></tr>');
 
@@ -131,15 +132,14 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
     '.ec-nota{margin-top:11px;padding:9px 13px;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + ';border-radius:9px;font-size:10.5px;line-height:1.5;color:' + C.blue + '}',
     '.ec-foot{margin-top:17px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:9.5px;line-height:1.55}',
     '.ec-foot b{color:' + C.green + '}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:2cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:2cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="ec-head"><div class="ec-brand">',
     '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="ec-wm">Cartera</div><div class="ec-sub">Gestion de cartera de credito</div></div></div>',
+    '<div><div class="ec-wm">Cartera</div><div class="ec-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="ec-meta"><div class="ec-type">Estado de Cuenta</div><div class="ec-num">' + ecCode + '</div>',
-    '<div class="ec-date">Emision: ' + fechaEmision + '</div></div></div>',
-    '<div class="ec-st">Credito abierto de</div>',
+    '<div class="ec-date">Emisión: ' + fechaEmision + '</div></div></div>',
+    '<div class="ec-st">Crédito abierto de</div>',
     '<div class="ec-name">' + esc(loan.nombre) + '</div>',
     (deudorMeta ? '<div class="ec-cc">' + deudorMeta + '</div>' : ''),
 
@@ -148,29 +148,29 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
     row('Desde', fmtD(loan.fechaInicio)),
     row('Tasa', (+loan.tasaMensual || 0) + '% mensual &nbsp;&middot;&nbsp; ' + tasaDia + '% diario'),
 
-    '<div class="ec-sec">Como se genero el interes</div>',
-    '<table><tr><th>Desde</th><th>Hasta</th><th class="n">Dias</th><th class="n">Capital base</th><th class="n">Interes</th></tr>',
+    '<div class="ec-sec">Cómo se generó el interés</div>',
+    '<table><thead><tr><th>Desde</th><th>Hasta</th><th class="n">Días</th><th class="n">Capital base</th><th class="n">Interés</th></tr></thead><tbody>',
     filas.join(''),
-    '</table>',
-    '<div class="ec-sm" style="margin-top:5px">Cada tramo va desde su fecha inicial inclusive hasta la siguiente sin incluir, de modo que ningun dia se cobra dos veces. Un abono a capital reduce la base ese mismo dia.</div>',
+    '</tbody></table>',
+    '<div class="ec-sm" style="margin-top:5px">Cada tramo va desde su fecha inicial inclusive hasta la siguiente sin incluir, de modo que ningún día se cobra dos veces. Un abono a capital reduce la base ese mismo día.</div>',
 
-    '<div class="ec-sec">Situacion al ' + fmtD(hasta) + '</div>',
+    '<div class="ec-sec">Situación al ' + fmtD(hasta) + '</div>',
     row('Capital prestado', money(dev.origCOP)),
     row('Capital devuelto', '&minus;' + money(dev.capitalAbonado), C.green),
     row('Capital vivo', money(dev.capitalVivo)),
-    row('Interes devengado por cobrar<div class="ec-sm">' + dev.diasDesdeUltimoCorte + ' dia(s) x ' + money(interesDia) +
-        '/dia desde ' + (dev.fechaUltimoCorte ? ('el ultimo corte (' + fmtD(dev.fechaUltimoCorte) + ')') : ('el inicio (' + fmtD(loan.fechaInicio) + ')')) + '</div>',
+    row('Interés devengado por cobrar<div class="ec-sm">' + dev.diasDesdeUltimoCorte + ' día(s) x ' + money(interesDia) +
+        '/día desde ' + (dev.fechaUltimoCorte ? ('el último corte (' + fmtD(dev.fechaUltimoCorte) + ')') : ('el inicio (' + fmtD(loan.fechaInicio) + ')')) + '</div>',
         money(dev.interesPendiente), C.blue),
 
     '<div class="ec-caja"><span class="q">Valor para liquidar al ' + fmtD(hasta) + '</span>',
     '<span class="v">' + money(dev.capitalVivo + dev.interesPendiente) + '</span></div>',
     (dev.capitalVivo > 0
-      ? '<div class="ec-nota">Mientras quede capital vivo, el credito genera <b>' + money(interesDia) + '</b> cada dia. Puedes pagar solo los intereses o abonar a capital en cualquier momento: cada abono baja el interes diario desde ese mismo dia.</div>'
-      : '<div class="ec-nota">El capital fue devuelto en su totalidad; el credito ya no genera interes.</div>'),
+      ? '<div class="ec-nota">Mientras quede capital vivo, el crédito genera <b>' + money(interesDia) + '</b> cada día. Puedes pagar solo los intereses o abonar a capital en cualquier momento: cada abono baja el interés diario desde ese mismo día.</div>'
+      : '<div class="ec-nota">El capital fue devuelto en su totalidad; el crédito ya no genera interés.</div>'),
 
-    '<div class="ec-foot">Este documento detalla como se genero el interes de tu credito abierto y su situacion a la fecha de emision.',
+    '<div class="ec-foot">Este documento detalla cómo se generó el interés de tu crédito abierto y su situación a la fecha de emisión.',
     '<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + ecCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
   var fname = 'Estado de cuenta ' + loan.nombre + ' - ' + hasta;

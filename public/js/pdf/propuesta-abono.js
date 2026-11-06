@@ -23,6 +23,7 @@
 import { fmt, fmtUSD, fmtD } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
 import { esDiario } from '../core/dominio.js';
+import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // `propuesta` = { fecha, plan, cajaCOP, proyeccion }
 //   - plan       : resultado de `planCascada` (pasos + totales). NO aplicado.
@@ -137,20 +138,20 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     var totP = uni(p.obligacionCOP), intP = uni(p.interes);
     var capP = Math.max(0, totP - intP);
     var esMora = p.tipo === 'partial';
-    var titulo = p.esInteresMes ? ('Interes del mes &middot; cuota #' + p.cuotaN)
+    var titulo = p.esInteresMes ? ('Interés del mes &middot; cuota #' + p.cuotaN)
                : esMora ? ('Cuota #' + p.cuotaN + ' vencida') : 'Abono extraordinario a capital';
     var chip = p.esInteresMes ? '<span class="pa-chip pa-chip-b">POR ADELANTADO</span>'
-             : esMora ? (p.salda ? '<span class="pa-chip pa-chip-g">SE SALDARIA</span>'
-                                 : '<span class="pa-chip pa-chip-a">QUEDARIA PARCIAL</span>')
+             : esMora ? (p.salda ? '<span class="pa-chip pa-chip-g">SE SALDARÍA</span>'
+                                 : '<span class="pa-chip pa-chip-a">QUEDARÍA PARCIAL</span>')
              : '';
     var det = [];
-    if (p.esInteresMes && p.fechaPago) det.push('aun no vence (' + fmtD(p.fechaPago) + ')');
-    else if (esMora && p.fechaPago) det.push('vencio el ' + fmtD(p.fechaPago));
+    if (p.esInteresMes && p.fechaPago) det.push('aún no vence (' + fmtD(p.fechaPago) + ')');
+    else if (esMora && p.fechaPago) det.push('venció el ' + fmtD(p.fechaPago));
     if (intP > 0) det.push('intereses <b style="color:' + C.red + '">' + fmtUni(intP) + '</b>');
     if (capP > 0) det.push('capital <b>' + fmtUni(capP) + '</b>');
     if (esMora && !p.esInteresMes && !p.salda && p.restanteCuota > 0)
-      det.push('seguiria debiendo <b style="color:' + C.amber + '">' + money(p.restanteCuota) + '</b>');
-    if (!esMora) det.push('reduciria el capital vivo y los intereses futuros');
+      det.push('seguiría debiendo <b style="color:' + C.amber + '">' + money(p.restanteCuota) + '</b>');
+    if (!esMora) det.push('reduciría el capital vivo y los intereses futuros');
     return '<div class="pa-paso"><div class="pa-paso-h">' +
       '<span class="pa-n">' + (i + 1) + '</span>' +
       '<span class="pa-paso-t">' + titulo + '</span>' + chip +
@@ -161,10 +162,10 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
 
   var totalesHTML = '<div class="pa-panel">' +
     (intU  > 0 ? row('Intereses vencidos',             fmtUni(intU),  C.red)   : '') +
-    (mesU  > 0 ? row('Interes del mes en curso',       fmtUni(mesU),  C.blue)  : '') +
+    (mesU  > 0 ? row('Interés del mes en curso',       fmtUni(mesU),  C.blue)  : '') +
     (capMoraU > 0 ? row('Capital de cuotas vencidas',  fmtUni(capMoraU))       : '') +
     (abonoU > 0 ? row('Abono extraordinario a capital', fmtUni(abonoU), C.green) : '') +
-    '<div class="pa-row pa-row-tot"><span class="pa-lab">Total que se aplicaria</span>' +
+    '<div class="pa-row pa-row-tot"><span class="pa-lab">Total que se aplicaría</span>' +
       '<span class="pa-val">' + fmtUni(totalU) + '</span></div>' +
     (esUSD && cajaCOP > 0 ? row('Equivalente en pesos', fmt(cajaCOP)) : '') +
     '</div>';
@@ -201,7 +202,7 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     // saldo al lado. Decirlo dos veces obligaba al lector a comparar dos redacciones de lo
     // mismo, que es el ruido que este rediseno vino a quitar. Aqui solo queda la fecha,
     // porque el rotulo del hero no la lleva.
-    cards = cardHero('Quedaria un solo pago', aPagarTxt,
+    cards = cardHero('Quedaría un solo pago', aPagarTxt,
       fechaProx ? 'el ' + fmtD(fechaProx) : '');
   } else {
     // Ninguna tarjeta repite una cifra que otra ya muestra: con una sola cuota
@@ -221,7 +222,7 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
       // Idem: la resta vive en la tabla. La nota solo carga la fecha cuando el rotulo la
       // perdio por la degradacion a "Proxima cuota".
       var notaCuota = (conMora && fechaProx) ? ('vence el ' + fmtD(fechaProx)) : '';
-      cards += card(conMora ? 'Proxima cuota' : (fechaProx ? ('A pagar el ' + fechaCorta(fechaProx)) : 'A pagar'),
+      cards += card(conMora ? 'Próxima cuota' : (fechaProx ? ('A pagar el ' + fechaCorta(fechaProx)) : 'A pagar'),
         (abonadoProx === 0 && cuotaAntes && cuotaAntes !== cuotaDespues) ? money(cuotaAntes) : '',
         aPagarTxt, notaCuota);
     }
@@ -229,15 +230,15 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
   }
 
   var saldadoHTML = (proy.saldado || totalDespues === 0)
-    ? '<div class="pa-saldado">Con ese abono el credito quedaria <b>totalmente cancelado</b>.</div>' : '';
+    ? '<div class="pa-saldado">Con ese abono el crédito quedaría <b>totalmente cancelado</b>.</div>' : '';
 
   // Cronograma PROYECTADO. Mismas columnas universales que el resto de la app
   // (v1.18.0), con el capital reconciliado en la moneda visible.
   var cronoHTML = '';
   if (filas.length) {
-    cronoHTML = '<div class="pa-st">Cronograma que quedaria</div>' +
+    cronoHTML = '<div class="pa-st">Cronograma que quedaría</div>' +
       '<table class="pa-tb"><thead><tr>' +
-      '<th class="l">#</th><th class="l">VENCE</th><th>INTERES</th><th>ABONO A CAPITAL</th>' +
+      '<th class="l">#</th><th class="l">VENCE</th><th>INTERÉS</th><th>ABONO A CAPITAL</th>' +
       '<th>VALOR CUOTA</th><th>SALDO</th></tr></thead><tbody>' +
       filas.map(function(f, ix){
         var q = uni(f.cuota), i2 = uni(f.interes), c2 = Math.max(0, q - i2);
@@ -257,7 +258,7 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
         // En condicional, como todo este documento: aqui no se ha pagado nada todavia.
         if (ix !== 0 || abonadoProx <= 0) return tr;
         return tr + '<tr class="ab"><td class="l" colspan="6"><span class="pa-ab">' +
-          'esta cuota quedaria con ' + money(abonadoProx) + ' abonado &rarr; a pagar <b>' +
+          'esta cuota quedaría con ' + money(abonadoProx) + ' abonado &rarr; a pagar <b>' +
           aPagarTxt + '</b></span></td></tr>';
       }).join('') + '</tbody></table>';
   }
@@ -331,13 +332,12 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     '.pa-aviso{margin-top:11px;padding:9px 12px;background:' + C.amberBg + ';border:1px solid ' + C.amberBd + ';border-radius:9px;font-size:10.5px;line-height:1.45;color:' + C.amber + '}',
     '.pa-foot{margin-top:14px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:10px;line-height:1.5}',
     '.pa-foot b{color:' + C.blue + '}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:1.3cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:1.3cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="pa-head"><div class="pa-brand">',
     '<svg width="34" height="34" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.blue + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="pa-wm">Cartera</div><div class="pa-sub">Gestion de cartera de credito</div></div></div>',
-    '<div class="pa-meta"><div class="pa-type">Propuesta de Abono</div><div class="pa-num">' + paCode + '</div><div class="pa-date">Emision: ' + fechaEmision + '</div></div></div>',
+    '<div><div class="pa-wm">Cartera</div><div class="pa-sub">Gestión de cartera de crédito</div></div></div>',
+    '<div class="pa-meta"><div class="pa-type">Propuesta de Abono</div><div class="pa-num">' + paCode + '</div><div class="pa-date">Emisión: ' + fechaEmision + '</div></div></div>',
     '<div class="pa-st">Preparada para</div>',
     '<div class="pa-name">' + esc(loan.nombre) + '</div>',
     (deudorMeta ? '<div class="pa-cc">' + deudorMeta + '</div>' : ''),
@@ -345,21 +345,21 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     '<div class="pa-ta">' + heroTxt + '</div>',
     (heroSub ? '<div class="pa-ts">' + heroSub + '</div>' : ''),
     '</div>',
-    '<div class="pa-st">Asi se aplicaria tu pago</div>',
+    '<div class="pa-st">Así se aplicaría tu pago</div>',
     pasosHTML,
     totalesHTML,
-    '<div class="pa-st">Asi quedaria tu credito</div>',
+    '<div class="pa-st">Así quedaría tu crédito</div>',
     '<div class="pa-imp">' + cards + '</div>',
     saldadoHTML,
     cronoHTML,
     // El aviso es la razon de ser del documento: sin el, un papel con el membrete de
     // la app y cifras exactas se puede leer como comprobante de algo ya pagado.
-    '<div class="pa-aviso"><b>Esto es una proyeccion, no un comprobante.</b> No se ha registrado ningun pago ' +
-      'y el credito sigue como estaba. Los valores corresponden al ' + fmtD(fechaProp) +
+    '<div class="pa-aviso"><b>Esto es una proyección, no un comprobante.</b> No se ha registrado ningún pago ' +
+      'y el crédito sigue como estaba. Los valores corresponden al ' + fmtD(fechaProp) +
       '; si vence una cuota antes de que abones, el reparto cambia.</div>',
     '<div class="pa-foot">Documento informativo preparado a solicitud del cliente.' +
       '<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + paCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>',
+    RB_MARCO_CIERRA + '</body></html>',
   ].join('\n');
 
   // `fmt()` mete un espacio duro despues del $ que ensuciaria el nombre del archivo.

@@ -10,7 +10,7 @@
     "cabeceras": [
       "#",
       "VENCE",
-      "INTERES",
+      "INTERÉS",
       "ABONO A CAPITAL",
       "VALOR CUOTA",
       "SALDO"
@@ -18,7 +18,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 8668,
+    "bytes": 9020,
     "nFilas": 4,
     "nCeldas": 24,
     "celdasPorTr": [
@@ -30,7 +30,7 @@
     "nMontos": 28,
     "hashMontos": "aebd53481d5ad31230bd06f3c77dd90ee710060c",
     "hashFname": "b1759f825f0d560fc6f20a4d228070e1987b32d4",
-    "hashTexto": "6cef22495345c0f6c7a2e06fb63bbb55b8649bb7",
+    "hashTexto": "d535ad98a6c8f11ceaad01f25cf98319b2c3c0d4",
     "clases": [
       "l",
       "pa-aviso",

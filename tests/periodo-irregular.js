@@ -1314,25 +1314,25 @@ async function seccionM() {
     lq.t.indexOf('Cobrar el interes de la semana en curso') !== -1 && lq.t.indexOf('+ ' + X.fmt(92379)) !== -1 &&
     lq.todo.indexOf('asi que esa semana aun no se ha facturado') !== -1 && lq.todo.indexOf('mes en curso') === -1, lq.todo.slice(0, 600));
   R.check('M4 el desglose: "Interes de la semana en curso", una semana al 10% mensual, y el total',
-    lq.t.indexOf('Interes de la semana en curso') !== -1 && lq.t.indexOf('Una semana de interes al 10% mensual sobre el capital pendiente') !== -1 &&
+    lq.t.indexOf('Interes de la semana en curso') !== -1 && lq.t.indexOf('Una semana de interés al 10% mensual sobre el capital pendiente') !== -1 &&
     lq.t.indexOf(X.fmt(K4 + 92379)) !== -1);
   boton(lq, /Confirmar liquidacion/).props.onClick();
   await new Promise(r => setTimeout(r, 0));
   R.check('M4 confirmar manda el capital y UNA semana de interes', confirmados.length === 1 && confirmados[0].monto === K4 && confirmados[0].intExtra === 92379, confirmados);
   const est = pdfDe(() => boton(lq, /Generar PDF de liquidacion/).props.onClick());
-  R.check('M4 el Estado de Liquidacion dice lo mismo', est.indexOf('Interes de la semana en curso') !== -1 &&
-    est.indexOf('Una semana de interes al 10% mensual sobre el capital pendiente') !== -1 && est.indexOf(X.fmt(K4 + 92379)) !== -1 &&
+  R.check('M4 el Estado de Liquidacion dice lo mismo', est.indexOf('Interés de la semana en curso') !== -1 &&
+    est.indexOf('Una semana de interés al 10% mensual sobre el capital pendiente') !== -1 && est.indexOf(X.fmt(K4 + 92379)) !== -1 &&
     est.indexOf('mes en curso') === -1, est.length);
   const lqQ = montar(X.LiquidarModal, Object.assign({}, propsS, { loan: QUI, pays: buildSchedule(QUI) }), [true, false, false, null]);
   R.check('M4 quincenal: "Cobrar el interes de la quincena en curso  + $ 200.000"',
     lqQ.t.indexOf('Cobrar el interes de la quincena en curso') !== -1 && lqQ.t.indexOf('+ ' + X.fmt(200000)) !== -1 &&
-    lqQ.t.indexOf('Una quincena de interes al 10% mensual sobre el capital pendiente') !== -1);
+    lqQ.t.indexOf('Una quincena de interés al 10% mensual sobre el capital pendiente') !== -1);
   const cr = montar(X.CronogramaPdfModal, { loan: SEM, pays: buildSchedule(SEM), onClose: () => {} }, [true, false, null]);
   R.check('M4 el modal del cronograma: misma casilla y la misma cifra en el valor que va al PDF',
     cr.t.indexOf('Cobrar el interes de la semana en curso') !== -1 && cr.todo.indexOf('+ interes de la semana en curso ' + X.fmt(92379)) !== -1, cr.todo.slice(0, 500));
   const crono = pdfDe(() => boton(cr, /Descargar PDF/).props.onClick());
   R.check('M4 el PDF del cronograma: "+ interes de la semana en curso" y el total con una semana',
-    crono.indexOf('+ interes de la semana en curso') !== -1 && crono.indexOf(X.fmt(K4 + 92379)) !== -1, crono.length);
+    crono.indexOf('+ interés de la semana en curso') !== -1 && crono.indexOf(X.fmt(K4 + 92379)) !== -1, crono.length);
 
   R.seccion('M5 — en la gracia: el aviso en vez de la casilla, en pantalla y en el papel');
   const propsG = Object.assign({}, propsS, { loan: grS, pays: buildSchedule(grS) });
@@ -1348,8 +1348,8 @@ async function seccionM() {
   R.check('M5 confirmar manda 0 de interes adelantado', confG.length === 1 && confG[0].monto === K4 && confG[0].intExtra === 0, confG);
   const estG = pdfDe(() => boton(lg, /Generar PDF de liquidacion/).props.onClick());
   R.check('M5 el Estado de Liquidacion explica la gracia en la vigencia y no cobra interes',
-    estG.indexOf('El credito esta en sus dias de gracia: el interes empieza a correr el ' + X.fmtD('2026-08-02')) !== -1 &&
-    estG.indexOf('Interes de la semana en curso') === -1 && estG.indexOf(X.fmt(K4)) !== -1, estG.length);
+    estG.indexOf('El crédito está en sus días de gracia: el interés empieza a correr el ' + X.fmtD('2026-08-02')) !== -1 &&
+    estG.indexOf('Interés de la semana en curso') === -1 && estG.indexOf(X.fmt(K4)) !== -1, estG.length);
   const crG = montar(X.CronogramaPdfModal, { loan: grS, pays: buildSchedule(grS), onClose: () => {} }, [true, false, null]);
   R.check('M5 si el modal del cronograma se abre igual, muestra el aviso y el valor sin interes',
     crG.t.indexOf('Dias de gracia: sin interes en curso') !== -1 && crG.todo.indexOf('interes de la semana') === -1 && crG.t.indexOf(X.fmt(K4)) !== -1);
@@ -1376,8 +1376,8 @@ async function seccionM() {
         const paz = pdfDe(() => X.generateReciboAbono(loanDe(S, id), tras, { monto: Lb.capitalPendiente, fecha: '2026-07-31', liquidar: true, intExtra: Lb.intExtra,
           pre: { saldo: K4, saldoCaja: K4, cuota: pDb[0].cuotaTotal, cuotas: pDb.length, intereses: 0, plazo: 8, liq: liqPre } }));
         R.check('M6 el Paz y Salvo rotula el interes como de la SEMANA en curso, con una semana de interes',
-          paz.indexOf('Interes de la semana en curso') !== -1 && paz.indexOf('Una semana de interes al 10% mensual') !== -1 &&
-          paz.indexOf('Interes del mes en curso') === -1 && paz.indexOf(X.fmt(K4 + interes)) !== -1, paz.length);
+          paz.indexOf('Interés de la semana en curso') !== -1 && paz.indexOf('Una semana de interés al 10% mensual') !== -1 &&
+          paz.indexOf('Interés del mes en curso') === -1 && paz.indexOf(X.fmt(K4 + interes)) !== -1, paz.length);
       }
     }
   } finally { await cerrar(S); }
@@ -1505,8 +1505,8 @@ async function seccionI() {
   boton(lq, /Generar PDF de liquidacion/).props.onClick();
   const est = CAP.pdfs[0] ? CAP.pdfs[0].html : '';
   R.check('I3 el Estado de Liquidacion imprime los mismos 45 dias, el mismo total y hasta cuando vale',
-    CAP.pdfs.length === 1 && est.indexOf('Interes del periodo en curso') !== -1 && est.indexOf('45 de 92 dias') !== -1 &&
-    est.indexOf(X.fmt(10750000)) !== -1 && est.indexOf('valido hasta el ' + X.fmtD('2026-09-03')) !== -1, est.length);
+    CAP.pdfs.length === 1 && est.indexOf('Interés del periodo en curso') !== -1 && est.indexOf('45 de 92 días') !== -1 &&
+    est.indexOf(X.fmt(10750000)) !== -1 && est.indexOf('válido hasta el ' + X.fmtD('2026-09-03')) !== -1, est.length);
   const lqSin = montar(X.LiquidarModal, props, [false, false, false, null]);
   R.check('I3 sin marcar no aparece el campo, y la cifra ofrecida son los dias corridos',
     lqSin.inputs.filter(n => n.props.type === 'number').length === 0 && lqSin.t.indexOf('+ ' + X.fmt(183333)) !== -1);
@@ -1520,8 +1520,8 @@ async function seccionI() {
   boton(cr, /Descargar PDF/).props.onClick();
   const crono = CAP.pdfs[0] ? CAP.pdfs[0].html : '';
   R.check('I4 el PDF del cronograma imprime el mismo total, los 45 dias y la misma vigencia',
-    CAP.pdfs.length === 1 && crono.indexOf(X.fmt(10750000)) !== -1 && crono.indexOf('+ interes de 45 dias del periodo en curso') !== -1 &&
-    crono.indexOf('Valido hasta el ' + X.fmtD('2026-09-03')) !== -1 && crono.indexOf('Incluye 45 dias de interes') !== -1, crono.length);
+    CAP.pdfs.length === 1 && crono.indexOf(X.fmt(10750000)) !== -1 && crono.indexOf('+ interés de 45 días del periodo en curso') !== -1 &&
+    crono.indexOf('Válido hasta el ' + X.fmtD('2026-09-03')) !== -1 && crono.indexOf('Incluye 45 días de interés') !== -1, crono.length);
   const crReg = montar(X.CronogramaPdfModal, { loan: reg, pays: buildSchedule(reg), onClose: () => {} }, [true, false, null]);
   R.check('I4 prestamo regular: el modal sigue ofreciendo el mes (texto de 3.1.0)',
     crReg.t.indexOf('Cobrar el interes del mes en curso') !== -1 && crReg.inputs.filter(n => n.props.type === 'number').length === 0);
@@ -1548,7 +1548,7 @@ async function seccionI() {
       pre: { saldo: 10000000, saldoCaja: 10000000, cuota: pDb[0].cuotaTotal, cuotas: pDb.length, intereses: 0, plazo: 6, liq: liqPre } });
     const paz = CAP.pdfs[0] ? CAP.pdfs[0].html : '';
     R.check('I5 el Paz y Salvo titula con el total recibido y rotula el interes como del PERIODO en curso',
-      CAP.pdfs.length === 1 && paz.indexOf(X.fmt(10750000)) !== -1 && paz.indexOf('Interes del periodo en curso') !== -1 && paz.indexOf('Interes del mes en curso') === -1, paz.length);
+      CAP.pdfs.length === 1 && paz.indexOf(X.fmt(10750000)) !== -1 && paz.indexOf('Interés del periodo en curso') !== -1 && paz.indexOf('Interés del mes en curso') === -1, paz.length);
   } finally { await cerrar(S); }
 
   R.seccion('I6 — el cable: los dias viajan a los tres documentos');

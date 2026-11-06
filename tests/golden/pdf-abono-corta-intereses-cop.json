@@ -14,7 +14,7 @@
       "Abono recibido a capital",
       "Resumen",
       "Modalidad",
-      "Monto original del prestamo",
+      "Monto original del préstamo",
       "Saldo anterior",
       "Abono aplicado",
       "Nuevo saldo pendiente",
@@ -22,14 +22,14 @@
     ]
   },
   "valores": {
-    "bytes": 6452,
+    "bytes": 6809,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 9,
     "hashMontos": "bdc5ea9848a47b6726a39bb8cadac346ec06d4ea",
     "hashFname": "f5577f210993122fba65e3caa1d2b2c6dbd54512",
-    "hashTexto": "a1ea505c18d8fc8b4c8ef7df79c9a7390fd9acf7",
+    "hashTexto": "5d9d1ffdeaf07a3338c0ff9eb3e8130a7f73f5f3",
     "clases": [
       "ab-brand",
       "ab-cc",

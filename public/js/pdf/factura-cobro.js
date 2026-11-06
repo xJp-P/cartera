@@ -17,6 +17,8 @@
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, facturaCode } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota, estadoDiario } from '../core/dominio.js';
+import { opModalidad } from '../core/operacion.js';
+import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // ── Recibo de Cobro / Factura (v1.16.0) ──────────────────────────────────────
 // Documento PROSPECTIVO (antes de pagar) para gestion de cartera. Distinto de
@@ -73,24 +75,24 @@ export function generateFacturaCobro(pay, loan, allPays, datosPago, opts) {
   var heroLabel, heroBig, heroMsg;
   if (dr > 0) {
     heroLabel = 'Aviso de mora';
-    heroBig = '<div class="rc-hero-days">' + dr + '<span>' + (dr === 1 ? 'dia' : 'dias') + '</span></div>';
-    heroMsg = 'Estas atrasado <b>' + dr + ' ' + (dr === 1 ? 'dia' : 'dias') + '</b> con el pago de esta cuota.';
+    heroBig = '<div class="rc-hero-days">' + dr + '<span>' + (dr === 1 ? 'día' : 'días') + '</span></div>';
+    heroMsg = 'Estás atrasado <b>' + dr + ' ' + (dr === 1 ? 'día' : 'días') + '</b> con el pago de esta cuota.';
   } else if (dr === 0) {
     heroLabel = 'Recordatorio';
     heroBig = '<div class="rc-hero-days" style="font-size:28px;letter-spacing:0">HOY</div>';
-    heroMsg = '<b>Hoy</b> es el dia de pago de tu cuota.';
+    heroMsg = '<b>Hoy</b> es el día de pago de tu cuota.';
   } else {
     var faltan = -dr;
-    heroLabel = 'Aviso de proximo vencimiento';
-    heroBig = '<div class="rc-hero-days">' + faltan + '<span>' + (faltan === 1 ? 'dia' : 'dias') + '</span></div>';
-    heroMsg = 'Tu cuota vence en <b>' + faltan + ' ' + (faltan === 1 ? 'dia' : 'dias') + '</b>.';
+    heroLabel = 'Aviso de próximo vencimiento';
+    heroBig = '<div class="rc-hero-days">' + faltan + '<span>' + (faltan === 1 ? 'día' : 'días') + '</span></div>';
+    heroMsg = 'Tu cuota vence en <b>' + faltan + ' ' + (faltan === 1 ? 'día' : 'días') + '</b>.';
   }
   // Proxima accion: exige el pago para la FECHA DE VENCIMIENTO REAL (sin dias de gracia)
   var proxAccion = dr > 0
-    ? '<b>Accion requerida:</b> el plazo de pago vencio el <b>' + fmtD(pay.fechaPago) + '</b>. Regulariza esta cuota de inmediato para evitar mayores intereses de mora.'
+    ? '<b>Acción requerida:</b> el plazo de pago venció el <b>' + fmtD(pay.fechaPago) + '</b>. Regulariza esta cuota de inmediato para evitar mayores intereses de mora.'
     : dr === 0
-    ? '<b>Accion requerida:</b> el pago de esta cuota vence <b>hoy, ' + fmtD(pay.fechaPago) + '</b>. Realiza el pago durante el dia.'
-    : '<b>Proxima accion:</b> ten lista esta cuota para su pago a mas tardar el <b>' + fmtD(pay.fechaPago) + '</b>.';
+    ? '<b>Acción requerida:</b> el pago de esta cuota vence <b>hoy, ' + fmtD(pay.fechaPago) + '</b>. Realiza el pago durante el día.'
+    : '<b>Próxima acción:</b> ten lista esta cuota para su pago a más tardar el <b>' + fmtD(pay.fechaPago) + '</b>.';
 
   // En prestamos USD el cliente paga en dolares -> el USD es la moneda protagonista y UNICA del
   // recibo (sin la doble fila COP+USD que duplicaba el alto de la columna). En COP se muestra COP.
@@ -106,7 +108,7 @@ export function generateFacturaCobro(pay, loan, allPays, datosPago, opts) {
   }
 
   var comoPagar = (datosPago && String(datosPago).trim())
-    ? '<div class="rc-stitle">Como pagar</div><div class="rc-panel"><div class="rc-pay-body">' + esc(datosPago).replace(/\n/g, '<br>') + '</div></div>'
+    ? '<div class="rc-stitle">Cómo pagar</div><div class="rc-panel"><div class="rc-pay-body">' + esc(datosPago).replace(/\n/g, '<br>') + '</div></div>'
     : '';
   // Cedula/telefono validos: descarta vacio, null/undefined y el placeholder "0" (evita "C.C. 0").
   // Si ambos son invalidos, deudorMeta queda '' y la linea de contacto no se renderiza.
@@ -114,7 +116,7 @@ export function generateFacturaCobro(pay, loan, allPays, datosPago, opts) {
   var deudorMeta = [ campoValido(loan.cedula) ? ('C.C. ' + esc(String(loan.cedula).trim())) : '', campoValido(loan.telefono) ? ('Tel. ' + esc(String(loan.telefono).trim())) : '' ].filter(Boolean).join(' &nbsp;&middot;&nbsp; ');
 
   var html = [
-    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo de Cobro</title>',
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Factura de Cobro</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
     'body{font-family:Arial,Helvetica,sans-serif;padding:22px;max-width:520px;margin:0 auto;color:' + C.text + ';background:' + C.bg + ';line-height:1.3}',
@@ -165,43 +167,42 @@ export function generateFacturaCobro(pay, loan, allPays, datosPago, opts) {
     '.rc-next-txt b{color:' + C.amber + ';font-weight:700}',
     '.rc-foot{margin-top:14px;padding-top:10px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:10.5px;line-height:1.5}',
     '.rc-foot b{color:' + C.green + '}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:1.3cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:1.3cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="rc-head"><div class="rc-brand">',
     '<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="rc-wordmark">Cartera</div><div class="rc-brand-sub">Gestion de cartera de credito</div></div></div>',
-    '<div class="rc-meta"><div class="rc-doc-type">Factura de Cobro</div><div class="rc-doc-num">' + fcCode + '</div><div class="rc-doc-date">Emision: ' + fechaEmision + '</div></div></div>',
+    '<div><div class="rc-wordmark">Cartera</div><div class="rc-brand-sub">Gestión de cartera de crédito</div></div></div>',
+    '<div class="rc-meta"><div class="rc-doc-type">Factura de Cobro</div><div class="rc-doc-num">' + fcCode + '</div><div class="rc-doc-date">Emisión: ' + fechaEmision + '</div></div></div>',
     '<div class="rc-hero"><div class="rc-hero-top"><span class="rc-hero-dot"></span><span class="rc-hero-label">' + heroLabel + '</span></div>',
     '<div class="rc-hero-body">' + heroBig + '<div class="rc-hero-msg">' + heroMsg + '</div></div></div>',
     '<div class="rc-stitle">Cobro dirigido a</div>',
     '<div><div class="rc-deudor-name">' + esc(pay.nombreCliente) + '</div>' + (deudorMeta ? '<div class="rc-deudor-meta">' + deudorMeta + '</div>' : '') + '</div>',
     '<div class="rc-total"><div class="rc-total-label">Total a pagar</div>',
     '<div class="rc-total-amt">' + moneyPend() + '</div>',
-    '<div style="margin-top:8px"><span class="rc-total-chip">Cuota #' + pay.cuotaN + '</span>' + (esTransitoria ? ' <span style="font-size:10px;color:' + C.amber + ';font-weight:700">(Cuota Transitoria / Interes Prorrateado)</span>' : '') + '</div>',
+    '<div style="margin-top:8px"><span class="rc-total-chip">Cuota #' + pay.cuotaN + '</span>' + (esTransitoria ? ' <span style="font-size:10px;color:' + C.amber + ';font-weight:700">(Cuota Transitoria / Interés Prorrateado)</span>' : '') + '</div>',
     (yaPag > 0 ? '<div class="rc-total-sub">Ya abonaste ' + moneyYaPag() + ' de ' + money(pay.cuotaTotal) + '</div>' : ''),
     '<div class="rc-total-dates">',
-    '<div class="rc-tdate"><div class="rc-tdate-lab">' + (dr > 0 ? 'Vencio el' : dr === 0 ? 'Vence hoy' : 'Vence el') + '</div><div class="rc-tdate-val" style="color:' + heroC.ac + '">' + fmtD(pay.fechaPago) + '</div></div>',
+    '<div class="rc-tdate"><div class="rc-tdate-lab">' + (dr > 0 ? 'Venció el' : dr === 0 ? 'Vence hoy' : 'Vence el') + '</div><div class="rc-tdate-val" style="color:' + heroC.ac + '">' + fmtD(pay.fechaPago) + '</div></div>',
     '<div class="rc-tdate"><div class="rc-tdate-lab">Fecha de hoy</div><div class="rc-tdate-val">' + fmtD(hoyStr) + '</div></div>',
     '</div></div>',
     // Fase 3: con un parcial en curso el desglose muestra lo que AUN SE DEBE, no la composicion
     // nominal. Antes imprimia $227.574 de interes + $222.426 de capital bajo un "Total a pagar" de
     // $50.000: cobraba un interes que el parcial ya habia cubierto y las filas no sumaban el total.
     '<div class="rc-stitle">' + (yaPag > 0 ? 'Desglose de lo que falta' : 'Desglose de la cuota') + '</div><div>',
-    (pend.interes > 0 ? rowHTML(esTransitoria ? 'Interes prorrateado' : 'Interes del periodo', pend.interes) : ''),
+    (pend.interes > 0 ? rowHTML(esTransitoria ? 'Interés prorrateado' : 'Interés del periodo', pend.interes) : ''),
     (pend.capital > 0 ? '<div class="rc-row"><span class="rc-lab">Abono a capital</span><span class="rc-val">' + moneyCapital() + '</span></div>' : ''),
     '<div class="rc-row rc-row-tot"><span class="rc-lab">' + (yaPag > 0 ? 'Total pendiente' : 'Valor de la cuota') + '</span><span class="rc-val">' + moneyPend() + '</span></div></div>',
-    '<div class="rc-stitle">Detalle del prestamo</div><div class="rc-panel">',
-    '<div class="rc-row"><span class="rc-lab">Modalidad</span><span class="rc-val">' + esc(loan.modalidad) + '</span></div>',
+    '<div class="rc-stitle">Detalle del préstamo</div><div class="rc-panel">',
+    '<div class="rc-row"><span class="rc-lab">Modalidad</span><span class="rc-val">' + esc(opModalidad(loan.modalidad)) + '</span></div>',
     '<div class="rc-row"><span class="rc-lab">Monto original</span><span class="rc-val">' + (esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) + '</span></div>',
     (loan.tasaMensual > 0 ? '<div class="rc-row"><span class="rc-lab">Tasa</span><span class="rc-val">' + loan.tasaMensual + '% mensual</span></div>' : ''),
     (loan.modalidad !== 'Prestamo' && loan.modalidad !== 'Pago Unico' && loan.plazoMeses > 0 ? '<div class="rc-row"><span class="rc-lab">Plazo</span><span class="rc-val">' + (loan.modalidad === 'Intereses' ? 'Indefinido' : (loan.plazoMeses + ' meses')) + '</span></div>' : ''),
-    '<div class="rc-row"><span class="rc-lab">Saldo pendiente del prestamo</span><span class="rc-val">' + money(saldoPrestamo) + '</span></div>',
+    '<div class="rc-row"><span class="rc-lab">Saldo pendiente del préstamo</span><span class="rc-val">' + money(saldoPrestamo) + '</span></div>',
     '</div>',
     comoPagar,
     '<div class="rc-next"><div class="rc-next-txt">' + proxAccion + '</div></div>',
     '<div class="rc-foot">Este documento es una solicitud de cobro y no constituye un comprobante de pago.<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + fcCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
   if (window.electronAPI && window.electronAPI.printPDF) {
@@ -285,35 +286,34 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
     '.fd-pay{font-size:11px;line-height:1.6;white-space:pre-line}',
     '.fd-foot{margin-top:17px;padding-top:9px;border-top:1px solid ' + K.footBd + ';text-align:center;color:' + K.foot + ';font-size:9.5px;line-height:1.55}',
     '.fd-foot b{color:' + K.green + '}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:1.3cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:1.3cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="fd-head"><div class="fd-brand">',
     '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + K.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="fd-wm">Cartera</div><div class="fd-sub">Gestion de cartera de credito</div></div></div>',
+    '<div><div class="fd-wm">Cartera</div><div class="fd-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="fd-meta"><div class="fd-type">Cobro</div><div class="fd-num">' + fcCode + '</div>',
-    '<div class="fd-date">Emision: ' + fechaEmision + '</div></div></div>',
+    '<div class="fd-date">Emisión: ' + fechaEmision + '</div></div></div>',
     '<div class="fd-st">Cobro a</div>',
     '<div class="fd-name">' + escD(loan.nombre) + '</div>',
     (metaD ? '<div class="fd-cc">' + metaD + '</div>' : ''),
-    '<div class="fd-info">Credito abierto: <b>no tiene fecha de vencimiento</b>. Puedes pagar los intereses generados o abonar a capital cuando quieras.</div>',
-    '<div class="fd-hero"><div class="l">Interes devengado al ' + fmtD(hasta) + '</div><div class="a">' + money(dev.interesPendiente) + '</div></div>',
-    '<div class="fd-sec">De donde sale</div>',
+    '<div class="fd-info">Crédito abierto: <b>no tiene fecha de vencimiento</b>. Puedes pagar los intereses generados o abonar a capital cuando quieras.</div>',
+    '<div class="fd-hero"><div class="l">Interés devengado al ' + fmtD(hasta) + '</div><div class="a">' + money(dev.interesPendiente) + '</div></div>',
+    '<div class="fd-sec">De dónde sale</div>',
     rowD('Capital vivo', money(dev.capitalVivo)),
-    rowD('Interes por dia', money(interesDia)),
-    rowD('Dias desde el ultimo movimiento<div class="fd-sm">' +
-      (dev.fechaUltimoCorte ? ('Ultimo corte: ' + fmtD(dev.fechaUltimoCorte)) : ('Inicio del credito: ' + fmtD(loan.fechaInicio))) + '</div>',
+    rowD('Interés por día', money(interesDia)),
+    rowD('Días desde el último movimiento<div class="fd-sm">' +
+      (dev.fechaUltimoCorte ? ('Último corte: ' + fmtD(dev.fechaUltimoCorte)) : ('Inicio del crédito: ' + fmtD(loan.fechaInicio))) + '</div>',
       String(dev.diasDesdeUltimoCorte)),
     rowD('<b>Total a pagar</b>', '<b>' + money(dev.interesPendiente) + '</b>', K.green),
     '<div class="fd-caja"><span class="q">Si prefieres liquidar todo hoy</span><span class="v">' +
       money(dev.capitalVivo + dev.interesPendiente) + '</span></div>',
     (datosPago && String(datosPago).trim()
-      ? '<div class="fd-sec">Como pagar</div><div class="fd-pay">' + escD(datosPago) + '</div>' : ''),
+      ? '<div class="fd-sec">Cómo pagar</div><div class="fd-pay">' + escD(datosPago) + '</div>' : ''),
     '<div class="fd-foot">Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + fcCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
-  var fnameD = 'FC ' + loan.nombre + ' - interes ' + hasta;
+  var fnameD = 'FC ' + loan.nombre + ' - interés ' + hasta;
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(htmlD, fnameD);
   } else {

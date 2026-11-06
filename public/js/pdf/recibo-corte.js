@@ -13,8 +13,8 @@
 // contradecir a la app aunque el llamador pase datos incompletos.
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
-import { properCase } from '../core/ui.js';
 import { estadoDiario } from '../core/dominio.js';
+import { rbImpresion, rbIniciales, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 function campoValido(v){
   if (v === null || v === undefined) return false;
@@ -49,8 +49,8 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
   var saldado = devPost.capitalVivo === 0 && devPost.interesPendiente === 0;
 
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
-  var ini = properCase(loan.nombre || '').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'').slice(0,2);
-  var rcCode = 'RC-' + (ini || 'XX') + '-' + String(loan.id).slice(-3) + '-' + String(corte.cuotaN).padStart(2,'0');
+  // Iniciales con la lista blanca comun (con dieresis): antes un apellido con "ü" perdia esa letra.
+  var rcCode = 'RC-' + rbIniciales(loan.nombre) + '-' + String(loan.id).slice(-3) + '-' + String(corte.cuotaN).padStart(2,'0');
 
   var C = dark ? {
     bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
@@ -104,14 +104,13 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
     '.rc-paz-s{font-size:12px;color:' + C.text + ';margin-top:5px}',
     '.rc-foot{margin-top:17px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:9.5px;line-height:1.55}',
     '.rc-foot b{color:' + C.green + '}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:1.3cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:1.3cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="rc-head"><div class="rc-brand">',
     '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="rc-wm">Cartera</div><div class="rc-sub">Gestion de cartera de credito</div></div></div>',
+    '<div><div class="rc-wm">Cartera</div><div class="rc-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="rc-meta"><div class="rc-type">Recibo de Corte</div><div class="rc-num">' + rcCode + '</div>',
-    '<div class="rc-date">Emision: ' + fechaEmision + '</div></div></div>',
+    '<div class="rc-date">Emisión: ' + fechaEmision + '</div></div></div>',
     '<div class="rc-st">Recibido de</div>',
     '<div class="rc-name">' + esc(loan.nombre) + '</div>',
     (deudorMeta ? '<div class="rc-cc">' + deudorMeta + '</div>' : ''),
@@ -121,29 +120,29 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
 
     '<div class="rc-sec">Detalle</div>',
     (intCobrado > 0
-      ? row('Intereses<div class="rc-sm">' + devPre.diasDesdeUltimoCorte + ' dia(s) x ' + money(interesDiaAntes) + '/dia desde ' +
+      ? row('Intereses<div class="rc-sm">' + devPre.diasDesdeUltimoCorte + ' día(s) x ' + money(interesDiaAntes) + '/día desde ' +
             (devPre.fechaUltimoCorte ? fmtD(devPre.fechaUltimoCorte) : fmtD(loan.fechaInicio)) + '</div>', money(intCobrado), C.green)
       : row('Intereses', money(0))),
     row('Abono a capital', money(abonoCap), abonoCap > 0 ? C.blue : undefined),
     (corte.observaciones ? row('Observaciones', esc(corte.observaciones)) : ''),
 
     (saldado
-      ? '<div class="rc-paz"><div class="rc-paz-t">PAZ Y SALVO</div><div class="rc-paz-s">Este credito quedo cancelado en su totalidad.</div></div>'
+      ? '<div class="rc-paz"><div class="rc-paz-t">PAZ Y SALVO</div><div class="rc-paz-s">Este crédito quedó cancelado en su totalidad.</div></div>'
       : [
-          '<div class="rc-sec">Como queda tu credito</div>',
+          '<div class="rc-sec">Cómo queda tu crédito</div>',
           row('Capital vivo' + (abonoCap === 0 ? '<div class="rc-sm">Sin cambio: este corte no incluyo abono</div>' : ''), money(devPost.capitalVivo)),
-          row('Interes por cobrar', money(devPost.interesPendiente), devPost.interesPendiente > 0 ? C.blue : undefined),
-          row('Desde manana genera' + (abonoCap > 0 ? '<div class="rc-sm">Antes generaba ' + money(interesDiaAntes) + '/dia</div>' : ''),
-              money(interesDiaDespues) + ' / dia'),
+          row('Interés por cobrar', money(devPost.interesPendiente), devPost.interesPendiente > 0 ? C.blue : undefined),
+          row('Desde mañana genera' + (abonoCap > 0 ? '<div class="rc-sm">Antes generaba ' + money(interesDiaAntes) + '/día</div>' : ''),
+              money(interesDiaDespues) + ' / día'),
           '<div class="rc-caja"><span class="q">Si liquidas hoy</span><span class="v">' +
             money(devPost.capitalVivo + devPost.interesPendiente) + '</span></div>'
         ].join('\n')),
 
     '<div class="rc-foot">' + (saldado
-        ? 'Este documento certifica que el credito fue cancelado en su totalidad.'
-        : 'Este documento certifica el dinero recibido y como queda tu credito a la fecha.') +
+        ? 'Este documento certifica que el crédito fue cancelado en su totalidad.'
+        : 'Este documento certifica el dinero recibido y cómo queda tu crédito a la fecha.') +
       '<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + rcCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
   // El monto se formatea aparte: fmt() mete un espacio duro (U+00A0) tras el '$'

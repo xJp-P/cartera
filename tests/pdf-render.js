@@ -397,10 +397,10 @@ const CASOS = [
   { nombre: 'crono-capint-cop-abono', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1776205975507jkph', tema: 'light', dark: false }),
     ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, false),
-    contiene: ['badge-abono', 'ABONOS', 'Capital + Intereses', 'Valor de liquidacion'],
+    contiene: ['badge-abono', 'ABONOS', 'Capital + Intereses', 'Valor de liquidación'],
     // Sin la opcion (3.1.0) el pie sigue siendo el de siempre: ni el interes del mes ni una
     // fecha de vigencia. Si alguno aparece, la opcion se filtro al camino por defecto.
-    noContiene: ['interes del mes en curso', 'Valido hasta', 'Valor calculado al'] },
+    noContiene: ['interés del mes en curso', 'Válido hasta', 'Valor calculado al'] },
 
   { nombre: 'crono-capint-usd-mora', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
     entrada: () => ({ loanId: '1782151590658w66y', tema: 'dark', dark: true }),
@@ -415,12 +415,12 @@ const CASOS = [
   { nombre: 'crono-prestamo-cop', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1782442889816wjhf', tema: 'light', dark: false }),
     ejecutar: () => S.generateCronogramaPDF(L('1782442889816wjhf'), pays, false),
-    contiene: ['>Prestamo</span>'] },
+    contiene: ['>Préstamo sin interés</span>'] },
 
   { nombre: 'crono-pagounico-usd', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
     entrada: () => ({ loanId: '1784667444678qsmr', tema: 'dark', dark: true }),
     ejecutar: () => S.generateCronogramaPDF(L('1784667444678qsmr'), pays, true),
-    contiene: ['ganancia pactada', 'Pago Unico'] },
+    contiene: ['ganancia pactada', 'Pago único'] },
 
   { nombre: 'crono-capint-cop-parcial', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: LOAN_PARCIAL, parcial: true, tema: 'light', dark: false }),
@@ -435,8 +435,8 @@ const CASOS = [
   { nombre: 'crono-capint-cop-con-mes', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1776205975507jkph', tema: 'light', dark: false, incluyeProxMes: true }),
     ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, false, { incluyeProxMes: true }),
-    contiene: ['Valor de liquidacion', 'interes del mes en curso', '215.177', '3.100.671',
-               'Valido hasta el 14 de ago de 2026'],
+    contiene: ['Valor de liquidación', 'interés del mes en curso', '215.177', '3.100.671',
+               'Válido hasta el 14 de ago de 2026'],
     noContiene: ['Valor calculado al'] },
 
   // El mismo pie en dolares y en oscuro, sobre un credito CON mora: la linea del interes se
@@ -444,7 +444,7 @@ const CASOS = [
   { nombre: 'crono-capint-usd-con-mes', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
     entrada: () => ({ loanId: '1782151590658w66y', tema: 'dark', dark: true, incluyeProxMes: true }),
     ejecutar: () => S.generateCronogramaPDF(L('1782151590658w66y'), pays, true, { incluyeProxMes: true }),
-    contiene: ['+ mora ', 'interes del mes en curso', 'USD $', 'Valido hasta el 19 de ago de 2026', '#0d1117'] },
+    contiene: ['+ mora ', 'interés del mes en curso', 'USD $', 'Válido hasta el 19 de ago de 2026', '#0d1117'] },
 
   // ── generateReportePrestamosPDF — cartera completa, ambos temas ───────────────────────
   { nombre: 'reporte-activos-claro', gen: 'generateReportePrestamosPDF', tema: 'light', celdas: 8,
@@ -492,7 +492,7 @@ const CASOS = [
     entrada: () => ({ loanId: '1773655076017', cuotaN: 4, tema: 'light' }),
     ejecutar: () => S.generateFacturaCobro(cuota('1773655076017', 4), L('1773655076017'),
                                            pays, config.datos_pago, {}),
-    contiene: ['Aviso de mora', 'Como pagar', 'FC-'] },
+    contiene: ['Aviso de mora', 'Cómo pagar', 'FC-'] },
 
   { nombre: 'factura-usd-mora', gen: 'generateFacturaCobro', tema: 'dark', celdas: null,
     entrada: () => ({ loanId: '1782151590658w66y', cuotaN: 2, tema: 'dark' }),
@@ -510,7 +510,7 @@ const CASOS = [
     entrada: () => ({ loanId: '1782872189716p6cz', cuotaN: 1, tema: 'light' }),
     ejecutar: () => S.generateFacturaCobro(cuota('1782872189716p6cz', 1), L('1782872189716p6cz'),
                                            pays, config.datos_pago, {}),
-    contiene: ['Aviso de proximo vencimiento', 'Cuota Transitoria', 'Interes prorrateado'] },
+    contiene: ['Aviso de próximo vencimiento', 'Cuota Transitoria', 'Interés prorrateado'] },
 
   { nombre: 'factura-parcial-cop', gen: 'generateFacturaCobro', tema: 'light', celdas: null,
     entrada: () => ({ loanId: LOAN_PARCIAL, cuotaN: 3, parcial: true, tema: 'light' }),
@@ -524,7 +524,7 @@ const CASOS = [
     ejecutar: () => S.generateReciboAbono(L('1776205975507jkph'), pays, {
       monto: 560000, fecha: '2026-07-18', recalcMode: 'mantener',
       pre: snapshotPrevio(L('1776205975507jkph'), pays, 560000) }),
-    contiene: ['Impacto del abono', 'Cronograma actualizado', 'Recalculo aplicado', 'AB-'] },
+    contiene: ['Impacto del abono', 'Cronograma actualizado', 'Recálculo aplicado', 'AB-'] },
 
   { nombre: 'abono-capint-usd-modificarplazo', gen: 'generateReciboAbono', tema: 'dark', celdas: 6,
     entrada: () => ({ loanId: '1782151590658w66y', monto: 1000000, usd: 271.66, mode: 'modificarPlazo', tema: 'dark' }),
@@ -569,8 +569,8 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', propuesta: true, tema: 'dark', dark: true }),
     ejecutar: () => S.generatePropuestaAbono(L('1782151590658w66y'), pays,
       propuestaDe(L('1782151590658w66y'), pays)),
-    contiene: ['Propuesta de Abono', 'Si abonas', 'Asi se aplicaria tu pago',
-               'Asi quedaria tu credito', 'Total por pagar', 'Cronograma que quedaria',
+    contiene: ['Propuesta de Abono', 'Si abonas', 'Así se aplicaría tu pago',
+               'Así quedaría tu crédito', 'Total por pagar', 'Cronograma que quedaría',
                'no un comprobante', 'PA-', '#0d1117'],
     noContiene: ['TOTAL RECIBIDO', 'Total recibido', 'certifica el dinero', 'Recibido el'] },
 
@@ -596,7 +596,7 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', propuesta: true, interesMes: true, tema: 'light', dark: false }),
     ejecutar: () => S.generatePropuestaAbono(L('1782151590658w66y'), pays,
       propuestaConInteresMes(L('1782151590658w66y'), pays)),
-    contiene: ['pa-ab', 'esta cuota quedaria con', 'a pagar', 'Cronograma que quedaria',
+    contiene: ['pa-ab', 'esta cuota quedaría con', 'a pagar', 'Cronograma que quedaría',
                'POR ADELANTADO', 'no un comprobante'],
     // El titular no vuelve a explicar la resta que la sub-linea ya explico.
     // 'ya abonado' es la frase exacta que llevaba el titular; 'menos' a secas seria un
@@ -610,7 +610,7 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', propuesta: true, hero: true, tema: 'light', dark: false }),
     ejecutar: () => S.generatePropuestaAbono(L('1782151590658w66y'), pays,
       propuestaConInteresMes(L('1782151590658w66y'), pays, 'modificarPlazo', 1)),
-    contiene: ['pa-hero', 'Quedaria un solo pago', 'esta cuota quedaria con', 'a pagar'],
+    contiene: ['pa-hero', 'Quedaría un solo pago', 'esta cuota quedaría con', 'a pagar'],
     // Lo que el titular dejo de decir, porque la tabla ya lo dice.
     noContiene: ['ya abonado', 'Total por pagar', 'Cuotas restantes'] },
 
@@ -741,9 +741,9 @@ const CASOS = [
       optsLiquidacion(L('1773656070840'), pays, 40000)),
     // Capital 400.000 + mora 40.000 + mes en curso 40.000 = 480.000 de caja. La cifra va
     // literal: es el aserto que se pone rojo si el hero vuelve a declarar solo el capital.
-    contiene: ['Total recibido', '480.000', 'Liquidacion pagada por', 'Como se aplico tu pago',
+    contiene: ['Total recibido', '480.000', 'Liquidación pagada por', 'Cómo se aplicó tu pago',
                'ab-dsg', 'Aplicado a capital', 'Intereses atrasados cubiertos',
-               'Interes del mes en curso', 'PAZ Y SALVO'],
+               'Interés del mes en curso', 'PAZ Y SALVO'],
     // Lo que el titular dejo de decir. 'Saldo anterior' y 'Abono aplicado' son las dos filas
     // del Resumen viejo, que imprimian por tercera vez la misma cifra de capital y volvian a
     // insinuar que el capital fue todo lo que entro.
@@ -765,8 +765,8 @@ const CASOS = [
     ejecutar: () => S.generateReciboAbono(finalizado(L('1782151590658w66y')), pays,
       optsLiquidacion(L('1782151590658w66y'), pays, 387370)),
     contiene: ['Total recibido', 'USD $1,537.37', 'USD $1,326.90', 'USD $105.24', 'USD $105.23',
-               'Como se aplico tu pago', 'Intereses atrasados cubiertos',
-               'Interes del mes en curso', '#0d1117'],
+               'Cómo se aplicó tu pago', 'Intereses atrasados cubiertos',
+               'Interés del mes en curso', '#0d1117'],
     // 1.326,89 es lo que imprimiria el capital sin reconciliar: es el aserto que se pone rojo
     // si alguien vuelve a formatear cada rubro por separado.
     noContiene: ['Abono recibido a capital', 'USD $1,326.89'] },
@@ -779,7 +779,7 @@ const CASOS = [
     ejecutar: () => S.generateReciboAbono(finalizado(L('1782872189716p6cz')), pays,
       optsLiquidacion(L('1782872189716p6cz'), pays, 0)),
     contiene: ['PAZ Y SALVO', 'Abono recibido a capital', 'Saldo anterior'],
-    noContiene: ['Total recibido', 'Como se aplico tu pago', 'ab-dsg'] },
+    noContiene: ['Total recibido', 'Cómo se aplicó tu pago', 'ab-dsg'] },
 
   // ── generateEstadoLiquidacion — desglose + respaldo, con y sin el mes opcional ────────
   // `hasta` se pasa SIEMPRE fijo: el valor de liquidacion depende del dia, asi que sin
@@ -790,8 +790,8 @@ const CASOS = [
       { incluyeProxMes: true, hasta: '2026-07-31' }),
     // Cobrando el mes en curso, el deudor queda cubierto HASTA el proximo vencimiento:
     // decir "solo por hoy" lo presionaria con un vencimiento que no existe.
-    contiene: ['Estado de Liquidacion', 'Total a liquidar hoy', 'Interes del mes en curso',
-               'valido hasta', 'Incluye el interes de este periodo', 'LQ-'] },
+    contiene: ['Estado de Liquidación', 'Total a liquidar hoy', 'Interés del mes en curso',
+               'válido hasta', 'Incluye el interés de este periodo', 'LQ-'] },
 
   // Control del mismo prestamo SIN el mes opcional: el bloque no aparece y el
   // disclaimer cambia de razon (vence la proxima cuota) sin cambiar de fecha.
@@ -799,7 +799,7 @@ const CASOS = [
     entrada: () => ({ loanId: '1776205975507jkph', incluye: false, tema: 'light' }),
     ejecutar: () => S.generateEstadoLiquidacion(L('1776205975507jkph'), pays, config.datos_pago,
       { incluyeProxMes: false, hasta: '2026-07-31' }),
-    contiene: ['Total a liquidar hoy', 'Respaldo', 'valido hasta', 'vence la proxima cuota'] },
+    contiene: ['Total a liquidar hoy', 'Respaldo', 'válido hasta', 'vence la próxima cuota'] },
 
   { nombre: 'liq-intereses-cop-mora', gen: 'generateEstadoLiquidacion', tema: 'light', celdas: 8,
     entrada: () => ({ loanId: '1773655076017', incluye: true, tema: 'light' }),
@@ -820,14 +820,14 @@ const CASOS = [
       { incluyeProxMes: false, hasta: '2026-07-31' }),
     // El credito abierto SI caduca cada dia: aqui el disclaimer debe seguir siendo el
     // estricto. Es el control de que la rama nueva no se lo comio.
-    contiene: ['Interes acumulado', 'por dia', 'Corte', 'valido unicamente para el'] },
+    contiene: ['Interés acumulado', 'por día', 'Corte', 'válido únicamente para el'] },
 
   // El parcial en vuelo TIENE que restarse del total y anunciarse en el respaldo.
   { nombre: 'liq-capint-parcial', gen: 'generateEstadoLiquidacion', tema: 'light', celdas: 8,
     entrada: () => ({ loanId: LOAN_PARCIAL, incluye: false, parcial: true, tema: 'light' }),
     ejecutar: () => S.generateEstadoLiquidacion(L(LOAN_PARCIAL), paysParcial, config.datos_pago,
       { incluyeProxMes: false, hasta: '2026-07-31' }),
-    contiene: ['Abonos parciales ya recibidos', 'ya estan descontados'] },
+    contiene: ['Abonos parciales ya recibidos', 'ya están descontados'] },
 ];
 
 // ── Extraccion de la huella ──────────────────────────────────────────────────────────────
@@ -1036,7 +1036,7 @@ for (const caso of CASOS) {
   if (caso.gen === 'generateCronogramaPDF') {
     const ths = todos(/<th[^>]*>([\s\S]*?)<\/th>/gi, html);
     R.eq('7 columnas universales del cronograma', ths,
-         ['#', 'Vence', 'Interes', 'Abono a capital', 'Valor cuota', 'Saldo', 'Estado']);
+         ['#', 'Vence', 'Interés', 'Abono a capital', 'Valor cuota', 'Saldo', 'Estado']);
   }
 
   // 5 — el caso ejercito de verdad la rama que dice ejercitar
@@ -1214,12 +1214,12 @@ for (const caso of CASOS) {
   R.check('M2 la pantalla muestra la cifra que va a imprimir (marcada)', conMes.pantalla.indexOf(S.fmt(liqCon.total)) !== -1, conMes.pantalla.slice(0, 400));
   R.check('M2 la pantalla muestra la cifra que va a imprimir (desmarcada)', sinMes.pantalla.indexOf(S.fmt(liqSin.total)) !== -1, sinMes.pantalla.slice(0, 400));
   R.check('M2 marcada: emite 1 PDF CON el interes del mes y su vigencia',
-          conMes.docs.length === 1 && conMes.docs[0].html.indexOf('interes del mes en curso') !== -1 &&
-          conMes.docs[0].html.indexOf('3.100.671') !== -1 && conMes.docs[0].html.indexOf('Valido hasta el 14 de ago de 2026') !== -1,
+          conMes.docs.length === 1 && conMes.docs[0].html.indexOf('interés del mes en curso') !== -1 &&
+          conMes.docs[0].html.indexOf('3.100.671') !== -1 && conMes.docs[0].html.indexOf('Válido hasta el 14 de ago de 2026') !== -1,
           conMes.docs.length ? '' : 'no se emitio documento');
   R.check('M2 desmarcada: emite 1 PDF SIN el interes del mes, con el total de siempre',
-          sinMes.docs.length === 1 && sinMes.docs[0].html.indexOf('interes del mes en curso') === -1 &&
-          sinMes.docs[0].html.indexOf('Valido hasta') === -1 && sinMes.docs[0].html.indexOf('2.885.494') !== -1);
+          sinMes.docs.length === 1 && sinMes.docs[0].html.indexOf('interés del mes en curso') === -1 &&
+          sinMes.docs[0].html.indexOf('Válido hasta') === -1 && sinMes.docs[0].html.indexOf('2.885.494') !== -1);
   R.check('M2 tras descargar, el modal se cierra (el perfil vuelve)', conMes.cierres() === 1 && sinMes.cierres() === 1);
 
   // M3 — el cronograma y el Estado de Liquidacion, misma decision, mismas cifras.

@@ -5,9 +5,9 @@
   "tema": "dark",
   "entradaHash": "3f1280b53be9a73ec7de08e692511584cdf08120",
   "estructura": {
-    "docTitle": "Reporte de Prestamos Activos",
+    "docTitle": "Reporte de Préstamos Activos",
     "h1": [
-      "Reporte de Prestamos Activos"
+      "Reporte de Préstamos Activos"
     ],
     "cabeceras": [
       "Vencimiento",
@@ -22,7 +22,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 12172,
+    "bytes": 12556,
     "nFilas": 23,
     "nCeldas": 184,
     "celdasPorTr": [
@@ -52,8 +52,8 @@
     ],
     "nMontos": 50,
     "hashMontos": "12a043d8e61defcc69099361f8c54c3e3ee40c3f",
-    "hashFname": "b8f8233920e5bcdeee9079ac1b2c17fa72f8fa34",
-    "hashTexto": "466423e307ccef968eeb83029e3f41adcf888412",
+    "hashFname": "c1c1dc4e882e76218e5752b2ef2365ed0a1187df",
+    "hashTexto": "b0112cbfed5efb0e7b3ee281632ec59c102d854a",
     "clases": [
       "badge badge-mora",
       "badge badge-pagado",

@@ -12,7 +12,7 @@
     "cabeceras": [
       "#",
       "Vence",
-      "Interes",
+      "Interés",
       "Abono a capital",
       "Valor cuota",
       "Saldo",
@@ -21,21 +21,21 @@
     "etiquetas": [
       "Deudor",
       "Nombre",
-      "Cedula / ID",
-      "Telefono",
-      "Prestamo",
+      "Cédula / ID",
+      "Teléfono",
+      "Préstamo",
       "Monto prestado",
       "Modalidad",
       "Frecuencia",
       "Tasa",
       "Fecha inicio",
-      "Fecha de finalizacion",
+      "Fecha de finalización",
       "Cuotas",
       "Cronograma"
     ]
   },
   "valores": {
-    "bytes": 6460,
+    "bytes": 6844,
     "nFilas": 7,
     "nCeldas": 49,
     "celdasPorTr": [
@@ -50,7 +50,7 @@
     "nMontos": 27,
     "hashMontos": "84433da22c7320c26a1cebe7064a7e33b59fffa4",
     "hashFname": "91d5990f68d40049e4a4dfc0bea442a6bbccf856",
-    "hashTexto": "4edda7d3b1c53b28f73a6de6398e7ece043b44a7",
+    "hashTexto": "289c26653ce4fe094760cd68d1a42d39f00859f3",
     "clases": [
       "badge badge-mora",
       "badge badge-pagado",

@@ -18,6 +18,8 @@ import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { imputarCobros, computeLiquidacion, proximoVencimiento, periodoEnCursoDe } from '../core/dominio.js';
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
+import { opModalidad } from '../core/operacion.js';
+import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // `opts.incluyeProxMes` (3.1.0): si el valor de liquidacion del pie incluye el interes del
 // mes en curso. Es la MISMA decision que la casilla de Liquidar deuda y la toma quien
@@ -57,7 +59,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     return cmp !== 0 ? cmp : a.cuotaN - b.cuotaN;
   });
   // Pago Unico: la "frecuencia" base (Mensual) confunde -> se fuerza a "Pago Unico"
-  var freqLabel = loan.modalidad === 'Pago Unico' ? 'Pago Unico' : (loan.frecuencia === 'Semanal' ? 'Semanal' : loan.frecuencia === 'Quincenal' ? 'Quincenal' : 'Mensual');
+  var freqLabel = loan.modalidad === 'Pago Unico' ? 'Pago único' : (loan.frecuencia === 'Semanal' ? 'Semanal' : loan.frecuencia === 'Quincenal' ? 'Quincenal' : 'Mensual');
   // Fecha de finalizacion = fecha programada de la ultima cuota (Indefinido para modalidad Intereses)
   var fechaFinPrestamo = loan.modalidad === 'Intereses' ? null : (cuotasAll.length ? cuotasAll.reduce(function(mx, p){ return p.fechaPago > mx ? p.fechaPago : mx; }, '') : null);
   // Tasa: Pago Unico imprime la ganancia pactada como % del capital; el resto, su tasa mensual
@@ -116,33 +118,33 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
            '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
     dark ? '.nota{margin-top:12px;padding:10px 14px;background:#2b2005;border:1px solid #3d2e08;border-radius:8px;font-size:11px;color:#d29922}' :
            '.nota{margin-top:12px;padding:10px 14px;background:#fff8c5;border:1px solid #d4a72c;border-radius:8px;font-size:11px;color:#7a5900}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:2cm;font-size:11px;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}' :
-           '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:2cm;font-size:11px;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark, 'font-size:11px;'),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="header">',
     '<h1>Cronograma de Pagos</h1>',
-    '<p>Fecha de emision: ' + fechaEmision + '</p>',
+    '<p>Fecha de emisión: ' + fechaEmision + '</p>',
     '</div>',
     '<div class="section">',
     '<div class="section-title">Deudor</div>',
     '<div class="row"><span class="label">Nombre</span><span class="value">' + loan.nombre + '</span></div>',
-    loan.cedula && loan.cedula !== '0' ? '<div class="row"><span class="label">Cedula / ID</span><span class="value">' + loan.cedula + '</span></div>' : '',
-    loan.telefono && loan.telefono !== '0' ? '<div class="row"><span class="label">Telefono</span><span class="value">' + loan.telefono + '</span></div>' : '',
+    loan.cedula && loan.cedula !== '0' ? '<div class="row"><span class="label">Cédula / ID</span><span class="value">' + loan.cedula + '</span></div>' : '',
+    loan.telefono && loan.telefono !== '0' ? '<div class="row"><span class="label">Teléfono</span><span class="value">' + loan.telefono + '</span></div>' : '',
     '</div>',
     '<div class="section">',
-    '<div class="section-title">Prestamo</div>',
+    '<div class="section-title">Préstamo</div>',
     '<div class="row"><span class="label">Monto prestado</span><span class="value">' + (esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) + '</span></div>',
-    '<div class="row"><span class="label">Modalidad</span><span class="value">' + loan.modalidad + '</span></div>',
+    '<div class="row"><span class="label">Modalidad</span><span class="value">' + opModalidad(loan.modalidad) + '</span></div>',
     '<div class="row"><span class="label">Frecuencia</span><span class="value">' + freqLabel + '</span></div>',
     tasaPdfRow,
     '<div class="row"><span class="label">Fecha inicio</span><span class="value">' + fmtD(loan.fechaInicio) + '</span></div>',
-    '<div class="row"><span class="label">Fecha de finalizacion</span><span class="value">' + (loan.modalidad === 'Intereses' ? 'Indefinido' : (fechaFinPrestamo ? fmtD(fechaFinPrestamo) : '—')) + '</span></div>',
+    '<div class="row"><span class="label">Fecha de finalización</span><span class="value">' + (loan.modalidad === 'Intereses' ? 'Indefinido' : (fechaFinPrestamo ? fmtD(fechaFinPrestamo) : '—')) + '</span></div>',
     loan.modalidad !== 'Intereses' ? '<div class="row"><span class="label">Cuotas</span><span class="value">' + cuotas.length + '</span></div>' : '',
     '</div>',
     '<div class="section">',
     '<div class="section-title">Cronograma</div>',
+    // La fila de titulos va en <thead>: si la tabla sigue en otra hoja, se repite arriba.
     '<table>',
-    '<tr><th>#</th><th>Vence</th><th>Interes</th><th>Abono a capital</th><th>Valor cuota</th><th>Saldo</th><th>Estado</th></tr>',
+    '<thead><tr><th>#</th><th>Vence</th><th>Interés</th><th>Abono a capital</th><th>Valor cuota</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>',
     filas.map(function(p) {
       var filaEsAbono = esAbono(p);
       var isParcial = !filaEsAbono && (p.partialPaid||0) > 0 && p.estadoPago !== 'Pagado';
@@ -178,8 +180,8 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     // caian en la 4a celda, que en el layout viejo era la de "Cuota".
     loan.modalidad === 'Intereses' ? function(){var intPagados=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.interes;},0);return intPagados>0?'<tr class="total-row"><td></td><td style="text-align:left">INTERESES PAGADOS</td><td><strong>'+fvT(intPagados)+'</strong></td><td></td><td></td><td></td><td></td></tr>':'';}() : loan.modalidad === 'Capital + Intereses' ? function(){var capPagado=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.capital;},0);return capPagado>0?'<tr class="total-row"><td></td><td style="text-align:left">CAPITAL PAGADO</td><td></td><td><strong>'+fvT(capPagado)+'</strong></td><td></td><td></td><td></td></tr>':'';}() : '',
     totalAbonos > 0 ? '<tr class="total-row" style="background:' + (dark ? '#131d2e' : '#ddf4ff') + ' !important;color:' + (dark ? '#79c0ff' : '#0969da') + '"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fvT(totalAbonos) + '</strong></td><td></td><td></td><td></td></tr>' : '',
-    '</table>',
-    loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este prestamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuaran hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '',
+    '</tbody></table>',
+    loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este préstamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuarán hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '',
     function(){
       // v1.19.0 — valor de liquidacion desde el helper centralizado (misma cifra que el modal).
       // 3.1.0 — con la opcion del interes del mes, la misma que ve `LiquidarModal`: para una
@@ -194,7 +196,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
         (L.intMora > 0 ? ' + mora ' + fv(L.intMora) + ' (' + L.moraCount + ' cuota' + (L.moraCount>1?'s':'') + ' a ' + mesTxt + ')' : '') +
         (L.moraConsolidada > 0 ? ' + mora consolidada ' + fv(L.moraConsolidada) : '') +
         (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '') +
-        (L.intExtra > 0 ? (L.periodoIrregular ? ' + interes de ' + L.diasCobrados + ' dias del periodo en curso ' : ' + interes ' + periodoEnCursoDe(L.frecuencia) + ' ') + fv(L.intExtra) : '');
+        (L.intExtra > 0 ? (L.periodoIrregular ? ' + interés de ' + L.diasCobrados + ' días del periodo en curso ' : ' + interés ' + periodoEnCursoDe(L.frecuencia) + ' ') + fv(L.intExtra) : '');
       var bg = dark ? '#2b2005' : '#fff8c5';
       var bd = dark ? '#3d2e08' : '#d4a72c';
       var cl = dark ? '#d29922' : '#7a5900';
@@ -208,13 +210,13 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
         // 3.2.0 — en un periodo irregular, hasta donde cubren los dias cobrados.
         var pv = L.periodoIrregular ? L.validoHasta : proximoVencimiento(loan, payments, hoy);
         vig = '<div style="font-size:10px;color:'+cl+';margin-top:4px"><b>' +
-          (pv && L.periodoIrregular ? 'Valido hasta el ' + fmtD(pv) + '.</b> Incluye ' + L.diasCobrados + ' dias de interes de este periodo; si el pago se hace despues, se generan nuevos intereses.'
-          : pv ? 'Valido hasta el ' + fmtD(pv) + '.</b> Incluye el interes de este periodo; si el pago se hace despues, se generan nuevos intereses.'
-              : 'Valor calculado al ' + fmtD(hoy) + '.</b> Si el pago se hace mas adelante, solicita un valor actualizado.') +
+          (pv && L.periodoIrregular ? 'Válido hasta el ' + fmtD(pv) + '.</b> Incluye ' + L.diasCobrados + ' días de interés de este periodo; si el pago se hace después, se generan nuevos intereses.'
+          : pv ? 'Válido hasta el ' + fmtD(pv) + '.</b> Incluye el interés de este periodo; si el pago se hace después, se generan nuevos intereses.'
+              : 'Valor calculado al ' + fmtD(hoy) + '.</b> Si el pago se hace más adelante, solicita un valor actualizado.') +
           '</div>';
       }
       return '<div style="margin-top:14px;padding:12px 16px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:12px">' +
-        '<div><div style="font-size:10px;font-weight:700;color:'+cl+';text-transform:uppercase;letter-spacing:1px">Valor de liquidacion</div>' +
+        '<div><div style="font-size:10px;font-weight:700;color:'+cl+';text-transform:uppercase;letter-spacing:1px">Valor de liquidación</div>' +
         '<div style="font-size:10px;color:'+cl+';margin-top:2px">' + detalle + '</div>' + vig + '</div>' +
         '<div style="font-size:20px;font-weight:700;color:'+cl+';white-space:nowrap">' + fv(L.total) + '</div></div>';
     }(),
@@ -223,7 +225,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     '<p>Este cronograma es informativo y puede variar por abonos a capital</p>',
     '<p style="margin-top:4px">Cartera</p>',
     '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {
     var fname = 'Cronograma ' + fmt(loan.montoOrigen) + ' - ' + loan.nombre;

@@ -18,6 +18,9 @@
 //   E. CAMBIAR DIA DE PAGO, el modal extraido del perfil: su preview contra lo que el backend
 //      REAL registra, pulsando el boton real del componente.
 //   F. GUARDAS ESTATICAS del reemplazo: las vistas viejas no dejan restos.
+//   G. LA MEMORIA DE CARTERA (3.6.0): al volver a la pestana se conservan el filtro, el orden, el
+//      deudor abierto y el prestamo elegido. "Volver" es montar la vista otra vez con la MISMA
+//      memoria, que es exactamente lo que hace App (la vista se desmonta al cambiar de pestana).
 //
 // Se ejecuta:
 //   ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron tests/operacion.js
@@ -551,6 +554,109 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('F4 styles.css trae el maestro-detalle y el panel superpuesto en ventana angosta',
     /\.op\{display:grid/.test(reglas) && /\.dp\{/.test(reglas) && /\.cb-tramos\{/.test(reglas) && /\.ct-fila\{/.test(reglas) &&
     /@media \(max-width:1099px\)\{(?:\s*[^{}]+\{[^}]*\})*?\s*\.op-lado\.superpuesto\{position:fixed/.test(reglas));
+
+  // ── G — LA MEMORIA DE CARTERA ─────────────────────────────────────────────
+  R.seccion('G — Cartera recuerda el filtro, el orden y el deudor entre visitas');
+  const filasDe  = a => conClase(a.arbol, 'ct-fila').map(f => textos(f)[1]);
+  const filaOn   = a => conClase(a.arbol, 'ct-fila on').map(f => textos(f)[1]);
+  const filtroOn = a => conClase(a.arbol, 'op-filtro on').map(n => textos(n)[0]);
+  const ordenDe  = a => nodos(a.arbol, n => n.tag === 'select')[0].props.value;
+  const tabOn    = a => conClase(a.arbol, 'dp-tab').findIndex(n => n.props.className.split(/\s+/).indexOf('on') !== -1);
+  const visita   = (memoria, extra, estado) => montar(X.CarteraView, Object.assign({}, propsCartera, { memoria }, extra || {}), estado || []);
+  const PC = X.properCase;
+  // El deudor que se elige: en dolares, con 2 prestamos activos (la pestana del prestamo importa).
+  const elegido = MD.filter(x => x.activos.length >= 2 && x.activos.every(m => m.esUSD))[0];
+  const enPesos = MD.filter(x => x.activos.length > 0 && !x.activos.some(m => m.esUSD) && x.moraN === 0)[0];
+  R.check('G0 ANTI-VACIO: el fixture tiene un deudor en dolares con 2 prestamos activos y uno en pesos al dia',
+    !!elegido && !!enPesos, elegido && elegido.nombre);
+
+  if (elegido && enPesos) {
+    const act = elegido.activos.map(m => m.loan.id);
+    // G1 — primera visita: como siempre, y lo que quedo a la vista entra en la memoria.
+    const mem = {};
+    const v1 = visita(mem);
+    const primero = filasDe(v1)[0];
+    R.check('G1 primera visita: "Activos", lo urgente primero y el primero de la lista abierto',
+      filtroOn(v1).join() === 'Activos' && ordenDe(v1) === 'prioridad' && filaOn(v1).join() === primero, [filtroOn(v1), ordenDe(v1), filaOn(v1)]);
+    R.check('G1 ...y la memoria guarda ese perfil: es el que el usuario tenia a la vista',
+      PC(mem.sel) === primero && mem.loan === null && mem.filtro === 'activos', mem);
+    R.check('G1 ANTI-TRIVIAL: el elegido NO es el primero de la lista', PC(elegido.nombre) !== primero);
+
+    // G2 — el usuario elige: "En dolares", "Mayor saldo" y el 2o prestamo del elegido (su chip).
+    const bDol = conClase(v1.arbol, 'op-filtro').filter(n => textos(n)[0] === 'En dólares')[0];
+    bDol.props.onClick();
+    nodos(v1.arbol, n => n.tag === 'select')[0].props.onChange({ target: { value: 'saldo' } });
+    const filaEl = conClase(v1.arbol, 'ct-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0];
+    const chipsEl = filaEl ? conClase(filaEl, 'ct-chip').filter(n => n.props.className.indexOf('cerrado') === -1) : [];
+    if (chipsEl[1]) chipsEl[1].props.onClick({ stopPropagation: () => {} });
+    R.check('G2 cada clic queda en la memoria: filtro, orden, deudor y prestamo',
+      mem.filtro === 'usd' && mem.orden === 'saldo' && mem.sel === elegido.nombre && mem.loan === act[1], mem);
+    R.check('G2 ...y tambien cambia lo que se ve (los setters de siempre)',
+      v1.llamadas.some(c => c.k === 1 && c.nuevo === 'usd') && v1.llamadas.some(c => c.k === 2 && c.nuevo === 'saldo') &&
+      v1.llamadas.some(c => c.k === 4 && c.nuevo === elegido.nombre), v1.llamadas);
+
+    // G3 — volver a la pestana: todo como se dejo.
+    const v2 = visita(mem);
+    const usd = MD.filter(x => x.activos.some(m => m.esUSD)).sort((a, b) => b.saldo - a.saldo).map(x => PC(x.nombre));
+    R.check('G3 al volver: "En dólares" y "Mayor saldo" siguen elegidos', filtroOn(v2).join() === 'En dólares' && ordenDe(v2) === 'saldo', [filtroOn(v2), ordenDe(v2)]);
+    R.eq('G3 la lista: los deudores en dolares, de mayor a menor saldo', filasDe(v2).join('|'), usd.join('|'));
+    R.check('G3 el deudor que estaba abierto sigue abierto, con su prestamo', filaOn(v2).join() === PC(elegido.nombre) && tabOn(v2) === 1, [filaOn(v2), tabOn(v2)]);
+
+    // G4 — la pestana del prestamo, elegida dentro del panel, tambien se recuerda.
+    conClase(v2.arbol, 'dp-tab')[0].props.onClick();
+    R.eq('G4 elegir otro prestamo en el panel lo deja en la memoria', mem.loan, act[0]);
+    const v3 = visita(mem);
+    R.check('G4 ...y al volver es ese el que esta abierto', filaOn(v3).join() === PC(elegido.nombre) && tabOn(v3) === 0, [filaOn(v3), tabOn(v3)]);
+
+    // G5 — cerrar el panel tambien se respeta: al volver no se abre nadie solo.
+    const bCerrar = nodos(v3.arbol, n => n.tag === 'button' && n.props.title === 'Cerrar panel')[0];
+    bCerrar.props.onClick();
+    R.check('G5 cerrar el panel deja la memoria sin deudor', mem.sel === null && mem.loan === null, mem);
+    const v4 = visita(mem);
+    R.check('G5 al volver no se abre nadie solo', filaOn(v4).length === 0 && conClase(v4.arbol, 'dp').length === 0 &&
+      v4.todo.indexOf('Elige un deudor de la lista.') !== -1);
+    // Elegir una fila: deudor nuevo y SIN prestamo recordado (abre el primero de los suyos).
+    conClase(v4.arbol, 'ct-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0].props.onClick();
+    R.check('G5 elegir una fila recuerda al deudor y olvida el prestamo del anterior', mem.sel === elegido.nombre && mem.loan === null, mem);
+
+    // G6 — el recordado ya no existe (p. ej. se eliminaron sus prestamos): se abre el primero.
+    const memNadie = { filtro: 'activos', sel: 'NADIE CON ESTE NOMBRE', loan: 'zzz' };
+    const v5 = visita(memNadie);
+    R.check('G6 si el deudor recordado ya no existe, se abre el primero de la lista y la memoria se corrige',
+      filaOn(v5).join() === primero && PC(memNadie.sel) === primero && memNadie.loan === null, [filaOn(v5), memNadie]);
+
+    // G7 — el filtro recordado se quedo sin nadie (se cobro la ultima mora): cae a "Activos".
+    const sinMora = deudores.filter(d => MD.filter(x => x.nombre === d.nombre)[0].moraN === 0);
+    const memMora = { filtro: 'mora' };
+    const v6 = visita(memMora, { deudores: sinMora });
+    const actSinMora = MD.filter(x => x.moraN === 0 && x.activos.length > 0).length;
+    R.check('G7 un filtro recordado que quedo vacio cae a "Activos" (su boton ya no existe)',
+      filtroOn(v6).join() === 'Activos' && filasDe(v6).length === actSinMora && !conClase(v6.arbol, 'op-filtro').some(n => textos(n)[0] === 'En mora'),
+      [filtroOn(v6), filasDe(v6).length, actSinMora]);
+    R.check('G7 ANTI-VACIO: sin esos deudores nadie queda en mora y la lista no esta vacia', actSinMora > 0 && sinMora.length < deudores.length);
+
+    // G8 — un foco (Resumen o busqueda) manda sobre la memoria, y la memoria lo aprende.
+    const lPesos = enPesos.activos[enPesos.activos.length - 1].loan;
+    const memF = { filtro: 'usd', orden: 'saldo', sel: elegido.nombre, loan: act[1] };
+    const v7 = visita(memF, { foco: { nombre: enPesos.nombre, loanId: lPesos.id, t: 2 } });
+    R.check('G8 con foco se abre ESE deudor, aunque la memoria tenga otro', filaOn(v7).join() === PC(enPesos.nombre), filaOn(v7));
+    R.check('G8 si el deudor del foco no pasa el filtro recordado, se abre uno donde si aparece',
+      filtroOn(v7).join() === 'Activos' && filasDe(v7).indexOf(PC(enPesos.nombre)) !== -1, filtroOn(v7));
+    R.check('G8 la memoria queda con lo que se ve: ese deudor, ese prestamo y ese filtro (al volver por el menu no se esconde)',
+      memF.sel === enPesos.nombre && memF.loan === lPesos.id && memF.filtro === 'activos' && memF.orden === 'saldo', memF);
+    const memF2 = { filtro: 'usd' };
+    const v8 = visita(memF2, { foco: { nombre: elegido.nombre, t: 3 } });
+    R.check('G8 si el deudor del foco SI pasa el filtro recordado, el filtro se conserva', filtroOn(v8).join() === 'En dólares' && memF2.filtro === 'usd', filtroOn(v8));
+  }
+
+  // G9 — el cableado en App: la memoria vive por encima de la vista y por encima del return del
+  // spinner (Bug #40: ningun hook por debajo de un return condicional).
+  const iMem = app.indexOf('var memCartera=React.useRef({});'), iLoad = app.indexOf('if(loading) return');
+  R.check('G9 App guarda la memoria de Cartera en un useRef, ANTES del return del spinner', iMem !== -1 && iLoad !== -1 && iMem < iLoad, { iMem, iLoad });
+  R.check('G9 ...y se la pasa a la vista', /h\(CarteraView,\{[^}]*memoria:memCartera\.current/.test(app));
+  R.check('G9 el panel avisa del prestamo elegido (onLoan) y Cartera lo recuerda',
+    /if \(props\.onLoan\) props\.onLoan\(x\.loan\.id\)/.test(leer('public/js/componentes/DeudorPanel.js')) &&
+    /onLoan: function\(id\)\{ mem\.loan = id; \}/.test(leer('public/js/vistas/CarteraView.js')));
 
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

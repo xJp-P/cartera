@@ -5,7 +5,7 @@
   "tema": "light",
   "entradaHash": "a73e69d49c7c5087634b3e414e02ff7f1eb164f5",
   "estructura": {
-    "docTitle": "Recibo de Cobro",
+    "docTitle": "Factura de Cobro",
     "h1": [],
     "cabeceras": [],
     "etiquetas": [
@@ -13,28 +13,28 @@
       "Aviso de mora",
       "Cobro dirigido a",
       "Total a pagar",
-      "Vencio el",
+      "Venció el",
       "Fecha de hoy",
       "Desglose de la cuota",
-      "Interes del periodo",
+      "Interés del periodo",
       "Valor de la cuota",
-      "Detalle del prestamo",
+      "Detalle del préstamo",
       "Modalidad",
       "Monto original",
       "Tasa",
-      "Saldo pendiente del prestamo",
-      "Como pagar"
+      "Saldo pendiente del préstamo",
+      "Cómo pagar"
     ]
   },
   "valores": {
-    "bytes": 7549,
+    "bytes": 7907,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 5,
     "hashMontos": "1493f2a9a7c0867d8c3e6954088ea2fb20e011d7",
     "hashFname": "c3b934490e4043a23e92b41bc7eeca93d1c35e01",
-    "hashTexto": "a5759003e13172bdb1f709f7443238e1df3c88d7",
+    "hashTexto": "73c1c13ce4b173666044011d52c537ec9e6fb5e0",
     "clases": [
       "rc-brand",
       "rc-brand-sub",

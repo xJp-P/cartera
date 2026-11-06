@@ -13,8 +13,8 @@
     "etiquetas": [
       "Deudor",
       "Nombre",
-      "Telefono",
-      "Prestamo",
+      "Teléfono",
+      "Préstamo",
       "Modalidad",
       "Monto original",
       "Tasa mensual",
@@ -30,21 +30,21 @@
       "Total cuota",
       "Total abonado (con este pago)",
       "Restante por pagar",
-      "Proximas cuotas (quedan # de #)",
+      "Próximas cuotas (quedan # de #)",
       "Cuota ## - # de M de #",
       "Cuota ## - # de M de #",
       "Cuota ## - # de M de #"
     ]
   },
   "valores": {
-    "bytes": 4318,
+    "bytes": 4672,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 11,
     "hashMontos": "ccd311bf37c57341c581af4aefec25a5619344ac",
     "hashFname": "0ceb9cc7f46746e94e6d4fd86d0b2433858be2f2",
-    "hashTexto": "e73d135623bdd17826b11a206a3de7eebad0ec8b",
+    "hashTexto": "34d999bb368abb395e23656f2b9b816b504b963b",
     "clases": [
       "amount",
       "footer",

@@ -18,6 +18,8 @@ import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
+import { opModalidad } from '../core/operacion.js';
+import { rbImpresion, rbEsc, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   opts = opts || {};
@@ -93,12 +95,12 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   var bannerHTML = '';
   if (esLiquidacion) {
     bannerHTML = bannerBox(dark ? '#0f2b19' : '#dafbe1', dark ? '#1b4332' : '#aceebb', dark ? '#3fb950' : '#166534',
-      '¡Felicidades! Ha cancelado la totalidad de su prestamo',
-      'Con este pago se salda el 100% del prestamo. ¡Gracias por tu cumplimiento!');
+      '¡Felicidades! Ha cancelado la totalidad de su préstamo',
+      'Con este pago se salda el 100% del préstamo. ¡Gracias por tu cumplimiento!');
   } else if (!esParcial && pay.fechaPago && !esAbono(pay)) {
     if (diasRetraso > 0) {
       bannerHTML = bannerBox(dark ? '#2d2410' : '#fff8c5', dark ? '#3d3115' : '#eac54f', dark ? '#d29922' : '#9a6700',
-        'Pago recibido con ' + diasRetraso + ' ' + (diasRetraso === 1 ? 'dia' : 'dias') + ' de retraso',
+        'Pago recibido con ' + diasRetraso + ' ' + (diasRetraso === 1 ? 'día' : 'días') + ' de retraso',
         'Procura pagar a tiempo para evitar inconvenientes.');
     } else {
       bannerHTML = bannerBox(dark ? '#0d2440' : '#ddf4ff', dark ? '#1f3a5f' : '#b6e3ff', dark ? '#58a6ff' : '#0969da',
@@ -131,29 +133,28 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
            '.total-box .sub{font-size:12px;color:#166534;margin-top:2px}',
     dark ? '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #30363d;font-size:10px;color:#6e7681}' :
            '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:2cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}' :
-           '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:2cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="header">',
     '<h1>' + tipoTitulo + '</h1>',
-    '<p>Fecha de emision: ' + fechaEmision + '</p>',
+    '<p>Fecha de emisión: ' + fechaEmision + '</p>',
     '</div>',
     '<div class="section">',
     '<div class="section-title">Deudor</div>',
-    '<div class="row"><span class="label">Nombre</span><span class="value">' + pay.nombreCliente + '</span></div>',
-    loan.cedula ? '<div class="row"><span class="label">Cedula / ID</span><span class="value">' + loan.cedula + '</span></div>' : '',
-    loan.telefono ? '<div class="row"><span class="label">Telefono</span><span class="value">' + loan.telefono + '</span></div>' : '',
+    '<div class="row"><span class="label">Nombre</span><span class="value">' + rbEsc(pay.nombreCliente) + '</span></div>',
+    loan.cedula ? '<div class="row"><span class="label">Cédula / ID</span><span class="value">' + rbEsc(loan.cedula) + '</span></div>' : '',
+    loan.telefono ? '<div class="row"><span class="label">Teléfono</span><span class="value">' + rbEsc(loan.telefono) + '</span></div>' : '',
     '</div>',
     '<div class="section">',
-    '<div class="section-title">Prestamo</div>',
-    '<div class="row"><span class="label">Modalidad</span><span class="value">' + loan.modalidad + '</span></div>',
+    '<div class="section-title">Préstamo</div>',
+    '<div class="row"><span class="label">Modalidad</span><span class="value">' + opModalidad(loan.modalidad) + '</span></div>',
     '<div class="row"><span class="label">Monto original</span><span class="value">' + (esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) + '</span></div>',
     loan.tasaMensual > 0 ? '<div class="row"><span class="label">Tasa mensual</span><span class="value">' + loan.tasaMensual + '%</span></div>' : '',
     '</div>',
     '<div class="section">',
     '<div class="section-title">Detalle del pago</div>',
     '<div class="row"><span class="label">Tipo</span><span class="value">' + tipoEtiqueta + '</span></div>',
-    '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + ((pay && pay.extraConsolidado && pay.extraConsolidado !== 0) ? ' <span style="color:' + (dark ? '#d29922' : '#9a6700') + ';font-weight:700">(Cuota Transitoria / Interes Prorrateado)</span>' : '') + '</span></div>',
+    '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + ((pay && pay.extraConsolidado && pay.extraConsolidado !== 0) ? ' <span style="color:' + (dark ? '#d29922' : '#9a6700') + ';font-weight:700">(Cuota Transitoria / Interés Prorrateado)</span>' : '') + '</span></div>',
     '<div class="row"><span class="label">Fecha vencimiento</span><span class="value">' + fmtD(pay.fechaPago) + '</span></div>',
     '<div class="row"><span class="label">Fecha recaudo</span><span class="value">' + fmtD(opts.fechaRecaudo || pay.fechaRecaudo || nowStr()) + '</span></div>',
     // Fase 3: se imputa ESTE pago (cascada interes -> capital), no la composicion nominal de la
@@ -177,17 +178,17 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
       '<div class="row"><span class="label">Restante por pagar</span><span class="value" style="color:' + (dark?'#d29922':'#9a6700') + '">' + fv(restanteTrasEste) + '</span></div>' +
       '</div>' : '',
     '<div class="section">',
-    !esParcial ? '<div class="row"><span class="label">Saldo restante del prestamo</span><span class="value">' + fv(saldoRestante) + '</span></div>' : '',
-    pay.observaciones ? '<div class="row"><span class="label">Observaciones</span><span class="value">' + pay.observaciones + '</span></div>' : '',
+    !esParcial ? '<div class="row"><span class="label">Saldo restante del préstamo</span><span class="value">' + fv(saldoRestante) + '</span></div>' : '',
+    pay.observaciones ? '<div class="row"><span class="label">Observaciones</span><span class="value">' + rbEsc(pay.observaciones) + '</span></div>' : '',
     '</div>',
-    proxCuotas.length > 0 ? '<div class="section"><div class="section-title">Proximas cuotas (quedan ' + totalPending + ' de ' + loan.plazoMeses + ')</div>' + proxCuotas.map(function(pc) {
+    proxCuotas.length > 0 ? '<div class="section"><div class="section-title">Próximas cuotas (quedan ' + totalPending + ' de ' + loan.plazoMeses + ')</div>' + proxCuotas.map(function(pc) {
       return '<div class="row"><span class="label">Cuota #' + pc.cuotaN + ' - ' + fmtD(pc.fechaPago) + '</span><span class="value">' + fv(pc.cuotaTotal) + '</span></div>';
-    }).join('') + (totalPending > 3 ? '<div style="text-align:center;color:var(--text2,#888);font-size:11px;margin-top:6px">... y ' + (totalPending - 3) + ' cuotas mas</div>' : '') + '</div>' : '',
+    }).join('') + (totalPending > 3 ? '<div style="text-align:center;color:var(--text2,#888);font-size:11px;margin-top:6px">... y ' + (totalPending - 3) + ' cuotas más</div>' : '') + '</div>' : '',
     '<div class="footer">',
     '<p>Este recibo es un comprobante de pago</p>',
     '<p style="margin-top:4px">Cartera</p>',
     '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {
     var montoTxt = loan.moneda === 'USD'

@@ -7,6 +7,13 @@
 //
 // `props.foco` ({nombre, loanId, payId}) abre un deudor concreto: es como llegan aqui los nombres
 // del Resumen y la busqueda global. App remonta la vista (key) con cada foco nuevo.
+//
+// `props.memoria` (3.6.0) es lo que la pestana recuerda entre visitas: el filtro, el orden, el
+// deudor abierto y, si el usuario eligio uno, su prestamo ({filtro, orden, sel, loan}). Vive en App
+// porque la vista se DESMONTA al cambiar de pestana; antes, al volver, el filtro regresaba a
+// "Activos" y el panel al primero de la lista. Se escribe en cada clic que cambia algo de eso (no
+// en un efecto: lo que se recuerda es lo que el usuario eligio, y asi lo prueba `operacion` G).
+// Dura lo que dura la sesion: al reabrir la app, la pestana arranca como siempre.
 
 import { DeudorPanel } from '../componentes/DeudorPanel.js';
 import { Ico } from '../componentes/iconos.js';
@@ -18,11 +25,37 @@ import { addDays, properCase } from '../core/ui.js';
 var CT_FILTROS = [['activos', 'Activos'], ['mora', 'En mora'], ['semana', 'Cobran esta semana'], ['usd', 'En dólares'], ['inactivos', 'Sin préstamos activos'], ['todos', 'Todos']];
 var CT_ORDEN = [['prioridad', 'Lo urgente primero'], ['saldo', 'Mayor saldo'], ['nombre', 'Nombre'], ['recientes', 'Préstamo más reciente']];
 
+// Que deudores deja pasar cada filtro (sobre `modeloDeudor`).
+function ctPasa(hoy){
+  return {
+    activos: function(x){ return x.activos.length > 0; },
+    mora: function(x){ return x.moraN > 0; },
+    semana: function(x){ return x.prox && x.prox.p.fechaPago <= addDays(hoy, 7); },
+    usd: function(x){ return x.activos.some(function(m){ return m.esUSD; }); },
+    inactivos: function(x){ return x.activos.length === 0; },
+    todos: function(){ return true; }
+  };
+}
+
+// 3.6.0 — el filtro con el que abre la pestana: el que el usuario dejo la ultima vez. Si se llega
+// con un foco (un nombre del Resumen o de la busqueda) y esa persona no pasa ese filtro, se abre
+// uno donde si aparezca: el panel no puede mostrar a alguien que la lista esconde.
+function ctFiltroInicial(foco, mem, deudores, loans, pays, hoy){
+  var f = foco && foco.filtro ? foco.filtro : (mem.filtro || 'activos');
+  var d = foco && foco.nombre ? deudores.filter(function(x){ return x.nombre === foco.nombre; })[0] : null;
+  if (!d) return f;
+  var pasa = ctPasa(hoy), x = modeloDeudor(d, loans, pays, hoy);
+  return pasa[f] && pasa[f](x) ? f : pasa.activos(x) ? 'activos' : 'todos';
+}
+
 export function CarteraView(props){
   var loans = props.loans, pays = props.pays, hoy = props.hoy, foco = props.foco;
+  var mem = props.memoria || {};
   var _q = useState(''); var q = _q[0], setQ = _q[1];
-  var _f = useState(foco && foco.filtro ? foco.filtro : 'activos'); var filtro = _f[0], setFiltro = _f[1];
-  var _o = useState('prioridad'); var orden = _o[0], setOrden = _o[1];
+  // El filtro con el que se abre queda en la memoria: si un foco lo cambio, al volver por el menu
+  // la pestana no puede abrir un filtro que esconda al deudor del panel.
+  var _f = useState(function(){ var f = ctFiltroInicial(foco, mem, props.deudores, loans, pays, hoy); mem.filtro = f; return f; }); var filtro = _f[0], setFiltro = _f[1];
+  var _o = useState(mem.orden || 'prioridad'); var orden = _o[0], setOrden = _o[1];
   var _w = useState(window.innerWidth); var ancho = _w[0], setAncho = _w[1];
   useEffect(function(){
     function r(){ setAncho(window.innerWidth); }
@@ -33,15 +66,12 @@ export function CarteraView(props){
 
   var todos = useMemo(function(){ return props.deudores.map(function(d){ return modeloDeudor(d, loans, pays, hoy); }); }, [props.deudores, loans, pays, hoy]);
   var cuenta = function(fn){ return todos.filter(fn).length; };
-  var pasa = {
-    activos: function(x){ return x.activos.length > 0; },
-    mora: function(x){ return x.moraN > 0; },
-    semana: function(x){ return x.prox && x.prox.p.fechaPago <= addDays(hoy, 7); },
-    usd: function(x){ return x.activos.some(function(m){ return m.esUSD; }); },
-    inactivos: function(x){ return x.activos.length === 0; },
-    todos: function(){ return true; }
-  };
-  var lista = todos.filter(pasa[filtro]).filter(function(x){
+  var pasa = ctPasa(hoy);
+  // Un filtro que se quedo sin nadie (el recordado, o "En mora" tras cobrar la ultima cuota
+  // vencida) esconde su boton: la lista cae a "Activos" en vez de quedar vacia sin un boton
+  // encendido. El estado conserva la eleccion del usuario.
+  var filtroVivo = pasa[filtro] && (filtro === 'activos' || filtro === 'todos' || cuenta(pasa[filtro]) > 0) ? filtro : 'activos';
+  var lista = todos.filter(pasa[filtroVivo]).filter(function(x){
     if (!q) return true;
     var s = q.toLowerCase();
     return x.nombre.toLowerCase().indexOf(s) !== -1 || (x.d.telefono || '').indexOf(q) !== -1;
@@ -54,10 +84,19 @@ export function CarteraView(props){
     return pa - pb || b.moraDias - a.moraDias || (a.prox && b.prox ? a.prox.p.fechaPago.localeCompare(b.prox.p.fechaPago) : (a.prox ? -1 : b.prox ? 1 : 0)) || b.saldo - a.saldo;
   });
 
-  var inicial = foco && foco.nombre ? foco.nombre : (!superpuesto && lista[0] ? lista[0].nombre : null);
-  var _s = useState(inicial); var sel = _s[0], setSel = _s[1];
-  var _fl = useState(foco && foco.loanId ? { loan: foco.loanId, pay: foco.payId } : null); var focoL = _fl[0], setFocoL = _fl[1];
+  // El deudor abierto: el del foco; si no, el que estaba abierto la ultima vez, si sigue existiendo
+  // (`null` = el usuario cerro el panel, y se respeta); si no, el primero de la lista.
+  var recuerda = !(foco && foco.nombre) && mem.sel !== undefined &&
+    (mem.sel === null || props.deudores.some(function(d){ return d.nombre === mem.sel; }));
+  var inicial = foco && foco.nombre ? foco.nombre : recuerda ? mem.sel : (!superpuesto && lista[0] ? lista[0].nombre : null);
+  var loanIni = foco && foco.nombre ? (foco.loanId || null) : recuerda ? (mem.loan || null) : null;
+  // Lo que se abre queda en la memoria, tambien el primero de la lista que la vista eligio sola:
+  // es el perfil que el usuario tenia a la vista al irse.
+  var _s = useState(function(){ if (inicial !== null){ mem.sel = inicial; mem.loan = loanIni; } return inicial; }); var sel = _s[0], setSel = _s[1];
+  var _fl = useState(foco && foco.loanId ? { loan: foco.loanId, pay: foco.payId } : loanIni ? { loan: loanIni } : null); var focoL = _fl[0], setFocoL = _fl[1];
   var deudorSel = sel ? props.deudores.filter(function(d){ return d.nombre === sel; })[0] : null;
+  function abrir(nombre, loanId){ setSel(nombre); setFocoL(loanId ? { loan: loanId } : null); mem.sel = nombre; mem.loan = loanId || null; }
+  function filtrar(f){ setFiltro(f); mem.filtro = f; }
 
   var activos = todos.filter(function(x){ return x.activos.length; });
   var calle = activos.reduce(function(s, x){ return s + x.saldo; }, 0);
@@ -71,7 +110,7 @@ export function CarteraView(props){
       : x.activos.length ? h('span', { style: { color: 'var(--blue)' } }, 'crédito abierto')
       : h('span', null, x.ultimo ? 'último pago ' + opCorta(x.ultimo.fecha) : 'sin movimientos');
     var pct = x.prestado > 0 ? Math.round((1 - x.saldo / x.prestado) * 100) : 0;
-    return h('button', { key: x.nombre, className: 'ct-fila' + (on ? ' on' : '') + (x.activos.length ? '' : ' inactivo'), onClick: function(){ setSel(x.nombre); setFocoL(null); } },
+    return h('button', { key: x.nombre, className: 'ct-fila' + (on ? ' on' : '') + (x.activos.length ? '' : ' inactivo'), onClick: function(){ abrir(x.nombre, null); } },
       h('div', { className: 'op-avatar e-' + x.estado }, opIniciales(x.nombre)),
       h('div', { className: 'ct-fila-c' },
         h('div', { className: 'ct-fila-1' },
@@ -82,7 +121,7 @@ export function CarteraView(props){
         x.activos.length > 0 && h('div', { className: 'ct-chips' },
           x.activos.map(function(m){
             return h('span', { key: m.loan.id, className: 'ct-chip e-' + m.estado, title: opModalidad(m.loan.modalidad) + ' · debe ' + fmt(m.saldo),
-                onClick: function(e){ e.stopPropagation(); setSel(x.nombre); setFocoL({ loan: m.loan.id }); } },
+                onClick: function(e){ e.stopPropagation(); abrir(x.nombre, m.loan.id); } },
               h('i', null), (m.esUSD ? 'USD ' + fmtN(m.loan.montoOrigen) : fmt(m.loan.montoOrigen)) + ' · ' + opModalidad(m.loan.modalidad, true));
           }),
           x.cerrados.length > 0 && h('span', { className: 'ct-chip cerrado' }, '+' + x.cerrados.length + ' cerrado' + (x.cerrados.length > 1 ? 's' : ''))),
@@ -91,7 +130,7 @@ export function CarteraView(props){
 
   var panel = deudorSel && h(DeudorPanel, Object.assign({ key: sel + '|' + (focoL ? focoL.loan : ''), deudor: deudorSel, loans: loans, pays: pays, hoy: hoy,
     focoLoan: focoL ? focoL.loan : null, focoPay: focoL ? focoL.pay : null, superpuesto: superpuesto, datosPago: props.datosPago, showToast: props.showToast, onPay: props.onPay,
-    onClose: function(){ setSel(null); } }, props.acciones));
+    onLoan: function(id){ mem.loan = id; }, onClose: function(){ abrir(null, null); } }, props.acciones));
 
   return h('div', { className: 'op' + (sel ? ' con-panel' : '') + ' ct' },
     h('div', { className: 'op-main ct-main' },
@@ -111,9 +150,9 @@ export function CarteraView(props){
         CT_FILTROS.map(function(f){
           var n = cuenta(pasa[f[0]]);
           if (!n && f[0] !== 'activos' && f[0] !== 'todos') return null;
-          return h('button', { key: f[0], className: 'op-filtro' + (filtro === f[0] ? ' on' : ''), onClick: function(){ setFiltro(f[0]); } }, f[1], h('span', null, n));
+          return h('button', { key: f[0], className: 'op-filtro' + (filtroVivo === f[0] ? ' on' : ''), onClick: function(){ filtrar(f[0]); } }, f[1], h('span', null, n));
         }),
-        h('select', { className: 'ct-orden', value: orden, onChange: function(e){ setOrden(e.target.value); } },
+        h('select', { className: 'ct-orden', value: orden, onChange: function(e){ setOrden(e.target.value); mem.orden = e.target.value; } },
           CT_ORDEN.map(function(o){ return h('option', { key: o[0], value: o[0] }, o[1]); }))),
       lista.length ? h('div', { className: 'ct-lista' }, lista.map(fila)) : h('div', { className: 'op-vacio' }, 'Nadie coincide con la búsqueda.')),
     panel ? h('div', { className: 'op-lado' + (superpuesto ? ' superpuesto' : '') }, panel)

@@ -18,6 +18,8 @@ import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota, computeLiquidacion, esDiario, periodoEnCursoDe, detalleInteresEnCurso } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
+import { opModalidad } from '../core/operacion.js';
+import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // ── Recibo de Abono a Capital (v1.17.0) ──────────────────────────────────────
 // Se genera automaticamente tras registrar un abono. Los 3 puntos de entrada
@@ -196,12 +198,12 @@ export function generateReciboAbono(loan, allPays, opts) {
     var tCuo = tInt + tCap;
     var yaAbon = pend.reduce(function(s, p){ return s + Math.round(p.partialPaid || 0); }, 0);
     cronoHTML = '<div class="ab-st">Cronograma actualizado &mdash; ' + nRest + ' cuota' + (nRest === 1 ? '' : 's') + ' restante' + (nRest === 1 ? '' : 's') + '</div>' +
-      '<table class="ab-t"><tr><th style="text-align:center">Cuota</th><th>Vence</th><th style="text-align:right">Interes</th>' +
-      '<th style="text-align:right">Abono a capital</th><th style="text-align:right">Valor cuota</th><th style="text-align:right">Saldo</th></tr>' +
+      '<table class="ab-t"><thead><tr><th style="text-align:center">Cuota</th><th>Vence</th><th style="text-align:right">Interés</th>' +
+      '<th style="text-align:right">Abono a capital</th><th style="text-align:right">Valor cuota</th><th style="text-align:right">Saldo</th></tr></thead><tbody>' +
       filas + '<tr class="tot"><td class="c" colspan="2">TOTAL A PAGAR' +
       (yaAbon > 0 ? ' <span style="font-weight:400;font-size:9px">(neto de ' + money(yaAbon) + ' ya abonado)</span>' : '') +
       '</td><td class="r">' + money(tInt) +
-      '</td><td class="r">' + money(tCap) + '</td><td class="r">' + money(tCuo) + '</td><td class="r">&mdash;</td></tr></table>';
+      '</td><td class="r">' + money(tCap) + '</td><td class="r">' + money(tCuo) + '</td><td class="r">&mdash;</td></tr></tbody></table>';
   }
 
   // ── Bloque "Como se aplico tu pago" (solo liquidacion con intereses) ──────────────────
@@ -235,7 +237,7 @@ export function generateReciboAbono(loan, allPays, opts) {
     }
     if (uMoraC > 0) {
       filasD += dsgRow('Intereses atrasados consolidados',
-        'Vencidos antes del cambio de dia de cobro &nbsp;&middot;&nbsp; estaban dentro de la cuota del ' +
+        'Vencidos antes del cambio de día de cobro &nbsp;&middot;&nbsp; estaban dentro de la cuota del ' +
         fmtD(liq.moraConsolidadaFecha),
         fmtUni(uMoraC), C.amber);
     }
@@ -246,13 +248,13 @@ export function generateReciboAbono(loan, allPays, opts) {
     if (uExtra > 0) {
       // 3.2.0 — si el periodo era irregular, lo cobrado fueron DIAS de ese periodo, no un mes.
       // 3.3.0 — en Semanal y Quincenal el periodo en curso es una semana o una quincena.
-      filasD += dsgRow(liq.periodoIrregular ? 'Interes del periodo en curso' : 'Interes ' + periodoEnCursoDe(loan.frecuencia),
+      filasD += dsgRow(liq.periodoIrregular ? 'Interés del periodo en curso' : 'Interés ' + periodoEnCursoDe(loan.frecuencia),
         liq.periodoIrregular
           ? 'periodo del ' + fmtD(liq.periodoDesde) + ' al ' + fmtD(liq.periodoHasta) + ' &nbsp;&middot;&nbsp; pactado con el deudor'
           : detalleInteresEnCurso(loan.frecuencia, loan.tasaMensual) + ' &nbsp;&middot;&nbsp; pactado con el deudor',
         fmtUni(uExtra), C.amber);
     }
-    dsgHTML = '<div class="ab-st">Como se aplico tu pago</div><div class="ab-dsg">' + filasD + '</div>';
+    dsgHTML = '<div class="ab-st">Cómo se aplicó tu pago</div><div class="ab-dsg">' + filasD + '</div>';
   }
 
   // ── Bloque RESUMEN (Paz y Salvo + variante corta) ──
@@ -262,13 +264,13 @@ export function generateReciboAbono(loan, allPays, opts) {
     // aplicado" imprimirian por tercera vez la misma cifra de capital y, peor, volverian a
     // insinuar que el capital fue todo lo que entro -- que es exactamente el defecto.
     resumenHTML = '<div class="ab-st">Resumen</div><div class="ab-panel">' +
-      row('Modalidad', esc(loan.modalidad)) +
-      row('Monto original del prestamo', esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) +
+      row('Modalidad', esc(opModalidad(loan.modalidad))) +
+      row('Monto original del préstamo', esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) +
       rowTot('Nuevo saldo pendiente', money(saldoDespues)) + '</div>';
   } else if (esPazYSalvo || cortoSinCrono) {
     resumenHTML = '<div class="ab-st">Resumen</div><div class="ab-panel">' +
-      row('Modalidad', esc(loan.modalidad)) +
-      row('Monto original del prestamo', esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) +
+      row('Modalidad', esc(opModalidad(loan.modalidad))) +
+      row('Monto original del préstamo', esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) +
       row('Saldo anterior', money(saldoAntes)) +
       row('Abono aplicado', '&minus; ' + montoTxt) +
       rowTot('Nuevo saldo pendiente', money(saldoDespues)) + '</div>';
@@ -276,14 +278,14 @@ export function generateReciboAbono(loan, allPays, opts) {
 
   var pazHTML = esPazYSalvo
     ? '<div class="ab-paz"><div class="ab-paz-t">PAZ Y SALVO</div><div class="ab-paz-s">Con este ' +
-      (esLiquidacion ? 'pago' : 'abono') + ' queda <b>cancelada la totalidad</b> del prestamo. No queda saldo pendiente.</div></div>'
+      (esLiquidacion ? 'pago' : 'abono') + ' queda <b>cancelada la totalidad</b> del préstamo. No queda saldo pendiente.</div></div>'
     : '';
   var notaHTML = (!esPazYSalvo && esCapInt)
-    ? '<div class="ab-nota"><b>Recalculo aplicado:</b> ' + (
-        mode === 'modificarPlazo' ? 'se ajusto el numero de cuotas restantes manteniendo el ritmo de pago.'
-        : mode === 'fijarCuota'   ? 'se fijo el valor de la cuota; el plazo se ajusto en consecuencia.'
+    ? '<div class="ab-nota"><b>Recálculo aplicado:</b> ' + (
+        mode === 'modificarPlazo' ? 'se ajustó el número de cuotas restantes manteniendo el ritmo de pago.'
+        : mode === 'fijarCuota'   ? 'se fijó el valor de la cuota; el plazo se ajustó en consecuencia.'
         : 'se mantuvo el plazo original y se redujo el valor de la cuota.'
-      ) + ' El abono se aplico 100% a capital, por lo que no genera intereses futuros sobre ese monto.</div>'
+      ) + ' El abono se aplicó 100% a capital, por lo que no genera intereses futuros sobre ese monto.</div>'
     : '';
   var deudorMeta = [ campoValido(loan.cedula) ? ('C.C. ' + esc(String(loan.cedula).trim())) : '',
                      campoValido(loan.telefono) ? ('Tel. ' + esc(String(loan.telefono).trim())) : '' ].filter(Boolean).join(' &nbsp;&middot;&nbsp; ');
@@ -346,14 +348,13 @@ export function generateReciboAbono(loan, allPays, opts) {
     '.ab-nota{margin-top:9px;padding:8px 12px;background:' + C.amberBg + ';border:1px solid ' + C.amberBd + ';border-radius:9px;font-size:11px;line-height:1.4;color:' + C.amber + '}',
     '.ab-foot{margin-top:14px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:10px;line-height:1.5}',
     '.ab-foot b{color:' + C.green + '}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:1.3cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:1.3cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
+    rbImpresion(dark),
+    '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="ab-head"><div class="ab-brand">',
     '<svg width="34" height="34" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="ab-wm">Cartera</div><div class="ab-sub">Gestion de cartera de credito</div></div></div>',
-    '<div class="ab-meta"><div class="ab-type">' + titulo + '</div><div class="ab-num">' + abCode + '</div><div class="ab-date">Emision: ' + fechaEmision + '</div></div></div>',
-    '<div class="ab-st">' + (esLiquidacion ? 'Liquidacion pagada por' : 'Abono realizado por') + '</div>',
+    '<div><div class="ab-wm">Cartera</div><div class="ab-sub">Gestión de cartera de crédito</div></div></div>',
+    '<div class="ab-meta"><div class="ab-type">' + titulo + '</div><div class="ab-num">' + abCode + '</div><div class="ab-date">Emisión: ' + fechaEmision + '</div></div></div>',
+    '<div class="ab-st">' + (esLiquidacion ? 'Liquidación pagada por' : 'Abono realizado por') + '</div>',
     '<div class="ab-name">' + esc(loan.nombre) + '</div>',
     (deudorMeta ? '<div class="ab-cc">' + deudorMeta + '</div>' : ''),
     '<div class="ab-total"><div class="ab-tl">' + heroRotulo + '</div>',
@@ -368,10 +369,10 @@ export function generateReciboAbono(loan, allPays, opts) {
     cronoHTML,
     notaHTML,
     '<div class="ab-foot">' + (esPazYSalvo
-        ? 'Este documento certifica que el prestamo fue cancelado en su totalidad.'
+        ? 'Este documento certifica que el préstamo fue cancelado en su totalidad.'
         : 'Este documento certifica el abono a capital recibido y el saldo resultante.') +
       '<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + abCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
   // Nombre de archivo con el monto (mas util al buscar que un consecutivo). Se formatea aparte

@@ -673,8 +673,8 @@ export function periodoEnCursoDe(frecuencia) {
 // La sub-linea que explica esa cifra: un periodo de interes sobre el capital pendiente.
 export function detalleInteresEnCurso(frecuencia, tasaMensual) {
   var t = +tasaMensual || 0;
-  if (frecuencia === 'Semanal') return 'Una semana de interes al ' + t + '% mensual sobre el capital pendiente';
-  if (frecuencia === 'Quincenal') return 'Una quincena de interes al ' + t + '% mensual sobre el capital pendiente';
+  if (frecuencia === 'Semanal') return 'Una semana de interés al ' + t + '% mensual sobre el capital pendiente';
+  if (frecuencia === 'Quincenal') return 'Una quincena de interés al ' + t + '% mensual sobre el capital pendiente';
   return t + '% sobre el capital pendiente';
 }
 

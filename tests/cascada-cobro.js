@@ -1159,7 +1159,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
               htmlP.indexOf('Total por pagar') !== -1,
               'la tarjeta no aparece: `proyeccionCobro` no recibio las filas del preview');
             R.check('H (4c) y trae el cronograma que quedaria',
-              htmlP.indexOf('Cronograma que quedaria') !== -1);
+              htmlP.indexOf('Cronograma que quedaría') !== -1);
             // Y NUNCA puede presentarse como comprobante de dinero recibido.
             R.check('H (4c) la propuesta no se presenta como comprobante',
               htmlP.indexOf('TOTAL RECIBIDO') === -1 && htmlP.indexOf('Total recibido') === -1 &&

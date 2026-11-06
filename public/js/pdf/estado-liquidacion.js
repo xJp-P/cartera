@@ -31,6 +31,8 @@ import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
 import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento, periodoEnCursoDe, detalleInteresEnCurso } from '../core/dominio.js';
 import { esAbono, esCorte } from '../core/ids.js';
+import { opModalidad } from '../core/operacion.js';
+import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
 function campoValido(v){
@@ -115,8 +117,8 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
 
   if (diario) {
     var porDia = L.interesDia;
-    desglose.push(dsg('Interes acumulado',
-      L.diasDevengados + ' dia(s) x ' + money(porDia) + ' por dia',
+    desglose.push(dsg('Interés acumulado',
+      L.diasDevengados + ' día(s) x ' + money(porDia) + ' por día',
       money(L.interesDevengado), C.amber));
   } else if (L.moraCount > 0) {
     desglose.push(dsg('Intereses atrasados',
@@ -129,7 +131,7 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   // asi que se cobra y se explica aparte en vez de desaparecer del total.
   if (L.moraConsolidada > 0) {
     desglose.push(dsg('Intereses atrasados consolidados',
-      'Vencidos antes del cambio de dia de cobro &nbsp;&middot;&nbsp; quedaron dentro de la cuota del ' +
+      'Vencidos antes del cambio de día de cobro &nbsp;&middot;&nbsp; quedaron dentro de la cuota del ' +
       fmtD(L.moraConsolidadaFecha),
       money(L.moraConsolidada), C.amber));
   }
@@ -139,13 +141,13 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   }
   if (L.incluyeProxMes && L.intExtra > 0 && L.periodoIrregular) {
     // 3.2.0 — el periodo en curso no es un mes: se dice cuantos dias y de que periodo.
-    desglose.push(dsg('Interes del periodo en curso',
-      L.diasCobrados + ' de ' + L.diasPeriodo + ' dias (periodo del ' + fmtD(L.periodoDesde) + ' al ' + fmtD(L.periodoHasta) +
+    desglose.push(dsg('Interés del periodo en curso',
+      L.diasCobrados + ' de ' + L.diasPeriodo + ' días (periodo del ' + fmtD(L.periodoDesde) + ' al ' + fmtD(L.periodoHasta) +
       ') &nbsp;&middot;&nbsp; pactado con el deudor',
       money(L.intExtra), C.amber));
   } else if (L.incluyeProxMes && L.intExtra > 0) {
     // 3.3.0 — en Semanal y Quincenal el periodo en curso es una semana o una quincena.
-    desglose.push(dsg(diario ? 'Interes del proximo mes' : 'Interes ' + periodoEnCursoDe(L.frecuencia),
+    desglose.push(dsg(diario ? 'Interés del próximo mes' : 'Interés ' + periodoEnCursoDe(L.frecuencia),
       (diario ? L.tasaMensual + '% sobre el capital pendiente' : detalleInteresEnCurso(L.frecuencia, L.tasaMensual)) +
       ' &nbsp;&middot;&nbsp; pactado con el deudor',
       money(L.intExtra), C.amber));
@@ -172,16 +174,16 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     });
     if (!fc.length) {
       fc.push('<tr><td colspan="5" style="text-align:center;color:' + C.muted +
-              '">Todavia no se ha registrado ningun corte en este credito.</td></tr>');
+              '">Todavía no se ha registrado ningún corte en este crédito.</td></tr>');
     } else {
       fc.push('<tr class="tot"><td colspan="4">Total recibido a la fecha</td>' +
               '<td class="n">' + moneyT(totalRecibido) + '</td></tr>');
     }
     respaldo =
-      '<table><tr><th>Corte</th><th>Fecha</th><th class="n">Intereses</th>' +
-      '<th class="n">Abono a capital</th><th class="n">Total</th></tr>' + fc.join('') + '</table>';
-    notaRespaldo = 'Cada corte es un movimiento real de caja. El interes se genera dia a dia sobre el ' +
-                   'capital vivo, por eso un abono lo reduce desde ese mismo dia.';
+      '<table><thead><tr><th>Corte</th><th>Fecha</th><th class="n">Intereses</th>' +
+      '<th class="n">Abono a capital</th><th class="n">Total</th></tr></thead><tbody>' + fc.join('') + '</tbody></table>';
+    notaRespaldo = 'Cada corte es un movimiento real de caja. El interés se genera día a día sobre el ' +
+                   'capital vivo, por eso un abono lo reduce desde ese mismo día.';
   } else {
     // Cuotas regulares + abonos INTERCALADOS por fecha (mismo comparador que el
     // cronograma, para que los dos documentos cuenten la misma secuencia).
@@ -227,7 +229,7 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     });
     if (!fr.length) {
       fr.push('<tr><td colspan="8" style="text-align:center;color:' + C.muted +
-              '">Este credito todavia no tiene movimientos registrados.</td></tr>');
+              '">Este crédito todavía no tiene movimientos registrados.</td></tr>');
     } else {
       fr.push('<tr class="tot"><td colspan="4">Capital amortizado a la fecha</td>' +
               '<td class="n">' + moneyT(capAmortizado) + '</td>' +
@@ -235,15 +237,15 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
               '<td colspan="2">Total recibido</td></tr>');
     }
     respaldo =
-      '<table><tr><th>#</th><th>Vence</th><th class="n">Valor cuota</th><th class="n">Interes</th>' +
-      '<th class="n">Abono a capital</th><th class="n">Pagado</th><th>Recaudado</th><th>Estado</th></tr>' +
-      fr.join('') + '</table>';
+      '<table><thead><tr><th>#</th><th>Vence</th><th class="n">Valor cuota</th><th class="n">Interés</th>' +
+      '<th class="n">Abono a capital</th><th class="n">Pagado</th><th>Recaudado</th><th>Estado</th></tr></thead><tbody>' +
+      fr.join('') + '</tbody></table>';
     // Nunca recortar en silencio: si algo quedo fuera, el documento lo dice (doctrina
     // "no silent caps"). Sin esto la tabla parece el cronograma completo y no lo es.
     notaRespaldo = 'Las filas azules son abonos a capital, no cuotas del cronograma.' +
-      (L.partialPend > 0 ? ' Los abonos parciales ya estan descontados del total a liquidar.' : '') +
+      (L.partialPend > 0 ? ' Los abonos parciales ya están descontados del total a liquidar.' : '') +
       (omitidas > 0 ? ' No se listan ' + omitidas + ' cuota(s) de vencimiento posterior al ' +
-        fmtD(hasta) + ': quedan canceladas con esta liquidacion.' : '');
+        fmtD(hasta) + ': quedan canceladas con esta liquidación.' : '');
   }
 
   var deudorMeta = [
@@ -252,7 +254,7 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   ].filter(Boolean).join(' &nbsp;&middot;&nbsp; ');
 
   var comoPagar = (datosPago && String(datosPago).trim())
-    ? '<div class="lq-pagar"><div class="h">Como pagar</div><div class="b">' +
+    ? '<div class="lq-pagar"><div class="h">Cómo pagar</div><div class="b">' +
       esc(datosPago).replace(/\n/g, '<br>') + '</div></div>'
     : '';
 
@@ -275,39 +277,39 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   if (L.capitalPendiente <= 0 && L.total <= 0) {
     vigencia = '<b>El capital ya fue devuelto en su totalidad.</b> Este documento deja constancia del cierre.';
   } else if (diario) {
-    vigencia = '<b>Este valor es valido unicamente para el ' + fmtD(hasta) + '.</b> ' +
-      'El credito genera intereses cada dia, asi que a partir del dia siguiente el monto a pagar cambia. ' +
+    vigencia = '<b>Este valor es válido únicamente para el ' + fmtD(hasta) + '.</b> ' +
+      'El crédito genera intereses cada día, así que a partir del día siguiente el monto a pagar cambia. ' +
       'Si el deudor liquida en otra fecha, solicita un documento actualizado.';
   } else if (L.periodoIrregular && L.incluyeProxMes) {
     // 3.2.0 — se cobran DIAS de un periodo irregular: el interes cubre hasta donde llegan
     // esos dias (o solo hoy, si se cobraron menos de los ya corridos).
-    vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(L.validoHasta) + '.</b> ' +
-      'Incluye ' + L.diasCobrados + ' dias de interes del periodo en curso. ' +
-      'Si el pago se realiza despues, se generaran nuevos intereses.';
+    vigencia = '<b>Este valor de liquidación es válido hasta el ' + fmtD(L.validoHasta) + '.</b> ' +
+      'Incluye ' + L.diasCobrados + ' días de interés del periodo en curso. ' +
+      'Si el pago se realiza después, se generarán nuevos intereses.';
   } else if (L.enGracia) {
     // 3.3.0 — se liquida dentro de los dias perdonados: todavia no corre interes, asi que no
     // se cobra nada por adelantado y el valor (el capital) no cambia hasta el primer pago.
-    vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(proxVenc || L.graciaHasta) + '.</b> ' +
-      'El credito esta en sus dias de gracia: el interes empieza a correr el ' + fmtD(L.graciaHasta) +
-      ', asi que si liquida antes no se cobra interes por adelantado.';
+    vigencia = '<b>Este valor de liquidación es válido hasta el ' + fmtD(proxVenc || L.graciaHasta) + '.</b> ' +
+      'El crédito está en sus días de gracia: el interés empieza a correr el ' + fmtD(L.graciaHasta) +
+      ', así que si liquida antes no se cobra interés por adelantado.';
   } else if (proxVenc && L.incluyeProxMes) {
-    vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(proxVenc) + '.</b> ' +
-      'Incluye el interes de este periodo, de modo que el monto no cambia hasta esa fecha. ' +
-      'Si el pago se realiza despues, se generaran nuevos intereses.';
+    vigencia = '<b>Este valor de liquidación es válido hasta el ' + fmtD(proxVenc) + '.</b> ' +
+      'Incluye el interés de este periodo, de modo que el monto no cambia hasta esa fecha. ' +
+      'Si el pago se realiza después, se generarán nuevos intereses.';
   } else if (proxVenc) {
-    vigencia = '<b>Este valor de liquidacion es valido hasta el ' + fmtD(proxVenc) + '.</b> ' +
-      'Ese dia vence la proxima cuota y se generan nuevos intereses, con lo que el monto a pagar aumenta.';
+    vigencia = '<b>Este valor de liquidación es válido hasta el ' + fmtD(proxVenc) + '.</b> ' +
+      'Ese día vence la próxima cuota y se generan nuevos intereses, con lo que el monto a pagar aumenta.';
   } else {
     vigencia = '<b>Este valor corresponde al ' + fmtD(hasta) + '.</b> ' +
-      'Si el pago se realiza mas adelante, solicita un documento actualizado.';
+      'Si el pago se realiza más adelante, solicita un documento actualizado.';
   }
 
   var tasaTxt = diario
-    ? (L.tasaMensual + '% mensual &nbsp;&middot;&nbsp; ' + money(L.interesDia) + ' por dia')
+    ? (L.tasaMensual + '% mensual &nbsp;&middot;&nbsp; ' + money(L.interesDia) + ' por día')
     : (L.tasaMensual + '% mensual');
 
   var html = [
-    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estado de Liquidacion - ' + esc(loan.nombre) + '</title><style>',
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estado de Liquidación - ' + esc(loan.nombre) + '</title><style>',
     '*{box-sizing:border-box}',
     // Una sola familia en todo el documento. Los valores NO llevan monoespaciada: la
     // mezcla desentonaba junto al texto. `tabular-nums` mantiene las cifras alineadas
@@ -361,51 +363,50 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     // Inset de impresion 1.3cm (no 2cm) y secciones mas juntas: el documento tiene que
     // caber en UNA hoja aun con desglose completo, respaldo y "Como pagar" — mismo
     // ajuste que ya hizo `generateFacturaCobro` por la misma razon.
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:1.3cm;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}.lq-sec{margin:11px 0 5px}}'
-         : '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:1.3cm;background:#ffffff!important;color:#1f2328!important;min-height:100vh}.lq-sec{margin:11px 0 5px}}',
-    '</style></head><body>',
+    rbImpresion(dark, '', '.lq-sec{margin:11px 0 5px}'),
+    '</style></head><body>' + RB_MARCO_ABRE,
 
     '<div class="lq-head"><div class="lq-brand">',
     '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
-    '<div><div class="lq-wm">Cartera</div><div class="lq-sub">Gestion de cartera de credito</div></div></div>',
-    '<div class="lq-meta"><div class="lq-type">Estado de Liquidacion</div><div class="lq-num">' + lqCode + '</div>',
-    '<div class="lq-date">Emision: ' + fechaEmision + '</div></div></div>',
+    '<div><div class="lq-wm">Cartera</div><div class="lq-sub">Gestión de cartera de crédito</div></div></div>',
+    '<div class="lq-meta"><div class="lq-type">Estado de Liquidación</div><div class="lq-num">' + lqCode + '</div>',
+    '<div class="lq-date">Emisión: ' + fechaEmision + '</div></div></div>',
 
-    '<div class="lq-st">Liquidacion del credito de</div>',
+    '<div class="lq-st">Liquidación del crédito de</div>',
     '<div class="lq-name">' + esc(loan.nombre) + '</div>',
     (deudorMeta ? '<div class="lq-cc">' + deudorMeta + '</div>' : ''),
 
     '<div class="lq-vig">' + vigencia + '</div>',
 
-    '<div class="lq-sec">Condiciones del credito</div>',
+    '<div class="lq-sec">Condiciones del crédito</div>',
     row('Capital prestado', money(origCOP)),
-    row('Modalidad', esc(loan.modalidad)),
+    row('Modalidad', esc(opModalidad(loan.modalidad))),
     row('Tasa', tasaTxt),
     row('Fecha de inicio', fmtD(loan.fechaInicio)),
     (diario ? '' : row('Plazo', (loan.modalidad === 'Intereses' ? 'Indefinido'
               : (loan.plazoMeses || 0) + ' cuota' + ((loan.plazoMeses || 0) === 1 ? '' : 's')))),
 
-    '<div class="lq-sec">Desglose de la liquidacion</div>',
+    '<div class="lq-sec">Desglose de la liquidación</div>',
     '<div class="lq-desg">' + desglose.join('') + '</div>',
 
     '<div class="lq-total"><div><div class="q">Total a liquidar hoy</div>',
-    '<div class="qs">Con este pago el credito queda cancelado en su totalidad</div></div>',
+    '<div class="qs">Con este pago el crédito queda cancelado en su totalidad</div></div>',
     '<div class="v">' + money(L.total) + '</div></div>',
 
-    '<div class="lq-sec">Respaldo &middot; historial del credito al ' + fmtD(hasta) + '</div>',
+    '<div class="lq-sec">Respaldo &middot; historial del crédito al ' + fmtD(hasta) + '</div>',
     respaldo,
     '<div class="lq-sm" style="margin-top:5px">' + notaRespaldo + '</div>',
 
     comoPagar,
 
-    '<div class="lq-foot">Documento informativo de liquidacion. No constituye recibo de pago.',
+    '<div class="lq-foot">Documento informativo de liquidación. No constituye recibo de pago.',
     '<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + lqCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
   // Sin `fmt()` en el nombre de archivo: inserta un espacio duro U+00A0 tras el '$'
   // que ensucia el nombre en disco (leccion de v1.17.1).
-  var fname = 'Liquidacion ' + loan.nombre + ' - ' + hasta;
+  var fname = 'Liquidación ' + loan.nombre + ' - ' + hasta;
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(html, fname);
   } else {

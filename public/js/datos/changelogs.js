@@ -721,5 +721,12 @@ export const CHANGELOGS = {
     'Nuevo Recibo de cobro general: un solo documento con toda la deuda vencida de un cliente, sus opciones de pago (ponerse al dia, al dia mas la proxima cuota o liquidar) y el estado de cada uno de sus creditos. Se genera desde la fila del credito con varias cuotas vencidas en Cobros y desde el panel del deudor. Si el cliente tiene varios creditos, el total va arriba y el detalle de cada uno debajo.',
     'Se corrigio que cambiar el dia de pago de un prestamo con cuotas vencidas cobrara dos veces los intereses de esos meses. Ahora las cuotas vencidas se quedan como estan, y la primera cuota nueva solo cobra los dias que van desde la ultima cuota ya facturada.',
     'Se corrigio que cambiar el dia de pago despues de un abono a capital recalculara las cuotas como si el abono no se hubiera hecho.'
+  ],
+  '3.6.0': [
+    'Cartera recuerda donde la dejaste: al volver a la pestana siguen elegidos el filtro, el orden y la persona que tenias abierta, con el mismo prestamo, en vez de volver a "Activos" y al primero de la lista. Si cerraste el panel, sigue cerrado. Al abrir a alguien desde el Resumen o la busqueda, esa persona manda.',
+    'Todos los documentos PDF dejan el mismo margen en cada hoja: cuando un cronograma, un reporte o un estado de cuenta ocupa mas de una hoja, la segunda ya no arranca pegada al borde del papel, y en tema oscuro el fondo sigue llegando hasta el borde.',
+    'Cuando una tabla sigue en la hoja siguiente, su fila de titulos se repite arriba, para que las columnas no queden sin nombre.',
+    'Los documentos se imprimen con su ortografia completa: Cédula, Teléfono, Interés, Valor de liquidación, días... y la modalidad con su nombre completo (Préstamo sin interés, Pago único, Solo intereses, Interés diario).',
+    'Se corrigio que un nombre u observacion con simbolos como < o & desacomodara el recibo de pago.'
   ]
 };

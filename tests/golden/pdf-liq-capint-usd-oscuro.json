@@ -5,13 +5,13 @@
   "tema": "dark",
   "entradaHash": "0ea0ce3f581b29f1340fc61330d8aaffa80279db",
   "estructura": {
-    "docTitle": "Estado de Liquidacion - Gabriela Rios",
+    "docTitle": "Estado de Liquidación - Gabriela Rios",
     "h1": [],
     "cabeceras": [
       "#",
       "Vence",
       "Valor cuota",
-      "Interes",
+      "Interés",
       "Abono a capital",
       "Pagado",
       "Recaudado",
@@ -20,7 +20,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 8064,
+    "bytes": 8446,
     "nFilas": 4,
     "nCeldas": 32,
     "celdasPorTr": [
@@ -31,8 +31,8 @@
     ],
     "nMontos": 17,
     "hashMontos": "fc9edf856229b5243df6859e85690c8d71133c33",
-    "hashFname": "b23fd7721da175cc70e6d83b5754106a05cfef26",
-    "hashTexto": "cd9f96bd1cf2a50b8c2ca50320fb08e55f062a5e",
+    "hashFname": "f5902d375afff493fbeff8f6794192b094041963",
+    "hashTexto": "388525e0a4f1290d62ba193e06bd0a85a6069a2b",
     "clases": [
       "b",
       "bdg b-mora",

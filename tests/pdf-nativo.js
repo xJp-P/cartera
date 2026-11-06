@@ -13,11 +13,38 @@
 //   2. REAL: genera el HTML de documentos reales (generadores de produccion + fixture), los
 //      pasa por `htmlAPdf` dentro de un proceso Electron COMPLETO (no ELECTRON_RUN_AS_NODE:
 //      sin app no hay ventanas) y mira el PDF que sale.
+//   3. EL MARGEN DE CADA HOJA (3.6.0): los documentos van dentro de un marco cuyo thead/tfoot se
+//      repite en cada hoja impresa (`RB_MARCO_*`). Antes, la hoja 2 de cualquier documento largo
+//      arrancaba pegada al filo del papel. Se mide DENTRO del PDF: Electron escribe el texto como
+//      `1 0 0 -1 x y Tm` en un espacio continuo entre hojas (1.056 unidades por hoja carta), asi
+//      que el margen de arriba de la hoja N es `min(y) - (N-1)*1056` y el de abajo `N*1056 - max(y)`.
 //
 //   ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron tests/pdf-nativo.js
 
 const fs   = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+
+// Por cada hoja del PDF, la y (en el espacio continuo de Electron) del texto mas alto y del mas
+// bajo. `null` si la hoja no trae texto que medir.
+function alturasPorHoja(buf) {
+  const s = buf.toString('latin1');
+  const objs = {};
+  const re = /(\d+) 0 obj([\s\S]*?)endobj/g;
+  let m;
+  while ((m = re.exec(s)) !== null) objs[m[1]] = m[2];
+  const hojas = Object.keys(objs).filter(k => /\/Type\s*\/Page[^s]/.test(objs[k])).sort((a, b) => a - b);
+  return hojas.map(k => {
+    const c = /\/Contents\s+(\d+)\s+0\s+R/.exec(objs[k]);
+    const o = c && objs[c[1]];
+    if (!o) return null;
+    const i = o.indexOf('stream'), j = o.lastIndexOf('endstream');
+    let datos = Buffer.from(o.slice(i + 6, j).replace(/^\r?\n/, '').replace(/\r?\n$/, ''), 'latin1');
+    try { datos = zlib.inflateSync(datos); } catch (_) {}
+    const ys = [...datos.toString('latin1').matchAll(/1 0 0 -1 [-\d.]+ ([-\d.]+) Tm/g)].map(x => +x[1]);
+    return ys.length ? { min: Math.min(...ys), max: Math.max(...ys) } : null;
+  });
+}
 
 // ── Modo APP: el proceso hijo. Imprime y devuelve un JSON por stdout. ─────────────────────
 if (process.argv.includes('--app')) {
@@ -38,6 +65,7 @@ if (process.argv.includes('--app')) {
         cabecera: s.slice(0, 5),
         paginas: (s.match(/\/Type\s*\/Page[^s]/g) || []).length,
         cajas: [...new Set(s.match(/\/MediaBox\s*\[[^\]]*\]/g) || [])],
+        alturas: alturasPorHoja(buf),
         ventanasVivas: BrowserWindow.getAllWindows().length,
       });
     }
@@ -105,12 +133,16 @@ const L = id => loans.find(x => x.id === id);
 const cuota = (id, n) => pays.find(p => p.prestamoId === id && p.cuotaN === n);
 const ID = '1776205975507jkph';   // C+I COP del fixture con abono intercalado
 
-// paginasMin: el cronograma oscuro y el reporte ocupan 2 hojas (medido); se exige >= 2 para
-// que la prueba cubra tambien el salto de pagina, no solo documentos de una hoja.
+// paginasMin: el cronograma oscuro, el reporte y el recibo general de un deudor con 3 creditos
+// ocupan 2 hojas (medido); se exige >= 2 para que la prueba cubra el salto de pagina y el margen
+// de la hoja 2. El cronograma es el del credito de 24 cuotas: desde 3.6.0 el margen de impresion
+// es de 1,3 cm (antes 2) y el de 14 cuotas ya cabe en una hoja.
+const LARGO = '1773657323435hkkb';   // C+I USD de 24 cuotas
 const CASOS = [
-  { doc: 'cronograma-oscuro', tema: 'dark',  paginasMin: 2, gen: () => S.generateCronogramaPDF(L(ID), pays, true) },
+  { doc: 'cronograma-oscuro', tema: 'dark',  paginasMin: 2, gen: () => S.generateCronogramaPDF(L(LARGO), pays, true) },
   { doc: 'recibo-claro',      tema: 'light', paginasMin: 1, gen: () => S.generateRecibo(cuota(ID, 4), L(ID), 393610, 0, pays, { fechaRecaudo: '2026-08-14' }) },
   { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
+  { doc: 'general-oscuro',    tema: 'dark',  paginasMin: 2, gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Bruno Salgado'), pays, '', { hasta: '2026-11-02' }) },
 ];
 const dir = path.join(WORK, `pdf-nativo-${process.pid}-${Date.now()}`);
 fs.mkdirSync(dir, { recursive: true });
@@ -140,6 +172,17 @@ for (const d of res.docs) {
   // Carta, como emitia 3.0.0: el cambio de ventana no puede cambiar el tamano del papel.
   R.eq(`${d.doc}: todas las paginas en tamano carta`, d.cajas, ['/MediaBox [0 0 612 792]']);
   R.check(`${d.doc}: no es un documento vacio (> 20 KB)`, d.bytes > 20000, d.bytes);
+  // El margen de cada hoja, medido sobre el texto del PDF (ver la cabecera). 40 unidades son
+  // ~1 cm: el marco deja 1,3 cm y la primera linea de texto cae un poco mas abajo. La hoja 2 de
+  // un documento sin marco arrancaba a 0,2 pt del filo.
+  const alt = d.alturas || [];
+  R.check(`${d.doc}: cada hoja trae texto que medir`, alt.length === d.paginas && alt.every(Boolean), alt);
+  const arriba = alt.map((a, i) => a ? Math.round(a.min - i * 1056) : null);
+  const abajo  = alt.map((a, i) => a ? Math.round((i + 1) * 1056 - a.max) : null);
+  R.check(`${d.doc}: cada hoja deja al menos 1 cm arriba`, arriba.every(v => v !== null && v >= 40), arriba);
+  if (d.paginas > 1) {
+    R.check(`${d.doc}: cada hoja que continua deja al menos 1 cm abajo`, abajo.slice(0, -1).every(v => v !== null && v >= 40), abajo);
+  }
   R.eq(`${d.doc}: no deja la ventana oculta viva`, d.ventanasVivas, 0);
 }
 R.check('un documento que no se puede cargar rechaza la promesa', res.error && res.error.rechazo === true, res.error);

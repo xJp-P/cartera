@@ -5,12 +5,12 @@
   "tema": "light",
   "entradaHash": "a645f93c0da5095004ba526222ae7aee1a84c1a0",
   "estructura": {
-    "docTitle": "Recibo de Cobro",
+    "docTitle": "Factura de Cobro",
     "h1": [],
     "cabeceras": [],
     "etiquetas": [
       "Factura de Cobro",
-      "Aviso de proximo vencimiento",
+      "Aviso de próximo vencimiento",
       "Cobro dirigido a",
       "Total a pagar",
       "Vence el",
@@ -18,24 +18,24 @@
       "Desglose de lo que falta",
       "Abono a capital",
       "Total pendiente",
-      "Detalle del prestamo",
+      "Detalle del préstamo",
       "Modalidad",
       "Monto original",
       "Tasa",
       "Plazo",
-      "Saldo pendiente del prestamo",
-      "Como pagar"
+      "Saldo pendiente del préstamo",
+      "Cómo pagar"
     ]
   },
   "valores": {
-    "bytes": 7624,
+    "bytes": 7977,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 7,
     "hashMontos": "f7842f0a0d7462fb7ac68885e87c95b5950794b4",
     "hashFname": "bde6d9acb6a8a46525fe22b4931bc6e2a3dcaff1",
-    "hashTexto": "4d585807318f375ea7f6587d70e255c0b0c1a692",
+    "hashTexto": "6fe099633f389e07751bf33700888d9c23ad4dd5",
     "clases": [
       "rc-brand",
       "rc-brand-sub",

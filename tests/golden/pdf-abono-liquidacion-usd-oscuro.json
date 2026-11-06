@@ -10,25 +10,25 @@
     "cabeceras": [],
     "etiquetas": [
       "Paz y Salvo",
-      "Liquidacion pagada por",
+      "Liquidación pagada por",
       "Total recibido",
       "PAZ Y SALVO",
-      "Como se aplico tu pago",
+      "Cómo se aplicó tu pago",
       "Resumen",
       "Modalidad",
-      "Monto original del prestamo",
+      "Monto original del préstamo",
       "Nuevo saldo pendiente"
     ]
   },
   "valores": {
-    "bytes": 7250,
+    "bytes": 7602,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 9,
     "hashMontos": "1d07d13fca2f3e472331c1d9e53a289985a1513d",
     "hashFname": "dc49007d268eaf4f6693e58004c3c0279e2f63dc",
-    "hashTexto": "8ff89becbba3321af79a8dd53f341988681dbd74",
+    "hashTexto": "ac91ed232c0ee1466d1aa7367a9d56d66621b470",
     "clases": [
       "ab-brand",
       "ab-cc",

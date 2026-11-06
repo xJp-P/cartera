@@ -18,6 +18,8 @@ import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { saldoConCaja, esDiario, estadoDiario } from '../core/dominio.js';
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
+import { opModalidad } from '../core/operacion.js';
+import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // ── Reporte de Prestamos Activos (PDF) ────────────────────────────────────
 // Reusa el pipeline printToPDF (electronAPI.printPDF) con fallback a window.print,
@@ -94,9 +96,9 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     if (esDiario(l)) {
       devD = estadoDiario(l, lp, nowStr());
       vencLabel = devD.fechaUltimoCorte ? fmtD(devD.fechaUltimoCorte) : fmtD(l.fechaInicio);
-      proxLabel = devD.diasDesdeUltimoCorte + ' dias';
+      proxLabel = devD.diasDesdeUltimoCorte + ' días';
       proxValor = Math.round(devD.capitalVivo * (+l.tasaMensual || 0) / 100 / 30);
-      proxValorLabel = fmt(proxValor) + '/dia';
+      proxValorLabel = fmt(proxValor) + '/día';
       saldo = devD.capitalVivo + devD.interesPendiente;
     }
     var tasaStr;
@@ -108,7 +110,8 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     } else {
       tasaStr = (l.tasaMensual || 0) + '% mensual';
     }
-    var modLabel = l.modalidad === 'Capital + Intereses' ? 'Cap. + Int.' : l.modalidad;
+    // El rotulo corto de la app (el valor interno se guarda sin tildes); el credito abierto, entero.
+    var modLabel = opModalidad(l.modalidad, l.modalidad !== 'Interes Diario');
     return { l: l, esUSD: esUSD, trm: trm, saldo: saldo, moras: moras, vencido: vencido, tasaStr: tasaStr, modLabel: modLabel,
              vencLabel: vencLabel, proxLabel: proxLabel, proxValor: proxValor, proxValorLabel: proxValorLabel, esTransitoria: esTransitoria, transValor: transValor, transFechaLabel: transFechaLabel };
   });
@@ -134,7 +137,7 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     // prestamo tiene mora pero esa cuota aun no vence -> "Pendiente" (neutral gris); las sub-filas
     // rojas ya alertan la mora. Sin ninguna Pendiente (cronograma vencido completo) -> "En Mora".
     var estadoBadge = !esMora
-      ? '<span class="badge badge-pagado">Al dia</span>'
+      ? '<span class="badge badge-pagado">Al día</span>'
       : (r.proxLabel !== '—' ? '<span class="badge badge-pend">Pendiente</span>' : '<span class="badge badge-mora">En Mora</span>');
     var usdSub = r.esUSD ? '<div class="usd-sub">' + copToUsd(r.saldo, r.trm) + '</div>' : '';
     var usdSubCuota = (r.esUSD && r.proxValor > 0) ? '<div class="usd-sub">' + copToUsd(r.proxValor, r.trm) + '</div>' : '';
@@ -159,18 +162,18 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
       // que el valor de la cuota (de lo contrario el documento parece tener un error).
       var notaParcial = abonado > 0 ? ' &middot; abonado ' + fmt(abonado) + ' de ' + fmt(p.cuotaTotal) : '';
       return '<tr class="mora-sub"><td colspan="8"><div class="mora-detalle">' +
-        '<span>&#8627; Cuota #' + p.cuotaN + ' &middot; vencio el ' + fmtD(p.fechaPago) + ' &middot; ' + dias + ' dia' + (dias === 1 ? '' : 's') + ' de atraso' + notaParcial + '</span>' +
+        '<span>&#8627; Cuota #' + p.cuotaN + ' &middot; venció el ' + fmtD(p.fechaPago) + ' &middot; ' + dias + (dias === 1 ? ' día' : ' días') + ' de atraso' + notaParcial + '</span>' +
         '<span><strong>' + fmt(pend) + '</strong>' + usdMora + '</span></div></td></tr>';
     }).join('');
     // Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha)
     var transTr = r.esTransitoria ? ('<tr class="tran-sub"><td colspan="8"><div class="tran-detalle">' +
-      '<span>&#8627; Cuota transitoria &middot; vence ' + r.transFechaLabel + ' &middot; interes prorrateado</span>' +
+      '<span>&#8627; Cuota transitoria &middot; vence ' + r.transFechaLabel + ' &middot; interés prorrateado</span>' +
       '<span><strong>' + fmt(r.transValor) + '</strong>' + (r.esUSD ? ' &middot; <span class="usd-i">' + copToUsd(r.transValor, r.trm) + '</span>' : '') + '</span></div></td></tr>') : '';
     return loanTr + moraTrs + transTr;
   }).join('');
 
   var html = [
-    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reporte de Prestamos Activos</title>',
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reporte de Préstamos Activos</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
     dark ? 'body{font-family:Arial,sans-serif;padding:30px;max-width:780px;margin:0 auto;color:#e6edf3;background:#0d1117;font-size:12px}' :
@@ -200,19 +203,18 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     dark ? '.badge-pend{background:#21262d;color:#8b949e;border:1px solid #30363d}' : '.badge-pend{background:#eef1f4;color:#57606a;border:1px solid #d0d7de}',
     dark ? '.footer{text-align:center;margin-top:22px;padding-top:14px;border-top:1px solid #30363d;font-size:10px;color:#6e7681}' :
            '.footer{text-align:center;margin-top:22px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
-    dark ? '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#0d1117!important}body{max-width:none;padding:2cm;font-size:11px;background:#0d1117!important;color:#e6edf3!important;min-height:100vh}}' :
-           '@media print{html,body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}@page{margin:0}html{background:#ffffff!important}body{max-width:none;padding:2cm;font-size:11px;background:#ffffff!important;color:#1f2328!important;min-height:100vh}}',
-    '</style></head><body>',
-    '<div class="header"><h1>Reporte de Prestamos Activos</h1><p>Fecha de emision: ' + fechaEmision + '</p></div>',
-    '<div class="summary"><span><strong>' + rows.length + '</strong> prestamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + '</span>' +
+    rbImpresion(dark, 'font-size:11px;'),
+    '</style></head><body>' + RB_MARCO_ABRE,
+    '<div class="header"><h1>Reporte de Préstamos Activos</h1><p>Fecha de emisión: ' + fechaEmision + '</p></div>',
+    '<div class="summary"><span><strong>' + rows.length + '</strong> préstamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + '</span>' +
       '<span><strong>' + countMora + '</strong> en mora</span>' +
       '<span>Total vencido: <strong>' + fmt(totalVencido) + '</strong>' + (totalVencidoUSD > 0 ? ' <span style="color:' + (dark ? '#79c0ff' : '#0969da') + ';font-weight:400">(Incluye ' + fmtUSD(totalVencidoUSD) + ')</span>' : '') + '</span></div>',
     rows.length === 0 ?
-      '<div style="text-align:center;padding:36px 0;font-size:12px;color:' + (dark ? '#8b949e' : '#656d76') + '">No hay prestamos activos.</div>' :
-      '<table><tr><th>Vencimiento</th><th>Deudor</th><th>Modalidad</th><th>Tasa</th><th style="text-align:center">Cuota</th><th style="text-align:right">Valor cuota</th><th style="text-align:right">Saldo Pendiente</th><th style="text-align:center">Estado</th></tr>' + filasHTML + '</table>',
+      '<div style="text-align:center;padding:36px 0;font-size:12px;color:' + (dark ? '#8b949e' : '#656d76') + '">No hay préstamos activos.</div>' :
+      '<table><thead><tr><th>Vencimiento</th><th>Deudor</th><th>Modalidad</th><th>Tasa</th><th style="text-align:center">Cuota</th><th style="text-align:right">Valor cuota</th><th style="text-align:right">Saldo Pendiente</th><th style="text-align:center">Estado</th></tr></thead><tbody>' + filasHTML + '</tbody></table>',
     '<div style="margin-top:18px;padding:14px 18px;background:' + (dark ? '#0f2b19' : '#f0fdf4') + ';border:1px solid ' + (dark ? '#1b4332' : '#4ade80') + ';border-radius:8px;display:flex;justify-content:space-between;align-items:center">' +
       '<div><div style="font-size:11px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + ';text-transform:uppercase;letter-spacing:1px">Capital total en la calle</div>' +
-      '<div style="font-size:10px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:2px">' + rows.length + ' prestamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + (countMora > 0 ? ' &middot; ' + countMora + ' en mora' : '') + '</div></div>' +
+      '<div style="font-size:10px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:2px">' + rows.length + ' préstamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + (countMora > 0 ? ' &middot; ' + countMora + ' en mora' : '') + '</div></div>' +
       '<div style="text-align:right"><div style="font-size:24px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + '">' + fmt(totalSaldo) + '</div>' + (totalSaldoUSD > 0 ? '<div style="font-size:12px;font-weight:600;color:' + (dark ? '#79c0ff' : '#0969da') + ';margin-top:2px">Incluye ' + fmtUSD(totalSaldoUSD) + '</div>' : '') + '</div></div>',
     rows.length > 0 ? function() {
       var borde = dark ? '#30363d' : '#eaeef2';
@@ -226,22 +228,22 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
       var cuad = function(c) { return '<span style="color:' + c + ';font-size:11px">&#9632;</span>'; };
       return '<div style="margin-top:14px;border-top:1px solid ' + borde + ';padding-top:10px;font-size:9px;color:' + txt + '">' +
         '<div style="font-size:9px;font-weight:700;color:' + txt + ';text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Referencia de estados</div>' +
-        item('<span class="badge badge-pagado">Al dia</span>', 'Sin cuotas vencidas.') +
-        item('<span class="badge badge-pend">Pendiente</span>', 'El prestamo tiene mora, pero la fila principal proyecta la proxima cuota (aun no vence); lo vencido se detalla en las sub-filas rojas.') +
+        item('<span class="badge badge-pagado">Al día</span>', 'Sin cuotas vencidas.') +
+        item('<span class="badge badge-pend">Pendiente</span>', 'El préstamo tiene mora, pero la fila principal proyecta la próxima cuota (aún no vence); lo vencido se detalla en las sub-filas rojas.') +
         item('<span class="badge badge-mora">En Mora</span>', 'Cronograma vencido por completo (sin ninguna cuota futura pendiente).') +
-        item(cuad(rojo), 'Sub-fila roja: cuota vencida, con sus dias de atraso.') +
+        item(cuad(rojo), 'Sub-fila roja: cuota vencida, con sus días de atraso.') +
         // 3.2.0: la transitoria ya no sale solo de un cambio de fecha; tambien de un primer
         // pago elegido al crear que no cae un mes despues del inicio.
-        item(cuad(ambar), 'Sub-fila ambar: cuota transitoria (interes prorrateado por dias: primer periodo irregular o cambio de fecha), con su fecha real a cobrar.') +
+        item(cuad(ambar), 'Sub-fila ámbar: cuota transitoria (interés prorrateado por días: primer periodo irregular o cambio de fecha), con su fecha real a cobrar.') +
         '</div>';
     }() : '',
     '<div class="footer"><p>Reporte informativo del estado actual de la cartera</p><p style="margin-top:4px">Cartera</p></div>',
-    '</body></html>'
+    RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
   if (window.electronAPI && window.electronAPI.printPDF) {
     var d2 = new Date();
-    var fname = 'Reporte Prestamos Activos ' + d2.getFullYear() + '-' + ('0' + (d2.getMonth() + 1)).slice(-2) + '-' + ('0' + d2.getDate()).slice(-2);
+    var fname = 'Reporte Préstamos Activos ' + d2.getFullYear() + '-' + ('0' + (d2.getMonth() + 1)).slice(-2) + '-' + ('0' + d2.getDate()).slice(-2);
     window.electronAPI.printPDF(html, fname);
   } else {
     var w = window.open('', '_blank', 'width=820,height=720');

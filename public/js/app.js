@@ -107,6 +107,9 @@ function App(){
   // 3.5.0 — a quien enfocar al abrir Cartera ({nombre, loanId, payId, t}) y que tramo abrir en
   // Cobros ({tramo, t}). La marca `t` remonta la vista para que el foco nuevo se aplique.
   var sFoco=useState(null); var foco=sFoco[0]; var setFoco=sFoco[1];
+  // 3.6.0 — lo que Cartera recuerda entre visitas ({filtro, orden, sel, loan}). Vive aqui porque la
+  // vista se desmonta al cambiar de pestana; la vista lo lee al montarse y lo escribe en cada clic.
+  var memCartera=React.useRef({});
   var sTramo=useState(null); var tramoCobros=sTramo[0]; var setTramoCobros=sTramo[1];
   // 3.1.0 — cronograma de un prestamo RECIEN creado: antes de imprimirlo se decide si su valor
   // de liquidacion incluye el interes del mes en curso (decision del PO: tambien aqui).
@@ -981,7 +984,7 @@ function App(){
       // 3.5.0 — Cobros (antes Pagos) y Cartera (antes Cartera + Deudores), con el panel del
       // deudor al lado. La `key` remonta la vista cuando llega un tramo o un foco nuevo.
       view==='cobros'     && h(CobrosView,{key:'cb'+(tramoCobros?tramoCobros.t:0),tramo:tramoCobros?tramoCobros.tramo:null,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,datosPago:cfg.datos_pago,showToast:showToast}),
-      view==='cartera'    && h(CarteraView,{key:'ct'+(foco?foco.t:0),foco:foco,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,onNuevo:function(){setLoanModal('new');},datosPago:cfg.datos_pago,showToast:showToast}),
+      view==='cartera'    && h(CarteraView,{key:'ct'+(foco?foco.t:0),foco:foco,memoria:memCartera.current,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,onNuevo:function(){setLoanModal('new');},datosPago:cfg.datos_pago,showToast:showToast}),
       view==='rendimiento'&& h(PortfolioView,{loans:loans,pays:pays}),
       view==='calculadora'&& h(CalcView,   {onConfirm:confirmarCalc}),
       view==='historial'   && h(HistorialView,{actLog:actLog,undoLog:undoLog,onUndo:function(entry){setUndoDlg(entry);},

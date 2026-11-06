@@ -12,7 +12,7 @@
     "cabeceras": [
       "#",
       "Vence",
-      "Interes",
+      "Interés",
       "Abono a capital",
       "Valor cuota",
       "Saldo",
@@ -21,20 +21,20 @@
     "etiquetas": [
       "Deudor",
       "Nombre",
-      "Cedula / ID",
-      "Telefono",
-      "Prestamo",
+      "Cédula / ID",
+      "Teléfono",
+      "Préstamo",
       "Monto prestado",
       "Modalidad",
       "Frecuencia",
       "Fecha inicio",
-      "Fecha de finalizacion",
+      "Fecha de finalización",
       "Cuotas",
       "Cronograma"
     ]
   },
   "valores": {
-    "bytes": 4250,
+    "bytes": 4646,
     "nFilas": 2,
     "nCeldas": 14,
     "celdasPorTr": [
@@ -44,7 +44,7 @@
     "nMontos": 5,
     "hashMontos": "b423929d9948b510a402aaa4fff2d2081110043c",
     "hashFname": "8ff0e69db084b098f806e122349faf60098272e7",
-    "hashTexto": "b914b8e4366e4e47086a74108c47f07fb0c72e40",
+    "hashTexto": "476b5de97d569b85e5f0995b49365b95d70dfb98",
     "clases": [
       "badge badge-pagado",
       "footer",
