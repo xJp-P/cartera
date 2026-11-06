@@ -1,11 +1,44 @@
 name: Build Instaladores
 
-# Se ejecuta manualmente desde GitHub
+# Se ejecuta manualmente desde GitHub.
+#
+# El release se crea UNA sola vez, como BORRADOR, antes de compilar; los dos instaladores se suben a ese
+# borrador y solo al final, cuando los dos terminaron bien, se publica. Antes cada trabajo creaba el
+# release por su cuenta, y si llegaban a publicar casi al mismo tiempo el segundo chocaba con
+# "already_exists" (v3.7.1: Windows lo creo y, dos segundos despues, Mac no lo vio en la lista, intento
+# crearlo y fallo sin subir el .dmg ni el .zip). Asi, ademas, el auto-update de Windows y el de Mac solo
+# ven una version nueva cuando ya trae sus dos instaladores.
+#
+# Si un trabajo falla, el release se queda en borrador (nadie lo ve): basta "Re-run failed jobs".
 on:
   workflow_dispatch:
 
 jobs:
+  preparar-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Leer la version
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Crear el release como borrador (si no existe)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          if gh release view "v$V" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "El release v$V ya existe: los instaladores se suben a el."
+          else
+            gh release create "v$V" --repo "${{ github.repository }}" --draft --title "$V" --notes "" --target "${{ github.sha }}"
+          fi
+
   build-windows:
+    needs: preparar-release
     runs-on: windows-latest
     steps:
       - name: Descargar codigo
@@ -31,6 +64,7 @@ jobs:
           path: dist/*.exe
 
   build-mac:
+    needs: preparar-release
     runs-on: macos-latest
     steps:
       - name: Descargar codigo
@@ -62,3 +96,13 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
+
+  publicar-release:
+    needs: [preparar-release, build-windows, build-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publicar el release (Windows y Mac ya subidos)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          V: ${{ needs.preparar-release.outputs.version }}
+        run: gh release edit "v$V" --repo "${{ github.repository }}" --draft=false --latest
