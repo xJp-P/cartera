@@ -174,7 +174,7 @@
      `vistas/CobrosView.js` (antes Pagos), `vistas/CarteraView.js` (antes Cartera + Deudores) y
      `componentes/DeudorPanel.js` (antes el modal del perfil del deudor). Maestro-detalle: la lista
      a la izquierda y el panel del deudor al lado, sin taparla. Prefijos `.op-` (comun), `.dp-`
-     (panel), `.cb-` (Cobros) y `.ct-` (Cartera); solo tokens de tema, asi que sirve en claro y
+     (panel), `.cb-` (Cobros 3.5.0: hoy solo lo que usa Cartera) y `.ct-` (Cartera); solo tokens de tema, asi que sirve en claro y
      oscuro. Pensado para escritorio (decision del PO): bajo 1.100 px el panel se abre encima. */
 
 /* ── Maestro-detalle: lista + panel, a todo el ancho ── */
@@ -182,20 +182,6 @@
 .op.con-panel{grid-template-columns:minmax(380px,.85fr) minmax(0,1.35fr)}
 .op.ct,.op.ct.con-panel{grid-template-columns:minmax(340px,410px) minmax(0,1fr)}
 .op-main{min-width:0;container-type:inline-size}
-@container (max-width:960px){ .op-main .cb-tramo-v{font-size:16px} .op-main .cb-tramo{padding:11px 12px} }
-/* Lista angosta (panel abierto, o pantalla mediana): cada fila en dos renglones, sin cortar nombres. */
-@container (max-width:720px){
-  .op-main .cb-fila,.op-main .cb-grupo-h{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"quien monto" "vence acc";row-gap:4px}
-  .op-main .cb-quien{grid-area:quien}.op-main .cb-monto{grid-area:monto}.op-main .cb-vence{grid-area:vence;padding-left:46px}.op-main .cb-acc{grid-area:acc}
-  .op-main .cb-fila.en-grupo .cb-vence{padding-left:0}
-  .op-main .cb-vence > div{display:flex;gap:8px;align-items:baseline}
-  .op-main .cb-split{display:none}
-  .op-main .cb-tramos{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .op-main .cb-tramo{padding:10px 12px}
-  .op-main .cb-tramo-v{font-size:16px}
-  .op-main .cb-tramo.t-despues{display:none}
-  .op-main .cb-resumen{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
 .op-lado{position:sticky;top:-24px;max-height:calc(100vh - 56px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--bg4) transparent;border-radius:16px;min-width:0}
 .op-cab{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
 .op-titulo{font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.3px}
@@ -333,59 +319,10 @@
 .dp-gb{padding-top:9px;border-top:1px solid var(--border);margin-top:2px}
 .dp.superpuesto{border-radius:0;border:none;box-shadow:none;min-height:100%}
 
-/* ── Cobros ── */
-.cb-tramos{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0 18px}
-.cb-tramo{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:12px 14px;text-align:left;cursor:pointer;font-family:inherit;color:var(--text);transition:border-color .15s,transform .1s;min-width:0}
-.cb-tramo:hover{border-color:var(--border2);transform:translateY(-1px)}
-.cb-tramo.on{box-shadow:inset 0 0 0 1px currentColor}
-.cb-tramo.vacio{opacity:.55}
-.cb-tramo-l{font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase}
-.cb-tramo-v{font-size:19px;font-weight:700;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cb-lista{display:flex;flex-direction:column;gap:6px}
-.cb-sec{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-.cb-sec-h{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:0 4px 4px}
-.cb-sec-n{font-size:11.5px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--text3)}
-.cb-sec-v{margin-left:auto;font-size:14px;font-weight:700}
-.cb-fila{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(96px,.75fr) minmax(110px,.8fr) auto;gap:12px;align-items:center;background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:12px;padding:10px 12px;cursor:pointer;transition:border-color .15s,background .15s}
-.cb-fila:hover{border-color:var(--border2)}
-.cb-fila.t-vencido{border-left-color:var(--red)}
-.cb-fila.t-hoy{border-left-color:var(--yellow)}
-.cb-fila.on{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
-.cb-fila.cobrada{border-left-color:var(--green-bd)}
-.cb-quien{display:flex;align-items:center;gap:10px;min-width:0}
+/* ── Cobros: la vista se rediseño en v4 (public/css/cobros.css, `.cbv-*`). Quedan las dos piezas de su
+   version anterior que todavia usa Cartera (el nombre de la fila y la tarjeta "Elige un deudor"). ── */
 .cb-nombre{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cb-vence{font-size:12.5px;color:var(--text2)}
-.cb-monto .mono{font-size:14.5px;font-weight:700}
-/* La sub-linea en dolares NO hereda el tamano de la cifra (hasta 3.6.0 salia tan grande y en negrita como los pesos) */
-.cb-monto .dp-usd{font-size:11px;font-weight:500;margin-top:1px}
-.cb-acc{display:flex;gap:6px;justify-content:flex-end;align-items:center;min-width:76px}
-.cb-grupo{background:var(--bg2);border:1px solid var(--red-bd);border-radius:14px;overflow:hidden}
-.cb-grupo.on{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
-.cb-grupo-h{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(96px,.75fr) minmax(110px,.8fr) auto;gap:12px;align-items:center;padding:11px 12px;background:var(--red-bg);cursor:pointer}
-.cb-fila.en-grupo{border:none;border-top:1px solid var(--border);border-radius:0;background:transparent;padding:8px 12px 8px 58px}
-/* Acordeon de un credito con varias cuotas vencidas (plegado por defecto). */
-.cb-chev{display:flex;flex-shrink:0;margin-right:-2px;transition:transform .2s ease}
-.cb-grupo.abierto .cb-chev{transform:rotate(90deg)}
-.cb-grupo-h:hover{filter:brightness(1.08)}
-.cb-grupo-cuotas{animation:fadeIn .15s ease}
-.cb-grupo-cuotas .cb-fila.en-grupo{padding-left:82px}
-.cb-fila.en-grupo:hover{background:var(--bg3)}
-.cb-fila.en-grupo.on{box-shadow:inset 3px 0 0 var(--green)}
-.cb-mas{background:var(--bg2);border:1px dashed var(--border2);border-radius:12px;padding:11px;font:600 12.5px inherit;font-family:inherit;color:var(--text2);cursor:pointer}
-.cb-mas:hover{color:var(--text);border-color:var(--text3)}
-.cb-cuota-n{font-size:13px;color:var(--text2);font-weight:600}
-.cb-split{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--text3)}
-.cb-split b{color:var(--text2);font-weight:600}
-.cb-mes{display:flex;align-items:center;justify-content:center;gap:12px;font-size:15px;font-weight:700;color:var(--text);margin:14px 0 12px;text-transform:capitalize}
-.cb-resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px}
-.cb-dia{display:flex;justify-content:space-between;font-size:11.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin:12px 4px 2px}
-.cb-dia:first-child{margin-top:0}
 .cb-lado{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:18px}
-.cb-lado-t{font-size:11.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text3)}
-.cb-lado-big{margin:12px 0 10px}
-.cb-lado-big .mono{font-size:30px;font-weight:800;color:var(--yellow);margin-top:4px}
-.cb-lado-f{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--border);font-size:13px;color:var(--text2)}
-.cb-lado-tip{display:flex;gap:10px;align-items:flex-start;background:var(--blue-bg);border-radius:12px;padding:12px;margin-top:14px;font-size:12.5px;line-height:1.55;color:var(--text2)}
 
 /* ── Cartera ── */
 .ct-res{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:12px}
@@ -413,7 +350,6 @@
 .ct-prog > div{height:100%;background:var(--green);border-radius:99px}
 
 /* ── Ventana angosta (la minima de la app es 1.000 px): la lista ocupa todo y el panel se abre encima ── */
-@media (max-width:1399px){ .cb-tramos{grid-template-columns:repeat(3,minmax(0,1fr))} }
 @media (max-width:1099px){
   .op,.op.con-panel,.op.ct,.op.ct.con-panel{display:block}
   .op-lado:not(.superpuesto){display:none}

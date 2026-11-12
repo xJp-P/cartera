@@ -7,9 +7,14 @@
 // cobrar o liquidar, el panel se redibuja solo con los datos frescos.
 //
 // Las cifras salen de `modeloDeudor` / `modeloPrestamo` (core/operacion.js), sin formulas propias.
+//
+// Rediseño v4 (integracion pestaña por pestaña): el diseño nuevo del panel lo pone el CSS bajo `.v4p`
+// (public/css/cobros.css), que solo lleva la raiz de una pestaña ya rediseñada. La prop `v4` cambia
+// ademas las dos cosas que no son CSS: el flujo de caja (`FlujoCajaPanelV4`) y la TRM de cada compra
+// de dolares ("TRM $ 3.550" en vez de "@ $ 3.550"). Sin `v4`, el panel es el de siempre.
 
 import { Ico } from './iconos.js';
-import { FlujoCajaPanel } from './FlujoCajaPanel.js';
+import { FlujoCajaPanel, FlujoCajaPanelV4 } from './FlujoCajaPanel.js';
 import { GananciaBimonetaria, notaCOPGanancia } from './GananciaBimonetaria.js';
 import { CronogramaPdfModal } from '../modales/CronogramaPdfModal.js';
 import { preguntaInteresMes, esDiario, pendCuota } from '../core/dominio.js';
@@ -128,7 +133,7 @@ function DpExtras(p){
   if (m.lotes){
     var u = m.lotes.reduce(function(s, c){ return s + (+c.monto || 0); }, 0), c = m.lotes.reduce(function(s, x){ return s + (+x.monto || 0) * (+x.tasa || 0); }, 0);
     out.push(h('div', { key: 'lotes', className: 'dp-card' }, h('div', { className: 'dp-card-t' }, 'Compras de dólares · TRM promedio ' + fmt(Math.round(c / (u || 1)))),
-      m.lotes.map(function(x, i){ return dpFila('Compra ' + (i + 1) + ' · USD ' + fmtN(+x.monto), '@ ' + fmt(+x.tasa)); }),
+      m.lotes.map(function(x, i){ return dpFila('Compra ' + (i + 1) + ' · USD ' + fmtN(+x.monto), (p.v4 ? 'TRM ' : '@ ') + fmt(+x.tasa)); }),
       dpFila('Total invertido', fmt(c))));
   }
   if (l.estado === 'Cancelado' && !m.condonado){
@@ -285,8 +290,8 @@ export function DeudorPanel(props){
         h('div', { className: 'dp-cuerpo-main' },
           h('div', { className: 'dp-sec-t' }, esDiario(l) ? 'Cortes registrados' : 'Cronograma', l.modalidad === 'Intereses' && h('span', { className: 'dp-sec-n' }, 'pagadas, vencidas y la próxima · las siguientes se generan solas')),
           h(DpCronograma, { m: m, hoy: hoy, focoPay: props.focoPay, onPay: m.activo ? props.onPay : null }),
-          h(FlujoCajaPanel, { loan: l, pays: pays })),
+          h(props.v4 ? FlujoCajaPanelV4 : FlujoCajaPanel, { loan: l, pays: pays })),
         h('div', { className: 'dp-cuerpo-lado' },
-          h(DpRecaudado, { m: m }), h(DpProyeccion, { m: m }), DpExtras({ m: m })))),
+          h(DpRecaudado, { m: m }), h(DpProyeccion, { m: m }), DpExtras({ m: m, v4: props.v4 })))),
     cronoPdf && h(CronogramaPdfModal, { loan: l, pays: m.lp, onClose: function(){ setCronoPdf(null); } }));
 }

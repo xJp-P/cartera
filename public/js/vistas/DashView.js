@@ -340,11 +340,12 @@ function v4Pct(x){ return (Math.round(x * 10) / 10).toLocaleString('es-CO', { mi
 // Respeta "reducir movimiento" del sistema (en Windows, los efectos de animacion apagados).
 var v4Reduce = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// Las tres piezas que siguen (V4Dinero, V4Chip y v4PuedeAnimar) las reutiliza Cobros (vistas/CobrosView.js).
 // Una cifra en pesos con el "$" pequeno y atenuado. Cuenta desde 0 al montarse (900 ms, ease-out) y,
 // cuando cambia, desde el valor anterior. Solo anima si el navegador pinta cuadros: con la ventana
 // oculta requestAnimationFrame no corre y la cifra muestra su valor final, no un cero.
-function v4PuedeAnimar(){ return !v4Reduce && typeof document !== 'undefined' && !document.hidden; }
-function V4Dinero(p){
+export function v4PuedeAnimar(){ return !v4Reduce && typeof document !== 'undefined' && !document.hidden; }
+export function V4Dinero(p){
   var v = Math.round(p.v || 0);
   var animar = p.animar && v4PuedeAnimar();
   var _c = useState(animar ? 0 : v); var cur = _c[0], setCur = _c[1];
@@ -366,7 +367,7 @@ function V4Dinero(p){
   return h('span', { className: 'v4-dinero' + (p.className ? ' ' + p.className : '') }, h('span', { className: 'cur' }, '$'), txt);
 }
 
-function V4Chip(p){
+export function V4Chip(p){
   return h('span', { className: 'v4-chip ' + (p.tono || 'neutral'), title: p.title || null },
     p.icono && h(Ico, { name: p.icono, size: 12, sw: 2.4 }), p.children);
 }

@@ -210,7 +210,12 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('A9 ANTI-VACIO: hay prestamos que si y que no', elegibles.length >= 2 && activos.some(l => !X.opPuedeCambiarDia(l)));
 
   // ── B — COBROS ────────────────────────────────────────────────────────────
-  R.seccion('B — la vista Cobros renderizada');
+  // El rediseño v4 (fase 2 de la integracion): mismos datos y mismo comportamiento que la vista de
+  // 3.5.0, con clases `cbv-`. Las cifras grandes cuentan desde 0 al montarse y el arnes no corre
+  // efectos: se pinta con la ventana "oculta", el caso en que la vista muestra el valor final.
+  R.seccion('B — la vista Cobros (rediseño v4) renderizada');
+  X.document.hidden = true;
+  const sinPeso = v => String(v).replace(/^-?\$\s*/, '');
   const llamadasAcc = [];
   const acciones = {};
   ['onCobro', 'onCorte', 'onLiquidar', 'onReestructurar', 'onCambiarDia', 'onCondonar', 'onEdit', 'onDelete', 'onForceClose', 'onNewLoan']
@@ -221,17 +226,18 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   try { cb = montar(X.CobrosView, propsCobros, []); } catch (e) { error = e; }
   R.check('B1 la vista se renderiza sin excepciones', !!cb, error && (error.stack || String(error)));
   if (cb) {
-    const tarjetas = conClase(cb.arbol, 'cb-tramo');
+    const TRAMOS = ['vencido', 'hoy', 'semana', 'mes', 'despues'];
+    const tarjetas = conClase(cb.arbol, 'cbv-tramo');
     R.eq('B1 cinco tarjetas de tramo', tarjetas.length, 5);
-    const valorTramo = t => { const n = tarjetas.filter(x => x.props.className.split(/\s+/).indexOf('t-' + t) !== -1)[0]; return n ? textos(n).join('|') : ''; };
-    R.check('B1 cada tarjeta muestra el total de su tramo',
-      ['vencido', 'hoy', 'semana', 'mes', 'despues'].every(t => valorTramo(t).indexOf(X.fmt(totTramo(t))) !== -1),
-      ['vencido', 'hoy', 'semana'].map(valorTramo));
+    const valorTramo = t => { const n = tarjetas[TRAMOS.indexOf(t)]; return n ? textos(n).join('|') : ''; };
+    R.check('B1 cada tarjeta muestra el total de su tramo (en orden: vencido, hoy, 7 dias, este mes, mas adelante)',
+      TRAMOS.every(t => valorTramo(t).indexOf(sinPeso(X.fmt(totTramo(t)))) !== -1),
+      TRAMOS.map(valorTramo));
     // Lo vencido se agrupa por credito: un grupo por prestamo con 2+ cuotas vencidas.
     const porLoan = {};
     tramo('vencido').forEach(f => { porLoan[f.l.id] = (porLoan[f.l.id] || 0) + 1; });
     const conVarias = Object.keys(porLoan).filter(id => porLoan[id] > 1);
-    const grupos = conClase(cb.arbol, 'cb-grupo');
+    const grupos = conClase(cb.arbol, 'cbv-grupo');
     R.eq('B2 un grupo por credito con varias cuotas vencidas', grupos.length, conVarias.length);
     R.check('B2 ANTI-VACIO: el fixture tiene al menos un credito con varias cuotas vencidas', conVarias.length >= 1);
     llamadasAcc.length = 0;
@@ -245,21 +251,21 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const enGrupos = conVarias.reduce((s, id) => s + porLoan[id], 0);
     const idG = conVarias[0], fsG = tramo('vencido').filter(f => f.l.id === idG);
     const grupoG = grupos.filter(g => textos(g).join(' ').indexOf(X.properCase(loanMap[idG].nombre)) !== -1)[0];
-    const cabG = conClase(grupoG, 'cb-grupo-h')[0];
+    const cabG = conClase(grupoG, 'cbv-grupo-h')[0];
     R.check('B2 acordeon plegado por defecto: el grupo no muestra sus cuotas',
-      conClase(grupoG, 'cb-grupo-cuotas').length === 0 && cabG.props['aria-expanded'] === false && !/\babierto\b/.test(grupoG.props.className));
+      conClase(grupoG, 'cbv-grupo-cuotas').length === 0 && cabG.props['aria-expanded'] === false && !/\babierto\b/.test(grupoG.props.className));
     const txtG = textos(cabG).join(' ');
     R.check('B2 su fila: cuantas cuotas, cuanto suman y los dias de la mas vieja',
       txtG.indexOf(fsG.length + ' cuotas vencidas') !== -1 && txtG.indexOf(X.fmt(suma(fsG, f => f.pend))) !== -1 &&
       txtG.indexOf((-fsG[0].dias) + ' días de mora') !== -1, txtG);
     const r0 = montar(X.CobrosView, propsCobros, []);
-    const cab0 = conClase(conClase(r0.arbol, 'cb-grupo').filter(g => textos(g).join(' ').indexOf(X.properCase(loanMap[idG].nombre)) !== -1)[0], 'cb-grupo-h')[0];
+    const cab0 = conClase(conClase(r0.arbol, 'cbv-grupo').filter(g => textos(g).join(' ').indexOf(X.properCase(loanMap[idG].nombre)) !== -1)[0], 'cbv-grupo-h')[0];
     cab0.props.onClick();
     R.check('B2 un clic en la fila lo abre (y muestra al deudor en el panel)',
       r0.llamadas.some(x => x.k === 7 && x.nuevo[idG] === true) && r0.llamadas.some(x => x.k === 3 && x.nuevo.loanId === idG), r0.llamadas);
     const abiertoG = {}; abiertoG[idG] = true;
     const cbG = montar(X.CobrosView, propsCobros, [undefined, undefined, undefined, undefined, undefined, undefined, undefined, abiertoG]);
-    R.eq('B2 abierto, muestra sus ' + fsG.length + ' cuotas una por una', conClase(cbG.arbol, 'cb-fila en-grupo').length, fsG.length);
+    R.eq('B2 abierto, muestra sus ' + fsG.length + ' cuotas una por una', conClase(cbG.arbol, 'cbv-fila en-grupo').length, fsG.length);
     // "Mas adelante" (> 30 dias) tambien nace plegado.
     const nDespues = tramo('despues').length;
     const pago = botones(cb.arbol, /^Pagó$/);
@@ -290,7 +296,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       const otro = loans.filter(x => x.estado === 'Activo' && x.nombre !== nomG && !X.esDiario(x))[0];
       const loansB6 = loans.concat([Object.assign({}, otro, { id: 'b6-segundo-credito', nombre: nomG })]);
       const cbB6 = montar(X.CobrosView, Object.assign({}, propsCobros, { loans: loansB6 }), []);
-      const grupoB6 = conClase(cbB6.arbol, 'cb-grupo').filter(g => textos(g).join(' ').indexOf(X.properCase(nomG)) !== -1)[0];
+      const grupoB6 = conClase(cbB6.arbol, 'cbv-grupo').filter(g => textos(g).join(' ').indexOf(X.properCase(nomG)) !== -1)[0];
       const rgB6 = nodos(grupoB6, n => n.tag === 'button' && n.props && /Recibo de cobro general/.test(n.props.title || ''))[0];
       const genReal = X.generateReciboGeneral, argsG = [];
       X.generateReciboGeneral = function(){ argsG.push([].slice.call(arguments)); return genReal.apply(this, arguments); };
@@ -311,8 +317,10 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.eq('B4 desplegado, "Más adelante" muestra sus cuotas', botones(cbAbierto.arbol, /^Pagó$/).length, B.length - enGrupos);
     // El tramo que llega por props (las insignias del encabezado) abre la bandeja filtrada.
     const cbVenc = montar(X.CobrosView, Object.assign({}, propsCobros, { tramo: 'vencido' }), []);
-    R.check('B5 tramo "vencido": solo la seccion Vencido', conClase(cbVenc.arbol, 'cb-sec').length === 1 &&
-      cbVenc.t.indexOf('Hoy') === cbVenc.t.lastIndexOf('Hoy'), conClase(cbVenc.arbol, 'cb-sec').length);
+    R.check('B5 tramo "vencido": solo la seccion Vencido', conClase(cbVenc.arbol, 'cbv-sec').length === 1 &&
+      conClase(cbVenc.arbol, 't-vencido').length === 1 && cbVenc.t.indexOf('Hoy') === cbVenc.t.lastIndexOf('Hoy'), conClase(cbVenc.arbol, 'cbv-sec').length);
+    R.check('B5 y su tarjeta queda marcada (con la X para volver a todos)',
+      /\bon\b/.test(conClase(cbVenc.arbol, 'cbv-tramo')[0].props.className) && conClase(cbVenc.arbol, 'cbv-tramo').filter(n => /\bon\b/.test(n.props.className)).length === 1);
     // Busqueda por codigo de factura.
     const cod = X.facturaCode(B[0].p);
     const cbQ = montar(X.CobrosView, propsCobros, [undefined, undefined, cod]);
@@ -323,15 +331,91 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const ev = []; pays.forEach(p => { if (loanMap[p.prestamoId]) X.imputarCobros(p).eventos.forEach(e => { if (e.fecha.slice(0, 7) === '2026-07') ev.push(e); }); });
     const caja = suma(ev, e => e.cop);
     R.eq('B7 "Cobrado" de julio = Cobros del Mes del Resumen (8.411.353)', caja, 8411353);
-    R.check('B7 la vista lo muestra en "Entró en caja"', cobr.t.indexOf('Entró en caja') !== -1 && cobr.t.indexOf(X.fmt(caja)) !== -1);
+    R.check('B7 la vista lo muestra en "Entró en caja"', cobr.t.indexOf('Entró en caja') !== -1 && cobr.t.indexOf(sinPeso(X.fmt(caja))) !== -1);
     R.check('B7 interes + capital + efecto TRM = caja, evento por evento', ev.every(e => Math.abs(e.interes + e.capital + (e.ajuste || 0) - e.cop) < 1e-6));
-    R.check('B7 y muestra los intereses del mes', cobr.t.indexOf(X.fmt(suma(ev, e => e.interes))) !== -1);
+    R.check('B7 y muestra los intereses del mes y el capital devuelto', cobr.t.indexOf(sinPeso(X.fmt(suma(ev, e => e.interes)))) !== -1 &&
+      cobr.t.indexOf(sinPeso(X.fmt(suma(ev, e => e.capital)))) !== -1);
+    const segCaja = conClase(conClase(cobr.arbol, 'cbv-segbar')[0], 'seg');
+    const repEsp = [suma(ev, e => e.interes), suma(ev, e => e.capital)].filter(v => v > 0);
+    R.check('B7 la barra de la caja reparte intereses y capital devuelto',
+      segCaja.length === repEsp.length && segCaja.every((n, i) => Math.abs(n.props.style.flexGrow - repEsp[i]) < 1e-6), [segCaja.map(n => n.props.style.flexGrow), repEsp]);
     // Con una cuota elegida, el panel del deudor aparece al lado con ese prestamo.
     const f0 = tramo('vencido')[0];
     const cbSel = montar(X.CobrosView, propsCobros, [undefined, undefined, undefined, { nombre: f0.l.nombre, loanId: f0.l.id, payId: f0.p.id }]);
     const panel = conClase(cbSel.arbol, 'dp');
     R.check('B8 elegir una cuota abre el panel de su deudor, con la cuota resaltada en el cronograma',
       panel.length === 1 && conClase(panel[0], 'dp-crono-f foco').length === 1);
+    R.check('B8 la raiz lleva el diseño nuevo de la bandeja y del panel (`v4c v4p`) y, con el panel, `con-panel`',
+      /^op v4c v4p\b/.test(cb.arbol.props.className) && /\bcon-panel\b/.test(cbSel.arbol.props.className) && !/\bcon-panel\b/.test(cb.arbol.props.className),
+      [cb.arbol.props.className, cbSel.arbol.props.className]);
+
+    // ── Lo nuevo del rediseño: el encabezado, la barra de tramos, el selector y "Tu día de cobro" ──
+    const hero = conClase(cb.arbol, 'cbv-hero')[0];
+    const deudoresB = Object.keys(B.reduce((a, f) => { a[f.p.nombreCliente] = 1; return a; }, {})).length;
+    R.check('B9 el encabezado: lo que falta cobrar de toda la bandeja, en ' + B.length + ' cuotas de ' + deudoresB + ' deudores',
+      textos(hero).indexOf(sinPeso(X.fmt(suma(B, f => f.pend)))) !== -1 && textos(hero).indexOf(B.length + ' cuotas de ' + deudoresB + ' deudores') !== -1,
+      textos(hero).slice(0, 6));
+    const segs = conClase(conClase(hero, 'cbv-segbar')[0], 'seg');
+    const conValor = TRAMOS.filter(t => totTramo(t) > 0);
+    R.check('B9 la barra reparte lo por cobrar en los tramos con algo, cada uno de su largo (su total)',
+      segs.length === conValor.length && segs.every((n, i) => Math.abs(n.props.style.flexGrow - totTramo(conValor[i])) < 1e-6),
+      [segs.map(n => n.props.style.flexGrow), conValor.map(totTramo)]);
+    const total = suma(B, f => f.pend);
+    R.check('B9 cada tramo de la barra dice su cifra y su porcentaje en el globo',
+      segs.every((n, i) => { const tx = textos(n).join(' '); return tx.indexOf(X.fmt(totTramo(conValor[i]))) !== -1 && tx.indexOf(Math.round(totTramo(conValor[i]) / total * 100) + '%') !== -1; }),
+      segs.map(n => textos(n).join(' ')));
+    const r9 = montar(X.CobrosView, propsCobros, []);
+    conClase(conClase(conClase(r9.arbol, 'cbv-hero')[0], 'cbv-segbar')[0], 'seg')[conValor.indexOf('hoy')].props.onClick();
+    R.check('B9 un clic en un tramo de la barra filtra la bandeja a ese tramo', r9.llamadas.some(x => x.k === 1 && x.nuevo === 'hoy'), r9.llamadas);
+    const vMarcada = montar(X.CobrosView, Object.assign({}, propsCobros, { tramo: 'vencido' }), []);
+    R.check('B9 con un tramo elegido, los demas tramos de la barra se apagan',
+      conClase(conClase(vMarcada.arbol, 'cbv-segbar')[0], 'seg').filter(n => /\bapagado\b/.test(n.props.className)).length === conValor.length - 1);
+    // El selector Por cobrar / Cobrado: la pastilla se desliza a la opcion elegida (`--k`).
+    const segSel = conClase(hero, 'cbv-seg')[0];
+    R.check('B10 el selector nace en "Por cobrar" (la pastilla en la primera opcion)',
+      segSel.props.style['--n'] === 2 && segSel.props.style['--k'] === 0 && conClase(segSel, 'cbv-seg-thumb').length === 1);
+    R.eq('B10 en "Cobrado" la pastilla pasa a la segunda opcion', conClase(conClase(cobr.arbol, 'cbv-hero')[0], 'cbv-seg')[0].props.style['--k'], 1);
+    const r10 = montar(X.CobrosView, propsCobros, []);
+    botones(conClase(conClase(r10.arbol, 'cbv-hero')[0], 'cbv-seg')[0], /^Cobrado$/)[0].props.onClick();
+    R.check('B10 un clic en "Cobrado" cambia el modo', r10.llamadas.some(x => x.k === 0 && x.nuevo === 'cobrado'), r10.llamadas);
+    // Sin cuota elegida, al lado va "Tu día de cobro" con los mismos totales de los tramos.
+    const lado = conClase(cb.arbol, 'cbv-lado')[0];
+    R.check('B11 "Tu día de cobro": lo de hoy, lo vencido, los próximos 7 días y el resto del mes',
+      !!lado && textos(lado).indexOf(sinPeso(X.fmt(totTramo('hoy')))) !== -1 && ['vencido', 'semana', 'mes'].every(t => textos(lado).indexOf(X.fmt(totTramo(t))) !== -1) &&
+      textos(lado).join(' ').indexOf(tramo('hoy').length + ' cuotas hoy') !== -1, lado && textos(lado));
+    R.check('B11 con una cuota elegida, el panel del deudor reemplaza a "Tu día de cobro"', conClase(cbSel.arbol, 'cbv-lado').length === 0);
+
+    // ── El panel del deudor: diseño nuevo en Cobros, el de siempre en Cartera (hasta su fase) ──
+    // Un prestamo en dolares con compras de dolares: su panel muestra la TRM de cada compra.
+    const lLotes = loans.filter(l => l.estado === 'Activo' && l.comprasUSD && l.comprasUSD.length > 2)[0];
+    R.check('B12 ANTI-VACIO: el fixture tiene un prestamo activo con compras de dolares', !!lLotes);
+    if (lLotes) {
+      const enCobros = montar(X.CobrosView, propsCobros, [undefined, undefined, undefined, { nombre: lLotes.nombre, loanId: lLotes.id, payId: null }]);
+      const pC = conClase(enCobros.arbol, 'dp')[0];
+      const enCartera = montar(X.CarteraView, { loans, pays, deudores, hoy: HOY, acciones, onPay: () => {}, onNuevo: () => {}, datosPago: '', showToast: () => {},
+        foco: { nombre: lLotes.nombre, loanId: lLotes.id } }, []);
+      const pK = conClase(enCartera.arbol, 'dp')[0];
+      const trm = n => textos(n).filter(x => /^TRM \$/.test(x)).length, arroba = n => textos(n).filter(x => /^@ \$/.test(x)).length;
+      R.check('B12 en Cobros, el panel dice "TRM $ X" en cada compra de dolares y trae el flujo de caja nuevo',
+        !!pC && trm(pC) > 0 && arroba(pC) === 0 && conClase(pC, 'fcv-btn').length === 1, pC && { trm: trm(pC), arroba: arroba(pC), fcv: conClase(pC, 'fcv-btn').length });
+      R.check('B12 en Cartera (sin rediseñar todavia), el mismo panel sigue con "@ $ X" y el flujo de caja de siempre',
+        !!pK && arroba(pK) === trm(pC) && trm(pK) === 0 && conClase(pK, 'fcv').length === 0 && conClase(pK, 'fcv-btn').length === 0 &&
+        botones(pK, /^Ver flujo de caja$/).length === 1, pK && { trm: trm(pK), arroba: arroba(pK) });
+      R.check('B12 la raiz de Cartera no lleva `v4p` (el diseño nuevo del panel no se le cuela)',
+        !/\bv4p\b/.test(enCartera.arbol.props.className), enCartera.arbol.props.className);
+      // El flujo de caja nuevo, abierto: las mismas filas y totales que el de siempre (flujoCajaDe), sobre
+      // el prestamo con MAS movimientos de caja del fixture.
+      const lFj = loans.slice().sort((x, y) => X.flujoCajaDe(y, lpDe(y.id)).eventos.length - X.flujoCajaDe(x, lpDe(x.id)).eventos.length)[0];
+      const fj = X.flujoCajaDe(lFj, lpDe(lFj.id));
+      const fv4 = montar(X.FlujoCajaPanelV4, { loan: lFj, pays: lpDe(lFj.id) }, [true]);
+      const fviejo = montar(X.FlujoCajaPanel, { loan: lFj, pays: lpDe(lFj.id) }, [true]);
+      const filasV4 = nodos(fv4.arbol, n => n.tag === 'tr').length, filasViejo = nodos(fviejo.arbol, n => n.tag === 'tr').length;
+      R.check('B13 el flujo de caja nuevo trae las mismas ' + fj.eventos.length + ' filas, sus totales y el mismo ingreso que el de siempre',
+        fj.eventos.length >= 5 && filasV4 === filasViejo && filasV4 === fj.eventos.length + 2 &&
+        fv4.t.indexOf(X.fmtN(fj.totales.ingreso)) !== -1 && fviejo.t.indexOf(X.fmtN(fj.totales.ingreso)) !== -1, { filasV4, filasViejo, eventos: fj.eventos.length });
+      R.check('B13 y ninguna celda del nuevo lleva color en linea (el estado va por clase)',
+        nodos(fv4.arbol, n => (n.tag === 'td' || n.tag === 'th') && n.props && n.props.style && n.props.style.color).length === 0);
+    }
   }
 
   // ── C — CARTERA ───────────────────────────────────────────────────────────
@@ -562,8 +646,18 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   const dash = leer('public/js/vistas/DashView.js');
   R.check('F3 el Resumen navega a las pestanas nuevas', !/onNav\('(pagos|deudores)'/.test(dash) && /onNav\('cobros', 'vencido'\)/.test(dash));
   const reglas = leer('public/css/styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const cobrosCss = leer('public/css/cobros.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
+  R.check('F4 index.html carga cobros.css despues de base.css y resumen.css (Cobros toma de ahi la tarjeta, los botones y las animaciones)',
+    /href="\/css\/base\.css">\s*<link[^>]*href="\/css\/resumen\.css">\s*<link[^>]*href="\/css\/cobros\.css">/.test(leer('public/index.html')));
+  R.check('F4 cobros.css trae la bandeja (`.v4c`) y el panel del deudor dentro de Cobros (`.v4p`)',
+    ['.v4c.op{', '.cbv-tramos{', '.cbv-segbar{', '.cbv-seg-thumb{', '.cbv-fila{', '.cbv-grupo{', '.v4p.dp{', '.v4p.fcv-btn{', '.v4p.op-lado:not(.superpuesto){'].every(x => cobrosCss.indexOf(x) !== -1));
+  // Las clases `cb-` de la vista vieja salieron de styles.css; quedan solo las dos que usa Cartera.
+  const cbUsadas = Array.from(new Set(['public/js/vistas/CarteraView.js', 'public/js/vistas/CobrosView.js', 'public/js/componentes/DeudorPanel.js']
+    .map(leer).join(' ').match(/\bcb-[a-z0-9-]+/g) || [])).sort();
+  const cbEnCss = Array.from(new Set(reglas.match(/\.cb-[a-z0-9-]+/g) || [])).map(x => x.slice(1)).sort();
+  R.eq('F4 styles.css solo conserva las clases `cb-` que alguien usa (las dos de Cartera)', [cbEnCss, cbUsadas], [['cb-lado', 'cb-nombre'], ['cb-lado', 'cb-nombre']]);
   R.check('F4 styles.css trae el maestro-detalle y el panel superpuesto en ventana angosta',
-    /\.op\{display:grid/.test(reglas) && /\.dp\{/.test(reglas) && /\.cb-tramos\{/.test(reglas) && /\.ct-fila\{/.test(reglas) &&
+    /\.op\{display:grid/.test(reglas) && /\.dp\{/.test(reglas) && /\.ct-fila\{/.test(reglas) &&
     /@media \(max-width:1099px\)\{(?:\s*[^{}]+\{[^}]*\})*?\s*\.op-lado\.superpuesto\{position:fixed/.test(reglas));
 
   // ── G — LA MEMORIA DE CARTERA ─────────────────────────────────────────────
@@ -900,9 +994,12 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   const regla = sel => { const m = new RegExp('(^|\\n)' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}').exec(css); return m ? m[2] : null; };
   R.check('J4 la sub-linea en dolares y la marca USD no usan el azul', !!regla('.dp-usd') && !/--blue/.test(regla('.dp-usd')) &&
     !!regla('.dp-usdtag') && !/--blue/.test(regla('.dp-usdtag')) && !/\.rz-chip\.usd/.test(css), [regla('.dp-usd'), regla('.dp-usdtag')]);
-  R.check('J4 en Cobros la sub-linea no hereda el tamano ni la negrita de los pesos (venia a 14,5 px)',
-    /font-size:11px/.test(regla('.cb-monto .dp-usd') || '') && /font-weight:500/.test(regla('.cb-monto .dp-usd') || '') &&
-    css.indexOf('.cb-monto .dp-usd{') > css.indexOf('.cb-monto .mono{'), regla('.cb-monto .dp-usd'));
+  // Rediseño v4: la cifra en pesos de Cobros va en su propio bloque (`.cbv-monto .v`), asi que la sub-linea
+  // en dolares ya no la tiene de padre; cobros.css le fija 11 px y el gris del resto de la app.
+  const cssCob = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'css', 'cobros.css'), 'utf8').replace(/\s+/g, ' ');
+  R.check('J4 en Cobros la sub-linea en dolares va aparte de la cifra en pesos, a 11 px y en gris (no azul)',
+    /\.cbv-monto \.dp-usd \{ display: block; font-size: 11px;/.test(cssCob) && /\.v4c \.dp-usd \{ color: var\(--ink-3\); \}/.test(cssCob) &&
+    !/\.dp-usd[^{]*\{[^}]*--blue/.test(cssCob));
   const pz = X.usdPiezas('+USD $1,647.22 en dólares');
   R.check('J5 el ayudante parte el importe y conserva el signo y lo que sigue',
     Array.isArray(pz) && pz[0] === '+' && pz[1].props.className === 'usd-c' && pz[2] === '1,647.22 en dólares', pz);
