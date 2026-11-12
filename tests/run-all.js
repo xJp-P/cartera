@@ -43,6 +43,7 @@ const SUITES = [
   { nombre: 'resumen',       archivo: 'resumen.js',       desc: 'la pestana Resumen: modelo, meta del mes sin cortes, agenda y la vista real (3.4.0)' },
   { nombre: 'operacion',     archivo: 'operacion.js',     desc: 'Cobros, Cartera y el panel del deudor; Cambiar dia contra el backend real (3.5.0)' },
   { nombre: 'deudas',        archivo: 'deudas.js',        desc: 'Mis deudas: la cuenta de cada deuda contra el saldo del backend, y la vista v4' },
+  { nombre: 'desarrollador', archivo: 'desarrollador.js', desc: 'Desarrollador: el cable con Electron (preload) y con el backend real, y la vista v4' },
 ];
 
 const args  = process.argv.slice(2);

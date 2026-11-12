@@ -376,8 +376,8 @@ const unir = n => textos(n).join('');
   const leer = p => fs.readFileSync(path.join(REPO, p), 'utf8');
   const compacto = c => c.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
   const dcss = compacto(leer('public/css/deudas.css')), scss = compacto(leer('public/css/styles.css'));
-  R.check('G1 index.html carga deudas.css al final, despues de rendimiento.css (reutiliza su lista de composicion)',
-    /href="\/css\/rendimiento\.css">\s*<link[^>]*href="\/css\/deudas\.css">\s*<\/head>/.test(leer('public/index.html')));
+  R.check('G1 index.html carga deudas.css despues de rendimiento.css (reutiliza su lista de composicion)',
+    /href="\/css\/rendimiento\.css">\s*<link[^>]*href="\/css\/deudas\.css">/.test(leer('public/index.html')));
   const usadas = Array.from(new Set((fuente.match(/dbv-[a-z0-9-]+/g) || []).filter(c => !/-$/.test(c))));
   const sinRegla = usadas.filter(c => !new RegExp('\\.' + c + '(?![A-Za-z0-9_-])').test(dcss));
   R.check('G2 cada clase dbv- que pinta la vista tiene su regla en deudas.css (' + usadas.length + ' clases)', usadas.length > 25 && sinRegla.length === 0, sinRegla);

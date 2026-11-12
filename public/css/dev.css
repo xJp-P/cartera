@@ -1,0 +1,99 @@
+/* public/css/dev.css — DESARROLLADOR del rediseño v4 (vistas/DevView.js), tal cual el prototipo que aprobo
+ * el PO. Se carga despues de resumen.css (las tarjetas `.v4-card`, los titulos `.v4-titulo`, los botones
+ * `.v4-btn`, los chips `.v4-chip` y las animaciones) y de cobros.css (el boton de icono `.cbv-icono`). Todo
+ * lo propio vive bajo `.v4v` (la raiz de la vista) con prefijo `dvv-`. */
+
+.v4v { display: flex; flex-direction: column; gap: 16px; color: var(--ink); }
+.dvv-intro { font-size: 13.5px; color: var(--ink-3); margin: 0 2px -2px; }
+.dvv-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
+.dvv-bd { grid-column: span 7; }
+.dvv-sis { grid-column: span 5; }
+.dvv-rep { grid-column: span 5; }
+.dvv-pago { grid-column: span 7; }
+.dvv-sync { grid-column: 1 / -1; }
+
+/* Tarjeta */
+.dvv-card { padding: 22px 24px; gap: 0; }
+.dvv-card-h { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.dvv-card-t { flex: 1; min-width: 0; }
+.dvv-ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; background: var(--surface-3); color: var(--ink-2); }
+.dvv-p { font-size: 13px; line-height: 1.6; color: var(--ink-3); margin: 0; }
+.dvv-acc { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+/* Un boton que no aplica (sin Electron, o sin cambios que guardar) se atenua. Por ahora solo esta pestaña
+   apaga botones `.v4-btn`; si otra lo necesita, esta regla pasa a la base (resumen.css). */
+.v4v .v4-btn:disabled { opacity: .45; cursor: not-allowed; }
+.v4v .v4-btn:disabled:active { transform: none; }
+
+/* Base de datos */
+.dvv-ruta { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 12px; }
+.dvv-ruta-c { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dvv-ruta-c .l { font-size: 11.5px; color: var(--ink-3); }
+.dvv-ruta-c code { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 12.5px; color: var(--ink); word-break: break-all; }
+.dvv-aviso { display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 12px; border-radius: var(--r-md); font-size: 12.5px; line-height: 1.5; }
+.dvv-aviso.warn { background: var(--warn-soft); color: var(--warn-text); }
+.dvv-aviso svg { flex-shrink: 0; margin-top: 2px; }
+.dvv-notas { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.dvv-notas-t { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.dvv-nota { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.dvv-nota svg { flex-shrink: 0; margin-top: 3px; color: var(--ink-3); }
+.dvv-nota b { color: var(--ink); font-weight: 600; }
+.dvv-nota.warn svg { color: var(--warn); }
+
+/* Sistema */
+.dvv-version { display: flex; align-items: baseline; gap: 10px; }
+.dvv-version .v { font-size: 40px; font-weight: 650; letter-spacing: -.04em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.dvv-version .l { font-size: 13px; color: var(--ink-3); }
+.dvv-filas { margin-top: 16px; border-top: 1px solid var(--line); }
+.dvv-filas > div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.dvv-filas span { color: var(--ink-3); }
+.dvv-filas b { font-weight: 550; color: var(--ink); text-align: right; }
+.dvv-act { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.dvv-barra { width: 100%; height: 6px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.dvv-barra i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .4s var(--ease); }
+.dvv-act-msg { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.dvv-act-msg b { color: var(--ink); font-weight: 600; }
+.dvv-act-msg.warn { color: var(--warn-text); }
+.dvv-act-msg.crit { color: var(--crit-text); }
+
+/* Reporte */
+.dvv-rep-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 16px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); background: var(--line); }
+.dvv-rep-stats > div { background: var(--surface); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.dvv-rep-stats b { font-size: 20px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dvv-rep-stats b.crit { color: var(--crit-text); }
+.dvv-rep-stats span { font-size: 12px; color: var(--ink-3); }
+.dvv-rep .dvv-acc { margin-top: auto; padding-top: 16px; }
+
+/* Datos de pago */
+.dvv-txt { width: 100%; resize: vertical; min-height: 110px; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  font: 13.5px/1.55 var(--font); outline: none; transition: border-color .15s, box-shadow .2s; box-sizing: border-box; }
+.dvv-txt::placeholder { color: var(--ink-3); }
+.dvv-txt:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.dvv-pago-pie { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 12px; }
+.dvv-pago-pie span { font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
+
+/* Sincronizar */
+.dvv-sync-c { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.dvv-res { margin-top: 16px; padding: 12px 14px; border-radius: var(--r-md); }
+.dvv-res.crit { background: var(--crit-soft); }
+.dvv-res.good { background: var(--good-soft); }
+.dvv-res-t { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.dvv-res.crit .dvv-res-t { color: var(--crit-text); }
+.dvv-res.good .dvv-res-t { color: var(--good-text); }
+.dvv-res-s { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+.dvv-res-f { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; margin-top: 6px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
+.dvv-res-f b { color: var(--ink); font-weight: 600; }
+
+@media (max-width: 1280px) {
+  .dvv-bd, .dvv-sis, .dvv-rep, .dvv-pago { grid-column: span 6; }
+}
+/* Ventana angosta (la minima de la app es 1.000 px): una tarjeta por fila */
+@media (max-width: 1100px) {
+  .dvv-bd, .dvv-sis, .dvv-rep, .dvv-pago { grid-column: 1 / -1; }
+}
+
+/* ── Movimiento ─────────────────────────────────────────────────────────────────── */
+.v4v.anima .dvv-intro, .v4v.anima .v4-card { animation: v4-in .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 60ms); }
+/* "Reducir movimiento" del sistema (Windows: efectos de animacion apagados): todo quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .v4v *, .v4v *::before, .v4v *::after { animation: none !important; transition: none !important; }
+}
