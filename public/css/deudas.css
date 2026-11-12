@@ -1,0 +1,131 @@
+/* public/css/deudas.css — MIS DEUDAS del rediseño v4 (vistas/DebtsView.js), tal cual el prototipo que
+ * aprobo el PO. Se carga despues de resumen.css (las tarjetas `.v4-card`, los botones `.v4-btn`, los chips
+ * `.v4-chip`, las etiquetas `.v4-tag` y las animaciones), cobros.css (la barra segmentada `.cbv-segbar`,
+ * los puntos `.cbv-dot`, los botones de icono `.cbv-icono` y los rotulos `.cbv-kl` / `.cbv-hero-s`) y
+ * rendimiento.css (la lista de composicion `.rdv-comp-f`). Todo lo propio vive bajo `.v4d` (la raiz de
+ * la vista) con prefijo `dbv-`, salvo el acordeon (`.acc`), que vino de styles.css con la vista. */
+
+/* ── El acordeon de dos niveles (v2.9.3; antes en styles.css) ─────────────────────
+   La ALTURA se anima por JS (Web Animations API, ver `animarPanel` en DebtsView). Se eligio WAAPI sobre
+   las vias declarativas por dos razones concretas:
+     - mide el contenido real y anima entre dos alturas conocidas, sin depender de como resuelve el
+       motor un `1fr` ni de `interpolate-size`, que pide Chromium 129 cuando la app corre sobre
+       Electron 29 = Chromium 122;
+     - anima las DOS direcciones. La version anterior (un @keyframes de entrada) abria suave y cerraba
+       de golpe.
+   CORRECCION de v2.9.2: alli se afirmo que `grid-template-rows: 0fr -> 1fr` se atasca en el primer
+   despliegue. Era FALSO — un artefacto del arnes: el panel de preview estaba oculto (`document.hidden`),
+   la linea de tiempo de animaciones no avanza y TODA transicion queda en su primer fotograma.
+   El panel nace cerrado desde CSS para que no se vea un parpadeo a altura completa antes de que corra
+   el efecto. */
+.acc { height: 0; overflow: hidden; }
+.acc-chev { display: flex; transition: transform .38s cubic-bezier(.4, 0, .2, 1); }
+.acc-chev.open { transform: rotate(90deg); }
+
+/* Las series de Control TC (como en Rendimiento) para "a quien le debes" */
+.v4d { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: var(--ink-3); --s5: var(--bar-muted); --s6: var(--track); }
+[data-theme="light"] .v4d { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; }
+.v4d .cbv-dot.s1, .v4d .cbv-segbar .seg.s1 { background: var(--s1); }
+.v4d .cbv-dot.s2, .v4d .cbv-segbar .seg.s2 { background: var(--s2); }
+.v4d .cbv-dot.s3, .v4d .cbv-segbar .seg.s3 { background: var(--s3); }
+.v4d .cbv-dot.s4, .v4d .cbv-segbar .seg.s4 { background: var(--s4); }
+.v4d .cbv-dot.s5, .v4d .cbv-segbar .seg.s5 { background: var(--s5); }
+.v4d .cbv-dot.s6, .v4d .cbv-segbar .seg.s6 { background: var(--s6); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+.v4d { display: flex; flex-direction: column; gap: 16px; color: var(--ink); }
+.v4d .good { color: var(--good-text); }
+/* La etiqueta del Cargo, en rojo suave (resumen.css trae las de good / info / warn) */
+.v4d .v4-tag.crit { background: var(--crit-soft); color: var(--crit-text); }
+.dbv-intro { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: var(--ink-3); margin: 0 2px -2px; }
+.dbv-intro-acc { display: flex; gap: 8px; }
+
+/* ── Encabezado ──────────────────────────────────────────────────────────────────── */
+.dbv-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; padding: 24px; }
+.dbv-hero-a { padding-right: 28px; display: flex; flex-direction: column; }
+.dbv-hero-b { padding-left: 28px; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+.dbv-hero-v { font-size: clamp(34px, 1.6vw + 14px, 44px); font-weight: 650; letter-spacing: -.04em; line-height: 1.1; margin-top: 8px; }
+.dbv-hero-a .dbv-avance { margin-top: auto; padding-top: 20px; }
+.dbv-hero-b-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); }
+.dbv-hero-b-h b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.dbv-hero-b .cbv-segbar { margin: 14px 0 10px; height: 10px; }
+
+/* Avance: "Abonado X de Y" + barra (el azul del progreso, como el recuperado de Cartera) */
+.dbv-avance-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12.5px; color: var(--ink-3); margin-bottom: 7px; }
+.dbv-avance-h b { font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.dbv-barra { height: 6px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.dbv-barra i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; transition: width .4s var(--ease); }
+.dbv-barra.fina { height: 3px; border-radius: 0; margin: 0 14px; }
+
+/* ── La lista de acreedores ────────────────────────────────────────────────────────── */
+.dbv-lista { display: flex; flex-direction: column; gap: 10px; }
+.dbv-grupo { display: flex; align-items: center; gap: 8px; margin: 8px 4px 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.dbv-grupo:first-child { margin-top: 0; }
+.dbv-grupo .n { font-size: 11px; letter-spacing: 0; color: var(--ink-2); background: var(--surface-3); border-radius: 99px; padding: 0 7px; }
+.dbv-acreedor { padding: 0; overflow: hidden; }
+.dbv-acreedor-h { display: flex; align-items: center; gap: 14px; padding: 16px 20px; cursor: pointer; transition: background-color .15s var(--ease); }
+.dbv-acreedor-h:hover { background: var(--surface-2); }
+.dbv-acreedor-h > .acc-chev { color: var(--ink-3); }
+.dbv-av { width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; font-size: 14px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
+.dbv-av.saldada { background: var(--good-soft); color: var(--good-text); }
+.dbv-acreedor-c { flex: 1; min-width: 0; }
+.dbv-acreedor-c .t { font-size: 15px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dbv-acreedor-c .s { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+.dbv-acreedor-v, .dbv-deuda-v { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; gap: 1px; }
+.dbv-acreedor-v .l, .dbv-deuda-v .l { font-size: 11.5px; color: var(--ink-3); }
+.dbv-acreedor-v b { font-size: 18px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dbv-deudas { display: flex; flex-direction: column; gap: 8px; padding: 4px 16px 16px; border-top: 1px solid var(--line); }
+.dbv-cat { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin: 12px 4px 0; }
+
+/* Una deuda: cuenta corriente */
+.dbv-deuda { border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); overflow: hidden; transition: border-color .2s var(--ease); }
+.dbv-deuda:hover, .dbv-deuda.abierta { border-color: var(--line-strong); }
+.dbv-deuda-h { display: flex; align-items: center; gap: 12px; padding: 13px 14px; cursor: pointer; }
+.dbv-deuda-h > .acc-chev { color: var(--ink-3); }
+.dbv-deuda-c { flex: 1; min-width: 0; }
+.dbv-deuda-c .t { font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dbv-deuda-c .s { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.dbv-deuda-v b { font-size: 16px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dbv-deuda.pagada .dbv-deuda-c .t { color: var(--ink-2); }
+.dbv-sec { padding: 14px 16px; border-top: 1px solid var(--line); background: var(--surface); }
+.dbv-sec-t { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+.dbv-cuenta { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.dbv-cuenta > div { display: flex; flex-direction: column; gap: 2px; }
+.dbv-cuenta span:not(.dbv-op) { font-size: 11.5px; color: var(--ink-3); }
+.dbv-cuenta b { font-size: 16px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.dbv-cuenta b.fuerte { font-weight: 650; }
+/* `.op` es la rejilla maestro-detalle de produccion: el operador lleva su propia clase */
+.dbv-cuenta .dbv-op { font-size: 16px; color: var(--ink-3); padding-bottom: 1px; }
+.dbv-movs { display: flex; flex-direction: column; }
+.dbv-mov { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 2px; border-top: 1px solid var(--line); }
+.dbv-mov:first-child { border-top: 0; }
+.dbv-mov .v4-tag { justify-self: start; margin-top: 1px; }
+.dbv-mov-c .f { font-size: 13px; font-weight: 550; color: var(--ink); }
+.dbv-mov-c .n { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+.dbv-mov-v { text-align: right; }
+.dbv-mov-v .v { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dbv-mov-v .s { font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; margin-top: 1px; }
+.dbv-acc { display: flex; align-items: center; gap: 8px; }
+.dbv-hueco { flex: 1; }
+.cbv-icono.peligro:hover { color: var(--crit-text); border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
+.dbv-nota { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-3); padding: 4px 0; }
+.dbv-nota.warn { color: var(--warn-text); }
+.dbv-vacio { align-items: center; text-align: center; padding: 56px 28px; }
+.dbv-vacio .ico { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: var(--surface-3); color: var(--ink-2); margin-bottom: 14px; }
+.dbv-vacio p { font-size: 13px; color: var(--ink-3); max-width: 46ch; margin-top: 6px; }
+
+@media (max-width: 1180px) {
+  .dbv-hero { grid-template-columns: 1fr; }
+  .dbv-hero-a { padding: 0 0 20px; }
+  .dbv-hero-b { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+}
+
+/* ── Movimiento ─────────────────────────────────────────────────────────────────── */
+.v4d.anima .dbv-intro, .v4d.anima > .v4-card, .v4d.anima .dbv-acreedor { animation: v4-in .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 60ms + 60ms); }
+.v4d.anima .dbv-hero .cbv-segbar .seg { animation: cbv-crecex .7s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 300ms); }
+.v4d.anima .dbv-hero .dbv-barra i { animation: cbv-crecex .8s var(--ease) backwards; animation-delay: 300ms; }
+.v4d.anima .dbv-hero .rdv-comp-f { animation: v4-fade .4s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 40ms + 380ms); }
+/* "Reducir movimiento" del sistema (Windows: efectos de animacion apagados): todo quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .acc-chev { transition: none; }
+  .v4d *, .v4d *::before, .v4d *::after { animation: none !important; transition: none !important; }
+}

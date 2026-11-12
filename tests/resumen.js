@@ -776,8 +776,8 @@ function metricsComoApp(X, loans, pays) {
   R.check('E1 SparklineChart ya no existe (solo lo usaba el Inicio viejo)', !fs.existsSync(path.join(REPO, 'public/js/componentes/SparklineChart.js')));
   R.check('E1 index.html carga styles.css, base.css y resumen.css, en ese orden (cada una gana los empates de la anterior)',
     /href="\/css\/styles\.css">\s*<link[^>]*href="\/css\/base\.css">\s*<link[^>]*href="\/css\/resumen\.css">/.test(index));
-  R.check('E1 y rendimiento.css va al final, despues de cartera.css (reutiliza sus pastillas, y las de cobros.css)',
-    /href="\/css\/cartera\.css">\s*<link[^>]*href="\/css\/rendimiento\.css">\s*<\/head>/.test(index));
+  R.check('E1 y rendimiento.css va despues de cartera.css (reutiliza sus pastillas, y las de cobros.css)',
+    /href="\/css\/cartera\.css">\s*<link[^>]*href="\/css\/rendimiento\.css">/.test(index));
   // Lo que salio: la version anterior del Resumen. Lo que queda: las tarjetas del analisis, que usa Rendimiento.
   const VIEJAS = /\.rz(\{|-(hero|puntos|cifras?|cifra-[a-z]+|cobrar|pc-[a-z]+|meta|meta-lista|mov|mov-lista|mov-dia|mv|mv-ico|li|li-[nsv]|lista|fila|filas|ring-wrap|mes-nav|analisis|analisis-[hs]|scroll|saludo|fecha|insight|acciones|btn|link|full)\b)/;
   R.check('E2 styles.css sin las clases .dash-* ni las del Resumen anterior', !/\.dash-(card|lists|container|list-body)/.test(css) && !VIEJAS.test(cssC),
