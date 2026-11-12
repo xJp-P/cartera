@@ -904,51 +904,51 @@ function App(){
   function toggleSidebar(){ setMenuOpen(!menuOpen); }
 
   return h('div',{className:'app-layout'},
-    // ── Sidebar ──
+    // ── Sidebar ── (rediseño v4: estilos en public/css/base.css, clases .sidebar-* / .nav-*)
     h('div',{className:'sidebar'+(menuOpen?' collapsed':'')},
       h('div',{className:'sidebar-header'},
-        h(Ico,{name:'briefcase',size:18,color:'var(--green)'}),
+        h('span',{className:'sidebar-marca'},h(Ico,{name:'briefcase',size:18})),
         h('div',null,
-          h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},'Cartera'),
-          h('div',{style:{fontSize:12,color:'var(--text3)',fontFamily:'monospace'}},metrics.activeCount+' activos'))),
+          h('div',{className:'sidebar-nombre'},'Cartera'),
+          h('div',{className:'sidebar-activos'},metrics.activeCount+' activos'))),
       h('div',{className:'sidebar-nav'},
         navSections.map(function(sec){
           var open=navOpen[sec.key]!==false;
-          return h('div',{key:sec.key,style:{marginBottom:2}},
-            h('button',{onClick:function(){toggleNavSection(sec.key);},style:{display:'flex',alignItems:'center',justifyContent:'space-between',width:'100%',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',color:'var(--text3)',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.6px',padding:'10px 14px 5px',userSelect:'none'}},
+          return h('div',{key:sec.key,className:'nav-grupo'},
+            h('button',{className:'nav-seccion',onClick:function(){toggleNavSection(sec.key);}},
               h('span',null,sec.label),
-              h(Ico,{name:open?'chevdown':'chevright',size:14,color:'var(--text3)'})),
+              h(Ico,{name:open?'chevdown':'chevright',size:14})),
             open?sec.items.map(function(item){
               var id=item[0],icon=item[1],label=item[2];
-              return h('button',{key:id,className:'nav-item'+(view===id?' active':''),onClick:function(){navTo(id);},style:{paddingLeft:24}},
-                h(Ico,{name:icon,size:18,color:view===id?'var(--green)':'var(--text3)'}),label);
+              return h('button',{key:id,className:'nav-item'+(view===id?' active':''),onClick:function(){navTo(id);}},
+                h(Ico,{name:icon,size:18}),label);
             }):null);
         }),
-        h('div',{style:{height:1,background:'var(--border)',margin:'8px 8px'}}),
+        h('div',{className:'nav-sep'}),
         navStandalone.map(function(item){
           var id=item[0],icon=item[1],label=item[2];
           return h('button',{key:id,className:'nav-item'+(view===id?' active':''),onClick:function(){navTo(id);}},
-            h(Ico,{name:icon,size:18,color:view===id?'var(--green)':'var(--text3)'}),label);
+            h(Ico,{name:icon,size:18}),label);
         })),
       h('div',{className:'sidebar-footer'},'v'+(window._appVersion||''))),
-    // ── Main Area ──
+    // ── Main Area ── (encabezado: clases .mh-* de base.css)
     h('div',{className:'main-area'},
       h('div',{className:'main-header'},
-        h('button',{onClick:toggleSidebar,style:{background:'none',border:'none',cursor:'pointer',padding:4,display:'flex'}},
-          h(Ico,{name:'menu',size:22,color:'var(--text)'})),
-        h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-          h(Ico,{name:nav.find(function(n){return n[0]===view;})?nav.find(function(n){return n[0]===view;})[1]:'home',size:18,color:'var(--green)'}),
-          h('span',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},nav.find(function(n){return n[0]===view;})?nav.find(function(n){return n[0]===view;})[2]:'Inicio')),
+        h('button',{className:'mh-menu',onClick:toggleSidebar},
+          h(Ico,{name:'menu',size:22})),
+        h('div',{className:'mh-titulo'},
+          h(Ico,{name:nav.find(function(n){return n[0]===view;})?nav.find(function(n){return n[0]===view;})[1]:'home',size:18}),
+          h('span',null,nav.find(function(n){return n[0]===view;})?nav.find(function(n){return n[0]===view;})[2]:'Inicio')),
         h('div',{style:{flex:1}}),
-        h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-          metrics.pronto.length>0&&h('div',{onClick:function(){navTo('cobros','semana');},style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',padding:'5px 10px',borderRadius:99,fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'var(--yellow)'},title:'Cuotas por vencer en 3 días'},
-            h(Ico,{name:'clock',size:12,color:'var(--yellow)'}),metrics.pronto.length,' pronto'),
-          metrics.mora.length>0&&h('div',{onClick:function(){navTo('cobros','vencido');},style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',padding:'5px 10px',borderRadius:99,fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:4,cursor:'pointer',color:'var(--red)'}},
-            h(Ico,{name:'bell',size:12,color:'var(--red)'}),metrics.mora.length,' mora'),
-          h('button',{onClick:openGSearch,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:99,padding:'6px 8px',cursor:'pointer',display:'flex',alignItems:'center'}},
-            h(Ico,{name:'search',size:14,color:'var(--text3)'})),
-          h('button',{onClick:toggleTheme,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:99,padding:'6px 8px',cursor:'pointer',display:'flex',alignItems:'center'},title:theme==='dark'?'Tema claro':'Tema oscuro'},
-            h(Ico,{name:theme==='dark'?'sun':'moon',size:14,color:'var(--text3)'})))),
+        h('div',{className:'mh-acciones'},
+          metrics.pronto.length>0&&h('div',{className:'mh-badge pronto',onClick:function(){navTo('cobros','semana');},title:'Cuotas por vencer en 3 días'},
+            h(Ico,{name:'clock',size:12}),metrics.pronto.length,' pronto'),
+          metrics.mora.length>0&&h('div',{className:'mh-badge mora',onClick:function(){navTo('cobros','vencido');}},
+            h(Ico,{name:'bell',size:12}),metrics.mora.length,' mora'),
+          h('button',{className:'mh-btn',onClick:openGSearch},
+            h(Ico,{name:'search',size:14})),
+          h('button',{className:'mh-btn',onClick:toggleTheme,title:theme==='dark'?'Tema claro':'Tema oscuro'},
+            h(Ico,{name:theme==='dark'?'sun':'moon',size:14})))),
       globalUpdate&&globalUpdate.status==='available'&&h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',padding:'10px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexShrink:0}},
         h('div',{style:{display:'flex',alignItems:'center',gap:8}},
           h(Ico,{name:'download',size:16,color:'var(--green)'}),

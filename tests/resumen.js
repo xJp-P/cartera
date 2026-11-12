@@ -14,9 +14,13 @@
 //      la exclusion pasaria en verde sin estar probando nada.
 //   C. POR COBRAR (`rzParaCobrar`, 3.7.1): lo vencido y lo de hoy, una fila por persona, recalculado
 //      APARTE sin `bandejaCobro`; y lo que entra esta semana.
-//   D. LA VISTA REAL (`DashView`) renderizada con el arnes: sin excepciones, con las piezas del Resumen
-//      hibrido que aprobo el PO (3.7.1), las cifras de A-C en pantalla y la ortografia completa.
-//   E. GUARDAS ESTATICAS: el Inicio viejo y las piezas de 3.4.0 que salieron no dejan restos.
+//   D. LA VISTA REAL (`DashView`, el rediseño v4 que aprobo el PO) renderizada con el arnes: sin
+//      excepciones, con sus piezas, las cifras de A-C en pantalla, la comparacion con el mismo tramo
+//      del mes anterior recalculada aparte, la rentabilidad IGUAL a la de Rendimiento, a donde lleva
+//      cada cosa, el movimiento (cifras que cuentan desde 0 solo con la ventana visible) y la ortografia.
+//   E. GUARDAS ESTATICAS: las hojas del rediseño (base.css, resumen.css) y sus reglas de layout, la
+//      fuente Inter local, el marco de app.js, la compatibilidad del panel del deudor con el marco nuevo,
+//      el fondo de la ventana principal, y que el Resumen anterior no deja restos.
 //
 // Se ejecuta:
 //   ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron tests/resumen.js
@@ -123,8 +127,8 @@ function metricsComoApp(X, loans, pays) {
 
   R.seccion('0 — el arnes ve el dia congelado y los simbolos de la vista');
   R.eq('0 nowStr() dentro del frontend = 31-jul-2026', X.nowStr(), HOY);
-  R.check('0 la vista expone modeloResumen, rzMetaDelMes, rzParaCobrar, RzPorCobrar y DashView',
-    ['modeloResumen', 'rzMetaDelMes', 'rzParaCobrar', 'RzPorCobrar', 'DashView'].every(k => typeof X[k] === 'function'));
+  R.check('0 la vista expone modeloResumen, rzMetaDelMes, rzParaCobrar, V4PorCobrar, V4Dinero y DashView',
+    ['modeloResumen', 'rzMetaDelMes', 'rzParaCobrar', 'V4PorCobrar', 'V4Dinero', 'DashView'].every(k => typeof X[k] === 'function'));
   R.check('0 el fixture trae prestamos, cuotas y deudas propias', loans.length > 0 && pays.length > 0 && debts.length > 0,
     { loans: loans.length, pays: pays.length, debts: debts.length });
 
@@ -278,118 +282,178 @@ function metricsComoApp(X, loans, pays) {
   R.eq('C7 y entra en "Para cobrar ya"', suma(X.rzParaCobrar(bandejaM, HOY), g => g.total), totYa + X.pendCuota(futura));
 
   // ── D — LA VISTA REAL ─────────────────────────────────────────────────────
-  R.seccion('D — DashView renderizado con los datos del fixture');
+  // El Resumen v4 (rediseño aprobado por el PO sobre el prototipo). Las cifras cuentan desde 0 al
+  // montarse y el arnes no corre efectos: se pinta con la ventana "oculta" (`document.hidden`), que es
+  // justo el caso en que la vista muestra el valor final sin animar. D10 prueba las dos ramas.
+  R.seccion('D — DashView (rediseño v4) renderizado con los datos del fixture');
+  X.document.hidden = true;
   const props = { metrics: met, isEmpty: false, loans, pays, onNav: () => {}, onNameClick: () => {}, onNewLoan: () => {} };
-  const render = ancho => {
-    X.window.innerWidth = ancho;
-    try { return pintar({ type: X.DashView, props, children: [] }); }
-    finally { X.window.innerWidth = 1280; }
-  };
+  const render = (pr) => pintar({ type: X.DashView, props: pr || props, children: [] });
+  const sinPeso = s => String(s).replace(/^-?\$\s*/, '');
+  const conClase = (n, c) => nodosDe(n, x => x.props && (' ' + (x.props.className || '') + ' ').indexOf(' ' + c + ' ') !== -1);
   let arbol = null, error = null;
-  try { arbol = render(1280); } catch (e) { error = e; }
+  try { arbol = render(); } catch (e) { error = e; }
   R.check('D1 la vista se pinta sin excepciones', !error, error && (error.stack || String(error)));
   if (arbol) {
     const t = textos(arbol), todo = t.join(' ');
     const tiene = s => todo.indexOf(s) !== -1;
     const cls = clases(arbol).join(' ').split(/\s+/);
-    R.check('D2 las piezas del Resumen hibrido: encabezado, tres cifras, por cobrar, meta y movimientos',
-      ['rz-hero', 'rz-puntos', 'rz-cifras', 'rz-cobrar', 'rz-meta', 'rz-mov'].every(c => cls.indexOf(c) !== -1),
-      ['rz-hero', 'rz-puntos', 'rz-cifras', 'rz-cobrar', 'rz-meta', 'rz-mov'].filter(c => cls.indexOf(c) === -1));
-    R.check('D2 salieron la agenda, el radar y los KPI de 3.4.0 (el modelo los reemplaza)',
-      ['rz-kpis', 'rz-kpi', 'rz-agenda', 'rz-agenda-grid', 'rz-radar', 'rz-insight'].every(c => cls.indexOf(c) === -1) &&
-      !tiene('Posición neta') && !tiene('Agenda de cobro') && !tiene('Radar de la cartera'));
-    // 3.7.0 (decision del PO): el "Analisis del negocio" se mudo a Rendimiento; aqui queda el enlace.
-    R.check('D2 el flujo de caja y la composicion ya no estan en el Resumen, y en su lugar va el enlace al analisis',
-      cls.indexOf('rz-flujo') === -1 && cls.indexOf('rz-comp') === -1 && cls.indexOf('rz-analisis') !== -1 &&
-      tiene('Análisis del negocio') && tiene('ahora en Rendimiento'));
-    R.check('D3 el encabezado dice el dia: "viernes 31 de julio"', tiene('viernes 31 de julio'));
-    // El dia en tres puntos: lo de hoy, la semana y lo vencido, con las cifras de App.
-    const puntos = nodosDe(arbol, n => n.tag === 'li').map(li => textos(li).join(''));
-    R.eq('D3 tres puntos: hoy, los próximos 7 días y lo vencido', puntos, [
-      'Hoy vencen ' + met.hoy.length + ' cuotas por ' + X.fmt(suma(met.hoy, p => X.pendCuota(p))) + '.',
-      'En los próximos 7 días entran ' + X.fmt(suma(met.proximos, p => X.pendCuota(p))) + '.',
-      'Tienes ' + X.fmt(met.totalMora) + ' vencidos en ' + met.mora.length + ' cuotas de ' + M.deudoresMora + ' deudores.']);
-    R.check('D4 "En la calle" muestra ' + X.fmt(M.vivo) + ' y cuanto de lo prestado ya volvio',
-      tiene('En la calle') && t.indexOf(X.fmt(M.vivo)) !== -1 && tiene(Math.round((1 - M.vivo / M.prestado) * 100) + '% de lo prestado ya volvió'));
-    R.check('D4 "Cobrado en julio" muestra "Cobros del Mes" de App', tiene('Cobrado en julio') && t.indexOf(X.fmt(met.recibido)) !== -1);
+    const PIEZAS = ['v4', 'v4-head', 'v4-pills', 'v4-kpis', 'v4-cobrar', 'v4-meta', 'v4-mov', 'v4-rend'];
+    R.check('D2 las piezas del Resumen v4: encabezado, pastillas, tres cifras, por cobrar, meta, movimientos y rendimiento',
+      PIEZAS.every(c => cls.indexOf(c) !== -1), PIEZAS.filter(c => cls.indexOf(c) === -1));
+    R.check('D2 no queda ninguna pieza del Resumen anterior (rejilla .rz, puntos, franja de cifras, enlace al analisis)',
+      cls.every(c => !/^rz(-|$)/.test(c)), cls.filter(c => /^rz(-|$)/.test(c)));
+    R.check('D2 el flujo de caja y la composicion siguen fuera del Resumen (viven en Rendimiento)',
+      !tiene('Flujo de caja') && !tiene('Dónde está tu capital'));
+    // Encabezado: la fecha, el estado y el dia en tres pastillas con las cifras de App.
+    R.check('D3 el encabezado dice el dia y los prestamos activos: "viernes 31 de julio · 13 préstamos activos"',
+      tiene('viernes 31 de julio · ' + M.activos.length + ' préstamos activos'));
+    R.check('D3 el estado de la cartera: "' + M.deudoresMora + ' deudores en mora"', tiene(M.deudoresMora + ' deudores en mora'));
+    const pills = conClase(arbol, 'v4-pill').map(n => textos(n).join('|'));
+    const totHoy = suma(met.hoy, p => X.pendCuota(p)), totSem = suma(met.proximos, p => X.pendCuota(p));
+    R.eq('D3 tres pastillas: hoy, los próximos 7 días y lo vencido, con las cifras de App', pills, [
+      'Hoy vencen|' + X.fmt(totHoy) + '|' + met.hoy.length + ' cuotas',
+      'Próximos 7 días|' + X.fmt(totSem) + '|por entrar',
+      'Vencido|' + X.fmt(met.totalMora) + '|' + met.mora.length + ' cuotas de ' + M.deudoresMora + ' deudores']);
+    // Un parcial sobre una cuota que vence hoy: la pastilla dice lo que FALTA (pendCuota), no la cuota
+    // entera. Construido: en el fixture ninguna cuota de hoy trae un parcial.
+    {
+      const paysP = pays.map(p => Object.assign({}, p));
+      const cuotaHoy = paysP.find(p => p.id === met.hoy[0].id);
+      cuotaHoy.partialPaid = 100000;
+      const arbolP = render(Object.assign({}, props, { pays: paysP, metrics: metricsComoApp(X, loans, paysP) }));
+      R.eq('D3 un parcial de 100.000 sobre una cuota de hoy baja en 100.000 la pastilla de hoy',
+        conClase(arbolP, 'v4-pill').map(n => textos(n).join('|'))[0], 'Hoy vencen|' + X.fmt(totHoy - 100000) + '|' + met.hoy.length + ' cuotas');
+    }
+    // Tres cifras: el valor en pesos va con el "$" aparte (pequeño): se busca la cifra sin el signo.
+    const pctRec = Math.round((1 - M.vivo / M.prestado) * 100);
+    R.check('D4 "En la calle" muestra ' + X.fmt(M.vivo) + ', lo prestado y cuanto ya volvio, con su anillo',
+      tiene('En la calle') && t.indexOf(sinPeso(X.fmt(M.vivo))) !== -1 && t.indexOf(X.fmt(M.prestado)) !== -1 &&
+      tiene(pctRec + '% ya volvió') && t.indexOf(pctRec + '%') !== -1);
+    R.check('D4 "Cobrado en julio" muestra "Cobros del Mes" de App', tiene('Cobrado en julio') && t.indexOf(sinPeso(X.fmt(met.recibido))) !== -1);
     R.check('D4 "Ganancia de julio" muestra la del mes y la de 12 meses',
-      tiene('Ganancia de julio') && t.indexOf(X.fmt(M.gananciaMes)) !== -1 && tiene('Últimos 12 meses: ') && t.indexOf(X.fmt(M.ganancia12)) !== -1);
+      tiene('Ganancia de julio') && t.indexOf(sinPeso(X.fmt(M.gananciaMes))) !== -1 && tiene('Últimos 12 meses: ') && t.indexOf(X.fmt(M.ganancia12)) !== -1);
+    const barrasDias = conClase(conClase(arbol, 'dias')[0], 'b'), barrasMeses = conClase(conClase(arbol, 'meses')[0], 'b');
+    R.eq('D4 una barra por dia de julio (31) y una por mes en la ganancia (12)', [barrasDias.length, barrasMeses.length], [31, 12]);
+    // La comparacion con el mismo tramo del mes anterior, recalculada APARTE: junio del 1 al 30.
+    let cajaJun = 0, ganJun = 0;
+    pays.forEach(p => {
+      X.cobrosDe(p).forEach(e => { if (mesDe(e.fecha) === '2026-06' && e.fecha <= '2026-06-30') cajaJun += e.cop; });
+      const l = loanMap[p.prestamoId];
+      X.gananciaDe(p, l && l.moneda === 'USD').eventos.forEach(e => { if (mesDe(e.fecha) === '2026-06' && e.fecha <= '2026-06-30') ganJun += e.ganancia; });
+    });
+    const chipDelta = (ahora, antes) => { const d = (ahora - antes) / antes * 100; return (d >= 0 ? '↗' : '↘') + '|' + (d >= 0 ? '+' : '') + Math.round(d) + ' %'; };
+    const deltas = conClase(arbol, 'v4-chip').filter(n => conClase(n, 'flecha').length).map(n => textos(n).join('|'));
+    R.eq('D4b el cobrado y la ganancia se comparan con junio del 1 al 30 (recalculado aparte con cobrosDe y gananciaDe)', deltas,
+      [chipDelta(met.recibido, Math.round(cajaJun)), chipDelta(M.gananciaMes, Math.round(ganJun))]);
+    R.check('D4b anti-vacio: junio tiene caja y ganancia', cajaJun > 0 && ganJun > 0, { cajaJun, ganJun });
     // Por cobrar: las dos listas con sus totales, una fila por persona y una por cuota de la semana.
-    const cobrar = nodosDe(arbol, n => /\brz-cobrar\b/.test((n.props && n.props.className) || ''))[0];
-    const esSec = n => n.props && (n.props.className || '').split(' ')[0] === 'rz-pc-sec';
-    const secs = nodosDe(cobrar, esSec);
-    const filasSec = i => nodosDe(secs[i], n => n.tag === 'button' && n.props.className === 'rz-pc-fila');
-    R.check('D5 "Por cobrar" trae "Para cobrar ya" con su total y una fila por persona',
-      secs.length === 2 && textos(secs[0]).join(' ').indexOf('Para cobrar ya') !== -1 && textos(secs[0]).indexOf(X.fmt(totYa)) !== -1 &&
+    const cobrar = conClase(arbol, 'v4-cobrar')[0];
+    const secs = conClase(cobrar, 'v4-pc-sec');
+    const filasSec = i => conClase(secs[i], 'v4-fila');
+    R.check('D5 "Por cobrar" trae "Para cobrar ya" con su total y una fila por persona, en una lista que se desplaza',
+      secs.length === 2 && textos(secs[0]).indexOf('Para cobrar ya') !== -1 && textos(secs[0]).indexOf(X.fmt(totYa)) !== -1 &&
+      conClase(secs[0], 'v4-pc-lista').length === 1 &&
       filasSec(0).length === ya.length && filasSec(0).every((f, i) => textos(f).indexOf(X.properCase(ya[i].nombre)) !== -1),
       secs.map(x => textos(x)));
     R.check('D5 y "Esta semana" con su total y una fila por cuota',
-      textos(secs[1]).join(' ').indexOf('Esta semana') !== -1 && textos(secs[1]).indexOf(X.fmt(suma(semana, f => f.pend))) !== -1 &&
+      textos(secs[1]).indexOf('Esta semana') !== -1 && textos(secs[1]).indexOf(X.fmt(suma(semana, f => f.pend))) !== -1 &&
       filasSec(1).length === Math.min(semana.length, 6));
-    // Las cifras en dolares van en gris (opcion A del PO, 3.7.0): `dp-usd`, nunca un color en linea.
     const usdC = nodosDe(cobrar, n => n.props && /\bdp-usd\b/.test(n.props.className || ''));
     R.check('D5 los dolares de "Por cobrar" van en gris, sin color en linea', usdC.length > 0 &&
       usdC.every(n => !(n.props.style && n.props.style.color)), usdC.map(n => n.props));
-    R.check('D6 el anillo de la meta marca 125%', t.indexOf('125%') !== -1);
-    R.check('D6 la meta muestra sus cuatro cifras', [meta.esperado, meta.cobrado, meta.moraRec, meta.falta].every(v => t.indexOf(X.fmt(v)) !== -1));
-    // Hotfix 3.4.1: la lista de pendientes NO lleva un tope de alto en linea. La tarjeta se estira a
-    // la altura de su fila y un `maxHeight` fijo dejaba la lista cortada a media fila con la tarjeta
-    // vacia por debajo. El alto lo gobierna styles.css (`.rz-meta-lista`, ver E4).
-    const listas = nodosDe(arbol, n => n.props && /\brz-meta-lista\b/.test(n.props.className || ''));
-    R.check('D6b la lista de la meta lleva su clase y ningun tope de alto en linea',
-      listas.length === 1 && !(listas[0].props.style && listas[0].props.style.maxHeight != null),
-      listas.map(l => ({ className: l.props.className, style: l.props.style })));
-    R.check('D6b con mas de 4 cuotas pendientes es "larga" (parte de 0 con minimo 250 px)',
-      listas.length === 1 && (meta.pend.length > 4) === /\blarga\b/.test(listas[0].props.className) && meta.pend.length > 4,
-      { pendientes: meta.pend.length, className: listas[0] && listas[0].props.className });
-    // Ortografia: aprobada con tildes en toda la pestaña. Ningun rotulo vuelve a salir sin ellas.
-    const conTilde = ['Últimos movimientos', 'Análisis del negocio', 'Préstamo', 'próximos', 'días', 'ya volvió', 'Últimos 12 meses'];
+    // Meta del mes
+    const metaCard = conClase(arbol, 'v4-meta')[0];
+    R.check('D6 la meta marca 125% y muestra sus cuatro cifras', textos(metaCard).indexOf('125%') !== -1 &&
+      [meta.esperado, meta.cobrado, meta.moraRec, meta.falta].every(v => textos(metaCard).indexOf(X.fmt(v)) !== -1));
+    const listaMeta = conClase(metaCard, 'v4-meta-lista');
+    R.check('D6 una fila por cuota pendiente, en una lista sin tope de alto en linea (regla de 3.4.1)',
+      listaMeta.length === 1 && conClase(listaMeta[0], 'v4-li').length === meta.pend.length && !(listaMeta[0].props.style && listaMeta[0].props.style.maxHeight != null),
+      listaMeta.map(l => l.props));
+    // Ultimos movimientos: el total del mes = la caja de julio de los movimientos recientes.
+    const movCard = conClase(arbol, 'v4-mov')[0];
+    const totMov = suma(M.recientes.filter(e => mesDe(e.fecha) === '2026-07'), e => e.cop);
+    const listaMov = conClase(movCard, 'v4-mov-lista');
+    R.check('D7 "Últimos movimientos": "Entraron ' + X.fmt(totMov) + ' en julio" y hasta 16 movimientos, sin tope de alto en linea',
+      textos(movCard).indexOf(X.fmt(totMov)) !== -1 && listaMov.length === 1 && conClase(listaMov[0], 'v4-mv').length === Math.min(16, M.recientes.length) &&
+      !(listaMov[0].props.style && listaMov[0].props.style.maxHeight != null));
+    // Rendimiento: la rentabilidad de la cartera es LA MISMA cifra de la pestaña Rendimiento.
+    const rendCard = conClase(arbol, 'v4-rend')[0];
+    const filasR = X.rdFilas(loans, pays, HOY);
+    const rentR = X.rdPct(suma(filasR, r => r.m.gp.cop) / suma(filasR, r => r.m.orig));
+    const rentV = conClase(rendCard, 'v4-rend-v').map(n => textos(n).join(''))[0];
+    R.eq('D8 la rentabilidad del Resumen = la de Rendimiento (' + rentR + ')', rentV, rentR.replace(' %', '%'));
+    R.check('D8 la caja de los últimos 12 meses: 12 columnas', conClase(rendCard, 'col').length === 12);
+    // Ortografia: con tildes en toda la pestaña. Ningun rotulo vuelve a salir sin ellas.
+    const conTilde = ['Últimos movimientos', 'Próximos 7 días', 'préstamos activos', 'Nuevo préstamo', 'ya volvió', 'Últimos 12 meses', 'Día a día',
+      'Mejor día', 'Lo que vence en el mes frente a lo que ya entró', 'Ganancia histórica', 'rentabilidad de la cartera'];
     R.check('D9 ortografia completa: ' + conTilde.join(' · '),
-      conTilde.every(s => todo.toLowerCase().indexOf(s.toLowerCase()) !== -1), conTilde.filter(s => todo.toLowerCase().indexOf(s.toLowerCase()) === -1));
-    const sinTilde = t.filter(s => /\b(dias|posicion|ultimos|donde esta|proximos|prestamos?|creditos?|interes|historico|unico|dolares|volvio|abono una)\b/i.test(s));
+      conTilde.every(s => todo.indexOf(s) !== -1), conTilde.filter(s => todo.indexOf(s) === -1));
+    const sinTilde = t.filter(s => /\b(dias|posicion|ultimos|donde esta|proximos|prestamos?|creditos?|interes|historico|historica|unico|dolares|volvio|abono una|entro)\b/i.test(s));
     R.check('D9 ningun texto de la vista sale sin tilde', sinTilde.length === 0, sinTilde);
   }
-  // A donde lleva cada cosa: los puntos del dia a Cobros en su tramo, las filas al deudor en Cartera.
+  // A donde lleva cada cosa: las pastillas a Cobros en su tramo, las filas al deudor en Cartera, los
+  // enlaces a Cobros, Historial y Rendimiento, y los botones del encabezado.
   {
-    const navs = [], abre = [];
-    const a = pintar({ type: X.DashView, props: Object.assign({}, props,
-      { onNav: (v, d) => navs.push([v, d]), onNameClick: (n, l, p) => abre.push([n, l, p]) }), children: [] });
-    nodosDe(a, n => n.tag === 'li' && typeof n.props.onClick === 'function').forEach(li => li.props.onClick());
-    R.eq('D3b cada punto del dia lleva a Cobros en su tramo', navs, [['cobros', 'hoy'], ['cobros', 'semana'], ['cobros', 'vencido']]);
-    const filas = nodosDe(a, n => n.tag === 'button' && n.props.className === 'rz-pc-fila');
+    const navs = [], abre = [], nuevos = [];
+    const a = render(Object.assign({}, props,
+      { onNav: (v, d) => navs.push(d === undefined ? [v] : [v, d]), onNameClick: (n, l, p) => abre.push([n, l, p]), onNewLoan: () => nuevos.push(1) }));
+    const conC = c => nodosDe(a, x => x.props && (' ' + (x.props.className || '') + ' ').indexOf(' ' + c + ' ') !== -1);
+    conC('v4-pill').forEach(n => n.props.onClick && n.props.onClick());
+    R.eq('D3b cada pastilla lleva a Cobros en su tramo', navs, [['cobros', 'hoy'], ['cobros', 'semana'], ['cobros', 'vencido']]);
+    navs.length = 0;
+    const conC2 = (n, c) => nodosDe(n, x => x.props && (' ' + (x.props.className || '') + ' ').indexOf(' ' + c + ' ') !== -1);
+    conC('v4-acciones').forEach(n => conC2(n, 'v4-btn').forEach(b => b.props.onClick()));
+    R.check('D3c los botones del encabezado: Calculadora, Cobros y Nuevo préstamo',
+      JSON.stringify(navs) === JSON.stringify([['calculadora'], ['cobros']]) && nuevos.length === 1, { navs, nuevos });
+    navs.length = 0;
+    conC('v4-link').forEach(b => b.props.onClick());
+    conC2(conC('v4-rend')[0], 'v4-btn').forEach(b => b.props.onClick());
+    R.eq('D3d los enlaces: Cobros (en lo vencido), Historial y Ver Rendimiento', navs, [['cobros', 'vencido'], ['historial'], ['rendimiento']]);
+    const filas = conC('v4-fila');
     abre.length = 0; filas[0].props.onClick();
     R.eq('D5b la primera fila de "Para cobrar ya" abre a esa persona en Cartera', abre, [[ya[0].nombre, ya[0].loanId, undefined]]);
-    const fSem = filas[ya.length];
-    abre.length = 0; fSem.props.onClick();
+    abre.length = 0; filas[ya.length].props.onClick();
     R.eq('D5b una fila de "Esta semana" abre ese prestamo con la cuota marcada', abre, [[semana[0].l.nombre, semana[0].l.id, semana[0].p.id]]);
   }
-  // "Para cobrar ya" trae a TODAS las personas en una lista que se desplaza (como la Meta y los
-  // movimientos); "Esta semana" muestra hasta 6 cuotas y anuncia el resto. Construido: el fixture tiene
-  // 5 personas con algo vencido y 2 cuotas en la semana.
+  // "Para cobrar ya" trae a TODAS las personas en una lista que se desplaza; "Esta semana" muestra hasta 6
+  // cuotas y anuncia el resto. Construido: el fixture tiene 5 personas con algo vencido y 2 cuotas en la semana.
   {
     const clon = (f, i, sufijo) => Object.assign({}, f, { l: Object.assign({}, f.l, { nombre: 'Zz ' + sufijo + i, id: 'zz-' + sufijo + i }),
       p: Object.assign({}, f.p, { id: 'zz-' + sufijo + i }) });
     const extraYa = [1, 2, 3].map(i => clon(bandeja.filter(x => x.tramo === 'vencido')[0], i, 'v'));
     const extraSem = [1, 2, 3, 4, 5, 6].map(i => clon(bandeja.filter(x => x.tramo === 'semana')[0], i, 's'));
     const navs = [];
-    const card = pintar({ type: X.RzPorCobrar, props: { filas: bandeja.concat(extraYa, extraSem), hoy: HOY, onNav: (v, d) => navs.push([v, d]), onNameClick: () => {} }, children: [] });
-    const [sec0, sec1] = nodosDe(card, n => n.props && (n.props.className || '').split(' ')[0] === 'rz-pc-sec');
-    const lista = nodosDe(sec0, n => n.props && /\brz-pc-lista\b/.test(n.props.className || ''));
-    R.check('D5c con 8 personas, "Para cobrar ya" las muestra a las 8 dentro de una lista que se desplaza, sin "y N más"',
-      /\bdesplaza\b/.test(sec0.props.className) && lista.length === 1 && /\brz-scroll\b/.test(lista[0].props.className) &&
-      nodosDe(lista[0], n => n.tag === 'button' && n.props.className === 'rz-pc-fila').length === 8 &&
-      nodosDe(sec0, n => n.tag === 'button' && n.props.className === 'rz-pc-mas').length === 0, textos(sec0));
-    R.check('D5c y la lista no lleva tope de alto en linea (lo gobierna styles.css, regla de 3.4.1)',
+    const card = pintar({ type: X.V4PorCobrar, props: { filas: bandeja.concat(extraYa, extraSem), hoy: HOY, onNav: (v, d) => navs.push([v, d]), onNameClick: () => {} }, children: [] });
+    const conCc = (n, c) => nodosDe(n, x => x.props && (' ' + (x.props.className || '') + ' ').indexOf(' ' + c + ' ') !== -1);
+    const [sec0, sec1] = conCc(card, 'v4-pc-sec');
+    const lista = conCc(sec0, 'v4-pc-lista');
+    R.check('D5c con 8 personas, "Para cobrar ya" las muestra a las 8 dentro de la lista que se desplaza, sin "y N más"',
+      /\bdesplaza\b/.test(sec0.props.className) && lista.length === 1 && conCc(lista[0], 'v4-fila').length === 8 && conCc(sec0, 'v4-mas').length === 0, textos(sec0));
+    R.check('D5c y la lista no lleva tope de alto en linea (lo gobierna resumen.css, regla de 3.4.1)',
       lista.length === 1 && !(lista[0].props.style && lista[0].props.style.maxHeight != null));
-    const mas = nodosDe(sec1, n => n.tag === 'button' && n.props.className === 'rz-pc-mas');
+    const mas = conCc(sec1, 'v4-mas');
     R.check('D5c con 8 cuotas en la semana, "Esta semana" muestra 6 y dice "y 2 cuotas más"',
-      nodosDe(sec1, n => n.tag === 'button' && n.props.className === 'rz-pc-fila').length === 6 && mas.length === 1 && textos(mas[0]).join('') === 'y 2 cuotas más →',
-      textos(sec1));
+      conCc(sec1, 'v4-fila').length === 6 && mas.length === 1 && textos(mas[0]).join('') === 'y 2 cuotas más', textos(sec1));
     if (mas[0]) mas[0].props.onClick();
     R.eq('D5c y ese enlace abre Cobros en la semana', navs, [['cobros', 'semana']]);
-    const vacia = pintar({ type: X.RzPorCobrar, props: { filas: [], hoy: HOY, onNav: () => {}, onNameClick: () => {} }, children: [] });
+    const vacia = pintar({ type: X.V4PorCobrar, props: { filas: [], hoy: HOY, onNav: () => {}, onNameClick: () => {} }, children: [] });
     R.check('D5d sin nada por cobrar, las dos listas lo dicen', textos(vacia).join(' ').indexOf('Nada vencido ni nada que venza hoy.') !== -1 &&
       textos(vacia).join(' ').indexOf('Nada vence en los próximos 7 días.') !== -1);
+  }
+  // El movimiento: con la ventana visible las cifras cuentan desde 0 (el efecto las lleva a su valor) y
+  // las tarjetas entran animadas (`anima`); oculta, la cifra final y sin animacion.
+  {
+    X.document.hidden = false;
+    const visible = render();
+    const ceroV = pintar({ type: X.V4Dinero, props: { v: 1234567, animar: true }, children: [] });
+    X.document.hidden = true;
+    const oculta = render();
+    const finalV = pintar({ type: X.V4Dinero, props: { v: 1234567, animar: true }, children: [] });
+    R.check('D10 ventana visible: la vista lleva la clase "anima" y la cifra arranca en 0',
+      /\banima\b/.test(visible.props.className) && textos(ceroV).join('') === '$0', [visible.props.className, textos(ceroV)]);
+    R.check('D10 ventana oculta: sin "anima" y la cifra muestra su valor final',
+      !/\banima\b/.test(oculta.props.className) && textos(finalV).join('') === '$1.234.567', [oculta.props.className, textos(finalV)]);
   }
   // Las otras dos pestañas de la composicion: se siembra su estado (`useState('deudor')`).
   const conPestana = tab => {
@@ -435,25 +499,6 @@ function metricsComoApp(X, loans, pays) {
   try { vacio = pintar({ type: X.DashView, props: Object.assign({}, props, { isEmpty: true, loans: [], pays: [] }), children: [] }); } catch (e) { error = e; }
   R.check('D12 sin prestamos: estado vacio con su llamado a crear el primero',
     !!vacio && textos(vacio).join(' ').indexOf('Tu cartera empieza aquí') !== -1, error && String(error));
-
-  // El enlace del Resumen lleva a Rendimiento.
-  {
-    const navs = [];
-    const arbolNav = pintar({ type: X.DashView, props: Object.assign({}, props, { onNav: (v, d) => navs.push(v) }), children: [] });
-    const enlaces = [];
-    const buscarE = n => { if (Array.isArray(n)) return n.forEach(buscarE); if (!n || !n.kids) return;
-      if (n.props && /\brz-analisis-h\b/.test(n.props.className || '')) enlaces.push(n); n.kids.forEach(buscarE); };
-    buscarE(arbolNav);
-    if (enlaces[0]) enlaces[0].props.onClick();
-    R.check('D16 el enlace "Análisis del negocio" abre Rendimiento', enlaces.length === 1 && navs.join() === 'rendimiento', navs);
-    // Ultimos movimientos comparte fila con Por cobrar y la Meta: su lista llena la tarjeta, sin tope en linea.
-    const movs = [];
-    const buscarM = n => { if (Array.isArray(n)) return n.forEach(buscarM); if (!n || !n.kids) return;
-      if (n.props && /\brz-mov-lista\b/.test(n.props.className || '')) movs.push(n); n.kids.forEach(buscarM); };
-    buscarM(arbolNav);
-    R.check('D17 la lista de Últimos movimientos lleva su clase y ningun tope de alto en linea',
-      movs.length === 1 && !(movs[0].props.style && movs[0].props.style.maxHeight != null), movs.map(m => m.props));
-  }
 
   // ── R — RENDIMIENTO (3.7.0) ───────────────────────────────────────────────
   // Rediseno aprobado por el PO: cuatro cifras, la tabla de prestamos (filtros, orden, clic a Cartera) y
@@ -603,43 +648,68 @@ function metricsComoApp(X, loans, pays) {
   R.check('R11 sin prestamos: un estado vacio, sin excepciones', !!rendVacio && textos(rendVacio).join(' ').indexOf('Todavía no hay préstamos') !== -1, error && String(error));
 
   // ── E — GUARDAS ESTATICAS ─────────────────────────────────────────────────
-  R.seccion('E — el Inicio viejo no deja restos');
+  // El layout no se puede medir en el arnes (no hay motor de CSS): se fijan las reglas que lo sostienen.
+  // Se comparan sin comentarios y sin espacios, para que el formato de la hoja no las rompa.
+  R.seccion('E — las hojas del rediseño v4, el marco y lo que salio del Resumen anterior');
   const leerRepo = p => fs.readFileSync(path.join(REPO, p), 'utf8');
-  const css = leerRepo('public/css/styles.css');
+  const compacto = c => c.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
+  const css = leerRepo('public/css/styles.css'), cssC = compacto(css);
+  const base = compacto(leerRepo('public/css/base.css'));
+  const rz = compacto(leerRepo('public/css/resumen.css'));
   const app = leerRepo('public/js/app.js');
+  const index = leerRepo('public/index.html');
   R.check('E1 SparklineChart ya no existe (solo lo usaba el Inicio viejo)', !fs.existsSync(path.join(REPO, 'public/js/componentes/SparklineChart.js')));
-  R.check('E2 styles.css sin las clases .dash-* y con las .rz-* del Resumen hibrido', !/\.dash-(card|lists|container|list-body)/.test(css) &&
-    /\.rz-card\b/.test(css) && /\.rz-cifras\{/.test(css) && /\.rz-pc-fila\{/.test(css) && /\.rz-puntos\{/.test(css));
-  R.check('E2 y sin los estilos de las piezas que salieron (KPI, agenda, radar)',
-    !/\.rz-(kpis?|kpi-[a-z]+|agenda|agenda-grid|radar|radar-lista|dia|chip|chipm|tabla|minibar|spark|est|filtros?)\b/.test(css),
-    (css.match(/\.rz-(kpis?|kpi-[a-z]+|agenda|agenda-grid|radar|radar-lista|dia|chip|chipm|tabla|minibar|spark|est|filtros?)\b/g) || []).slice(0, 10));
+  R.check('E1 index.html carga styles.css, base.css y resumen.css, en ese orden (cada una gana los empates de la anterior)',
+    /href="\/css\/styles\.css">\s*<link[^>]*href="\/css\/base\.css">\s*<link[^>]*href="\/css\/resumen\.css">/.test(index));
+  // Lo que salio: la version anterior del Resumen. Lo que queda: las tarjetas del analisis, que usa Rendimiento.
+  const VIEJAS = /\.rz(\{|-(hero|puntos|cifras?|cifra-[a-z]+|cobrar|pc-[a-z]+|meta|meta-lista|mov|mov-lista|mov-dia|mv|mv-ico|li|li-[nsv]|lista|fila|filas|ring-wrap|mes-nav|analisis|analisis-[hs]|scroll|saludo|fecha|insight|acciones|btn|link|full)\b)/;
+  R.check('E2 styles.css sin las clases .dash-* ni las del Resumen anterior', !/\.dash-(card|lists|container|list-body)/.test(css) && !VIEJAS.test(cssC),
+    (cssC.match(new RegExp(VIEJAS.source, 'g')) || []).slice(0, 10));
+  R.check('E2 y conserva las del analisis del negocio que importa Rendimiento (tarjeta, segmentado, flujo, composicion)',
+    ['.rz-card{', '.rz-head{', '.rz-seg{', '.rz-chart{', '.rz-tip{', '.rz-resumen-flujo{', '.rz-donut-wrap{', '.rz-leg{', '.rz-nota{'].every(s => cssC.indexOf(s) !== -1));
+  R.check('E2 cada clase rz- que pinta DashView tiene su regla en styles.css (las de Rendimiento incluidas)',
+    (() => { const usadas = Array.from(new Set(leerRepo('public/js/vistas/DashView.js').match(/rz-[a-z0-9-]+/g) || []));
+      return usadas.every(c => cssC.indexOf('.' + c) !== -1); })());
   R.check('E3 la Posicion neta salio: App ya no le pasa las deudas propias al Resumen y la vista no las lee',
     /h\(DashView,\s*\{/.test(app) && !/h\(DashView,\s*\{[^}]*debts/.test(app) && !/debts/.test(leerRepo('public/js/vistas/DashView.js')));
-  // El layout no se puede medir en el arnes (no hay motor de CSS): se fijan las reglas que lo
-  // sostienen. Medido en la app real: a 1.600 px la lista paso de 249 a 326 px y el hueco bajo ella
-  // de 78 a 1 px, sin cambiar el alto de la fila.
-  const reglas = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  R.check('E4 Meta del mes: el cuerpo es una columna flexible y la lista crece hasta el borde',
-    /\.rz-meta > \.rz-body(,[^{]*)?\{[^}]*flex:1 1 auto[^}]*display:flex[^}]*flex-direction:column/.test(reglas) &&
-    /\.rz-meta \.rz-meta-lista\{[^}]*flex:1 1 auto[^}]*max-height:none/.test(reglas));
-  R.check('E4 con lista larga parte de 0 con el minimo de antes (250 px) y sola en su fila vuelve a un tope',
-    /\.rz-meta \.rz-meta-lista\.larga\{[^}]*flex-basis:0[^}]*min-height:250px/.test(reglas) &&
-    /@media \(max-width:1180px\)\{\s*\.rz-meta \.rz-meta-lista,\.rz-meta \.rz-meta-lista\.larga\{[^}]*max-height:360px/.test(reglas));
-  R.check('E5 "Para cobrar ya" llena la tarjeta: parte de 0 con minimo 250 px; a lo ancho, tope de 320 px',
-    /\.rz-cobrar > \.rz-body\{[^}]*flex:1 1 auto[^}]*display:flex[^}]*flex-direction:column/.test(reglas) &&
-    /\.rz-pc-sec\.desplaza\{flex:1 1 auto;display:flex;flex-direction:column;min-height:0\}/.test(reglas) &&
-    /\.rz-cobrar \.rz-pc-lista\{flex:1 1 0;min-height:250px;max-height:none\}/.test(reglas) &&
-    /@media \(max-width:1439px\)\{\s*\.rz-cobrar \.rz-pc-lista\{flex:0 1 auto;min-height:0;max-height:320px\}/.test(reglas));
-  R.check('E5 la fila de tres (3.7.1): Por cobrar 5 + Meta 4 + movimientos 3 columnas',
-    /\.rz-cobrar\{grid-column:span 5\}\s*\.rz-meta\{grid-column:span 4\}\s*\.rz-mov\{grid-column:span 3\}/.test(reglas));
-  R.check('E5 a 1.439 px o menos, Por cobrar a lo ancho con sus dos listas lado a lado, y Meta y movimientos mitad y mitad',
-    /@media \(max-width:1439px\)\{\s*\.rz-cobrar\{grid-column:1 \/ -1\}\s*\.rz-meta,\.rz-mov\{grid-column:span 6\}/.test(reglas) &&
-    /@media \(max-width:1439px\)\{[^@]*\.rz-pc-secciones\{display:grid;grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/.test(reglas));
-  R.check('E6 Ultimos movimientos (3.7.0): cuerpo flexible y lista que parte de 0 con minimo 240 px; sola en su fila, tope de 360 px',
-    /\.rz-mov > \.rz-body[,{][^}]*flex:1 1 auto[^}]*display:flex/.test(reglas) &&
-    /\.rz-mov \.rz-mov-lista\{flex:1 1 0;min-height:240px;max-height:none\}/.test(reglas) &&
-    /@media \(max-width:1180px\)\{[^@]*\.rz-mov \.rz-mov-lista\{[^}]*max-height:360px/.test(reglas));
+  // La fila de tres tarjetas y sus listas (regla de 3.4.1: las listas parten de 0 con un minimo y llenan la tarjeta).
+  R.check('E4 la fila de tres: Por cobrar 5 + Meta 4 + movimientos 3 columnas de la rejilla de 12',
+    rz.indexOf('.v4{display:grid;grid-template-columns:repeat(12,minmax(0,1fr))') !== -1 &&
+    rz.indexOf('.v4-cobrar{grid-column:span5;}.v4-meta{grid-column:span4;}.v4-mov{grid-column:span3;}') !== -1);
+  R.check('E4 las listas llenan su tarjeta: parten de 0 con un minimo (250 / 150 / 250 px)',
+    rz.indexOf('.v4-pc-lista{flex:110;min-height:250px;}') !== -1 && rz.indexOf('.v4-meta-lista{flex:110;min-height:150px;}') !== -1 &&
+    rz.indexOf('.v4-mov-lista{flex:110;min-height:250px;}') !== -1);
+  R.check('E4 a 1.439 px o menos, Por cobrar a lo ancho con sus dos listas lado a lado y tope de 320 px; Meta y movimientos mitad y mitad',
+    /@media\(max-width:1439px\)\{\.v4-cobrar\{grid-column:1\/-1;\}\.v4-cobrar\.v4-pc\{flex-direction:row;[^}]*\}\.v4-cobrar\.v4-pc-sec\{flex:110;\}\.v4-cobrar\.v4-pc-lista\{max-height:320px;\}\.v4-meta,\.v4-mov\{grid-column:span6;\}/.test(rz));
+  R.check('E4 a 1.180 px o menos, todo apilado y las listas con tope de 360 px',
+    /@media\(max-width:1180px\)\{[^@]*\.v4-meta,\.v4-mov\{grid-column:1\/-1;\}\.v4-meta-lista,\.v4-mov-lista\{max-height:360px;\}/.test(rz));
+  R.check('E4 "reducir movimiento" del sistema apaga las animaciones del Resumen',
+    rz.indexOf('@media(prefers-reduced-motion:reduce){.v4*,.v4*::after,.v4*::before{animation:none!important;transition:none!important;}}') !== -1);
+  // La base global: la paleta de Control TC, los tokens viejos re-mapeados, Inter local y la pildora.
+  R.check('E5 base.css: negro real y blanco perla, y los tokens de siempre re-mapeados a la paleta nueva',
+    base.indexOf('--page:#000000;') !== -1 && base.indexOf('--page:#f6f6f3;') !== -1 &&
+    ['--bg:var(--page)', '--bg2:var(--surface)', '--text:var(--ink)', '--green:var(--good-text)', '--red:var(--crit-text)', '--blue:var(--accent)'].every(s => base.split(s).length === 3));
+  const fuentes = (leerRepo('public/css/base.css').match(/url\((\/fonts\/[^)]+)\)/g) || []).map(u => u.slice(4, -1));
+  R.check('E5 Inter se sirve desde public/fonts (las dos fuentes existen) con su licencia OFL',
+    fuentes.length === 2 && fuentes.every(f => fs.existsSync(path.join(REPO, 'public', f))) && fs.existsSync(path.join(REPO, 'public/fonts/Inter-OFL.txt')), fuentes);
+  R.check('E5 la barra de desplazamiento es una pildora, y nadie la devuelve a la del sistema (scrollbar-* a auto con !important)',
+    base.indexOf('::-webkit-scrollbar-thumb{background-color:var(--scroll);background-clip:padding-box;border:3pxsolidtransparent;border-radius:999px;') !== -1 &&
+    base.indexOf('@supportsselector(::-webkit-scrollbar){*,*::before,*::after{scrollbar-width:auto!important;scrollbar-color:auto!important;}}') !== -1);
+  // El marco: toda clase que app.js le pone al menu y al encabezado tiene su regla en base.css.
+  const marco = ['sidebar-marca', 'sidebar-nombre', 'sidebar-activos', 'nav-grupo', 'nav-seccion', 'nav-sep', 'mh-menu', 'mh-titulo', 'mh-acciones', 'mh-badge', 'mh-btn'];
+  R.check('E6 el menu y el encabezado de app.js llevan sus clases y cada una tiene su regla en base.css',
+    marco.every(c => app.indexOf("'" + c) !== -1 && base.indexOf('.' + c) !== -1), marco.filter(c => app.indexOf("'" + c) === -1 || base.indexOf('.' + c) === -1));
+  R.check('E6 el marco ya no pinta colores en linea (los iconos toman el color de su boton)',
+    !/sidebar-header[\s\S]{0,400}color:'var\(--green\)'/.test(app) && !/className:'nav-item'[^\n]*\n[^\n]*color:view===id/.test(app));
+  // Compatibilidad: el panel del deudor (Cobros y Cartera, sin rediseñar) se pega bajo el encabezado nuevo.
+  const pad = (base.match(/\.main-content\{padding:(\d+)px/) || [])[1], alto = (base.match(/\.main-header\{height:(\d+)px/) || [])[1];
+  R.check('E7 el panel del deudor se ajusta al marco nuevo: sube lo que mide el relleno (' + pad + ' px) y ocupa el alto bajo el encabezado (' + alto + ' px)',
+    !!pad && !!alto && base.indexOf('.op-lado:not(.superpuesto){top:-' + pad + 'px;max-height:calc(100vh-' + alto + 'px);}') !== -1, { pad, alto });
   R.check('E7 App le pasa a Rendimiento la navegacion a Cartera', /h\(PortfolioView,\{[^}]*onNameClick:openDebtorByName/.test(app));
+  R.check('E8 la ventana principal nace con el fondo del tema oscuro (#000000), sin el azul de antes',
+    /async function createWindow\(\)\s*\{[\s\S]{0,300}backgroundColor:\s*'#000000'/.test(leerRepo('desktop/main.js')));
+  R.check('E9 nada del prototipo en produccion (ni ?anim=1 ni el chip de prototipo)',
+    ['__V4_FORZAR_MOV', 'v4-forzar', 'proto-chip'].every(s => [leerRepo('public/js/vistas/DashView.js'), leerRepo('public/css/base.css'), leerRepo('public/css/resumen.css')].every(f => f.indexOf(s) === -1)));
 
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

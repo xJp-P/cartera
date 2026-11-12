@@ -1,21 +1,20 @@
 // public/js/vistas/DashView.js — Resumen: el centro de mando de la cartera.
 //
-// 3.4.0 reemplazo al Inicio de cuatro tarjetas fijas (v1.9.1) por una rejilla de 12 columnas que llena
-// todo el ancho. 3.7.0 (decision del PO): el "Analisis del negocio" -flujo de caja y composicion del
-// capital- se MUDO a Rendimiento, que los importa de aqui (`RzFlujo`, `RzComposicion`, `modeloResumen`).
-// 3.7.1: el Resumen HIBRIDO que el PO aprobo sobre el prototipo, tal cual:
-//   1. la bienvenida (fecha, saludo, acciones) con el dia en TRES puntos que llevan a Cobros;
-//   2. tres cifras en una franja: en la calle, cobrado en el mes, ganancia del mes;
-//   3. tres tarjetas de la MISMA altura, de izquierda a derecha: Por cobrar (lo vencido y lo de hoy,
-//      una fila por persona, y lo de esta semana) · Meta del mes · Ultimos movimientos;
-//   4. el enlace al analisis, en Rendimiento.
-// Salieron la Agenda de cobro, el Radar y los KPI "En mora" y "Posicion neta" de 3.4.0: el modelo los
-// reemplaza por los puntos del encabezado y "Por cobrar".
+// Historia: 3.4.0 reemplazo al Inicio de cuatro tarjetas por una rejilla de 12 columnas; 3.7.0 (decision
+// del PO) mudo el "Analisis del negocio" -flujo de caja y composicion del capital- a Rendimiento, que lo
+// importa de aqui (`RzFlujo`, `RzComposicion`, `modeloResumen`); 3.7.1 fue el Resumen hibrido.
 //
-// Todas las cifras salen de los helpers del dominio (cobrosDe, imputarCobros, gananciaDe,
-// pendCuota, estadoDiario): ninguna formula nueva de dinero. Los estilos viven en styles.css
-// (prefijo `.rz-`). Los nombres de nivel superior llevan prefijo rz/Rz/RZ_ porque el arnes de
-// pruebas aplana todos los modulos en un solo ambito y un nombre repetido lo romperia.
+// REDISEÑO v4 (aprobado por el PO sobre el prototipo, integrado pestaña por pestaña): el sistema de
+// diseño de Control TC v7 (paleta, Inter, tarjetas, chips, pastillas, cifras con el "$" pequeño y
+// entradas animadas). Las piezas estan en el bloque "EL RESUMEN v4", mas abajo; sus estilos, en
+// public/css/resumen.css (`.v4-*`), sobre la base global de public/css/base.css.
+//
+// Todas las cifras salen de los helpers del dominio (cobrosDe, imputarCobros, gananciaDe, pendCuota,
+// estadoDiario) agregados en `modeloResumen`, `rzMetaDelMes` y `rzParaCobrar`: ninguna formula nueva de
+// dinero. Lo unico nuevo del rediseño es la COMPARACION con el mismo tramo del mes anterior (los mismos
+// eventos de caja y de ganancia, filtrados del dia 1 al de hoy del mes pasado) y la rentabilidad de la
+// cartera, que es la cifra de Rendimiento. Los nombres de nivel superior llevan prefijo rz/Rz/RZ_/v4/V4
+// porque el arnes de pruebas aplana todos los modulos en un solo ambito y un nombre repetido lo romperia.
 
 import { Ico } from '../componentes/iconos.js';
 import { cobrosDe, imputarCobros, pendCuota, esDiario, estadoDiario, gananciaDe, diasEntre } from '../core/dominio.js';
@@ -148,67 +147,9 @@ function RzSeg(p){
   }));
 }
 
-// ── 1. ENCABEZADO: la fecha, el saludo, el dia en tres puntos y las acciones ─────
-// Cada punto que tiene algo lleva a Cobros en su tramo (hoy, la semana, lo vencido).
-function RzHero(p){
-  var M = p.M, met = p.metrics, hoy = p.hoy, d = rzFecha(hoy), hr = new Date().getHours();
-  var hoyCuotas = met.hoy || [], mora = met.mora || [];
-  var totHoy = hoyCuotas.reduce(function(s, x){ return s + pendCuota(x); }, 0);
-  var semana = (met.proximos || []).reduce(function(s, x){ return s + pendCuota(x); }, 0);
-  function punto(color, contenido, ir){
-    return h('li', { className: ir ? 'ir' : null, onClick: ir || null, title: ir ? 'Ver en Cobros' : null },
-      h('i', { style: { background: color } }), h('span', null, contenido));
-  }
-  function btn(ico, txt, fn, pri){ return h('button', { className: 'rz-btn' + (pri ? ' pri' : ''), onClick: fn }, h(Ico, { name: ico, size: 15, color: pri ? '#fff' : 'var(--text2)', sw: 2.3 }), txt); }
-  return h('div', { className: 'rz-card rz-full rz-hero' },
-    h('div', { style: { minWidth: 0, flex: '1 1 420px' } },
-      h('div', { className: 'rz-fecha' }, RZ_DIAS[d.getDay()] + ' ' + d.getDate() + ' de ' + RZ_MESES[d.getMonth()]),
-      h('div', { className: 'rz-saludo' }, hr < 12 ? 'Buenos días' : hr < 19 ? 'Buenas tardes' : 'Buenas noches'),
-      h('ul', { className: 'rz-puntos' },
-        hoyCuotas.length
-          ? punto('var(--yellow)', ['Hoy vencen ', h('b', { key: 'a', className: 'y' }, rzPl(hoyCuotas.length, 'cuota')), ' por ', h('b', { key: 'b' }, fmt(totHoy)), '.'],
-              function(){ p.onNav('cobros', 'hoy'); })
-          : punto('var(--text3)', 'Hoy no vence ninguna cuota.'),
-        semana > 0
-          ? punto('var(--blue)', ['En los próximos 7 días entran ', h('b', { key: 'a' }, fmt(semana)), '.'], function(){ p.onNav('cobros', 'semana'); })
-          : punto('var(--text3)', 'En los próximos 7 días no vence ninguna cuota.'),
-        mora.length
-          ? punto('var(--red)', ['Tienes ', h('b', { key: 'a', className: 'r' }, fmt(met.totalMora) + ' vencidos'), ' en ' + rzPl(mora.length, 'cuota') + ' de ' +
-              rzPl(M.deudoresMora, 'deudor', 'deudores') + '.'], function(){ p.onNav('cobros', 'vencido'); })
-          : punto('var(--green)', h('b', { className: 'g' }, 'Toda la cartera está al día.')))),
-    h('div', { className: 'rz-acciones' },
-      btn('plus', 'Nuevo préstamo', p.onNewLoan, true),
-      btn('dollar', 'Cobros', function(){ p.onNav('cobros'); }),
-      btn('users', 'Cartera', function(){ p.onNav('cartera'); }),
-      btn('calc', 'Calculadora', function(){ p.onNav('calculadora'); })));
-}
-
-// ── 2. TRES CIFRAS, en una sola franja ──────────────────────────────────────────
-function RzCifras(p){
-  var M = p.M, mesNom = rzMesDe(rzYm(p.hoy));
-  var pctRec = M.prestado > 0 ? Math.round((1 - M.vivo / M.prestado) * 100) : 0;
-  return h('div', { className: 'rz-full rz-cifras' },
-    h('div', { className: 'rz-cifra' },
-      h('div', { className: 'rz-cifra-l' }, 'En la calle'),
-      h('div', { className: 'rz-cifra-v' }, fmt(M.vivo)),
-      h('div', { className: 'rz-cifra-barra' }, h('div', { style: { width: Math.max(0, Math.min(100, pctRec)) + '%' } })),
-      h('div', { className: 'rz-cifra-s' }, pctRec + '% de lo prestado ya volvió')),
-    h('div', { className: 'rz-cifra' },
-      h('div', { className: 'rz-cifra-l' }, 'Cobrado en ' + mesNom),
-      h('div', { className: 'rz-cifra-v' }, fmt(p.metrics.recibido)),
-      h('div', { className: 'rz-cifra-s' }, 'Toda la caja del mes: cuotas, parciales y abonos')),
-    h('div', { className: 'rz-cifra' },
-      h('div', { className: 'rz-cifra-l' }, 'Ganancia de ' + mesNom),
-      h('div', { className: 'rz-cifra-v g' }, fmt(M.gananciaMes)),
-      h('div', { className: 'rz-cifra-s' }, 'Últimos 12 meses: ', h('b', null, fmt(M.ganancia12)))));
-}
-
-// ── 3. POR COBRAR: lo vencido y lo de hoy, y lo que entra esta semana ──────────────
-// Sale de `bandejaCobro` (la de Cobros): cuotas del cronograma de prestamos activos, sin pagar, con
-// lo que falta de cada una (`pendCuota`). "Para cobrar ya" trae a TODAS las personas en una lista que
-// se desplaza y llena el alto de la tarjeta, como la Meta y los movimientos (`.rz-pc-lista`, sin tope en
-// linea: regla de 3.4.1). "Esta semana" muestra hasta RZ_PC_MAX cuotas y anuncia el resto, que se abre
-// en Cobros.
+// ── POR COBRAR: lo vencido y lo de hoy, y lo que entra esta semana ───────────────
+// Sale de `bandejaCobro` (la de Cobros): cuotas del cronograma de prestamos activos, sin pagar, con lo
+// que falta de cada una (`pendCuota`). "Esta semana" muestra hasta RZ_PC_MAX cuotas y anuncia el resto.
 var RZ_PC_MAX = 6;
 // "Para cobrar ya": lo vencido y lo de hoy, UNA fila por persona, la mora mas vieja primero.
 function rzParaCobrar(filas, hoy){
@@ -224,68 +165,8 @@ function rzParaCobrar(filas, hoy){
   return Object.keys(por).map(function(k){ var g = por[k]; g.dias = g.vieja ? diasEntre(g.vieja, hoy) : 0; return g; })
     .sort(function(a, b){ return b.dias - a.dias || b.total - a.total; });
 }
-function RzPcFila(p){
-  return h('button', { className: 'rz-pc-fila', onClick: p.onClick },
-    h('span', { className: 'rz-pc-av ' + (p.tono || '') }, p.av),
-    h('span', { className: 'rz-pc-c' },
-      h('span', { className: 'rz-pc-nom' }, p.nombre),
-      h('span', { className: 'rz-pc-det' + (p.detTono ? ' ' + p.detTono : '') }, p.detalle)),
-    h('span', { className: 'rz-pc-monto' }, p.monto, p.usd && usdLinea(p.usd, null, 'span')));
-}
-function RzPcSeccion(p){
-  return h('div', { className: 'rz-pc-sec' + (p.desplaza ? ' desplaza' : '') },
-    h('div', { className: 'rz-pc-sec-h' },
-      h('span', { className: 'rz-pc-sec-t' }, h('i', { style: { background: p.color } }), p.titulo),
-      p.total != null && h('b', { className: 'rz-pc-sec-tot' }, p.total)),
-    !p.filas.length ? h('div', { className: 'rz-pc-vacio' }, h(Ico, { name: 'check', size: 15, color: 'var(--green)', sw: 2.4 }), p.vacio)
-      : p.desplaza ? h('div', { className: 'rz-scroll rz-pc-lista' }, p.filas) : p.filas,
-    p.mas && h('button', { className: 'rz-pc-mas', onClick: p.onMas }, p.mas, ' →'));
-}
-function RzPorCobrar(p){
-  var filas = p.filas, hoy = p.hoy, onNav = p.onNav, onNameClick = p.onNameClick;
-  var ya = rzParaCobrar(filas, hoy);
-  var vencidas = filas.filter(function(f){ return f.tramo === 'vencido'; });
-  var totYa = ya.reduce(function(s, g){ return s + g.total; }, 0);
-  var filasYa = ya.map(function(g){
-    var det = g.venc
-      ? rzPl(g.venc, 'cuota vencida', 'cuotas vencidas') + ' · hace ' + rzPl(g.dias, 'día') + (g.hoyN ? ' · y ' + rzPl(g.hoyN, 'vence', 'vencen') + ' hoy' : '')
-      : (g.hoyN > 1 ? g.hoyN + ' cuotas vencen hoy' : 'vence hoy');
-    return h(RzPcFila, { key: g.nombre, av: opIniciales(g.nombre), tono: g.venc ? 'r' : 'y', nombre: properCase(g.nombre),
-      detalle: det, detTono: g.venc ? 'r' : 'y', monto: fmt(g.total), usd: g.todoUSD && g.usd ? fmtUSD(g.usd) : null,
-      onClick: function(){ onNameClick(g.nombre, g.loanId); } });
-  });
-  var semana = filas.filter(function(f){ return f.tramo === 'semana'; });
-  var totSemana = semana.reduce(function(s, f){ return s + f.pend; }, 0);
-  var filasSem = semana.slice(0, RZ_PC_MAX).map(function(f){
-    var d = rzFecha(f.p.fechaPago);
-    return h(RzPcFila, { key: f.p.id, av: h('span', { className: 'rz-pc-dia' }, h('b', null, d.getDate()), RZ_DIAS[d.getDay()].slice(0, 3)),
-      tono: 'd', nombre: properCase(f.l.nombre), detalle: 'cuota ' + f.p.cuotaN + (f.p.partialPaid > 0 ? ' · ya abonó una parte' : ''),
-      monto: fmt(f.pend), usd: f.l.moneda === 'USD' && f.l.trmAcordada > 0 ? fmtUSD(f.pend / f.l.trmAcordada) : null,
-      onClick: function(){ onNameClick(f.l.nombre, f.l.id, f.p.id); } });
-  });
-  return h(RzCard, { className: 'rz-cobrar', icono: 'calendar', color: 'var(--blue)', titulo: 'Por cobrar',
-      sub: 'Lo vencido y lo de hoy, y lo que entra esta semana',
-      acciones: h('button', { className: 'rz-link', onClick: function(){ onNav('cobros', vencidas.length ? 'vencido' : null); } }, 'Cobros →') },
-    h('div', { className: 'rz-pc-secciones' },
-      h(RzPcSeccion, { color: vencidas.length ? 'var(--red)' : 'var(--yellow)', titulo: 'Para cobrar ya', total: ya.length ? fmt(totYa) : null,
-        filas: filasYa, vacio: 'Nada vencido ni nada que venza hoy.', desplaza: true }),
-      h(RzPcSeccion, { color: 'var(--blue)', titulo: 'Esta semana', total: semana.length ? fmt(totSemana) : null,
-        filas: filasSem, vacio: 'Nada vence en los próximos 7 días.',
-        mas: semana.length > RZ_PC_MAX ? 'y ' + rzPl(semana.length - RZ_PC_MAX, 'cuota') + ' más' : null,
-        onMas: function(){ onNav('cobros', 'semana'); } })));
-}
 
-// ── 4. META DEL MES: cuanto de lo que vence en el mes ya entro ────────────────────
-function RzAnillo(p){
-  var r = 54, c = 2 * Math.PI * r, pct = Math.max(0, p.pct || 0), lleno = Math.min(pct, 100) / 100 * c;
-  var col = pct > 100 ? 'var(--gold)' : 'var(--green)';
-  return h('svg', { width: 140, height: 140, viewBox: '0 0 140 140', style: { flexShrink: 0 } },
-    h('circle', { cx: 70, cy: 70, r: r, style: { fill: 'none', stroke: 'var(--bg4)', strokeWidth: 12 } }),
-    h('circle', { cx: 70, cy: 70, r: r, transform: 'rotate(-90 70 70)', strokeDasharray: lleno + ' ' + c,
-      style: { fill: 'none', stroke: col, strokeWidth: 12, strokeLinecap: 'round', transition: 'stroke-dasharray .6s ease' } }),
-    h('text', { x: 70, y: 70, textAnchor: 'middle', style: { fontSize: 27, fontWeight: 700, fill: 'var(--text)', fontFamily: "'Cascadia Code','Consolas',monospace" } }, p.txt),
-    h('text', { x: 70, y: 90, textAnchor: 'middle', style: { fontSize: 11, fill: 'var(--text3)' } }, p.sub));
-}
+// ── META DEL MES ─────────────────────────────────────────────────────────────────
 // La meta de un mes: lo que VENCE en el mes frente a lo que ya entro (regla "Recaudo del mes",
 // v1.9.2). Solo cuotas del cronograma (`esCuotaRegular`): ni abonos ni CORTES de interes diario.
 // Hasta 3.3.0 la tarjeta del Inicio excluia solo los abonos, asi que un corte —un evento ya
@@ -305,41 +186,9 @@ function rzMetaDelMes(pays, mes){
   return { esperado: esperado, cobrado: aTiempo + parciales, moraRec: moraRec, pend: pend,
     falta: pend.reduce(function(s, x){ return s + pendCuota(x); }, 0) };
 }
-function RzMetaMes(p){
-  var _m = useState(rzYm(p.hoy)); var mes = _m[0], setMes = _m[1];
-  var M = p.M;
-  var r = useMemo(function(){ return rzMetaDelMes(p.pays, mes); }, [p.pays, mes]);
-  var recibido = r.cobrado + r.moraRec;
-  var pct = r.esperado > 0 ? Math.round(recibido / r.esperado * 100) : null;
-  return h(RzCard, { className: 'rz-meta', icono: 'shield', color: 'var(--green)', titulo: 'Meta del mes', sub: 'Lo que vence en el mes frente a lo que ya entró',
-      acciones: h('div', { className: 'rz-mes-nav' },
-        h('button', { onClick: function(){ setMes(rzMesMover(mes, -1)); }, title: 'Mes anterior' }, h(Ico, { name: 'chevleft', size: 14, color: 'var(--blue)', sw: 2.5 })),
-        h('span', null, rzMesDe(mes) + ' ' + mes.slice(0, 4)),
-        h('button', { onClick: function(){ setMes(rzMesMover(mes, 1)); }, title: 'Mes siguiente' }, h(Ico, { name: 'chevright', size: 14, color: 'var(--blue)', sw: 2.5 }))) },
-    h('div', { className: 'rz-ring-wrap' },
-      h(RzAnillo, { pct: pct || 0, txt: pct == null ? '—' : pct + '%', sub: pct > 100 ? 'meta superada' : 'de la meta' }),
-      h('div', { className: 'rz-filas' },
-        h('div', { className: 'rz-fila' }, h('span', null, h('i', { className: 'rz-dot', style: { background: 'var(--text3)' } }), 'Meta (vence en el mes)'), h('b', null, fmt(r.esperado))),
-        h('div', { className: 'rz-fila' }, h('span', null, h('i', { className: 'rz-dot', style: { background: 'var(--green)' } }), 'Cobrado del mes'), h('b', { style: { color: 'var(--green)' } }, fmt(r.cobrado))),
-        r.moraRec > 0 && h('div', { className: 'rz-fila' }, h('span', null, h('i', { className: 'rz-dot', style: { background: 'var(--gold)' } }), 'Mora recuperada'), h('b', { style: { color: 'var(--gold)' } }, fmt(r.moraRec))),
-        h('div', { className: 'rz-fila' }, h('span', null, h('i', { className: 'rz-dot', style: { background: 'var(--yellow)' } }), 'Falta por cobrar'), h('b', null, fmt(r.falta))))),
-    // Sin tope en linea: la lista llena el alto que la rejilla le da a la tarjeta (styles.css,
-    // `.rz-meta-lista`). Mas de 4 cuotas ya no caben en 250 px: `larga` fija ese minimo.
-    r.pend.length > 0 && h('div', { className: 'rz-lista rz-scroll rz-meta-lista' + (r.pend.length > 4 ? ' larga' : '') },
-      r.pend.map(function(x){
-        var l = M.loanMap[x.prestamoId], mora = x.estadoPago === 'En Mora';
-        return h('div', { key: x.id, className: 'rz-li', onClick: function(){ p.onNameClick(x.nombreCliente); } },
-          h('div', { style: { minWidth: 0 } },
-            h('div', { className: 'rz-li-n' }, properCase(x.nombreCliente)),
-            h('div', { className: 'rz-li-s', style: mora ? { color: 'var(--red)' } : null }, 'Cuota ' + x.cuotaN + ' · ' + (mora ? 'vencida ' : 'vence ') + rzRel(p.hoy, x.fechaPago))),
-          h('div', null,
-            h('div', { className: 'rz-li-v', style: { color: mora ? 'var(--red)' : 'var(--text)' } }, fmt(pendCuota(x))),
-            rzUsd(l, pendCuota(x)) && usdLinea(rzUsd(l, pendCuota(x)),{fontSize: 10.5, textAlign: 'right'})));
-      })),
-    r.pend.length === 0 && r.esperado > 0 && h('div', { className: 'rz-nota', style: { color: 'var(--green)' } }, 'Todas las cuotas de ' + rzMesDe(mes) + ' están cobradas.'));
-}
 
-// ── 5. FLUJO DE CAJA: 12 meses de historia + 3 de proyeccion ─────────────────────
+// ── ANALISIS DEL NEGOCIO (vive en Rendimiento desde 3.7.0, que lo importa de aqui) ──────
+// 1. FLUJO DE CAJA: 12 meses de historia + 3 de proyeccion
 function rzTopeEje(max){
   if (max <= 0) return 1;
   var p = Math.pow(10, Math.floor(Math.log10(max))), steps = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
@@ -427,7 +276,7 @@ export function RzFlujo(p){
       : h('span', null, h('i', { style: { background: 'var(--gold)' } }), 'Ganancia real (intereses netos de pérdida cambiaria)')));
 }
 
-// ── 6. COMPOSICION: donde esta el capital ────────────────────────────────────────
+// 2. COMPOSICION: donde esta el capital
 export function RzComposicion(p){
   var _t = useState('deudor'); var tab = _t[0], setTab = _t[1];
   var _s = useState(null); var sel = _s[0], setSel = _s[1];
@@ -474,36 +323,332 @@ export function RzComposicion(p){
     nota);
 }
 
-// ── 8. MOVIMIENTOS: la caja mas reciente, agrupada por dia ───────────────────────
-function RzMovimientos(p){
+// ═════════════════════════════════════════════════════════════════════════════════
+// EL RESUMEN v4 — el rediseño que aprobo el PO sobre el prototipo (estilos en resumen.css, `.v4-*`)
+// ═════════════════════════════════════════════════════════════════════════════════
+// Piezas, de arriba abajo:
+//   1. Encabezado: el estado de la cartera, la fecha, el saludo, las acciones y el dia en tres
+//      pastillas que llevan a Cobros en su tramo (hoy, los proximos 7 dias, lo vencido).
+//   2. Tres cifras con su mini-grafico: en la calle (anillo de lo que ya volvio), cobrado en el mes
+//      (barras dia a dia) y ganancia del mes (barras de 12 meses); las dos ultimas, comparadas con el
+//      mismo tramo del mes anterior.
+//   3. Por cobrar (5) · Meta del mes (4) · Ultimos movimientos (3), a la misma altura.
+//   4. Rendimiento: la rentabilidad de la cartera (la MISMA cifra de la pestaña Rendimiento: ganancia
+//      historica / capital prestado) y la caja de los ultimos 12 meses.
+
+function v4Pct(x){ return (Math.round(x * 10) / 10).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %'; }
+// Respeta "reducir movimiento" del sistema (en Windows, los efectos de animacion apagados).
+var v4Reduce = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Una cifra en pesos con el "$" pequeno y atenuado. Cuenta desde 0 al montarse (900 ms, ease-out) y,
+// cuando cambia, desde el valor anterior. Solo anima si el navegador pinta cuadros: con la ventana
+// oculta requestAnimationFrame no corre y la cifra muestra su valor final, no un cero.
+function v4PuedeAnimar(){ return !v4Reduce && typeof document !== 'undefined' && !document.hidden; }
+function V4Dinero(p){
+  var v = Math.round(p.v || 0);
+  var animar = p.animar && v4PuedeAnimar();
+  var _c = useState(animar ? 0 : v); var cur = _c[0], setCur = _c[1];
+  var desde = useRef(animar ? 0 : v);
+  useEffect(function(){
+    var from = desde.current; desde.current = v;
+    if (from === v || !v4PuedeAnimar()) { setCur(v); return; }
+    var raf, t0 = null;
+    function paso(t){
+      if (t0 === null) t0 = t;
+      var k = Math.min(1, (t - t0) / 900), e = 1 - Math.pow(1 - k, 3);
+      setCur(Math.round(from + (v - from) * e));
+      if (k < 1) raf = requestAnimationFrame(paso);
+    }
+    raf = requestAnimationFrame(paso);
+    return function(){ cancelAnimationFrame(raf); setCur(v); };
+  }, [v]);
+  var txt = fmt(cur).replace(/^-?\$\s*/, '');
+  return h('span', { className: 'v4-dinero' + (p.className ? ' ' + p.className : '') }, h('span', { className: 'cur' }, '$'), txt);
+}
+
+function V4Chip(p){
+  return h('span', { className: 'v4-chip ' + (p.tono || 'neutral'), title: p.title || null },
+    p.icono && h(Ico, { name: p.icono, size: 12, sw: 2.4 }), p.children);
+}
+// Variacion frente al mismo tramo del mes anterior. Sin base (mes pasado en cero) no se inventa un %.
+function V4Delta(p){
+  if (!(p.antes > 0)) return h(V4Chip, { tono: 'neutral' }, 'nuevo este mes');
+  var d = (p.ahora - p.antes) / p.antes * 100;
+  var sube = d >= 0;
+  return h(V4Chip, { tono: sube ? 'good' : 'crit', title: 'Frente a ' + p.etiqueta + ': ' + fmt(p.antes) },
+    h('span', { className: 'flecha' }, sube ? '↗' : '↘'), (sube ? '+' : '') + Math.round(d) + ' %');
+}
+
+// ── 1. ENCABEZADO ────────────────────────────────────────────────────────────────
+function V4Head(p){
+  var M = p.M, met = p.metrics, d = rzFecha(p.hoy), hr = new Date().getHours();
+  var hoyCuotas = met.hoy || [], mora = met.mora || [];
+  var totHoy = hoyCuotas.reduce(function(s, x){ return s + pendCuota(x); }, 0);
+  var semana = (met.proximos || []).reduce(function(s, x){ return s + pendCuota(x); }, 0);
+  function pastilla(key, tono, rot, valor, detalle, ir){
+    return h('button', { key: key, className: 'v4-pill ' + tono + (ir ? '' : ' quieta'), onClick: ir || null, title: ir ? 'Ver en Cobros' : null, style: { '--i': key } },
+      h('span', { className: 'dot' }),
+      h('span', { className: 'rot' }, rot),
+      valor && h('b', null, valor),
+      detalle && h('span', { className: 'det' }, detalle),
+      ir && h(Ico, { name: 'chevright', size: 14, sw: 2.2 }));
+  }
+  return h('div', { className: 'v4-head' },
+    h('div', { className: 'v4-head-top' },
+      h('div', { className: 'v4-estado' },
+        mora.length
+          ? h(V4Chip, { tono: 'crit' }, h('span', { className: 'pulso' }), rzPl(M.deudoresMora, 'deudor', 'deudores') + ' en mora')
+          : h(V4Chip, { tono: 'good' }, h('span', { className: 'pulso' }), 'Cartera al día'),
+        h('span', { className: 'v4-fecha' }, RZ_DIAS[d.getDay()] + ' ' + d.getDate() + ' de ' + RZ_MESES[d.getMonth()] + ' · ' + rzPl(M.activos.length, 'préstamo activo', 'préstamos activos'))),
+      h('div', { className: 'v4-acciones' },
+        h('button', { className: 'v4-btn ghost', onClick: function(){ p.onNav('calculadora'); } }, h(Ico, { name: 'calc', size: 15, sw: 2 }), 'Calculadora'),
+        h('button', { className: 'v4-btn ghost', onClick: function(){ p.onNav('cobros'); } }, h(Ico, { name: 'dollar', size: 15, sw: 2 }), 'Cobros'),
+        h('button', { className: 'v4-btn pri', onClick: p.onNewLoan }, h(Ico, { name: 'plus', size: 15, sw: 2.4 }), 'Nuevo préstamo'))),
+    h('h1', { className: 'v4-saludo' }, hr < 12 ? 'Buenos días' : hr < 19 ? 'Buenas tardes' : 'Buenas noches'),
+    h('div', { className: 'v4-pills' },
+      hoyCuotas.length
+        ? pastilla(1, 'warn', 'Hoy vencen', fmt(totHoy), rzPl(hoyCuotas.length, 'cuota'), function(){ p.onNav('cobros', 'hoy'); })
+        : pastilla(1, 'muted', 'Hoy no vence ninguna cuota'),
+      semana > 0
+        ? pastilla(2, 'info', 'Próximos 7 días', fmt(semana), 'por entrar', function(){ p.onNav('cobros', 'semana'); })
+        : pastilla(2, 'muted', 'Nada vence en los próximos 7 días'),
+      mora.length
+        ? pastilla(3, 'crit', 'Vencido', fmt(met.totalMora), rzPl(mora.length, 'cuota') + ' de ' + rzPl(M.deudoresMora, 'deudor', 'deudores'), function(){ p.onNav('cobros', 'vencido'); })
+        : pastilla(3, 'good', 'Toda la cartera está al día')));
+}
+
+// ── 2. TRES CIFRAS ───────────────────────────────────────────────────────────────
+// Barras con su globo al pasar el mouse (CSS puro).
+function V4Barras(p){
+  var max = Math.max.apply(null, p.items.map(function(x){ return x.v; }).concat([1]));
+  return h('div', { className: 'v4-barras' + (p.className ? ' ' + p.className : '') }, p.items.map(function(x, i){
+    var alto = x.v > 0 ? Math.max(6, Math.round(x.v / max * 100)) : 0;
+    var lado = i < 2 ? ' start' : i > p.items.length - 3 ? ' end' : '';
+    return h('span', { key: i, className: 'b' + (x.on ? ' on' : '') + (x.futuro ? ' futuro' : '') + (x.v > 0 ? '' : ' vacia'), tabIndex: x.v > 0 ? 0 : -1, style: { '--i': i } },
+      h('i', { style: { height: alto + '%' } }),
+      x.v > 0 && h('span', { className: 'v4-tip' + lado }, h('b', null, fmt(x.v)), h('span', null, x.t)));
+  }));
+}
+function V4Anillo(p){
+  var r = 30, c = 2 * Math.PI * r, pct = Math.max(0, Math.min(100, p.pct || 0)), len = pct / 100 * c;
+  return h('svg', { className: 'v4-anillo', width: 76, height: 76, viewBox: '0 0 76 76' },
+    h('circle', { cx: 38, cy: 38, r: r, className: 'pista' }),
+    h('circle', { cx: 38, cy: 38, r: r, className: 'val', transform: 'rotate(-90 38 38)', strokeDasharray: len + ' ' + c, style: { '--c': c } }),
+    h('text', { x: 38, y: 42, textAnchor: 'middle' }, Math.round(pct) + '%'));
+}
+function V4Cifras(p){
+  var M = p.M, met = p.metrics, hoy = p.hoy, mes = RZ_MESES[rzFecha(hoy).getMonth()];
+  var pctRec = M.prestado > 0 ? (1 - M.vivo / M.prestado) * 100 : 0;
+  var ant = p.antes;
+  // La curva es el cobrado ACUMULADO del mes: dia a dia sale de restar el punto anterior.
+  var dias = M.curva.map(function(v, i){ return v - (i ? M.curva[i - 1] : 0); });
+  var dHoy = dias.length, dMes = new Date(rzFecha(hoy).getFullYear(), rzFecha(hoy).getMonth() + 1, 0).getDate();
+  var itemsDias = [];
+  for (var i = 0; i < dMes; i++) itemsDias.push({ v: i < dHoy ? dias[i] : 0, futuro: i >= dHoy, on: i === dHoy - 1, t: (i + 1) + ' de ' + mes });
+  var mejor = dias.reduce(function(b, v, i){ return v > b.v ? { v: v, i: i } : b; }, { v: 0, i: -1 });
+  var itemsGan = M.meses.slice(0, 12).map(function(m, i){ return { v: m.ganancia, on: i === 11, t: rzMesDe(m.key) + ' ' + m.anio }; });
+  return h('div', { className: 'v4-kpis' },
+    h('div', { className: 'v4-card v4-kpi', style: { '--i': 0 } },
+      h('div', { className: 'v4-kpi-h' }, h('span', { className: 'v4-kpi-l' }, 'En la calle'), h(V4Chip, { tono: 'neutral' }, rzPl(M.activos.length, 'activo'))),
+      h('div', { className: 'v4-kpi-row' },
+        h('div', null,
+          h('div', { className: 'v4-kpi-v' }, h(V4Dinero, { v: M.vivo, animar: true })),
+          h('div', { className: 'v4-kpi-s' }, 'de ', h('b', null, fmt(M.prestado)), ' prestados')),
+        h(V4Anillo, { pct: pctRec })),
+      h('div', { className: 'v4-kpi-pie' },
+        h('span', { className: 'v4-leyenda' }, h('i', { className: 'azul' }), Math.round(pctRec) + '% ya volvió'),
+        M.devengo > 0 && h('span', { className: 'v4-leyenda' }, '+ ', h('b', null, fmt(M.devengo)), ' devengado en créditos abiertos'))),
+    h('div', { className: 'v4-card v4-kpi', style: { '--i': 1 } },
+      h('div', { className: 'v4-kpi-h' }, h('span', { className: 'v4-kpi-l' }, 'Cobrado en ' + mes), h(V4Delta, { ahora: met.recibido, antes: ant.caja, etiqueta: ant.etiqueta })),
+      h('div', { className: 'v4-kpi-v' }, h(V4Dinero, { v: met.recibido, animar: true })),
+      h('div', { className: 'v4-kpi-s' }, rzPl(M.movMes, 'movimiento') + ' entre cuotas, parciales y abonos'),
+      h(V4Barras, { items: itemsDias, className: 'dias' }),
+      h('div', { className: 'v4-kpi-pie' },
+        h('span', null, 'Día a día'),
+        mejor.i >= 0 && h('span', null, 'Mejor día: ', h('b', null, (mejor.i + 1) + ' de ' + mes)))),
+    h('div', { className: 'v4-card v4-kpi', style: { '--i': 2 } },
+      h('div', { className: 'v4-kpi-h' }, h('span', { className: 'v4-kpi-l' }, 'Ganancia de ' + mes), h(V4Delta, { ahora: M.gananciaMes, antes: ant.gan, etiqueta: ant.etiqueta })),
+      h('div', { className: 'v4-kpi-v g' }, h(V4Dinero, { v: M.gananciaMes, animar: true })),
+      h('div', { className: 'v4-kpi-s' }, 'Últimos 12 meses: ', h('b', null, fmt(M.ganancia12))),
+      h(V4Barras, { items: itemsGan, className: 'meses' }),
+      h('div', { className: 'v4-kpi-pie' }, h('span', null, RZ_MES3[parseInt(M.meses[0].key.slice(5, 7), 10) - 1] + ' ' + M.meses[0].anio), h('span', null, mes))));
+}
+
+// ── 3a. POR COBRAR ───────────────────────────────────────────────────────────────
+// "Para cobrar ya" (lo vencido y lo de hoy, una fila por persona, `rzParaCobrar`) se desplaza dentro de
+// una lista que llena la tarjeta; "Esta semana" muestra hasta RZ_PC_MAX cuotas y anuncia el resto.
+function V4Fila(p){
+  return h('button', { className: 'v4-fila', onClick: p.onClick, style: { '--i': p.i || 0 } },
+    p.av,
+    h('span', { className: 'v4-fila-c' },
+      h('span', { className: 'n' }, p.nombre),
+      h('span', { className: 's' + (p.sTono ? ' ' + p.sTono : '') }, p.detalle)),
+    h('span', { className: 'v4-fila-v' }, p.monto, p.usd && usdLinea(p.usd, null, 'span')));
+}
+function V4Avatar(p){ return h('span', { className: 'v4-av' + (p.alerta ? ' alerta' : p.hoy ? ' hoy' : '') }, opIniciales(p.nombre)); }
+function V4PorCobrar(p){
+  var filas = p.filas, hoy = p.hoy, onNav = p.onNav, onNameClick = p.onNameClick;
+  var ya = rzParaCobrar(filas, hoy);
+  var vencidas = filas.filter(function(f){ return f.tramo === 'vencido'; });
+  var totYa = ya.reduce(function(s, g){ return s + g.total; }, 0);
+  var semana = filas.filter(function(f){ return f.tramo === 'semana'; });
+  var totSemana = semana.reduce(function(s, f){ return s + f.pend; }, 0);
+  var filasYa = ya.map(function(g, i){
+    var det = g.venc
+      ? rzPl(g.venc, 'cuota vencida', 'cuotas vencidas') + ' · hace ' + rzPl(g.dias, 'día') + (g.hoyN ? ' · y ' + rzPl(g.hoyN, 'vence', 'vencen') + ' hoy' : '')
+      : (g.hoyN > 1 ? g.hoyN + ' cuotas vencen hoy' : 'vence hoy');
+    return h(V4Fila, { key: g.nombre, i: i, av: h(V4Avatar, { nombre: g.nombre, alerta: g.venc > 0, hoy: !g.venc }), nombre: properCase(g.nombre),
+      detalle: det, sTono: g.venc ? 'crit' : 'warn', monto: fmt(g.total), usd: g.todoUSD && g.usd ? fmtUSD(g.usd) : null,
+      onClick: function(){ onNameClick(g.nombre, g.loanId); } });
+  });
+  var filasSem = semana.slice(0, RZ_PC_MAX).map(function(f, i){
+    var d = rzFecha(f.p.fechaPago);
+    return h(V4Fila, { key: f.p.id, i: i, av: h('span', { className: 'v4-dia' }, h('b', null, d.getDate()), RZ_DIAS[d.getDay()].slice(0, 3)),
+      nombre: properCase(f.l.nombre), detalle: 'Cuota ' + f.p.cuotaN + (f.p.partialPaid > 0 ? ' · ya abonó una parte' : ''),
+      monto: fmt(f.pend), usd: f.l.moneda === 'USD' && f.l.trmAcordada > 0 ? fmtUSD(f.pend / f.l.trmAcordada) : null,
+      onClick: function(){ onNameClick(f.l.nombre, f.l.id, f.p.id); } });
+  });
+  function vacio(txt){ return h('div', { className: 'v4-vacio' }, h('span', { className: 'ok' }, h(Ico, { name: 'check', size: 14, sw: 2.6 })), txt); }
+  return h('section', { className: 'v4-card v4-cobrar', style: { '--i': 3 } },
+    h('div', { className: 'v4-card-h' },
+      h('div', null, h('div', { className: 'v4-titulo' }, 'Por cobrar'), h('div', { className: 'v4-sub' }, 'Lo vencido y lo de hoy, y lo que entra esta semana')),
+      h('button', { className: 'v4-link', onClick: function(){ onNav('cobros', vencidas.length ? 'vencido' : null); } }, 'Cobros', h(Ico, { name: 'chevright', size: 14, sw: 2.2 }))),
+    h('div', { className: 'v4-pc' },
+      h('div', { className: 'v4-pc-sec desplaza' },
+        h('div', { className: 'v4-pc-h' },
+          h('span', { className: 't' }, h('i', { className: vencidas.length ? 'crit' : 'warn' }), 'Para cobrar ya', ya.length > 0 && h('span', { className: 'n' }, ya.length)),
+          ya.length > 0 && h('b', null, fmt(totYa))),
+        filasYa.length ? h('div', { className: 'v4-lista v4-pc-lista' }, filasYa) : vacio('Nada vencido ni nada que venza hoy.')),
+      h('div', { className: 'v4-pc-sec' },
+        h('div', { className: 'v4-pc-h' },
+          h('span', { className: 't' }, h('i', { className: 'info' }), 'Esta semana', semana.length > 0 && h('span', { className: 'n' }, semana.length)),
+          semana.length > 0 && h('b', null, fmt(totSemana))),
+        filasSem.length ? filasSem : vacio('Nada vence en los próximos 7 días.'),
+        semana.length > RZ_PC_MAX && h('button', { className: 'v4-mas', onClick: function(){ onNav('cobros', 'semana'); } }, 'y ' + rzPl(semana.length - RZ_PC_MAX, 'cuota') + ' más', h(Ico, { name: 'chevright', size: 13, sw: 2.2 })))));
+}
+
+// ── 3b. META DEL MES ─────────────────────────────────────────────────────────────
+function V4Meta(p){
+  var _m = useState(rzYm(p.hoy)); var mes = _m[0], setMes = _m[1];
+  var M = p.M;
+  var r = useMemo(function(){ return rzMetaDelMes(p.pays, mes); }, [p.pays, mes]);
+  var recibido = r.cobrado + r.moraRec;
+  var pct = r.esperado > 0 ? Math.round(recibido / r.esperado * 100) : null;
+  var nombreMes = rzMesDe(mes);
+  var lleno = pct == null ? 0 : Math.min(100, pct);
+  return h('section', { className: 'v4-card v4-meta', style: { '--i': 4 } },
+    h('div', { className: 'v4-card-h' },
+      h('div', null, h('div', { className: 'v4-titulo' }, 'Meta del mes'), h('div', { className: 'v4-sub' }, 'Lo que vence en el mes frente a lo que ya entró')),
+      h('div', { className: 'v4-mesnav' },
+        h('button', { onClick: function(){ setMes(rzMesMover(mes, -1)); }, title: 'Mes anterior' }, h(Ico, { name: 'chevleft', size: 14, sw: 2.4 })),
+        h('span', null, nombreMes + ' ' + mes.slice(0, 4)),
+        h('button', { onClick: function(){ setMes(rzMesMover(mes, 1)); }, title: 'Mes siguiente' }, h(Ico, { name: 'chevright', size: 14, sw: 2.4 })))),
+    h('div', { className: 'v4-meta-top' },
+      h('div', { className: 'v4-meta-pct' }, pct == null ? '—' : pct + '%'),
+      pct == null ? h(V4Chip, { tono: 'neutral' }, 'Sin cuotas en el mes')
+        : pct > 100 ? h(V4Chip, { tono: 'good', icono: 'check' }, 'Meta superada')
+        : h(V4Chip, { tono: 'neutral' }, 'de la meta')),
+    h('div', { className: 'v4-meta-barra' + (pct > 100 ? ' superada' : '') },
+      h('div', { className: 'fill', key: mes, style: { width: lleno + '%' } })),
+    h('div', { className: 'v4-meta-escala' }, h('span', null, '0'), h('span', null, '50%'), h('span', null, '100%')),
+    h('div', { className: 'v4-meta-kv' },
+      h('div', null, h('span', { className: 'k' }, h('i', { className: 'gris' }), 'Meta del mes'), h('b', null, fmt(r.esperado))),
+      h('div', null, h('span', { className: 'k' }, h('i', { className: 'verde' }), 'Cobrado del mes'), h('b', { className: 'good' }, fmt(r.cobrado))),
+      h('div', null, h('span', { className: 'k' }, h('i', { className: 'oro' }), 'Mora recuperada'), h('b', null, fmt(r.moraRec))),
+      h('div', null, h('span', { className: 'k' }, h('i', { className: 'ambar' }), 'Falta por cobrar'), h('b', null, fmt(r.falta)))),
+    // Sin tope de alto en linea: la lista llena la tarjeta (resumen.css, `.v4-meta-lista`).
+    r.pend.length > 0
+      ? h('div', { className: 'v4-lista v4-meta-lista' }, r.pend.map(function(x, i){
+          var l = M.loanMap[x.prestamoId], mora = x.estadoPago === 'En Mora';
+          return h('button', { key: x.id, className: 'v4-li', style: { '--i': i }, onClick: function(){ p.onNameClick(x.nombreCliente); } },
+            h('span', { className: 'v4-li-c' },
+              h('span', { className: 'n' }, properCase(x.nombreCliente)),
+              h('span', { className: 's' + (mora ? ' crit' : '') }, 'Cuota ' + x.cuotaN + ' · ' + (mora ? 'vencida ' : 'vence ') + rzRel(p.hoy, x.fechaPago))),
+            h('span', { className: 'v4-li-v' + (mora ? ' crit' : '') }, fmt(pendCuota(x)), rzUsd(l, pendCuota(x)) && usdLinea(rzUsd(l, pendCuota(x)), null, 'span')));
+        }))
+      : r.esperado > 0 && h('div', { className: 'v4-vacio' }, h('span', { className: 'ok' }, h(Ico, { name: 'check', size: 14, sw: 2.6 })), 'Todas las cuotas de ' + nombreMes + ' están cobradas.'));
+}
+
+// ── 3c. ULTIMOS MOVIMIENTOS: la caja mas reciente, agrupada por dia ──────────────
+function V4Movimientos(p){
   var hoy = p.hoy, lista = p.M.recientes.slice(0, 16);
   var mesHoy = rzYm(hoy), totMes = p.M.recientes.reduce(function(s, e){ return rzYm(e.fecha) === mesHoy ? s + e.cop : s; }, 0);
   var bloques = [], ultimo = null;
   lista.forEach(function(e, i){
-    if (e.fecha !== ultimo){ ultimo = e.fecha; var d = diasEntre(e.fecha, hoy);
-      bloques.push(h('div', { key: 'd' + e.fecha, className: 'rz-mov-dia' }, d === 0 ? 'Hoy' : d === 1 ? 'Ayer' : fmtD(e.fecha))); }
-    var pay = e.pay, tipo, ico, ac;
-    if (esCorte(pay)){ tipo = 'Corte de interés diario'; ico = 'clock'; ac = 'blue'; }
-    else if (esAbono(pay)){ tipo = 'Abono a capital'; ico = 'dollar'; ac = 'blue'; }
-    else if (pay.estadoPago !== 'Pagado'){ tipo = 'Abono parcial · cuota ' + pay.cuotaN; ico = 'receipt'; ac = 'yellow'; }
-    else { tipo = 'Cuota ' + pay.cuotaN + (e.n > 1 ? ' · pago final' : ''); ico = 'check'; ac = 'green'; }
-    bloques.push(h('div', { key: pay.id + '|' + e.fecha + '|' + e.k + '|' + i, className: 'rz-mv', onClick: function(){ p.onNameClick(pay.nombreCliente); } },
-      h('div', { className: 'rz-mv-ico', style: { background: 'var(--' + ac + '-bg)' } }, h(Ico, { name: ico, size: 13, color: 'var(--' + ac + ')', sw: 2.4 })),
-      h('div', { style: { flex: 1, minWidth: 0 } },
-        h('div', { className: 'rz-li-n' }, properCase(pay.nombreCliente)),
-        h('div', { className: 'rz-li-s' }, tipo)),
-      h('div', { style: { textAlign: 'right' } },
-        h('div', { className: 'rz-li-v', style: { color: 'var(--green)' } }, '+ ' + fmt(e.cop)),
-        rzUsd(e.loan, e.cop) && usdLinea(rzUsd(e.loan, e.cop),{fontSize: 10.5}))));
+    if (e.fecha !== ultimo){
+      ultimo = e.fecha;
+      var dd = diasEntre(e.fecha, hoy);
+      bloques.push(h('div', { key: 'd' + e.fecha, className: 'v4-mov-dia' }, dd === 0 ? 'Hoy' : dd === 1 ? 'Ayer' : fmtD(e.fecha)));
+    }
+    var pay = e.pay, tipo, tono, ico;
+    if (esCorte(pay)){ tipo = 'Corte'; tono = 'info'; ico = 'clock'; }
+    else if (esAbono(pay)){ tipo = 'Abono'; tono = 'info'; ico = 'dollar'; }
+    else if (pay.estadoPago !== 'Pagado'){ tipo = 'Parcial'; tono = 'warn'; ico = 'receipt'; }
+    else { tipo = 'Cuota ' + pay.cuotaN; tono = 'good'; ico = 'check'; }
+    bloques.push(h('button', { key: pay.id + '|' + e.fecha + '|' + e.k + '|' + i, className: 'v4-mv', style: { '--i': i }, onClick: function(){ p.onNameClick(pay.nombreCliente); } },
+      h('span', { className: 'v4-mv-ico ' + tono }, h(Ico, { name: ico, size: 13, sw: 2.4 })),
+      h('span', { className: 'v4-li-c' },
+        h('span', { className: 'n' }, properCase(pay.nombreCliente)),
+        h('span', { className: 's' }, h('span', { className: 'v4-tag ' + tono }, tipo))),
+      h('span', { className: 'v4-li-v good' }, '+ ' + fmt(e.cop), rzUsd(e.loan, e.cop) && usdLinea(rzUsd(e.loan, e.cop), null, 'span'))));
   });
-  return h(RzCard, { className: 'rz-mov', icono: 'receipt', color: 'var(--green)', titulo: 'Últimos movimientos',
-      sub: h('span', null, 'Entraron ', h('b', { className: 'mono', style: { color: 'var(--green)' } }, fmt(totMes)), ' en ' + rzMesDe(mesHoy)),
-      acciones: h('button', { className: 'rz-link', onClick: function(){ p.onNav('historial'); } }, 'Historial →') },
-    // 3.7.0: la lista llena la tarjeta (misma regla que la Meta, `.rz-mov-lista`): sin tope en linea.
-    lista.length ? h('div', { className: 'rz-scroll rz-mov-lista' }, bloques) : h('div', { className: 'rz-nota' }, 'Todavía no hay cobros registrados.'));
+  return h('section', { className: 'v4-card v4-mov', style: { '--i': 5 } },
+    h('div', { className: 'v4-card-h' },
+      h('div', null, h('div', { className: 'v4-titulo' }, 'Últimos movimientos'), h('div', { className: 'v4-sub' }, 'Entraron ', h('b', { className: 'good' }, fmt(totMes)), ' en ' + rzMesDe(mesHoy))),
+      h('button', { className: 'v4-link', onClick: function(){ p.onNav('historial'); } }, 'Historial', h(Ico, { name: 'chevright', size: 14, sw: 2.2 }))),
+    lista.length ? h('div', { className: 'v4-lista v4-mov-lista' }, bloques) : h('div', { className: 'v4-vacio' }, 'Todavía no hay cobros registrados.'));
 }
 
-// ── LA VISTA ────────────────────────────────────────────────────────────────────
+// ── 4. RENDIMIENTO ───────────────────────────────────────────────────────────────
+// La rentabilidad de la cartera es la de la pestaña Rendimiento: la ganancia historica (la de la
+// tarjeta de App, `gananciaDe` sobre todas las filas) sobre el capital prestado en TODOS los prestamos.
+function V4Rendimiento(p){
+  var M = p.M, met = p.metrics, loans = p.loans;
+  var prestadoTodo = loans.reduce(function(s, l){ return s + rzOrigCOP(l); }, 0);
+  var rent = prestadoTodo > 0 ? met.totalInteresesRecibidos / prestadoTodo * 100 : 0;
+  var hist = M.meses.slice(0, 12);
+  var max = Math.max.apply(null, hist.map(function(m){ return m.caja; }).concat([1]));
+  return h('section', { className: 'v4-card v4-rend', style: { '--i': 6 } },
+    h('div', { className: 'v4-rend-txt' },
+      h(V4Chip, { tono: 'neutral', icono: 'trending' }, 'Rendimiento'),
+      h('div', { className: 'v4-rend-v' }, v4Pct(rent).replace(' %', ''), h('span', { className: 'pc' }, '%')),
+      h('div', { className: 'v4-rend-l' }, 'rentabilidad de la cartera'),
+      h('p', null, 'Ganaste ', h('b', null, fmt(M.ganancia12)), ' en los últimos 12 meses y ', h('b', null, fmt(met.totalInteresesRecibidos)),
+        ' desde el inicio, sobre ', h('b', null, fmt(prestadoTodo)), ' prestados. El flujo de caja y dónde está tu capital, en Rendimiento.'),
+      h('div', { className: 'v4-rend-acc' },
+        h('button', { className: 'v4-btn ghost', onClick: function(){ p.onNav('rendimiento'); } }, 'Ver Rendimiento', h(Ico, { name: 'chevright', size: 14, sw: 2.4 })),
+        h('span', { className: 'v4-rend-nota' }, 'Ganancia histórica ÷ capital prestado'))),
+    h('div', { className: 'v4-rend-graf' },
+      h('div', { className: 'v4-rend-gh' }, h('span', null, 'Caja de los últimos 12 meses'), h('span', { className: 'ley' }, h('i', { className: 'int' }), 'intereses', h('i', { className: 'cap' }), 'capital')),
+      h('div', { className: 'v4-rend-barras' }, hist.map(function(m, i){
+        var alto = m.caja / max * 100, hi = m.caja > 0 ? m.interes / m.caja * 100 : 0;
+        return h('span', { key: m.key, className: 'col' + (m.actual ? ' on' : ''), tabIndex: 0, style: { '--i': i } },
+          h('span', { className: 'barra', style: { height: Math.max(m.caja > 0 ? 4 : 0, alto) + '%' } },
+            h('i', { className: 'cap', style: { height: (100 - hi) + '%' } }), h('i', { className: 'int', style: { height: hi + '%' } })),
+          h('span', { className: 'mes' }, m.label),
+          m.caja > 0 && h('span', { className: 'v4-tip' + (i < 2 ? ' start' : i > 9 ? ' end' : '') },
+            h('b', null, fmt(m.caja)), h('span', null, rzMesDe(m.key) + ' ' + m.anio),
+            h('span', null, 'Intereses ' + rzCompacto(m.interes) + ' · capital ' + rzCompacto(m.capital))));
+      }))));
+}
+
+// El mismo tramo del mes anterior (del dia 1 al dia de hoy): con los mismos eventos de caja (`cobrosDe`)
+// y de ganancia (`gananciaDe`) que el mes en curso, para comparar peras con peras.
+function v4MismoTramo(pays, loanMap, hoy){
+  var d = rzFecha(hoy), prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  var ym = prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0');
+  var ultimo = new Date(prev.getFullYear(), prev.getMonth() + 1, 0).getDate();
+  var tope = ym + '-' + String(Math.min(d.getDate(), ultimo)).padStart(2, '0');
+  var caja = 0, gan = 0;
+  pays.forEach(function(p){
+    cobrosDe(p).forEach(function(e){ if (e.fecha.slice(0, 7) === ym && e.fecha <= tope) caja += e.cop; });
+    var l = loanMap[p.prestamoId];
+    gananciaDe(p, l && l.moneda === 'USD').eventos.forEach(function(e){ if (e.fecha.slice(0, 7) === ym && e.fecha <= tope) gan += e.ganancia; });
+  });
+  return { caja: Math.round(caja), gan: Math.round(gan), etiqueta: RZ_MESES[prev.getMonth()] + ' (1 al ' + Math.min(d.getDate(), ultimo) + ')' };
+}
+
+// ── LA VISTA ─────────────────────────────────────────────────────────────────────
 export function DashView(props){
   var metrics = props.metrics, loans = props.loans || [], pays = props.pays || [];
   var onNav = props.onNav, onNameClick = props.onNameClick || function(){};
@@ -511,26 +656,24 @@ export function DashView(props){
   var hoy = nowStr();
   var M = useMemo(function(){ return modeloResumen(loans, pays, hoy); }, [loans, pays, hoy]);
   var filas = useMemo(function(){ return bandejaCobro(loans, pays, hoy); }, [loans, pays, hoy]);
+  var antes = useMemo(function(){ return v4MismoTramo(pays, M.loanMap, hoy); }, [pays, M, hoy]);
+  var _a = useState(v4PuedeAnimar); var anima = _a[0];
 
-  if (props.isEmpty) return h('div', { className: 'rz' },
-    h('div', { className: 'rz-card rz-full rz-hero', style: { padding: '48px 28px', justifyContent: 'center', textAlign: 'center', flexDirection: 'column' } },
-      h(Ico, { name: 'briefcase', size: 44, color: 'var(--green)' }),
-      h('div', { className: 'rz-saludo', style: { marginTop: 12 } }, 'Tu cartera empieza aquí'),
-      h('div', { className: 'rz-insight' }, 'Registra tu primer préstamo y este resumen se llenará con tus cobros, lo que vence y tu ganancia.'),
-      h('button', { className: 'rz-btn pri', style: { marginTop: 18 }, onClick: onNewLoan }, h(Ico, { name: 'plus', size: 15, color: '#fff', sw: 2.3 }), 'Nuevo préstamo')));
+  if (props.isEmpty) return h('div', { className: 'v4' },
+    h('section', { className: 'v4-card v4-vacia' },
+      h('span', { className: 'v4-vacia-ico' }, h(Ico, { name: 'briefcase', size: 26, sw: 2 })),
+      h('h1', { className: 'v4-saludo' }, 'Tu cartera empieza aquí'),
+      h('p', null, 'Registra tu primer préstamo y este resumen se llenará con tus cobros, lo que vence y tu ganancia.'),
+      h('button', { className: 'v4-btn pri', onClick: onNewLoan }, h(Ico, { name: 'plus', size: 15, sw: 2.4 }), 'Nuevo préstamo')));
 
-  var comun = { M: M, hoy: hoy, pays: pays, metrics: metrics, onNav: onNav, onNameClick: onNameClick };
-  return h('div', { className: 'rz' },
-    h(RzHero, Object.assign({ onNewLoan: onNewLoan }, comun)),
-    h(RzCifras, comun),
-    // Una fila de tres tarjetas de la misma altura, de izquierda a derecha: lo que hay que cobrar,
-    // el mes (meta) y lo que ya entro (movimientos).
-    h(RzPorCobrar, Object.assign({ filas: filas }, comun)),
-    h(RzMetaMes, comun),
-    h(RzMovimientos, comun),
-    h('div', { className: 'rz-full rz-analisis' },
-      h('button', { className: 'rz-analisis-h', onClick: function(){ onNav('rendimiento'); } },
-        h(Ico, { name: 'trending', size: 15, color: 'var(--text3)', sw: 2.2 }),
-        h('span', null, 'Análisis del negocio'),
-        h('span', { className: 'rz-analisis-s' }, 'el flujo de caja y dónde está tu capital, ahora en Rendimiento →'))));
+  var comun = { M: M, hoy: hoy, pays: pays, loans: loans, metrics: metrics, onNav: onNav, onNameClick: onNameClick };
+  // Las entradas animadas solo si la ventana se ve (oculta, el reloj de animaciones no corre y las
+  // tarjetas se quedarian en su primer cuadro, invisibles).
+  return h('div', { className: 'v4' + (anima ? ' anima' : '') },
+    h(V4Head, Object.assign({ onNewLoan: onNewLoan }, comun)),
+    h(V4Cifras, Object.assign({ antes: antes }, comun)),
+    h(V4PorCobrar, Object.assign({ filas: filas }, comun)),
+    h(V4Meta, comun),
+    h(V4Movimientos, comun),
+    h(V4Rendimiento, comun));
 }

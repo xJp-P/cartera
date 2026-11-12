@@ -152,7 +152,7 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 1000, minHeight: 700,
     title: 'Cartera',
-    backgroundColor: '#0d1117',
+    backgroundColor: '#000000',   // rediseño v4: el fondo del tema oscuro (--page), sin destello de otro color
     autoHideMenuBar: true,
     show: false,
     webPreferences: {

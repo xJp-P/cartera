@@ -123,30 +123,13 @@
   .acc-chev.open{transform:rotate(90deg)}
   @media (prefers-reduced-motion:reduce){.acc-chev{transition:none}}
 
-  /* ── RESUMEN (3.4.0) ─────────────────────────────────────────────────────────
-     La pestana de inicio (`vistas/DashView.js`). Rejilla de 12 columnas SIN max-width: llena
-     todo el ancho a cualquier tamano y se reacomoda por tramos (>=1440 / 1181-1439 / <=1180). Reemplaza al grid 2x2 fijo de v1.9.1 (`.dash-*`), que dejaba franjas vacias a los
-     lados en pantallas anchas. Todo lleva prefijo `.rz-` y usa los tokens de tema de arriba. */
-/* ── Rejilla: ocupa TODO el ancho, sin max-width. 12 columnas que se reacomodan por tramos. ── */
-.rz{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;width:100%;animation:fadeIn .25s ease}
-.rz > *{min-width:0}
-.rz-full{grid-column:1 / -1}
-/* Resumen hibrido (3.7.1, el modelo que aprobo el PO): bienvenida y tres cifras a lo ancho; debajo, tres
-   tarjetas de la MISMA altura que se leen de izquierda a derecha: Por cobrar (5) · Meta del mes (4) ·
-   Ultimos movimientos (3). El flujo y la composicion viven en Rendimiento desde 3.7.0.
-   1.181-1.439 px: Por cobrar a lo ancho, con sus dos listas lado a lado; Meta y movimientos, mitad y mitad. */
-.rz-cobrar{grid-column:span 5} .rz-meta{grid-column:span 4} .rz-mov{grid-column:span 3}
-@media (max-width:1439px){
-  .rz-cobrar{grid-column:1 / -1}
-  .rz-meta,.rz-mov{grid-column:span 6}
-}
-@media (max-width:1180px){
-  .rz-meta,.rz-mov{grid-column:1 / -1}
-}
+  /* ── ANALISIS DEL NEGOCIO (3.4.0; vive en Rendimiento desde 3.7.0) ───────────────
+     Las tarjetas de flujo de caja y de composicion del capital (`RzFlujo` y `RzComposicion`, en
+     `vistas/DashView.js`), que Rendimiento importa, con su tarjeta (`RzCard`) y su control segmentado
+     (`RzSeg`). El Resumen se rediseño en v4 y sus estilos viven en resumen.css (`.v4-*`): las reglas de
+     su version anterior (la rejilla `.rz`, el encabezado, las tres cifras, Por cobrar, la Meta y los
+     movimientos) salieron con ella. */
 @media (max-width:760px){
-  .rz{gap:12px}
-  .rz-hero{padding:16px}
-  .rz-saludo{font-size:19px}
   .rz-head{flex-wrap:wrap}
 }
 
@@ -157,125 +140,14 @@
 .rz-title{font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;line-height:1.25}
 .rz-sub{font-size:12px;color:var(--text3);margin-top:3px}
 .rz-body{padding:4px 18px 18px;min-width:0}
-.rz-link{font-size:12px;font-weight:600;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;padding:2px 0}
-.rz-link:hover{color:var(--text)}
 
 /* Control segmentado */
 .rz-seg{display:inline-flex;background:var(--bg3);border:1px solid var(--border);border-radius:99px;padding:2px;gap:2px;flex-shrink:0}
 .rz-seg button{border:none;background:none;color:var(--text3);font:600 11px inherit;font-family:inherit;padding:4px 10px;border-radius:99px;cursor:pointer;white-space:nowrap}
 .rz-seg button.on{background:var(--bg2);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.25)}
-
-/* ── Encabezado (hero) ── */
-.rz-hero{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:20px 22px;
-  background:linear-gradient(135deg,var(--bg2) 0%,var(--bg2) 55%,var(--green-bg) 160%)}
-.rz-fecha{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--green)}
-.rz-saludo{font-size:22px;font-weight:700;color:var(--text);margin-top:2px;letter-spacing:-.3px}
-.rz-insight{font-size:13px;color:var(--text2);margin-top:6px;max-width:820px;line-height:1.55}
-.rz-insight b{color:var(--text);font-weight:600}
-/* El dia en tres puntos (3.7.1); los que tienen algo llevan a Cobros en su tramo */
-.rz-puntos{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:5px}
-.rz-puntos li{display:flex;align-items:baseline;gap:10px;font-size:13.5px;color:var(--text2);line-height:1.45;width:fit-content;max-width:100%}
-.rz-puntos li.ir{cursor:pointer}
-.rz-puntos li.ir:hover{color:var(--text)}
-.rz-puntos li.ir:hover span{text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:3px}
-.rz-puntos li i{width:7px;height:7px;border-radius:50%;flex-shrink:0;transform:translateY(-1px)}
-.rz-puntos b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
-.rz-puntos b.r{color:var(--red)} .rz-puntos b.y{color:var(--yellow)} .rz-puntos b.g{color:var(--green)}
-.rz-acciones{display:flex;gap:8px;flex-wrap:wrap}
-.rz-btn{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:11px;border:1px solid var(--border);background:var(--bg3);
-  color:var(--text);font:600 13px inherit;font-family:inherit;cursor:pointer;transition:border-color .15s,transform .15s}
-.rz-btn:hover{border-color:var(--border2);transform:translateY(-1px)}
-.rz-btn.pri{background:var(--green2);border-color:var(--green2);color:#fff}
-
-/* ── Tres cifras en UNA franja (3.7.1) ── */
-.rz-cifras{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
-.rz-cifra{padding:20px 24px 22px;border-left:1px solid var(--border);min-width:0}
-.rz-cifra:first-child{border-left:none}
-.rz-cifra-l{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
-.rz-cifra-v{font-size:30px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
-.rz-cifra-v.g{color:var(--green)}
-.rz-cifra-s{font-size:12.5px;color:var(--text2);margin-top:5px}
-.rz-cifra-s b{color:var(--text);font-variant-numeric:tabular-nums}
-.rz-cifra-barra{height:4px;border-radius:99px;background:var(--bg3);margin-top:10px;overflow:hidden}
-.rz-cifra-barra>div{height:100%;background:var(--blue);border-radius:99px}
-@media (max-width:1050px){ .rz-cifra-v{font-size:25px} }
-
-/* ── Por cobrar (3.7.1): lo vencido y lo de hoy, una fila por persona, y lo de esta semana ── */
-.rz-cobrar > .rz-body{padding:2px 8px 10px;flex:1 1 auto;display:flex;flex-direction:column}
-.rz-pc-secciones{display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-height:0}
-/* "Para cobrar ya" se desplaza y llena la tarjeta como la Meta y los movimientos (regla de 3.4.1): parte
-   de 0 con un minimo de 250 px (cinco personas a la vista), asi que una lista larga no empuja la fila.
-   A lo ancho (<=1439 px, sus dos listas lado a lado) no hay alto que llenar: tope propio. */
-.rz-pc-sec.desplaza{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
-.rz-cobrar .rz-pc-lista{flex:1 1 0;min-height:250px;max-height:none}
-.rz-pc-sec + .rz-pc-sec{border-top:1px solid var(--border);padding-top:8px}
-.rz-pc-sec-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px 4px}
-.rz-pc-sec-t{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text2)}
-.rz-pc-sec-t i{width:8px;height:8px;border-radius:50%}
-.rz-pc-sec-tot{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap}
-.rz-pc-fila{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:11px;align-items:center;width:100%;padding:8px 10px;border:none;border-radius:10px;
-  background:none;color:var(--text);font-family:inherit;text-align:left;cursor:pointer;transition:background .12s}
-.rz-pc-fila:hover{background:var(--bg3)}
-.rz-pc-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;background:var(--bg3);color:var(--text2)}
-.rz-pc-av.r{background:var(--red-bg);color:var(--red)} .rz-pc-av.y{background:var(--yellow-bg);color:var(--yellow)}
-.rz-pc-av.d{border-radius:10px}
-.rz-pc-dia{display:flex;flex-direction:column;align-items:center;line-height:1;font-size:10px;font-weight:600;color:var(--text3);text-transform:lowercase}
-.rz-pc-dia b{font-size:14px;color:var(--text);margin-bottom:2px}
-.rz-pc-c{display:flex;flex-direction:column;min-width:0}
-.rz-pc-nom{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rz-pc-det{font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rz-pc-det.r{color:var(--red)} .rz-pc-det.y{color:var(--yellow)}
-.rz-pc-monto{font-size:13.5px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.rz-pc-monto .dp-usd{display:block;font-size:10.5px;font-weight:500}
-.rz-pc-vacio{display:flex;align-items:center;gap:8px;padding:6px 10px 10px;font-size:12.5px;color:var(--text2)}
-.rz-pc-mas{display:block;width:100%;text-align:left;border:none;background:none;color:var(--blue);font:600 12.5px inherit;font-family:inherit;padding:4px 10px 6px;cursor:pointer}
-.rz-pc-mas:hover{text-decoration:underline}
-@media (max-width:1439px){
-  .rz-cobrar .rz-pc-lista{flex:0 1 auto;min-height:0;max-height:320px}
-  .rz-pc-secciones{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
-  .rz-pc-sec + .rz-pc-sec{border-top:none;padding-top:0;border-left:1px solid var(--border);padding-left:12px}
-}
 .rz-leyenda{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text3);margin-top:4px}
 .rz-leyenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-
-/* ── Meta del mes ── */
-.rz-mes-nav{display:inline-flex;align-items:center;gap:2px;background:var(--bg3);border-radius:99px;padding:2px}
-.rz-mes-nav button{display:flex;background:none;border:none;cursor:pointer;padding:3px;border-radius:99px}
-.rz-mes-nav span{font-size:12px;font-weight:700;color:var(--blue);min-width:92px;text-align:center;user-select:none;text-transform:capitalize}
-.rz-ring-wrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-.rz-filas{flex:1;min-width:170px;display:flex;flex-direction:column;gap:9px}
-.rz-fila{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px;color:var(--text2)}
-.rz-fila b{font-family:'Cascadia Code','Consolas',monospace;font-weight:700;color:var(--text);font-size:13px;white-space:nowrap}
 .rz-dot{display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:7px;vertical-align:1px}
-.rz-lista{margin-top:14px;border-top:1px solid var(--border);padding-top:6px}
-/* Meta del mes: la lista llena la tarjeta (hotfix 3.4.1). La rejilla estira la tarjeta a la altura
-   de su fila (align-items:stretch), pero la lista tenia un tope fijo de 250 px en linea y el cuerpo no
-   era flexible: la lista se cortaba a media fila y el alto sobrante quedaba vacio al fondo. Ahora el
-   cuerpo es una columna flexible y la lista crece hasta el borde. Con mas de 4 cuotas (`larga`) parte
-   de 0 con minimo 250 px: aporta a la fila lo mismo que antes y no la empuja con una lista larga.
-   Sola en su fila (<=1180 px) no hay nada que llenar: vuelve a un tope propio. Dos clases para
-   ganarle al max-height de .rz-scroll sin depender del orden del archivo. */
-.rz-meta > .rz-body,.rz-mov > .rz-body{flex:1 1 auto;display:flex;flex-direction:column}
-.rz-meta .rz-meta-lista{flex:1 1 auto;min-height:0;max-height:none}
-.rz-meta .rz-meta-lista.larga{flex-basis:0;min-height:250px}
-/* Ultimos movimientos (3.7.0, desde que comparte fila con la Meta): parte de 0 con un minimo de 240 px,
-   asi que no empuja la fila, y llena el alto que le dan las otras dos. */
-.rz-mov .rz-mov-lista{flex:1 1 0;min-height:240px;max-height:none}
-@media (max-width:1180px){
-  .rz-meta .rz-meta-lista,.rz-meta .rz-meta-lista.larga{flex:0 1 auto;min-height:0;max-height:360px}
-  .rz-mov .rz-mov-lista{flex:0 1 auto;min-height:0;max-height:360px}
-}
-/* El enlace al analisis, que vive en Rendimiento desde 3.7.0 */
-.rz-analisis{border-top:1px solid var(--border);padding-top:12px;margin-top:2px}
-.rz-analisis-h{display:flex;align-items:center;gap:8px;border:none;background:none;color:var(--text2);font:600 14px inherit;font-family:inherit;cursor:pointer;padding:4px 0}
-.rz-analisis-h:hover{color:var(--text)}
-.rz-analisis-s{font-weight:400;color:var(--text3);font-size:13px}
-.rz-li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--bg3);cursor:pointer}
-.rz-li:last-child{border-bottom:none}
-.rz-li:hover .rz-li-n{text-decoration:underline}
-.rz-li-n{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rz-li-s{font-size:11px;color:var(--text3);margin-top:1px}
-.rz-li-v{font-family:'Cascadia Code','Consolas',monospace;font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
 
 /* ── Flujo de caja ── */
 .rz-chart{position:relative;width:100%}
@@ -297,16 +169,6 @@
 .rz-leg .pc{font-weight:700;color:var(--text);font-family:'Cascadia Code','Consolas',monospace;font-size:12px}
 .rz-nota{margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--bg3);font-size:12px;color:var(--text2);line-height:1.5}
 .rz-nota b{color:var(--text)}
-
-/* ── Movimientos ── */
-.rz-mov-dia{font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text3);margin:12px 0 4px}
-.rz-mov-dia:first-child{margin-top:0}
-.rz-mv{display:flex;align-items:center;gap:10px;padding:7px 0;cursor:pointer}
-.rz-mv:hover .rz-li-n{text-decoration:underline}
-.rz-mv-ico{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-
-/* Lista con scroll suave dentro de una tarjeta */
-.rz-scroll{max-height:420px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--bg4) transparent;margin-right:-8px;padding-right:8px}
 
   /* ── OPERACION (3.5.0): COBROS, CARTERA Y EL PANEL DEL DEUDOR ────────────────
      `vistas/CobrosView.js` (antes Pagos), `vistas/CarteraView.js` (antes Cartera + Deudores) y

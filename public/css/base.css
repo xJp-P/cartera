@@ -1,0 +1,168 @@
+/* public/css/base.css — la BASE GLOBAL del rediseño v4 (aprobado por el PO sobre los prototipos).
+ *
+ * Se carga DESPUES de styles.css y gana los empates. Trae lo que comparte toda la app:
+ *   1. los tokens: la paleta de Control TC v7 tal cual (negro real / blanco perla, superficies en tres
+ *      niveles, lineas translucidas) y los tokens de siempre (--bg, --green, --text...) RE-MAPEADOS a
+ *      ella, para que las pestañas que todavia no se rediseñan hereden la paleta sin tocarse;
+ *   2. la tipografia: Inter servida desde public/fonts (licencia OFL en Inter-OFL.txt) y las cifras con
+ *      numeros tabulares en vez de la monoespaciada;
+ *   3. las barras de desplazamiento en pildora;
+ *   4. el marco de la app: menu lateral y encabezado (clases de app.js) y el area de contenido;
+ *   5. la compatibilidad de las pestañas viejas con el marco nuevo.
+ *
+ * La integracion es pestaña por pestaña (regla del PO): cada pestaña rediseñada trae su propia hoja
+ * (resumen.css, ...). Las reglas de los componentes de los modales NO viven aqui: llegan con ellos. */
+
+/* ── 1. TOKENS ───────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url(/fonts/inter-latin-wght.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url(/fonts/inter-latin-ext-wght.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root, [data-theme="dark"] {
+  --font: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --r-sm: 10px; --r-md: 12px; --r-lg: 18px; --r-xl: 22px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  /* Paleta de Control TC v7, tal cual */
+  --page: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #111111;
+  --surface-3: #191919;
+  --line: rgba(255, 255, 255, .08);
+  --line-strong: rgba(255, 255, 255, .16);
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, .035);
+  --panel-shadow: 0 0 0 0 transparent;
+  --tt-bg: #161616;
+  --track: rgba(255, 255, 255, .07);
+  --bar-muted: rgba(255, 255, 255, .16);
+  --scroll: rgba(255, 255, 255, .13); --scroll-hover: rgba(255, 255, 255, .28);
+
+  --ink: #f5f5f4; --ink-2: #a3a3a0; --ink-3: #858580;
+  --inverse-bg: #f5f5f4; --inverse-ink: #0a0a0a;
+
+  --accent: #5b9bf0; --accent-soft: rgba(91, 155, 240, .14); --info-text: #5b9bf0;
+
+  --good: #0ca30c; --good-text: #3fb37f; --good-soft: rgba(12, 163, 12, .14);
+  --warn: #fab219; --warn-text: #f2b33d; --warn-soft: rgba(250, 178, 25, .12);
+  --crit: #d03b3b; --crit-text: #f06b6b; --crit-soft: rgba(208, 59, 59, .16);
+
+  /* los tokens de siempre, re-mapeados: el resto de la app hereda la paleta nueva sin tocarse */
+  --bg: var(--page); --bg2: var(--surface); --bg3: var(--surface-2); --bg4: #2a2a2a;
+  --border: var(--line); --border2: var(--line-strong);
+  --text: var(--ink); --text2: var(--ink-2); --text3: var(--ink-3);
+  --green: var(--good-text); --green2: #17804f; --green-bg: var(--good-soft); --green-bd: rgba(12, 163, 12, .32);
+  --blue: var(--accent); --blue-bg: var(--accent-soft); --blue-bd: rgba(91, 155, 240, .34);
+  --red: var(--crit-text); --red-bg: var(--crit-soft); --red-bd: rgba(208, 59, 59, .36);
+  --yellow: var(--warn-text); --yellow-bg: var(--warn-soft); --gold: var(--warn-text);
+  --purple: #a78bfa; --purple-bg: rgba(167, 139, 250, .14); --purple-bd: rgba(167, 139, 250, .34);
+  --shadow: 0 12px 32px -12px rgba(0, 0, 0, .7);
+}
+[data-theme="light"] {
+  --page: #f6f6f3;
+  --surface: #ffffff;
+  --surface-2: #fbfbf9;
+  --surface-3: #ecece8;
+  --line: rgba(10, 10, 10, .07);
+  --line-strong: rgba(10, 10, 10, .16);
+  --highlight: inset 0 0 0 0 transparent;
+  --panel-shadow: 0 1px 2px rgba(20, 20, 16, .04), 0 4px 16px -8px rgba(20, 20, 16, .06);
+  --tt-bg: #ffffff;
+  --track: rgba(10, 10, 10, .06);
+  --bar-muted: rgba(10, 10, 10, .13);
+  --scroll: rgba(10, 10, 10, .14); --scroll-hover: rgba(10, 10, 10, .32);
+
+  --ink: #0a0a0a; --ink-2: #4b4b47; --ink-3: #6b6b66;
+  --inverse-bg: #0a0a0a; --inverse-ink: #fafafa;
+
+  --accent: #2a6fd1; --accent-soft: rgba(42, 111, 209, .09); --info-text: #2a6fd1;
+
+  --good: #0ca30c; --good-text: #17804f; --good-soft: rgba(12, 163, 12, .09);
+  --warn: #fab219; --warn-text: #a86400; --warn-soft: rgba(250, 178, 25, .16);
+  --crit: #d03b3b; --crit-text: #c62f35; --crit-soft: rgba(208, 59, 59, .09);
+
+  --bg: var(--page); --bg2: var(--surface); --bg3: var(--surface-2); --bg4: #dcdcd6;
+  --border: var(--line); --border2: var(--line-strong);
+  --text: var(--ink); --text2: var(--ink-2); --text3: var(--ink-3);
+  --green: var(--good-text); --green2: #17804f; --green-bg: var(--good-soft); --green-bd: rgba(12, 163, 12, .3);
+  --blue: var(--accent); --blue-bg: var(--accent-soft); --blue-bd: rgba(42, 111, 209, .3);
+  --red: var(--crit-text); --red-bg: var(--crit-soft); --red-bd: rgba(208, 59, 59, .3);
+  --yellow: var(--warn-text); --yellow-bg: var(--warn-soft); --gold: var(--warn-text);
+  --purple: #7c5cd6; --purple-bg: rgba(124, 92, 214, .10); --purple-bd: rgba(124, 92, 214, .3);
+  --shadow: 0 12px 32px -14px rgba(20, 20, 16, .22);
+}
+
+/* ── 2. TIPOGRAFIA ───────────────────────────────────────────────────────────── */
+body { font-family: var(--font); font-feature-settings: 'cv11', 'ss01'; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+button, input, select, textarea { font-family: inherit; }
+/* Las cifras dejan la monoespaciada: la misma Inter con numeros tabulares (alinean en columna igual). */
+.mono, .kpi-value { font-family: var(--font) !important; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+/* ── 3. BARRAS DE DESPLAZAMIENTO ─────────────────────────────────────────────── */
+/* Una pildora de 4 px que se ensancha a 6 px al tomarla, sin flechas ni carril visible. El ancho real es
+   10 px (area comoda para el mouse); el borde transparente con background-clip la adelgaza a la vista. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-thumb { background-color: var(--scroll); background-clip: padding-box; border: 3px solid transparent; border-radius: 999px; min-height: 36px; transition: background-color .2s; }
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { background-color: var(--scroll-hover); border-width: 2px; }
+/* Chromium ignora ::-webkit-scrollbar en un elemento que declare scrollbar-width o scrollbar-color, y
+   scrollbar-color se HEREDA: basta con que un contenedor lo declare (styles.css lo hace en varios, y
+   cualquier estilo en linea podria hacerlo) para que toda su descendencia vuelva a la barra gruesa del
+   sistema. Se devuelven a auto en TODOS los elementos, con !important para ganarle tambien a un estilo
+   en linea, y asi la pildora manda en cualquier contenedor de la app. */
+@supports selector(::-webkit-scrollbar) {
+  *, *::before, *::after { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
+}
+
+/* ── 4. EL MARCO DE LA APP ───────────────────────────────────────────────────── */
+.sidebar { background: var(--page); border-right: 1px solid var(--line); width: 248px; min-width: 248px; }
+.sidebar.collapsed { transform: translateX(-248px); }
+.sidebar-header { border-bottom: 0; padding: 22px 20px 14px; }
+/* El maletin es el logo: un cuadro inverso con radio, como el boton primario. */
+.sidebar-marca { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; background: var(--inverse-bg); color: var(--inverse-ink); }
+.sidebar-nombre { font-size: 17px; font-weight: 650; letter-spacing: -.02em; color: var(--ink); line-height: 1.35; }
+.sidebar-activos { font-size: 12px; color: var(--ink-3); }
+.sidebar-nav { padding: 6px 12px; }
+.nav-grupo { margin-bottom: 2px; }
+.nav-seccion { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px 12px 6px; border: 0; background: none; cursor: pointer; user-select: none;
+  font-family: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.nav-seccion:hover { color: var(--ink-2); }
+.nav-item { height: 38px; padding: 0 12px; border-radius: var(--r-sm); color: var(--ink-2); font-weight: 500; margin-bottom: 2px; transition: background-color .18s var(--ease), color .18s var(--ease); }
+.nav-item svg { opacity: .85; transition: transform .25s var(--ease); }
+.nav-item:hover { background: var(--surface-2); color: var(--ink); }
+.nav-item:hover svg { transform: translateX(1px); }
+.nav-item.active { background: var(--surface-3); color: var(--ink); font-weight: 600; box-shadow: var(--highlight); }
+.nav-item.active svg { opacity: 1; }
+.nav-sep { height: 1px; background: var(--line); margin: 10px 12px; }
+.sidebar-footer { border-top: 0; font-family: var(--font); color: var(--ink-3); padding: 16px; }
+
+.main-header { height: 64px; background: var(--page); border-bottom: 1px solid var(--line); padding: 0 28px; }
+.mh-menu { display: flex; padding: 7px; border: 0; border-radius: 9px; background: none; color: var(--ink-2); cursor: pointer; transition: background-color .15s, color .15s; }
+.mh-menu:hover { background: var(--surface-2); color: var(--ink); }
+.mh-titulo { display: flex; align-items: center; gap: 8px; color: var(--ink-3); }
+.mh-titulo > span { font-size: 19px; font-weight: 650; letter-spacing: -.02em; color: var(--ink); }
+.mh-acciones { display: flex; align-items: center; gap: 8px; }
+.mh-badge { display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px; border-radius: 99px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mh-badge.pronto { background: var(--warn-soft); color: var(--warn-text); }
+.mh-badge.mora { background: var(--crit-soft); color: var(--crit-text); }
+.mh-btn { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--line); border-radius: 99px;
+  background: var(--surface); color: var(--ink-2); cursor: pointer; transition: border-color .15s, color .15s; }
+.mh-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+.mh-menu:focus-visible, .mh-btn:focus-visible, .nav-item:focus-visible, .nav-seccion:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.main-content { padding: 28px 32px 40px; background: var(--page); }
+
+/* ── 5. COMPATIBILIDAD DE LAS PESTAÑAS VIEJAS CON EL MARCO NUEVO ─────────────── */
+/* El panel del deudor de Cobros y Cartera se pega arriba subiendo lo que mide el relleno superior del
+   area de contenido (era 24 px, ahora 28) y ocupa el alto bajo el encabezado (era 56 px, ahora 64).
+   No aplica al panel superpuesto de las ventanas angostas, que es fijo y ocupa toda la ventana. */
+.op-lado:not(.superpuesto) { top: -28px; max-height: calc(100vh - 64px); }
