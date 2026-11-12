@@ -1,0 +1,187 @@
+/* public/css/rendimiento.css — RENDIMIENTO del rediseño v4 (vistas/PortfolioView.js), tal cual el
+ * prototipo que aprobo el PO. Se carga despues de resumen.css (las tarjetas `.v4-card`, el globo `.v4-tip`,
+ * los chips `.v4-chip` y las animaciones), cobros.css (el selector `.cbv-seg`, la barra segmentada
+ * `.cbv-segbar`, los puntos `.cbv-dot`, los avatares `.cbv-av` y los rotulos `.cbv-kl`) y cartera.css (los
+ * filtros en pastilla `.ctv-filtro`). Todo lo propio vive bajo `.v4r` (la raiz de la vista) con prefijo
+ * `rdv-`. La ventana va de 1.000 a 1.600 px: la tabla se ajusta en vez de desplazarse de lado; lo que se
+ * esconde en ventanas angostas (capital y recuperado) esta a un clic, en el panel del deudor. */
+
+/* Series de datos de Control TC (validadas para daltonismo) + dos grises para el resto */
+.v4r { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: var(--ink-3); --s5: var(--bar-muted); --s6: var(--track); }
+[data-theme="light"] .v4r { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; }
+.v4r .cbv-dot.s1, .v4r .cbv-segbar .seg.s1 { background: var(--s1); }
+.v4r .cbv-dot.s2, .v4r .cbv-segbar .seg.s2 { background: var(--s2); }
+.v4r .cbv-dot.s3, .v4r .cbv-segbar .seg.s3 { background: var(--s3); }
+.v4r .cbv-dot.s4, .v4r .cbv-segbar .seg.s4 { background: var(--s4); }
+.v4r .cbv-dot.s5, .v4r .cbv-segbar .seg.s5 { background: var(--s5); }
+.v4r .cbv-dot.s6, .v4r .cbv-segbar .seg.s6 { background: var(--s6); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+.v4r { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 20px; color: var(--ink); }
+.v4r > * { grid-column: 1 / -1; min-width: 0; }
+.rdv-intro { font-size: 13.5px; color: var(--ink-3); margin: 0 2px -6px; }
+
+/* ── Las cuatro cifras ─────────────────────────────────────────────────────────── */
+.rdv-cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0; overflow: hidden; }
+.rdv-cifra { padding: 22px 24px 20px; border-left: 1px solid var(--line); min-width: 0; display: flex; flex-direction: column; }
+.rdv-cifra:first-child { border-left: 0; }
+.rdv-cifra-v { font-size: clamp(26px, 1.1vw + 12px, 32px); font-weight: 650; letter-spacing: -.035em; line-height: 1.15; margin-top: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); font-variant-numeric: tabular-nums; }
+.rdv-cifra-v.good { color: var(--good-text); }
+.rdv-cifra-v.good .cur { color: inherit; opacity: .6; }
+.rdv-cifra-v .pc { font-size: .55em; font-weight: 500; color: var(--ink-3); margin-left: .1em; letter-spacing: 0; }
+.rdv-cifra-s { font-size: 12.5px; color: var(--ink-3); margin-top: auto; padding-top: 8px; }
+.rdv-cifra-s b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.rdv-cifra-meter { height: 4px; border-radius: 99px; background: var(--track); overflow: hidden; margin-top: 12px; }
+.rdv-cifra-meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; }
+
+/* ── La tabla ──────────────────────────────────────────────────────────────────── */
+.rdv-card { padding: 0; overflow: hidden; }
+.rdv-card-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 18px 14px; border-bottom: 1px solid var(--line); }
+.rdv-ayuda { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-3); }
+.rdv-ayuda svg { flex-shrink: 0; }
+.rdv-tabla { overflow-x: auto; }
+.rdv-t { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rdv-t th { padding: 11px 16px 9px; font-size: 12px; font-weight: 500; color: var(--ink-3); white-space: nowrap; text-align: left; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.rdv-t th button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: color .15s; }
+.rdv-t th button:hover, .rdv-t th.on button { color: var(--ink); }
+.rdv-flecha { font-size: 11px; opacity: .5; }
+.rdv-t th.on .rdv-flecha { opacity: 1; }
+.rdv-t td { padding: 12px 16px; border-top: 1px solid var(--line); vertical-align: middle; color: var(--ink); }
+.rdv-t tbody tr:first-child td { border-top: 0; }
+.rdv-t th.rdv-r, .rdv-t td.rdv-n { text-align: right; }
+.rdv-t th.rdv-c, .rdv-t td.rdv-c { text-align: center; }
+.rdv-t td.rdv-n { white-space: nowrap; }
+.rdv-fila { cursor: pointer; }
+.rdv-fila td { transition: background-color .15s var(--ease); }
+.rdv-fila:hover td { background: var(--surface-2); }
+.rdv-fila.cerrado .rdv-nom { color: var(--ink-2); }
+.rdv-quien { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rdv-quien-c { min-width: 0; }
+.rdv-nom { display: flex; align-items: center; gap: 7px; font-weight: 550; font-size: 13.5px; white-space: nowrap; }
+.rdv-sub { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; margin-top: 1px; }
+.rdv-rec { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+.rdv-barra { flex: 1; height: 4px; border-radius: 99px; background: var(--track); overflow: hidden; min-width: 70px; }
+.rdv-barra i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; }
+.rdv-rec-p { font-size: 12px; color: var(--ink-2); width: 42px; text-align: right; }
+.rdv-rec-v { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-top: 4px; white-space: nowrap; }
+.rdv-col-recuperado .dp-usd { margin-top: 1px; }
+.rdv-gan { font-weight: 600; }
+.rdv-gan.good { color: var(--good-text); }
+.rdv-nota-f { font-size: 11px; margin-top: 2px; }
+.rdv-nota-f.warn { color: var(--warn-text); }
+.rdv-nota-f.crit { color: var(--crit-text); }
+.rdv-rent { font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
+.rdv-rent.nada { color: var(--ink-3); font-weight: 500; }
+.rdv-rent-b { height: 3px; border-radius: 99px; background: var(--track); margin: 5px 0 3px auto; width: 72px; overflow: hidden; display: flex; justify-content: flex-end; }
+.rdv-rent-b i { display: block; height: 100%; border-radius: inherit; background: var(--ink-3); transform-origin: right; }
+.rdv-t td .dp-usd { display: block; font-size: 11px; }
+.rdv-vacio { padding: 36px 16px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+.rdv-pie { padding: 12px 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); }
+
+/* La cifra en dolares junto a los pesos, en gris (opcion A del PO, 3.7.0), como en el Resumen y el panel */
+.v4r .dp-usd { color: var(--ink-3); }
+
+/* ── Analisis del negocio ──────────────────────────────────────────────────────── */
+.rdv-sec { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 8px 2px -4px; }
+.rdv-sec .t { font-size: 16px; font-weight: 650; letter-spacing: -.01em; color: var(--ink); }
+.rdv-sec span:not(.t) { font-size: 13px; color: var(--ink-3); }
+.rdv-analisis { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 20px; align-items: stretch; }
+
+/* Flujo de caja */
+.rdv-stats { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 18px; }
+.rdv-stats > div { display: flex; flex-direction: column; gap: 3px; }
+.rdv-stats span { font-size: 12px; color: var(--ink-3); }
+.rdv-stats b { font-size: 17px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
+.rdv-stats b.good { color: var(--good-text); }
+.rdv-graf { position: relative; height: 240px; }
+.rdv-eje { position: absolute; left: 0; right: 0; top: 0; bottom: 24px; pointer-events: none; }
+.rdv-eje-l { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--line); }
+.rdv-eje-l:last-child { border-top-style: solid; border-color: var(--line-strong); }
+.rdv-eje-l span { position: absolute; left: 0; bottom: 3px; font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rdv-barras { position: absolute; inset: 0 0 0 52px; display: flex; gap: 8px; }
+.rdv-barras .col { position: relative; flex: 1 1 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 24px; outline: none; border-radius: 8px; transition: background-color .15s; }
+.rdv-barras .col.on { background: var(--surface-2); }
+.rdv-barras .col:hover, .rdv-barras .col:focus-visible { background: var(--surface-2); }
+.rdv-barras .barra { width: 100%; max-width: 32px; display: flex; flex-direction: column; gap: 2px; transform-origin: bottom; }
+.rdv-barras .barra i { display: block; width: 100%; min-height: 2px; border-radius: 3px; flex-basis: 0; }
+.rdv-barras .barra i.int, .rdv-ley i.int, .v4r .v4-tip i.int { background: var(--good-text); }
+.rdv-barras .barra i.cap, .rdv-ley i.cap, .v4r .v4-tip i.cap { background: var(--bar-muted); }
+.rdv-barras .barra i.gan, .rdv-ley i.gan, .v4r .v4-tip i.gan { background: var(--good-text); }
+.rdv-barras .barra i.proy, .rdv-ley i.proy, .v4r .v4-tip i.proy { background: repeating-linear-gradient(135deg, var(--bar-muted) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.rdv-barras .mes { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.rdv-barras .col.on .mes { color: var(--ink); font-weight: 600; }
+.rdv-barras .col.futuro .mes { opacity: .7; }
+.rdv-barras .v4-tip { bottom: calc(100% - 18px); min-width: 190px; }
+.col:hover > .v4-tip.start, .col:hover > .v4-tip.end, .col:focus-visible > .v4-tip.start, .col:focus-visible > .v4-tip.end { transform: none; }
+.v4r .v4-tip .f { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+.v4r .v4-tip .f i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+.v4r .v4-tip .f em { margin-left: auto; padding-left: 14px; font-style: normal; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.v4r .v4-tip .f.tot { border-top: 1px solid var(--line); margin-top: 7px; padding-top: 6px; }
+.rdv-ley { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: 12px; color: var(--ink-3); }
+.rdv-ley span { display: inline-flex; align-items: center; gap: 7px; }
+.rdv-ley i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* Donde esta el capital */
+.rdv-comp .cbv-segbar { margin: 6px 0 14px; height: 12px; }
+.rdv-comp-lista { display: flex; flex-direction: column; }
+.rdv-comp-f { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px; margin: 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink-2);
+  font: 13px var(--font); text-align: left; border-radius: 0; transition: background-color .15s; }
+.rdv-comp-f:first-child { border-top: 0; }
+.rdv-comp-f.clic { cursor: pointer; }
+.rdv-comp-f.clic:hover { background: var(--surface-2); border-radius: 10px; }
+.rdv-comp-f .nm { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rdv-comp-f .v { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.rdv-comp-f .pc { width: 40px; text-align: right; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.rdv-nota { margin-top: auto; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); font-size: 12.5px; color: var(--ink-3); line-height: 1.55; }
+.rdv-comp-lista { margin-bottom: 14px; }
+.rdv-nota b { color: var(--ink); font-weight: 600; }
+.rdv-nota b.warn { color: var(--warn-text); }
+
+/* ── Anchos (escritorio: 1.000 a 1.600 px; la tabla se ajusta en vez de desplazarse de lado) ───── */
+@media (max-width: 1640px) { .rdv-t th, .rdv-t td { padding-left: 10px; padding-right: 10px; } .rdv-rec { min-width: 112px; } .rdv-barra { min-width: 44px; } .rdv-rent-b { width: 60px; } }
+@media (max-width: 1640px) {
+  .rdv-t th { white-space: normal; line-height: 1.3; }
+  .rdv-col-nombre .rdv-sub, .rdv-col-rent .rdv-sub, .rdv-col-mes .rdv-sub { white-space: normal; }
+}
+@media (max-width: 1280px) {
+  .rdv-cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rdv-cifra:nth-child(3) { border-left: 0; }
+  .rdv-cifra:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .rdv-col-recuperado .rdv-barra { display: none; }
+  .rdv-rec { min-width: 0; }
+}
+@media (max-width: 1180px) { .rdv-analisis { grid-template-columns: 1fr; } .rdv-ayuda { display: none; } }
+/* La tabla se ajusta, nunca se desplaza de lado: compacta desde 1.280 px */
+@media (max-width: 1280px) {
+  .rdv-t th, .rdv-t td { padding-left: 7px; padding-right: 7px; }
+  .rdv-t .cbv-av { width: 30px; height: 30px; font-size: 11px; }
+  .rdv-quien { gap: 9px; }
+  .rdv-rent-b { width: 56px; }
+  .rdv-t .v4-chip { height: 24px; padding: 0 8px; font-size: 11.5px; }
+  .rdv-col-nombre .rdv-sub { white-space: normal; }
+}
+/* Capital y recuperado (a un clic, en el panel del deudor) se esconden donde ya no caben */
+@media (max-width: 1170px) {
+  .rdv-col-capital, .rdv-col-recuperado { display: none; }
+  .rdv-t th, .rdv-t td { padding-left: 6px; padding-right: 6px; }
+  .rdv-t .cbv-av { width: 30px; height: 30px; font-size: 11px; }
+  .rdv-quien { gap: 9px; }
+  .rdv-rent-b { width: 56px; }
+  .rdv-t .v4-chip { height: 24px; padding: 0 8px; font-size: 11.5px; }
+}
+
+/* ── Movimiento ─────────────────────────────────────────────────────────────────── */
+.v4r.anima .rdv-intro, .v4r.anima .v4-card, .v4r.anima .rdv-sec { animation: v4-in .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 60ms); }
+.v4r.anima .rdv-fila { animation: v4-fade .4s var(--ease) backwards; animation-delay: calc(min(var(--i, 0), 14) * 28ms + 200ms); }
+.v4r.anima .rdv-barra i, .v4r.anima .rdv-cifra-meter i { animation: cbv-crecex .8s var(--ease) backwards; animation-delay: calc(min(var(--i, 0), 14) * 28ms + 320ms); }
+.v4r.anima .rdv-rent-b i { animation: cbv-crecex .8s var(--ease) backwards; animation-delay: calc(min(var(--i, 0), 14) * 28ms + 360ms); }
+.v4r.anima .rdv-barras .barra { animation: v4-crece .8s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 40ms + 420ms); }
+.v4r.anima .cbv-segbar .seg { animation: cbv-crecex .7s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 480ms); }
+.v4r.anima .rdv-comp-f { animation: v4-fade .4s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 40ms + 520ms); }
+/* "Reducir movimiento" del sistema (Windows: efectos de animacion apagados): todo quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .v4r *, .v4r *::before, .v4r *::after { animation: none !important; transition: none !important; }
+}
+
+/* "Donde esta tu capital" es la tarjeta angosta: el titulo arriba y el selector debajo, sin partir el titulo */
+.rdv-comp > .v4-card-h { flex-direction: column; align-items: flex-start; gap: 12px; }
+.rdv-comp .v4-titulo { white-space: nowrap; }

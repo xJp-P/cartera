@@ -16,7 +16,7 @@
 //   - en Cobrado, la caja del mes con su barra intereses / capital y la lista por dia;
 //   - el panel del deudor con el diseño nuevo (la raiz lleva `.v4p`, como la de Cartera).
 // Estilos en public/css/cobros.css (`.v4c`, `.cbv-*`); los del panel, en public/css/panel.css. La barra
-// segmentada (`CbvSegbar`) la reutiliza Cartera. Prefijo `cbv`/`CBV_` (el arnes aplana los modulos en
+// segmentada (`CbvSegbar`) la reutilizan Cartera y Rendimiento, y el selector (`CbvSeg`), Rendimiento. Prefijo `cbv`/`CBV_` (el arnes aplana los modulos en
 // un ambito).
 
 import { DeudorPanel } from '../componentes/DeudorPanel.js';
@@ -45,7 +45,7 @@ function cbvUsd(l, cop){ return l && l.moneda === 'USD' ? usdLinea(copToUsd(cop,
 function cbvPl(n, s, p){ return n + ' ' + (n === 1 ? s : (p || s + 's')); }
 
 // Control segmentado con la pastilla que se desliza (el selector de tema de Control TC).
-function CbvSeg(p){
+export function CbvSeg(p){
   var i = p.opciones.findIndex(function(o){ return o[0] === p.valor; });
   return h('div', { className: 'cbv-seg', style: { '--n': p.opciones.length, '--k': Math.max(0, i) } },
     h('span', { className: 'cbv-seg-thumb' }),
