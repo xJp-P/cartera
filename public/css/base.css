@@ -7,8 +7,9 @@
  *   2. la tipografia: Inter servida desde public/fonts (licencia OFL en Inter-OFL.txt) y las cifras con
  *      numeros tabulares en vez de la monoespaciada;
  *   3. las barras de desplazamiento en pildora;
- *   4. el marco de la app: menu lateral y encabezado (clases de app.js) y el area de contenido;
- *   5. la compatibilidad de las pestañas viejas con el marco nuevo.
+ *   4. el marco de la app: menu lateral y encabezado (clases de app.js) y el area de contenido.
+ * (Hubo un bloque 5, la compatibilidad del panel del deudor viejo con el marco nuevo: salio al
+ * integrar Cartera; el panel de Cobros y Cartera se posiciona en panel.css.)
  *
  * La integracion es pestaña por pestaña (regla del PO): cada pestaña rediseñada trae su propia hoja
  * (resumen.css, ...). Las reglas de los componentes de los modales NO viven aqui: llegan con ellos. */
@@ -160,9 +161,3 @@ button, input, select, textarea { font-family: inherit; }
 .mh-btn:hover { border-color: var(--line-strong); color: var(--ink); }
 .mh-menu:focus-visible, .mh-btn:focus-visible, .nav-item:focus-visible, .nav-seccion:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .main-content { padding: 28px 32px 40px; background: var(--page); }
-
-/* ── 5. COMPATIBILIDAD DE LAS PESTAÑAS VIEJAS CON EL MARCO NUEVO ─────────────── */
-/* El panel del deudor de Cobros y Cartera se pega arriba subiendo lo que mide el relleno superior del
-   area de contenido (era 24 px, ahora 28) y ocupa el alto bajo el encabezado (era 56 px, ahora 64).
-   No aplica al panel superpuesto de las ventanas angostas, que es fijo y ocupa toda la ventana. */
-.op-lado:not(.superpuesto) { top: -28px; max-height: calc(100vh - 64px); }

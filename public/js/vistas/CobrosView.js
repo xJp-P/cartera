@@ -14,10 +14,10 @@
 //     ademas un filtro, en la barra y en su tarjeta);
 //   - cada tramo es una tarjeta con sus filas separadas por lineas, sin bordes de color;
 //   - en Cobrado, la caja del mes con su barra intereses / capital y la lista por dia;
-//   - el panel del deudor con el diseño nuevo: la raiz lleva `.v4p` y el panel recibe `v4` (ver
-//     componentes/DeudorPanel.js). Cartera, que todavia no se rediseña, sigue con el panel de siempre.
-// Estilos en public/css/cobros.css (`.v4c`, `.cbv-*` y `.v4p`). Prefijo `cbv`/`CBV_` (el arnes aplana
-// los modulos en un ambito).
+//   - el panel del deudor con el diseño nuevo (la raiz lleva `.v4p`, como la de Cartera).
+// Estilos en public/css/cobros.css (`.v4c`, `.cbv-*`); los del panel, en public/css/panel.css. La barra
+// segmentada (`CbvSegbar`) la reutiliza Cartera. Prefijo `cbv`/`CBV_` (el arnes aplana los modulos en
+// un ambito).
 
 import { DeudorPanel } from '../componentes/DeudorPanel.js';
 import { Ico } from '../componentes/iconos.js';
@@ -54,7 +54,7 @@ function CbvSeg(p){
     }));
 }
 // Barra segmentada (Control TC .ds-segbar) con su globo por segmento.
-function CbvSegbar(p){
+export function CbvSegbar(p){
   var total = p.partes.reduce(function(s, x){ return s + Math.max(0, x.v); }, 0);
   if (!(total > 0)) return h('div', { className: 'cbv-segbar vacia' }, h('span', { className: 'seg track', style: { flex: 1 } }));
   var vivas = p.partes.filter(function(x){ return x.v > 0; });
@@ -120,8 +120,11 @@ export function CobrosView(props){
   }
   // Lo vencido se agrupa por credito: si alguien debe tres cuotas, se ve como UNA deuda y se cobra de
   // una vez con el cobro en cascada. Con 2 o mas cuotas el grupo es un ACORDEON plegado (decision del
-  // PO): la fila dice cuantas cuotas, cuanto suman y los dias de la mas vieja; se abre con un clic (o
-  // solo, si la cuota elegida esta adentro).
+  // PO): la fila dice cuantas cuotas, cuanto suman y los dias de la mas vieja.
+  // Dos clics distintos (ajuste del PO en la integracion): el chevron SOLO pliega o despliega las
+  // cuotas; el resto de la fila abre al deudor en el panel. El chevron es un boton propio y no deja
+  // que su clic llegue a la fila. Lo que el usuario eligio con el chevron (abierto o cerrado) manda;
+  // sin eleccion, el grupo se abre solo si la cuota elegida esta adentro.
   function grupos(fs){
     var porLoan = {}, orden = [];
     fs.forEach(function(f){ if (!porLoan[f.l.id]){ porLoan[f.l.id] = []; orden.push(f.l.id); } porLoan[f.l.id].push(f); });
@@ -129,15 +132,17 @@ export function CobrosView(props){
       var g = porLoan[id], l = g[0].l, total = g.reduce(function(s, f){ return s + f.pend; }, 0);
       if (g.length === 1) return fila(g[0], false, gi);
       var on = sel && sel.loanId === id;
-      var abierto = !!abiertos[id] || !!(on && sel.payId && g.some(function(f){ return f.p.id === sel.payId; }));
-      function alternar(){
+      var abierto = abiertos[id] !== undefined ? !!abiertos[id] : !!(on && sel.payId && g.some(function(f){ return f.p.id === sel.payId; }));
+      function alternar(e){
+        e.stopPropagation();
         var x = Object.assign({}, abiertos); x[id] = !abierto; setAbiertos(x);
-        setSel({ nombre: l.nombre, loanId: l.id, payId: null });
       }
+      function verDeudor(){ setSel({ nombre: l.nombre, loanId: l.id, payId: null }); }
       return h('div', { key: 'g' + id, className: 'cbv-grupo' + (on ? ' on' : '') + (abierto ? ' abierto' : ''), style: { '--i': gi } },
-        h('div', { className: 'cbv-fila cbv-grupo-h', role: 'button', 'aria-expanded': abierto, title: abierto ? 'Ocultar las cuotas' : 'Ver las cuotas una por una', onClick: alternar },
+        h('div', { className: 'cbv-fila cbv-grupo-h', title: 'Ver a ' + properCase(l.nombre) + ' en el panel', onClick: verDeudor },
           h('div', { className: 'cbv-quien' },
-            h('span', { className: 'cbv-chev' }, h(Ico, { name: 'chevright', size: 14, sw: 2.4 })),
+            h('button', { type: 'button', className: 'cbv-chev', 'aria-expanded': abierto, title: abierto ? 'Ocultar las cuotas' : 'Ver las cuotas una por una', onClick: alternar },
+              h(Ico, { name: 'chevright', size: 14, sw: 2.4 })),
             avatar(l.nombre, 'crit'),
             h('div', { className: 'cbv-quien-c' },
               h('div', { className: 'cbv-nombre' }, properCase(l.nombre)),
@@ -276,7 +281,7 @@ export function CobrosView(props){
   var acciones = props.acciones;
   var panel = deudorSel
     ? h(DeudorPanel, Object.assign({ key: sel.nombre + '|' + sel.loanId, deudor: deudorSel, loans: loans, pays: pays, hoy: hoy, focoLoan: sel.loanId, focoPay: sel.payId,
-        onClose: function(){ setSel(null); }, superpuesto: superpuesto, datosPago: props.datosPago, showToast: props.showToast, onPay: props.onPay, v4: true }, acciones))
+        onClose: function(){ setSel(null); }, superpuesto: superpuesto, datosPago: props.datosPago, showToast: props.showToast, onPay: props.onPay }, acciones))
     : !superpuesto && h('aside', { className: 'v4-card cbv-lado', style: { '--i': 1 } },
         h('div', { className: 'cbv-lado-h' }, h('div', { className: 'v4-titulo' }, 'Tu día de cobro'), h(V4Chip, { tono: tot.hoy.n ? 'warn' : 'good' }, tot.hoy.n ? cbvPl(tot.hoy.n, 'cuota') + ' hoy' : 'Nada vence hoy')),
         h('div', { className: 'cbv-kl' }, 'Para cobrar hoy'),

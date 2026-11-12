@@ -252,17 +252,35 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const idG = conVarias[0], fsG = tramo('vencido').filter(f => f.l.id === idG);
     const grupoG = grupos.filter(g => textos(g).join(' ').indexOf(X.properCase(loanMap[idG].nombre)) !== -1)[0];
     const cabG = conClase(grupoG, 'cbv-grupo-h')[0];
-    R.check('B2 acordeon plegado por defecto: el grupo no muestra sus cuotas',
-      conClase(grupoG, 'cbv-grupo-cuotas').length === 0 && cabG.props['aria-expanded'] === false && !/\babierto\b/.test(grupoG.props.className));
+    const chevG = conClase(cabG, 'cbv-chev')[0];
+    R.check('B2 acordeon plegado por defecto: el grupo no muestra sus cuotas (y su chevron lo dice)',
+      conClase(grupoG, 'cbv-grupo-cuotas').length === 0 && !!chevG && chevG.tag === 'button' && chevG.props['aria-expanded'] === false &&
+      !/\babierto\b/.test(grupoG.props.className));
     const txtG = textos(cabG).join(' ');
     R.check('B2 su fila: cuantas cuotas, cuanto suman y los dias de la mas vieja',
       txtG.indexOf(fsG.length + ' cuotas vencidas') !== -1 && txtG.indexOf(X.fmt(suma(fsG, f => f.pend))) !== -1 &&
       txtG.indexOf((-fsG[0].dias) + ' días de mora') !== -1, txtG);
+    // Dos clics distintos (ajuste del PO en la integracion): el chevron SOLO pliega o despliega, y no deja
+    // que su clic llegue a la fila; el resto de la fila abre al deudor en el panel, sin tocar el acordeon.
+    const grupoDe = r => conClase(r.arbol, 'cbv-grupo').filter(g => textos(g).join(' ').indexOf(X.properCase(loanMap[idG].nombre)) !== -1)[0];
     const r0 = montar(X.CobrosView, propsCobros, []);
-    const cab0 = conClase(conClase(r0.arbol, 'cbv-grupo').filter(g => textos(g).join(' ').indexOf(X.properCase(loanMap[idG].nombre)) !== -1)[0], 'cbv-grupo-h')[0];
-    cab0.props.onClick();
-    R.check('B2 un clic en la fila lo abre (y muestra al deudor en el panel)',
-      r0.llamadas.some(x => x.k === 7 && x.nuevo[idG] === true) && r0.llamadas.some(x => x.k === 3 && x.nuevo.loanId === idG), r0.llamadas);
+    let corto = 0;
+    conClase(grupoDe(r0), 'cbv-chev')[0].props.onClick({ stopPropagation: () => { corto++; } });
+    R.check('B2 un clic en el chevron despliega las cuotas y NO abre al deudor',
+      r0.llamadas.some(x => x.k === 7 && x.nuevo[idG] === true) && !r0.llamadas.some(x => x.k === 3) && corto === 1, { llamadas: r0.llamadas, corto });
+    const r0b = montar(X.CobrosView, propsCobros, []);
+    conClase(grupoDe(r0b), 'cbv-grupo-h')[0].props.onClick();
+    R.check('B2 un clic en el resto de la fila abre al deudor en el panel y NO toca el acordeon',
+      r0b.llamadas.some(x => x.k === 3 && x.nuevo.loanId === idG && x.nuevo.payId === null) && !r0b.llamadas.some(x => x.k === 7), r0b.llamadas);
+    R.check('B2 el chevron es el unico boton de la fila que pliega (el "Cobrar" y el recibo siguen aparte)',
+      conClase(grupoDe(r0b), 'cbv-grupo-h')[0].props['aria-expanded'] === undefined && botones(grupoDe(r0b), /^Cobrar$/).length === 1);
+    // Con una cuota del grupo elegida el grupo se abre solo; si el usuario lo cierra con el chevron, se cierra.
+    const cuotaDentro = { nombre: loanMap[idG].nombre, loanId: idG, payId: fsG[1].p.id };
+    const conDentro = montar(X.CobrosView, propsCobros, [undefined, undefined, undefined, cuotaDentro]);
+    const cerradoAMano = {}; cerradoAMano[idG] = false;
+    const conDentroCerrado = montar(X.CobrosView, propsCobros, [undefined, undefined, undefined, cuotaDentro, undefined, undefined, undefined, cerradoAMano]);
+    R.check('B2 con una cuota de adentro elegida el grupo se abre solo, y el chevron puede cerrarlo igual',
+      conClase(grupoDe(conDentro), 'cbv-grupo-cuotas').length === 1 && conClase(grupoDe(conDentroCerrado), 'cbv-grupo-cuotas').length === 0);
     const abiertoG = {}; abiertoG[idG] = true;
     const cbG = montar(X.CobrosView, propsCobros, [undefined, undefined, undefined, undefined, undefined, undefined, undefined, abiertoG]);
     R.eq('B2 abierto, muestra sus ' + fsG.length + ' cuotas una por una', conClase(cbG.arbol, 'cbv-fila en-grupo').length, fsG.length);
@@ -385,7 +403,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       textos(lado).join(' ').indexOf(tramo('hoy').length + ' cuotas hoy') !== -1, lado && textos(lado));
     R.check('B11 con una cuota elegida, el panel del deudor reemplaza a "Tu día de cobro"', conClase(cbSel.arbol, 'cbv-lado').length === 0);
 
-    // ── El panel del deudor: diseño nuevo en Cobros, el de siempre en Cartera (hasta su fase) ──
+    // ── El panel del deudor: el diseño nuevo en Cobros y en Cartera (fase 3 de la integracion) ──
     // Un prestamo en dolares con compras de dolares: su panel muestra la TRM de cada compra.
     const lLotes = loans.filter(l => l.estado === 'Activo' && l.comprasUSD && l.comprasUSD.length > 2)[0];
     R.check('B12 ANTI-VACIO: el fixture tiene un prestamo activo con compras de dolares', !!lLotes);
@@ -398,34 +416,37 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       const trm = n => textos(n).filter(x => /^TRM \$/.test(x)).length, arroba = n => textos(n).filter(x => /^@ \$/.test(x)).length;
       R.check('B12 en Cobros, el panel dice "TRM $ X" en cada compra de dolares y trae el flujo de caja nuevo',
         !!pC && trm(pC) > 0 && arroba(pC) === 0 && conClase(pC, 'fcv-btn').length === 1, pC && { trm: trm(pC), arroba: arroba(pC), fcv: conClase(pC, 'fcv-btn').length });
-      R.check('B12 en Cartera (sin rediseñar todavia), el mismo panel sigue con "@ $ X" y el flujo de caja de siempre',
-        !!pK && arroba(pK) === trm(pC) && trm(pK) === 0 && conClase(pK, 'fcv').length === 0 && conClase(pK, 'fcv-btn').length === 0 &&
-        botones(pK, /^Ver flujo de caja$/).length === 1, pK && { trm: trm(pK), arroba: arroba(pK) });
-      R.check('B12 la raiz de Cartera no lleva `v4p` (el diseño nuevo del panel no se le cuela)',
-        !/\bv4p\b/.test(enCartera.arbol.props.className), enCartera.arbol.props.className);
-      // El flujo de caja nuevo, abierto: las mismas filas y totales que el de siempre (flujoCajaDe), sobre
-      // el prestamo con MAS movimientos de caja del fixture.
+      R.check('B12 en Cartera, el mismo panel con el mismo diseño: "TRM $ X" y el flujo de caja nuevo',
+        !!pK && trm(pK) === trm(pC) && arroba(pK) === 0 && conClase(pK, 'fcv-btn').length === 1, pK && { trm: trm(pK), arroba: arroba(pK) });
+      R.check('B12 las raices de Cobros y de Cartera llevan `v4p` (el diseño del panel, panel.css)',
+        /\bv4p\b/.test(enCobros.arbol.props.className) && /\bv4p\b/.test(enCartera.arbol.props.className), [enCobros.arbol.props.className, enCartera.arbol.props.className]);
+      R.check('B12 el flujo de caja viejo salio: un solo FlujoCajaPanel (el del diseño nuevo)',
+        typeof X.FlujoCajaPanel === 'function' && typeof X.FlujoCajaPanelV4 === 'undefined');
+      // El flujo de caja, abierto: una fila por movimiento de `flujoCajaDe` y sus totales, sobre el prestamo
+      // con MAS movimientos de caja del fixture.
       const lFj = loans.slice().sort((x, y) => X.flujoCajaDe(y, lpDe(y.id)).eventos.length - X.flujoCajaDe(x, lpDe(x.id)).eventos.length)[0];
       const fj = X.flujoCajaDe(lFj, lpDe(lFj.id));
-      const fv4 = montar(X.FlujoCajaPanelV4, { loan: lFj, pays: lpDe(lFj.id) }, [true]);
-      const fviejo = montar(X.FlujoCajaPanel, { loan: lFj, pays: lpDe(lFj.id) }, [true]);
-      const filasV4 = nodos(fv4.arbol, n => n.tag === 'tr').length, filasViejo = nodos(fviejo.arbol, n => n.tag === 'tr').length;
-      R.check('B13 el flujo de caja nuevo trae las mismas ' + fj.eventos.length + ' filas, sus totales y el mismo ingreso que el de siempre',
-        fj.eventos.length >= 5 && filasV4 === filasViejo && filasV4 === fj.eventos.length + 2 &&
-        fv4.t.indexOf(X.fmtN(fj.totales.ingreso)) !== -1 && fviejo.t.indexOf(X.fmtN(fj.totales.ingreso)) !== -1, { filasV4, filasViejo, eventos: fj.eventos.length });
-      R.check('B13 y ninguna celda del nuevo lleva color en linea (el estado va por clase)',
+      const fv4 = montar(X.FlujoCajaPanel, { loan: lFj, pays: lpDe(lFj.id) }, [true]);
+      const filasV4 = nodos(fv4.arbol, n => n.tag === 'tr').length;
+      R.check('B13 el flujo de caja trae una fila por cada uno de sus ' + fj.eventos.length + ' movimientos y la fila de totales (interes, capital, ingreso)',
+        fj.eventos.length >= 5 && filasV4 === fj.eventos.length + 2 && conClase(fv4.arbol, 'fcv-tot').length === 1 &&
+        [fj.totales.interes, fj.totales.capital, fj.totales.ingreso].every(v => textos(conClase(fv4.arbol, 'fcv-tot')[0]).indexOf(X.fmtN(v)) !== -1),
+        { filasV4, eventos: fj.eventos.length });
+      R.check('B13 y ninguna celda lleva color en linea (el estado va por clase)',
         nodos(fv4.arbol, n => (n.tag === 'td' || n.tag === 'th') && n.props && n.props.style && n.props.style.color).length === 0);
     }
   }
 
   // ── C — CARTERA ───────────────────────────────────────────────────────────
-  R.seccion('C — la vista Cartera renderizada');
+  // El rediseño v4 (fase 3 de la integracion): mismo comportamiento y mismos datos que la vista de 3.7.1,
+  // con clases `ctv-`. Se sigue pintando con la ventana "oculta" (B): las cifras grandes, en su valor final.
+  R.seccion('C — la vista Cartera (rediseño v4) renderizada');
   const propsCartera = { loans, pays, deudores, hoy: HOY, acciones, onPay: () => {}, onNuevo: () => {}, datosPago: '', showToast: () => {}, foco: null };
   let ct = null; error = null;
   try { ct = montar(X.CarteraView, propsCartera, []); } catch (e) { error = e; }
   R.check('C1 la vista se renderiza sin excepciones', !!ct, error && (error.stack || String(error)));
   if (ct) {
-    const filas = conClase(ct.arbol, 'ct-fila');
+    const filas = conClase(ct.arbol, 'ctv-fila');
     const conActivos = MD.filter(x => x.activos.length > 0);
     R.eq('C1 por defecto lista los deudores con prestamos activos', filas.length, conActivos.length);
     const nombres = filas.map(f => textos(f)[1]);
@@ -438,21 +459,62 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       pesos.every((w, i) => i === 0 || w >= pesos[i - 1]) && new Set(pesos).size >= 3, pesos);
     R.check('C2 en escritorio el primero de la lista ya esta abierto en el panel',
       conClase(ct.arbol, 'dp').length === 1 && ct.t.indexOf(X.properCase(filas.length ? nombres[0] : '')) !== -1);
-    const chips = conClase(ct.arbol, 'op-filtro').map(n => textos(n).join(' '));
+    const chips = conClase(ct.arbol, 'ctv-filtro').map(n => textos(n).join(' '));
     R.check('C3 el filtro "En mora" cuenta 3', chips.some(c => /^En mora 3$/.test(c)), chips);
     R.check('C3 el filtro "Activos" cuenta los deudores con prestamos activos', chips.some(c => c === 'Activos ' + conActivos.length), chips);
-    R.check('C4 el resumen dice lo mismo que el Resumen: en la calle y prestado',
-      ct.t.indexOf(X.fmt(MR.vivo)) !== -1 && ct.t.indexOf(X.fmt(MR.prestado)) !== -1);
+    const heroCt = conClase(ct.arbol, 'ctv-hero')[0];
+    R.check('C4 el encabezado dice lo mismo que el Resumen: en la calle, prestado y cuanto ya volvio',
+      textos(heroCt).indexOf(sinPeso(X.fmt(MR.vivo))) !== -1 &&
+      textos(heroCt).indexOf('de ' + X.fmt(MR.prestado) + ' prestados · ' + Math.round((1 - MR.vivo / MR.prestado) * 100) + '% ya volvió') !== -1, textos(heroCt));
+    // La calle por estado, recalculada APARTE desde modeloDeudor: al dia, cobran esta semana, en mora, abierto.
+    const GR = { aldia: 'aldia', hoy: 'pronto', semana: 'pronto', mora: 'mora', abierto: 'abierto' };
+    const porEst = { aldia: [0, 0], pronto: [0, 0], mora: [0, 0], abierto: [0, 0] };
+    MD.filter(x => x.activos.length).forEach(x => { const g = porEst[GR[x.estado]]; if (g) { g[0] += x.saldo; g[1]++; } });
+    const ley = conClase(heroCt, 'ctv-ley-f').map(n => textos(n));
+    R.eq('C7 la leyenda: cada estado con su conteo y lo que suma en la calle', ley.map(t => [t[0], t[1], t[2]]),
+      [['Al día', 'aldia'], ['Esta semana', 'pronto'], ['Con mora', 'mora'], ['Abierto', 'abierto']].map(([r, k]) => [r, String(porEst[k][1]), X.fmt(porEst[k][0])]));
+    R.eq('C7 la leyenda suma lo que esta en la calle', suma(Object.keys(porEst), k => porEst[k][0]), MR.vivo);
+    // La correccion del PO: en un solo renglon el conteo quedaba pegado al monto. Cada estado va en dos
+    // renglones: arriba el rotulo con su conteo (en su chip), abajo el monto, cada uno en su propio bloque.
+    R.check('C7 cada estado de la leyenda en dos bloques: el rotulo con su conteo, y el monto aparte',
+      conClase(heroCt, 'ctv-ley-f').every(n => n.kids.length === 2 && conClase(n.kids[0], 'n').length === 1 && n.kids[1].tag === 'b'));
+    const segCt = conClase(conClase(heroCt, 'cbv-segbar')[0], 'seg');
+    R.check('C7 la barra del encabezado reparte la calle en los estados con algo, cada uno de su largo',
+      segCt.length === Object.keys(porEst).filter(k => porEst[k][0] > 0).length &&
+      segCt.every(n => Object.keys(porEst).some(k => Math.abs(porEst[k][0] - n.props.style.flexGrow) < 1e-6)), segCt.map(n => n.props.style.flexGrow));
+    // "Lo urgente primero" agrupa la lista por estado, cada grupo con cuantos y cuanto suman.
+    const grH = conClase(ct.arbol, 'ctv-grupo-h').map(n => textos(n));
+    R.eq('C8 en "Lo urgente primero" la lista va agrupada por estado, en el orden de la urgencia',
+      grH.map(t => t[0]), ['En mora', 'Cobran esta semana', 'Al día', 'Crédito abierto'].filter(r => grH.some(t => t[0] === r)));
+    const moraG = grH.filter(t => t[0] === 'En mora')[0];
+    R.check('C8 el grupo "En mora" dice cuantos deudores y cuanto tienen vencido',
+      !!moraG && moraG[1] === String(MD.filter(x => x.estado === 'mora').length) && moraG[2] === X.fmt(suma(MD.filter(x => x.estado === 'mora'), x => x.mora)), moraG);
+    R.check('C8 ANTI-VACIO: el fixture llena al menos tres grupos', grH.length >= 3, grH.map(t => t[0]));
+    const ctSaldo = montar(X.CarteraView, propsCartera, [undefined, undefined, 'saldo']);
+    R.eq('C8 con otro orden la lista no se agrupa', conClase(ctSaldo.arbol, 'ctv-grupo-h').length, 0);
+    // Cada fila: el chip de un prestamo abre ESE prestamo; la barra fina dice cuanto ya volvio.
+    const f0 = filas[0], x0 = MD.filter(x => X.properCase(x.nombre) === textos(f0)[1])[0];
+    const rC9 = montar(X.CarteraView, propsCartera, []);
+    const chipC9 = conClase(conClase(rC9.arbol, 'ctv-fila')[0], 'ctv-chip')[0];
+    let cortoC9 = 0;
+    chipC9.props.onClick({ stopPropagation: () => { cortoC9++; } });
+    R.check('C9 el chip de un prestamo abre a su deudor con ESE prestamo (sin que el clic llegue a la fila)',
+      cortoC9 === 1 && rC9.llamadas.some(x => x.k === 4 && x.nuevo === x0.nombre) && rC9.llamadas.some(x => x.k === 5 && x.nuevo && x.nuevo.loan === x0.activos[0].loan.id),
+      rC9.llamadas);
+    const pctF0 = Math.max(0, Math.min(100, Math.round((1 - x0.saldo / x0.prestado) * 100)));
+    R.check('C9 la barra de cada fila dice cuanto del capital ya volvio (' + pctF0 + '%)',
+      textos(conClase(f0, 'ctv-meter')[0]).indexOf(pctF0 + '%') !== -1 && conClase(f0, 'pista')[0].kids[0].props.style.width === pctF0 + '%');
+    R.check('C10 la raiz lleva el diseño nuevo de la lista y del panel (`op ct v4t v4p`)', /^op ct v4t v4p\b/.test(ct.arbol.props.className), ct.arbol.props.className);
     // El foco (desde el Resumen o la busqueda): un deudor sin mora y uno de sus prestamos.
     const otro = MD.filter(x => x.activos.length > 0 && x.moraN === 0)[0];
     const lf = otro.activos[otro.activos.length - 1].loan;
     const ctF = montar(X.CarteraView, Object.assign({}, propsCartera, { foco: { nombre: otro.nombre, loanId: lf.id, t: 1 } }), []);
     const pestOn = conClase(ctF.arbol, 'dp-tab on');
     R.check('C5 el foco abre ESE deudor con ESE prestamo seleccionado',
-      conClase(ctF.arbol, 'ct-fila on').length === 1 && textos(conClase(ctF.arbol, 'ct-fila on')[0])[1] === X.properCase(otro.nombre) &&
+      conClase(ctF.arbol, 'ctv-fila on').length === 1 && textos(conClase(ctF.arbol, 'ctv-fila on')[0])[1] === X.properCase(otro.nombre) &&
       pestOn.length === 1 && textos(pestOn[0]).join(' ').indexOf(X.fmt(X.modeloPrestamo(lf, lpDe(lf.id), HOY).saldo)) !== -1);
     const ctInact = montar(X.CarteraView, propsCartera, [undefined, 'inactivos']);
-    R.eq('C6 el filtro "Sin préstamos activos" lista los demas', conClase(ctInact.arbol, 'ct-fila').length, MD.length - conActivos.length);
+    R.eq('C6 el filtro "Sin préstamos activos" lista los demas', conClase(ctInact.arbol, 'ctv-fila').length, MD.length - conActivos.length);
   }
 
   // ── D — EL PANEL DEL DEUDOR ───────────────────────────────────────────────
@@ -647,24 +709,31 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('F3 el Resumen navega a las pestanas nuevas', !/onNav\('(pagos|deudores)'/.test(dash) && /onNav\('cobros', 'vencido'\)/.test(dash));
   const reglas = leer('public/css/styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
   const cobrosCss = leer('public/css/cobros.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
-  R.check('F4 index.html carga cobros.css despues de base.css y resumen.css (Cobros toma de ahi la tarjeta, los botones y las animaciones)',
-    /href="\/css\/base\.css">\s*<link[^>]*href="\/css\/resumen\.css">\s*<link[^>]*href="\/css\/cobros\.css">/.test(leer('public/index.html')));
-  R.check('F4 cobros.css trae la bandeja (`.v4c`) y el panel del deudor dentro de Cobros (`.v4p`)',
-    ['.v4c.op{', '.cbv-tramos{', '.cbv-segbar{', '.cbv-seg-thumb{', '.cbv-fila{', '.cbv-grupo{', '.v4p.dp{', '.v4p.fcv-btn{', '.v4p.op-lado:not(.superpuesto){'].every(x => cobrosCss.indexOf(x) !== -1));
-  // Las clases `cb-` de la vista vieja salieron de styles.css; quedan solo las dos que usa Cartera.
-  const cbUsadas = Array.from(new Set(['public/js/vistas/CarteraView.js', 'public/js/vistas/CobrosView.js', 'public/js/componentes/DeudorPanel.js']
-    .map(leer).join(' ').match(/\bcb-[a-z0-9-]+/g) || [])).sort();
-  const cbEnCss = Array.from(new Set(reglas.match(/\.cb-[a-z0-9-]+/g) || [])).map(x => x.slice(1)).sort();
-  R.eq('F4 styles.css solo conserva las clases `cb-` que alguien usa (las dos de Cartera)', [cbEnCss, cbUsadas], [['cb-lado', 'cb-nombre'], ['cb-lado', 'cb-nombre']]);
+  const panelCss = leer('public/css/panel.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
+  const carteraCss = leer('public/css/cartera.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
+  R.check('F4 index.html carga cobros.css, panel.css y cartera.css, en ese orden, despues de base.css y resumen.css',
+    /href="\/css\/base\.css">\s*<link[^>]*href="\/css\/resumen\.css">\s*<link[^>]*href="\/css\/cobros\.css">\s*<link[^>]*href="\/css\/panel\.css">\s*<link[^>]*href="\/css\/cartera\.css">/.test(leer('public/index.html')));
+  R.check('F4 cobros.css trae la bandeja (`.v4c`); el panel ya no vive ahi',
+    ['.v4c.op{', '.cbv-tramos{', '.cbv-segbar{', '.cbv-seg-thumb{', '.cbv-fila{', '.cbv-grupo{', '.cbv-chev{'].every(x => cobrosCss.indexOf(x) !== -1) && cobrosCss.indexOf('.v4p') === -1);
+  R.check('F4 panel.css trae el panel del deudor que comparten las dos pestañas (`.v4p`), con su flujo de caja',
+    ['.v4p.dp{', '.v4p.dp-head{', '.v4p.dp-crono{', '.v4p.fcv-btn{', '.v4p.fcv-tot', '.v4p.op-lado:not(.superpuesto){'].every(x => panelCss.indexOf(x) !== -1));
+  R.check('F4 cartera.css trae la lista (`.v4t`, `ctv-`) y la leyenda en dos renglones (la correccion del PO)',
+    ['.v4t.op.ct,', '.ctv-hero{', '.ctv-filtro{', '.ctv-fila{', '.ctv-chip{', '.ctv-grupo-h{'].every(x => carteraCss.indexOf(x) !== -1) &&
+    /\.ctv-ley-f\{display:flex;flex-direction:column;/.test(carteraCss) && /\.ctv-ley-f\.n\{margin-left:auto;/.test(carteraCss) && /\.ctv-ley-fb\{padding-left:16px;/.test(carteraCss));
+  // Las clases de las vistas de 3.5.0 (`cb-` de Cobros, `ct-` de Cartera) salieron: ni en el codigo ni en styles.css.
+  const viejas = /\.(cb|ct)-[a-z0-9-]+/g;
+  const enJs = ['public/js/vistas/CarteraView.js', 'public/js/vistas/CobrosView.js', 'public/js/componentes/DeudorPanel.js'].map(leer).join(' ');
+  R.eq('F4 sin clases `cb-` ni `ct-` de las vistas de 3.5.0, ni en el codigo ni en styles.css (salvo `ct-main`, que no lleva regla)',
+    [Array.from(new Set(reglas.match(viejas) || [])), Array.from(new Set(enJs.match(/\b(cb|ct)-[a-z0-9-]+/g) || []))], [[], ['ct-main']]);
   R.check('F4 styles.css trae el maestro-detalle y el panel superpuesto en ventana angosta',
-    /\.op\{display:grid/.test(reglas) && /\.dp\{/.test(reglas) && /\.ct-fila\{/.test(reglas) &&
+    /\.op\{display:grid/.test(reglas) && /\.dp\{/.test(reglas) && /\.op\.ct,\.op\.ct\.con-panel\{/.test(reglas) &&
     /@media \(max-width:1099px\)\{(?:\s*[^{}]+\{[^}]*\})*?\s*\.op-lado\.superpuesto\{position:fixed/.test(reglas));
 
   // ── G — LA MEMORIA DE CARTERA ─────────────────────────────────────────────
   R.seccion('G — Cartera recuerda el filtro, el orden y el deudor entre visitas');
-  const filasDe  = a => conClase(a.arbol, 'ct-fila').map(f => textos(f)[1]);
-  const filaOn   = a => conClase(a.arbol, 'ct-fila on').map(f => textos(f)[1]);
-  const filtroOn = a => conClase(a.arbol, 'op-filtro on').map(n => textos(n)[0]);
+  const filasDe  = a => conClase(a.arbol, 'ctv-fila').map(f => textos(f)[1]);
+  const filaOn   = a => conClase(a.arbol, 'ctv-fila on').map(f => textos(f)[1]);
+  const filtroOn = a => conClase(a.arbol, 'ctv-filtro on').map(n => textos(n)[0]);
   const ordenDe  = a => nodos(a.arbol, n => n.tag === 'select')[0].props.value;
   const tabOn    = a => conClase(a.arbol, 'dp-tab').findIndex(n => n.props.className.split(/\s+/).indexOf('on') !== -1);
   const visita   = (memoria, extra, estado) => montar(X.CarteraView, Object.assign({}, propsCartera, { memoria }, extra || {}), estado || []);
@@ -688,11 +757,11 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.check('G1 ANTI-TRIVIAL: el elegido NO es el primero de la lista', PC(elegido.nombre) !== primero);
 
     // G2 — el usuario elige: "En dolares", "Mayor saldo" y el 2o prestamo del elegido (su chip).
-    const bDol = conClase(v1.arbol, 'op-filtro').filter(n => textos(n)[0] === 'En dólares')[0];
+    const bDol = conClase(v1.arbol, 'ctv-filtro').filter(n => textos(n)[0] === 'En dólares')[0];
     bDol.props.onClick();
     nodos(v1.arbol, n => n.tag === 'select')[0].props.onChange({ target: { value: 'saldo' } });
-    const filaEl = conClase(v1.arbol, 'ct-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0];
-    const chipsEl = filaEl ? conClase(filaEl, 'ct-chip').filter(n => n.props.className.indexOf('cerrado') === -1) : [];
+    const filaEl = conClase(v1.arbol, 'ctv-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0];
+    const chipsEl = filaEl ? conClase(filaEl, 'ctv-chip').filter(n => n.props.className.indexOf('cerrado') === -1) : [];
     if (chipsEl[1]) chipsEl[1].props.onClick({ stopPropagation: () => {} });
     R.check('G2 cada clic queda en la memoria: filtro, orden, deudor y prestamo',
       mem.filtro === 'usd' && mem.orden === 'saldo' && mem.sel === elegido.nombre && mem.loan === act[1], mem);
@@ -719,9 +788,9 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.check('G5 cerrar el panel deja la memoria sin deudor', mem.sel === null && mem.loan === null, mem);
     const v4 = visita(mem);
     R.check('G5 al volver no se abre nadie solo', filaOn(v4).length === 0 && conClase(v4.arbol, 'dp').length === 0 &&
-      v4.todo.indexOf('Elige un deudor de la lista.') !== -1);
+      conClase(v4.arbol, 'ctv-elige').length === 1 && v4.todo.indexOf('Elige un deudor de la lista') !== -1);
     // Elegir una fila: deudor nuevo y SIN prestamo recordado (abre el primero de los suyos).
-    conClase(v4.arbol, 'ct-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0].props.onClick();
+    conClase(v4.arbol, 'ctv-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0].props.onClick();
     R.check('G5 elegir una fila recuerda al deudor y olvida el prestamo del anterior', mem.sel === elegido.nombre && mem.loan === null, mem);
 
     // G6 — el recordado ya no existe (p. ej. se eliminaron sus prestamos): se abre el primero.
@@ -736,7 +805,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const v6 = visita(memMora, { deudores: sinMora });
     const actSinMora = MD.filter(x => x.moraN === 0 && x.activos.length > 0).length;
     R.check('G7 un filtro recordado que quedo vacio cae a "Activos" (su boton ya no existe)',
-      filtroOn(v6).join() === 'Activos' && filasDe(v6).length === actSinMora && !conClase(v6.arbol, 'op-filtro').some(n => textos(n)[0] === 'En mora'),
+      filtroOn(v6).join() === 'Activos' && filasDe(v6).length === actSinMora && !conClase(v6.arbol, 'ctv-filtro').some(n => textos(n)[0] === 'En mora'),
       [filtroOn(v6), filasDe(v6).length, actSinMora]);
     R.check('G7 ANTI-VACIO: sin esos deudores nadie queda en mora y la lista no esta vacia', actSinMora > 0 && sinMora.length < deudores.length);
 
@@ -764,10 +833,10 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const memA = X.ctLeerMemoria();
     R.eq('G10 sin nada guardado, la memoria arranca vacia (Cartera abre como siempre)', JSON.stringify(memA), '{}');
     const va = persistente(memA);
-    conClase(va.arbol, 'op-filtro').filter(n => textos(n)[0] === 'En dólares')[0].props.onClick();
+    conClase(va.arbol, 'ctv-filtro').filter(n => textos(n)[0] === 'En dólares')[0].props.onClick();
     nodos(va.arbol, n => n.tag === 'select')[0].props.onChange({ target: { value: 'saldo' } });
-    const filaE = conClase(va.arbol, 'ct-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0];
-    conClase(filaE, 'ct-chip').filter(n => n.props.className.indexOf('cerrado') === -1)[1].props.onClick({ stopPropagation: () => {} });
+    const filaE = conClase(va.arbol, 'ctv-fila').filter(f => textos(f)[1] === PC(elegido.nombre))[0];
+    conClase(filaE, 'ctv-chip').filter(n => n.props.className.indexOf('cerrado') === -1)[1].props.onClick({ stopPropagation: () => {} });
     let disco = null; try { disco = JSON.parse(LS.getItem(CLAVE)); } catch (_) {}
     R.check('G10 cada clic queda en disco: filtro, orden, deudor y prestamo',
       !!disco && disco.filtro === 'usd' && disco.orden === 'saldo' && disco.sel === elegido.nombre && disco.loan === act[1], disco);
@@ -781,7 +850,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       [filtroOn(vb), ordenDe(vb), filaOn(vb), tabOn(vb)]);
     nodos(vb.arbol, n => n.tag === 'button' && n.props.title === 'Cerrar panel')[0].props.onClick();
     const vc = persistente(X.ctLeerMemoria());
-    R.check('G10 el panel cerrado tambien sobrevive al reinicio', filaOn(vc).length === 0 && vc.todo.indexOf('Elige un deudor de la lista.') !== -1 &&
+    R.check('G10 el panel cerrado tambien sobrevive al reinicio', filaOn(vc).length === 0 && conClase(vc.arbol, 'ctv-elige').length === 1 && vc.todo.indexOf('Elige un deudor de la lista') !== -1 &&
       filtroOn(vc).join() === 'En dólares', [filaOn(vc), filtroOn(vc)]);
   }
   // G11 — lo que se lee de disco se VALIDA: un dato viejo o corrupto nunca rompe la vista.
@@ -998,8 +1067,8 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   // en dolares ya no la tiene de padre; cobros.css le fija 11 px y el gris del resto de la app.
   const cssCob = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'css', 'cobros.css'), 'utf8').replace(/\s+/g, ' ');
   R.check('J4 en Cobros la sub-linea en dolares va aparte de la cifra en pesos, a 11 px y en gris (no azul)',
-    /\.cbv-monto \.dp-usd \{ display: block; font-size: 11px;/.test(cssCob) && /\.v4c \.dp-usd \{ color: var\(--ink-3\); \}/.test(cssCob) &&
-    !/\.dp-usd[^{]*\{[^}]*--blue/.test(cssCob));
+    /\.cbv-monto \.dp-usd \{ display: block; font-size: 11px;/.test(cssCob) && !/\.dp-usd[^{]*\{[^}]*--blue/.test(cssCob) &&
+    /\.v4p \.dp-usd \{ color: var\(--ink-3\); \}/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'css', 'panel.css'), 'utf8')));
   const pz = X.usdPiezas('+USD $1,647.22 en dólares');
   R.check('J5 el ayudante parte el importe y conserva el signo y lo que sigue',
     Array.isArray(pz) && pz[0] === '+' && pz[1].props.className === 'usd-c' && pz[2] === '1,647.22 en dólares', pz);

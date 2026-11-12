@@ -2,16 +2,15 @@
  * aprobo el PO. Se carga despues de base.css y resumen.css (de donde toma la tarjeta `.v4-card`, los
  * botones `.v4-btn`, el globo `.v4-tip`, `.v4-mesnav`, `.v4-tag` y las animaciones `v4-in` / `v4-fade`).
  *
- * Todo vive bajo la raiz de la vista: `.v4c` (la bandeja) y `.v4p` (el panel del deudor dentro de
- * Cobros). Cartera todavia no se rediseña (integracion pestaña por pestaña): su raiz no lleva `.v4p`,
- * asi que su panel sigue con los estilos de styles.css. Al integrar Cartera, su raiz tambien llevara
- * `.v4p` y el panel quedara igual en las dos pestañas. */
+ * Todo vive bajo la raiz de la vista (`.v4c`) con prefijo `cbv-`. Cartera reutiliza de aqui el buscador
+ * (`.cbv-buscar`), los puntos (`.cbv-dot`), la barra segmentada (`.cbv-segbar`) y los rotulos del
+ * encabezado (`.cbv-kl`, `.cbv-hero-s`). El panel del deudor, que comparten las dos pestañas, vive en
+ * panel.css. */
 
 /* ── Maestro-detalle ─────────────────────────────────────────────────────────── */
 .v4c.op { gap: 20px; grid-template-columns: minmax(0, 1fr) 340px; animation: none; }
 .v4c.op.con-panel { grid-template-columns: minmax(400px, .85fr) minmax(0, 1.35fr); }
 .v4c .op-main { display: flex; flex-direction: column; gap: 16px; }
-.v4p .op-lado:not(.superpuesto) { top: -28px; max-height: calc(100vh - 64px); border-radius: var(--r-lg); }
 .cbv-fecha { font-size: 13px; color: var(--ink-3); margin: 0 2px -4px; }
 .cbv-fecha::first-letter { text-transform: uppercase; }
 
@@ -130,8 +129,14 @@
 .cbv-grupo.abierto { background: var(--surface-2); margin: 4px 0; }
 .cbv-grupo.on:not(.abierto) > .cbv-grupo-h { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .cbv-grupo.abierto > .cbv-grupo-h:hover { background: transparent; }
-.cbv-chev { display: flex; color: var(--ink-3); margin-right: -4px; transition: transform .3s var(--ease); }
-.cbv-grupo.abierto .cbv-chev { transform: rotate(90deg); }
+/* El chevron es un boton propio (ajuste del PO): solo pliega o despliega las cuotas; el resto de la fila
+   abre al deudor. Area de clic de 28 px con el icono en el mismo sitio de antes (14 px, 10 px de ancho util). */
+.cbv-chev { width: 28px; height: 28px; margin: -7px -11px -7px -7px; flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px;
+  background: none; color: var(--ink-3); cursor: pointer; transition: background-color .15s, color .15s; }
+.cbv-chev:hover { background: var(--surface-3); color: var(--ink); }
+.cbv-chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cbv-chev svg { transition: transform .3s var(--ease); }
+.cbv-grupo.abierto .cbv-chev svg { transform: rotate(90deg); }
 .cbv-grupo-cuotas { padding-bottom: 6px; animation: cbv-desp .3s var(--ease); }
 .cbv-fila.en-grupo { padding-top: 8px; padding-bottom: 8px; }
 .cbv-fila.en-grupo:hover { background: var(--surface-3); }
@@ -167,101 +172,6 @@
 .cbv-lado-tip svg { flex-shrink: 0; margin-top: 2px; color: var(--ink-3); }
 .cbv-lado-tip b { color: var(--ink-2); font-weight: 600; }
 
-/* ── El panel del deudor (`.v4p`: hoy dentro de Cobros; Cartera cuando se rediseñe) ── */
-.v4p .dp { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--panel-shadow), var(--highlight); }
-.v4p .dp.superpuesto { border-radius: 0; border: 0; }
-.v4p .dp svg { stroke: currentColor; }
-.v4p .dp-head { padding: 22px 22px 16px; gap: 14px; }
-.v4p .op-avatar { border: 0; background: var(--surface-3); color: var(--ink-2); font-weight: 600; }
-.v4p .op-avatar.grande { width: 48px; height: 48px; font-size: 15px; }
-.v4p .op-avatar.e-mora { background: var(--crit-soft); color: var(--crit-text); }
-.v4p .op-avatar.e-hoy, .v4p .op-avatar.e-semana { background: var(--warn-soft); color: var(--warn-text); }
-.v4p .op-avatar.e-abierto { background: var(--accent-soft); color: var(--info-text); }
-.v4p .dp-nombre { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
-.v4p .op-chip { font-size: 11.5px; font-weight: 550; letter-spacing: 0; padding: 3px 9px; }
-.v4p .dp-meta { font-size: 12.5px; gap: 6px 14px; }
-.v4p .dp-tel { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); font-weight: 550; transition: border-color .15s, color .15s; }
-.v4p .dp-tel:hover { border-color: var(--line-strong); color: var(--ink); }
-.v4p .dp-x { border-color: var(--line); background: var(--surface); border-radius: 10px; color: var(--ink-2); transition: border-color .15s, color .15s; }
-.v4p .dp-x:hover { border-color: var(--line-strong); color: var(--ink); }
-.v4p .dp-kpis, .v4p .dp-figs { gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.v4p .dp-kpis { margin: 0 22px 16px; padding: 0; }
-.v4p .dp-kpi, .v4p .dp-fig, .v4p .dp-kpi.mal, .v4p .dp-fig.mal { background: var(--surface); border: 0; border-radius: 0; padding: 12px 14px; }
-.v4p .dp-fig-l { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-2); }
-.v4p .dp-kpi-v, .v4p .dp-fig-v { font-size: 17px; font-weight: 600; letter-spacing: -.02em; margin-top: 4px; }
-.v4p .dp-fig-s { font-size: 11.5px; color: var(--ink-3); }
-.v4p .dp-tabs { padding: 0 22px 16px; }
-.v4p .dp-tab { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); transition: border-color .15s, background-color .15s; }
-.v4p .dp-tab:hover { border-color: var(--line-strong); }
-.v4p .dp-tab.on { background: var(--surface-2); border-color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--ink-3); }
-.v4p .dp-tab.hist { border-style: dashed; }
-.v4p .dp-tab-1 { font-weight: 600; }
-.v4p .dp-dot { background: var(--good-text); }
-.v4p .e-mora .dp-dot, .v4p .e-cancelado .dp-dot { background: var(--crit); }
-.v4p .e-hoy .dp-dot, .v4p .e-semana .dp-dot, .v4p .e-condonado .dp-dot { background: var(--warn); }
-.v4p .e-abierto .dp-dot { background: var(--accent); }
-.v4p .dp-loan { border-top: 1px solid var(--line); padding: 20px 22px 22px; }
-.v4p .dp-loan-t { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
-.v4p .dp-acc { gap: 8px; margin: 16px 0; }
-.v4p .op-btn { height: 36px; padding: 0 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: 600 13px var(--font); transition: border-color .15s, background-color .15s, transform .15s var(--ease); }
-.v4p .op-btn:hover { border-color: var(--line-strong); background: var(--surface-2); }
-.v4p .op-btn:active { transform: scale(.97); }
-.v4p .op-btn.pri { background: var(--inverse-bg); color: var(--inverse-ink); border-color: transparent; }
-.v4p .op-btn.pri:hover { opacity: .88; background: var(--inverse-bg); }
-.v4p .op-btn.peligro, .v4p .dp-menu button.peligro { color: var(--crit-text); }
-.v4p .op-btn.sm { height: 32px; padding: 0 11px; font-size: 12.5px; border-radius: 10px; }
-.v4p .op-btn.on { border-color: var(--line-strong); background: var(--surface-2); }
-.v4p .dp-menu { background: var(--tt-bg); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--shadow); padding: 6px; }
-.v4p .dp-menu button { border-radius: 9px; padding: 8px 10px; }
-.v4p .dp-menu button:hover { background: var(--surface-2); }
-.v4p .dp-menu-t { font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; padding: 8px 10px 4px; }
-.v4p .dp-sec-t { font-size: 14px; font-weight: 600; letter-spacing: -.01em; text-transform: none; color: var(--ink); }
-.v4p .dp-crono { border: 1px solid var(--line); border-radius: 14px; }
-.v4p .dp-crono-h { background: var(--surface-2); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-3); padding: 9px 10px; }
-.v4p .dp-crono-f { border-top: 1px solid var(--line); border-left: 0; font-size: 12.5px; padding: 9px 10px; transition: background-color .15s; }
-.v4p .dp-crono-f:hover { background: var(--surface-2); }
-.v4p .dp-crono-f.mora { background: color-mix(in srgb, var(--crit) 7%, transparent); box-shadow: inset 2px 0 0 var(--crit); }
-.v4p .dp-crono-f.prox { background: color-mix(in srgb, var(--warn) 7%, transparent); box-shadow: inset 2px 0 0 var(--warn); }
-.v4p .dp-crono-f.abono { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 2px 0 0 var(--accent); color: var(--info-text); }
-.v4p .dp-crono-f.foco { box-shadow: inset 0 0 0 1.5px var(--accent); }
-.v4p .dp-card { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-.v4p .dp-card-t { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-2); }
-.v4p .dp-hero-mini, .v4p .dp-fila + .dp-fila, .v4p .dp-gb { border-color: var(--line); }
-.v4p .op-bar { height: 6px; background: var(--track); }
-
-/* El flujo de caja real (desplegable dentro del panel) */
-.v4p .fcv { margin-top: 10px; }
-.v4p .fcv-btn { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px 0 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
-  color: var(--ink-2); font: 550 12.5px var(--font); cursor: pointer; transition: border-color .15s, color .15s, background-color .15s; }
-.v4p .fcv-btn:hover { border-color: var(--line-strong); color: var(--ink); }
-.v4p .fcv-btn svg { transition: transform .25s var(--ease); }
-.v4p .fcv.abierto .fcv-btn { background: var(--surface-2); color: var(--ink); }
-.v4p .fcv.abierto .fcv-btn svg { transform: rotate(90deg); }
-.v4p .fcv-n { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
-.v4p .fcv-cuerpo { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; animation: cbv-desp .3s var(--ease); }
-.v4p .fcv-t { padding: 10px 12px 8px; font-size: 12px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border-bottom: 1px solid var(--line); }
-.v4p .fcv-tabla { overflow-x: auto; }
-.v4p .fcv table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-.v4p .fcv th { padding: 8px 8px; text-align: left; font-size: 11px; font-weight: 500; color: var(--ink-3); white-space: nowrap; border-bottom: 1px solid var(--line); }
-.v4p .fcv td { padding: 8px 8px; vertical-align: top; color: var(--ink-2); border-top: 1px solid var(--line); white-space: nowrap; }
-.v4p .fcv tbody tr:first-child td { border-top: 0; }
-.v4p .fcv tbody tr:hover td { background: var(--surface-2); }
-.v4p .fcv .r { text-align: right; }
-.v4p .fcv .txt { color: var(--ink); white-space: normal; }
-.v4p .fcv .sec { color: var(--ink-2); }
-.v4p .fcv .muted { color: var(--ink-3); }
-.v4p .fcv .fuerte { color: var(--ink); font-weight: 600; }
-.v4p .fcv .good { color: var(--good-text); }
-.v4p .fcv .crit { color: var(--crit-text); }
-.v4p .fcv .fuerte .dp-usd { display: block; font-size: 10.5px; font-weight: 500; }
-.v4p .fcv-nota { font-size: 11px; margin-top: 1px; }
-.v4p .fcv-nota.warn { color: var(--warn-text); }
-.v4p .fcv-nota.crit { color: var(--crit-text); }
-.v4p .fcv-nota.good { color: var(--good-text); }
-.v4p .fcv-tot td { border-top: 1px solid var(--line-strong) !important; color: var(--ink); font-weight: 600; background: var(--surface-2); }
-.v4p .fcv-pie { padding: 10px 12px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.55; color: var(--ink-3); display: flex; flex-direction: column; gap: 4px; }
-.v4p .fcv-pie b { color: var(--ink-2); font-weight: 600; }
-
 /* ── Anchos: lista angosta (con el panel abierto, o ventana mediana) ──────────────── */
 @container (max-width: 760px) {
   /* Cinco tramos en dos filas parejas: tres arriba y dos abajo */
@@ -285,15 +195,10 @@
 /* ── Movimiento ─────────────────────────────────────────────────────────────────── */
 @keyframes cbv-desp { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @keyframes cbv-crecex { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-@keyframes cbv-lado { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 .v4c.anima .cbv-fecha, .v4c.anima .v4-card, .v4c.anima .cbv-buscar { animation: v4-in .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 40ms); }
 .v4c.anima .cbv-segbar .seg { animation: cbv-crecex .7s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 260ms); }
 .v4c.anima .cbv-filas > .cbv-fila, .v4c.anima .cbv-filas > .cbv-grupo { animation: v4-fade .4s var(--ease) backwards; animation-delay: calc(min(var(--i, 0), 10) * 30ms + 220ms); }
 .v4c .cbv-grupo-cuotas .cbv-fila { animation: v4-fade .3s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 35ms); }
-.v4p .op-lado > .dp { animation: cbv-lado .35s var(--ease) backwards; }
-
-/* Las cifras en dolares, en gris como en el resto de la app (opcion A del PO, 3.7.0) */
-.v4c .dp-usd { color: var(--ink-3); }
 
 /* "Reducir movimiento" del sistema (Windows: efectos de animacion apagados): todo quieto. */
 @media (prefers-reduced-motion: reduce) {

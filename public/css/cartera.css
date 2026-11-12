@@ -1,0 +1,112 @@
+/* public/css/cartera.css — CARTERA del rediseño v4 (vistas/CarteraView.js), tal cual el prototipo que
+ * aprobo el PO. Se carga despues de cobros.css (de donde reutiliza el buscador `.cbv-buscar`, los puntos
+ * `.cbv-dot`, la barra segmentada `.cbv-segbar` y los rotulos `.cbv-kl` / `.cbv-hero-s`) y de panel.css
+ * (el panel del deudor `.v4p`). Todo lo propio vive bajo `.v4t` (la raiz de la vista) con prefijo `ctv-`. */
+
+/* ── Maestro-detalle ─────────────────────────────────────────────────────────── */
+.v4t.op.ct, .v4t.op.ct.con-panel { gap: 20px; grid-template-columns: minmax(360px, 420px) minmax(0, 1fr); animation: none; }
+.v4t .op-main { display: flex; flex-direction: column; gap: 14px; }
+
+/* ── Encabezado: lo que esta en la calle, repartido por estado ─────────────────── */
+.ctv-hero { padding: 22px 22px 18px; }
+.ctv-hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ctv-hero-v { font-size: 36px; font-weight: 650; letter-spacing: -.04em; line-height: 1.1; margin-top: 8px; color: var(--ink); }
+.ctv-hero .cbv-segbar { margin: 18px 0 14px; height: 8px; }
+.ctv-ley { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; }
+/* Cada estado en dos renglones: el rotulo con su conteo arriba y el monto abajo, alineado con el
+   rotulo. En un solo renglon el conteo quedaba pegado al monto (reporte del PO). */
+.ctv-ley-f { display: flex; flex-direction: column; gap: 4px; padding: 10px 0 9px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); min-width: 0; }
+.ctv-ley-f .k { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+.ctv-ley-f .n { margin-left: auto; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 99px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; color: var(--ink-2); background: var(--surface-3); }
+.ctv-ley-f b { padding-left: 16px; font-size: 15px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ctv-ley-f.vacia { opacity: .5; }
+
+/* ── Filtros (pastillas) ───────────────────────────────────────────────────────── */
+.ctv-filtros { display: flex; flex-wrap: wrap; gap: 6px; }
+.ctv-filtro { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 6px 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink-2); font: 500 12.5px var(--font); cursor: pointer; white-space: nowrap; transition: background-color .15s, border-color .15s, color .15s, transform .15s var(--ease); }
+.ctv-filtro:hover { border-color: var(--line-strong); color: var(--ink); }
+.ctv-filtro:active { transform: scale(.97); }
+.ctv-filtro span { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
+.ctv-filtro.on { background: var(--inverse-bg); border-color: var(--inverse-bg); color: var(--inverse-ink); }
+.ctv-filtro.on span { background: rgba(127, 127, 127, .28); color: inherit; }
+
+/* ── La lista: UNA tarjeta, filas separadas por lineas ───────────────────────────── */
+.ctv-lista { padding: 6px 10px 10px; }
+.ctv-lista-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 10px 8px; }
+.ctv-lista-h .t { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.ctv-orden { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 28px 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2);
+  font-size: 12px; color: var(--ink-3); cursor: pointer; transition: border-color .15s; }
+.ctv-orden:hover { border-color: var(--line-strong); }
+.ctv-orden select { appearance: none; -webkit-appearance: none; border: 0; background: none; outline: none; color: var(--ink); font: 550 12px var(--font); cursor: pointer; padding: 0; }
+.ctv-orden select option { background: var(--surface); color: var(--ink); }
+.ctv-orden svg { position: absolute; right: 9px; color: var(--ink-3); pointer-events: none; }
+.ctv-filas { display: flex; flex-direction: column; }
+.ctv-filas > * { position: relative; }
+.ctv-filas > .ctv-fila + .ctv-fila::before { content: ''; position: absolute; left: 12px; right: 12px; top: 0; height: 1px; background: var(--line); pointer-events: none; }
+.ctv-filas > .ctv-fila:hover::before, .ctv-filas > .ctv-fila:hover + .ctv-fila::before, .ctv-filas > .ctv-fila.on::before, .ctv-filas > .ctv-fila.on + .ctv-fila::before { opacity: 0; }
+.ctv-grupo-h { display: flex; align-items: center; gap: 8px; padding: 16px 12px 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.ctv-grupo-h:first-child { padding-top: 6px; }
+.ctv-grupo-h .t { white-space: nowrap; }
+.ctv-grupo-h .n { font-size: 11px; letter-spacing: 0; color: var(--ink-3); background: var(--surface-3); border-radius: 99px; padding: 0 6px; }
+.ctv-grupo-h .v { margin-left: auto; font-size: 12.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ctv-grupo-h .v.crit { color: var(--crit-text); }
+.ctv-grupo-h .vl { font-weight: 400; color: var(--ink-3); }
+
+/* Fila de un deudor */
+.ctv-fila { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; padding: 12px; border: 0; border-radius: var(--r-md); background: transparent;
+  color: var(--ink); cursor: pointer; font-family: inherit; transition: background-color .15s var(--ease), box-shadow .15s; }
+.ctv-fila:hover { background: var(--surface-2); }
+.ctv-fila.on { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.ctv-fila.inactivo .ctv-nombre { color: var(--ink-2); }
+.ctv-fila.inactivo .ctv-av { opacity: .7; }
+.ctv-av { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; font-size: 12.5px; font-weight: 600; background: var(--surface-3); color: var(--ink-2); }
+.ctv-av.crit { background: var(--crit-soft); color: var(--crit-text); }
+.ctv-av.warn { background: var(--warn-soft); color: var(--warn-text); }
+.ctv-av.info { background: var(--accent-soft); color: var(--info-text); }
+.ctv-c { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ctv-1 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ctv-nombre { font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctv-saldo { font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ctv-2 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+.ctv-2 .crit { color: var(--crit-text); }
+.ctv-2 .warn { color: var(--warn-text); }
+.ctv-2 .info { color: var(--info-text); }
+.ctv-2 .dp-usd { font-size: 11px; white-space: nowrap; }
+.ctv-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.ctv-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line);
+  font-size: 11.5px; font-weight: 500; color: var(--ink-2); white-space: nowrap; cursor: pointer; transition: border-color .15s, color .15s; }
+.ctv-fila:hover .ctv-chip, .ctv-fila.on .ctv-chip { background: var(--surface); }
+.ctv-chip:hover { border-color: var(--line-strong); color: var(--ink); }
+.ctv-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--good-text); flex-shrink: 0; }
+.ctv-chip.e-mora i { background: var(--crit); }
+.ctv-chip.e-hoy i, .ctv-chip.e-semana i { background: var(--warn); }
+.ctv-chip.e-abierto i { background: var(--accent); }
+.ctv-chip.cerrado { cursor: default; border-style: dashed; color: var(--ink-3); background: transparent; }
+.ctv-chip.cerrado:hover { border-color: var(--line); color: var(--ink-3); }
+.ctv-meter { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.ctv-meter .pista { flex: 1; height: 4px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.ctv-meter .pista i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; }
+.ctv-meter .pct { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+.ctv-vacio { padding: 22px 12px; font-size: 13.5px; color: var(--ink-3); }
+
+/* Sin deudor elegido */
+.ctv-elige { align-items: center; justify-content: center; text-align: center; padding: 56px 28px; min-height: 320px; }
+.ctv-elige .ico { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: var(--surface-3); color: var(--ink-2); margin-bottom: 14px; }
+.ctv-elige p { font-size: 13px; color: var(--ink-3); max-width: 40ch; margin-top: 6px; line-height: 1.55; }
+
+/* ── Movimiento ─────────────────────────────────────────────────────────────────── */
+.v4t.anima .v4-card, .v4t.anima .cbv-buscar, .v4t.anima .ctv-filtros { animation: v4-in .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 40ms); }
+.v4t.anima .cbv-segbar .seg { animation: cbv-crecex .7s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 260ms); }
+.v4t.anima .ctv-filas > .ctv-fila { animation: v4-fade .4s var(--ease) backwards; animation-delay: calc(min(var(--i, 0), 12) * 30ms + 200ms); }
+.v4t.anima .ctv-meter .pista i { animation: cbv-crecex .8s var(--ease) backwards; animation-delay: calc(min(var(--i, 0), 12) * 30ms + 320ms); }
+
+/* Ventana angosta (bajo 1.100 px): la lista ocupa todo y el panel se abre encima (styles.css). */
+@media (max-width: 1099px) {
+  .v4t .op-main { max-width: none; }
+}
+
+/* "Reducir movimiento" del sistema (Windows: efectos de animacion apagados): todo quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .v4t *, .v4t *::before, .v4t *::after { animation: none !important; transition: none !important; }
+}

@@ -703,8 +703,11 @@ function metricsComoApp(X, loans, pays) {
     !/sidebar-header[\s\S]{0,400}color:'var\(--green\)'/.test(app) && !/className:'nav-item'[^\n]*\n[^\n]*color:view===id/.test(app));
   // Compatibilidad: el panel del deudor (Cobros y Cartera, sin rediseñar) se pega bajo el encabezado nuevo.
   const pad = (base.match(/\.main-content\{padding:(\d+)px/) || [])[1], alto = (base.match(/\.main-header\{height:(\d+)px/) || [])[1];
+  // Desde la fase 3 (Cartera) el panel del deudor de las dos pestañas se posiciona en panel.css, bajo `.v4p`.
+  const panelCss = compacto(leerRepo('public/css/panel.css'));
   R.check('E7 el panel del deudor se ajusta al marco nuevo: sube lo que mide el relleno (' + pad + ' px) y ocupa el alto bajo el encabezado (' + alto + ' px)',
-    !!pad && !!alto && base.indexOf('.op-lado:not(.superpuesto){top:-' + pad + 'px;max-height:calc(100vh-' + alto + 'px);}') !== -1, { pad, alto });
+    !!pad && !!alto && panelCss.indexOf('.v4p.op-lado:not(.superpuesto){top:-' + pad + 'px;max-height:calc(100vh-' + alto + 'px);') !== -1 &&
+    base.indexOf('.op-lado') === -1, { pad, alto });
   R.check('E7 App le pasa a Rendimiento la navegacion a Cartera', /h\(PortfolioView,\{[^}]*onNameClick:openDebtorByName/.test(app));
   R.check('E8 la ventana principal nace con el fondo del tema oscuro (#000000), sin el azul de antes',
     /async function createWindow\(\)\s*\{[\s\S]{0,300}backgroundColor:\s*'#000000'/.test(leerRepo('desktop/main.js')));
