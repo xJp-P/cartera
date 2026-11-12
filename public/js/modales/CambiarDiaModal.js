@@ -134,7 +134,7 @@ export function CambiarDiaModal(props){
       h('div',{style:{background:'var(--bg3)',borderRadius:10,padding:'10px 12px',marginBottom:14,fontSize:12,color:'var(--text2)',display:'flex',justifyContent:'space-between',alignItems:'center'}},
         h('span',null,'Cuotas siguientes (cada día '+rs.nuevoDia+')'),
         h('span',{className:'mono',style:{color:'var(--text)',fontWeight:600}},fmt(rs.cuotasRecurrentes||pv.cuotaRecurrente))),
-      h('button',{onClick:onClose,className:'btn-primary',style:{background:'var(--green2)',color:'#fff',border:'none'}},'Cerrar'));
+      h('button',{onClick:onClose,className:'btn-primary'},'Cerrar'));
   }
 
   // ── Formulario con el preview ──
@@ -155,7 +155,7 @@ export function CambiarDiaModal(props){
   }
   var activo=pv.valido&&!sending;
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
+    h('div',{className:'v4m-tit',style:{display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'calendar',size:16,color:'var(--blue)',sw:2}),'Cambiar día de pago'),
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},loan.nombre+' • '+opModalidad(loan.modalidad)+' • '+pv.tasaMensual+'% mensual'),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}},

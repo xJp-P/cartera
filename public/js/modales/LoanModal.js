@@ -344,9 +344,9 @@ export function LoanModal(props){
     setTimeout(function(){setIsSubmitting(false);},5000);
   }
   return h(Modal,{onClose:onClose,tall:true,wide:true},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},!isNew?'Editar Préstamo':'Nuevo Préstamo'),
+    h('div',{className:'v4m-tit'},!isNew?'Editar Préstamo':'Nuevo Préstamo'),
     // v1.9.0 — Banner de campos bloqueados (solo en edicion con actividad)
-    lockSens&&h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:10,padding:'10px 12px',marginBottom:10,display:'flex',alignItems:'flex-start',gap:8}},
+    lockSens&&h('div',{className:'v4m-caja-aviso',style:{borderRadius:10,padding:'10px 12px',marginBottom:10,display:'flex',alignItems:'flex-start',gap:8}},
       h(Ico,{name:'alert',size:14,color:'var(--yellow)',sw:2.4}),
       h('div',{style:{flex:1}},
         h('div',{style:{fontSize:12,color:'var(--yellow)',fontWeight:700,marginBottom:2}},'Algunos campos están bloqueados'),
@@ -381,11 +381,11 @@ export function LoanModal(props){
     // Modo fraccionado: la tasa es la promedio ponderada (solo lectura)
     f.moneda==='USD'&&aplicaFracc&&h(Fld,{label:'Tasa de compra de USD (COP x 1 USD) — calculada automáticamente'},
       h('input',{type:'text',inputMode:'numeric',value:tasaPromedio>0?fmtNumInput(tasaPromedio):'',onChange:function(){},className:'inp',disabled:true,placeholder:'Llena el desglose abajo',style:{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}})),
-    f.moneda==='USD'&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:4,marginBottom:8,fontFamily:'monospace'}},'Capital en COP: '+fmt(montoCOP)),
-    f.moneda==='USD'&&h('label',{style:{display:'flex',alignItems:'center',gap:10,background:'var(--bg3)',border:'1px solid '+(compraFrac?'var(--blue)':'var(--border)'),borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:lockSens?'not-allowed':'pointer',transition:'border-color .2s',opacity:lockSens?.5:1}},
-      h('input',{type:'checkbox',checked:compraFrac,onChange:function(){if(!lockSens)setCompraFrac(!compraFrac);},disabled:lockSens,style:{width:16,height:16,accentColor:'var(--blue)',cursor:lockSens?'not-allowed':'pointer',margin:0}}),
+    f.moneda==='USD'&&h('div',{className:'v4m-num',style:{fontSize:11,color:'var(--text2)',marginTop:4,marginBottom:8}},'Capital en COP: '+fmt(montoCOP)),
+    f.moneda==='USD'&&h('label',{className:'v4m-casilla',style:{display:'flex',alignItems:'center',gap:10,borderRadius:10,padding:'10px 12px',marginBottom:8,cursor:lockSens?'not-allowed':'pointer',transition:'border-color .2s',opacity:lockSens?.5:1}},
+      h('input',{type:'checkbox',checked:compraFrac,onChange:function(){if(!lockSens)setCompraFrac(!compraFrac);},disabled:lockSens,style:{width:16,height:16,cursor:lockSens?'not-allowed':'pointer',margin:0}}),
       h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'¿Compraste el USD en varias partes/tasas?')),
-    f.moneda==='USD'&&compraFrac&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px',marginBottom:8}},
+    f.moneda==='USD'&&compraFrac&&h('div',{className:'v4m-grupo',style:{borderRadius:12,padding:'12px',marginBottom:8}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:8,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'dollar',size:11,color:'var(--blue)'}),' DESGLOSE DE COMPRAS DE USD'),
       compras.map(function(c,i){
@@ -406,7 +406,7 @@ export function LoanModal(props){
       h('div',{style:{borderTop:'1px solid var(--blue-bd)',paddingTop:10,marginTop:4}},
         excedeMonto&&h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:8,padding:'8px 10px',marginBottom:8,fontSize:11,color:'var(--red)',display:'flex',alignItems:'center',gap:6}},
           h(Ico,{name:'alert',size:12,color:'var(--red)',sw:2.4}),' El total de compras excede el monto del préstamo'),
-        faltaUSD&&h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:8,padding:'8px 10px',marginBottom:8,fontSize:11,color:'var(--yellow)'}},
+        faltaUSD&&h('div',{className:'v4m-caja-aviso',style:{borderRadius:8,padding:'8px 10px',marginBottom:8,fontSize:11,color:'var(--yellow)'}},
           'Faltan '+fmtN(Math.max(0,(+f.montoOrigen||0)-totalUSDComprado))+' USD por registrar'),
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',fontSize:12}},
           h('span',{style:{color:'var(--text3)'}},'Total USD comprado'),
@@ -440,12 +440,12 @@ export function LoanModal(props){
     // invitaria a escribir un numero que el motor ignora.
     esDiarioF&&h(Fld,{label:'Tasa mensual (%)'},
       h('input',{type:'text',inputMode:'decimal',value:f.tasaMensual,onChange:function(e){set('tasaMensual',parseDecimalInput(e.target.value));},placeholder:'0.00',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
-      (+f.tasaMensual)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},
+      (+f.tasaMensual)>0&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:'var(--text3)'}},
         'Se aplicará: '+(+f.tasaMensual)+'% mensual — '+fmt(Math.round(montoCOP*(+f.tasaMensual||0)/100/30))+' por día')),
     !esUnaCuota&&!esDiarioF&&h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Tasa mensual (%)'},
         h('input',{type:'text',inputMode:'decimal',value:f.tasaMensual,onChange:function(e){set('tasaMensual',parseDecimalInput(e.target.value));},placeholder:'0.00',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
-        (+f.tasaMensual)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},'Se aplicará: '+(+f.tasaMensual)+'% mensual')),
+        (+f.tasaMensual)>0&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:'var(--text3)'}},'Se aplicará: '+(+f.tasaMensual)+'% mensual')),
       h(Fld,{label:f.modalidad==='Capital + Intereses'?(f.frecuencia==='Semanal'?'Plazo (semanas) *':f.frecuencia==='Quincenal'?'Plazo (quincenas) *':'Plazo (meses) *'):'\u221E Plazo indefinido'},
         h('input',{type:'text',inputMode:'numeric',value:f.plazoMeses,onChange:function(e){set('plazoMeses',parseIntInput(e.target.value));},placeholder:f.modalidad==='Capital + Intereses'?'12':'\u221E',className:'inp',disabled:lockSens||f.modalidad==='Intereses',style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}))),
     esUnaCuota?h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
@@ -465,13 +465,13 @@ export function LoanModal(props){
           // tecleo, pero un tiempo muerto largo es legitimo.
           !primerPagoInvalido&&infoPP.dias>366&&h('div',{style:{fontSize:11,marginTop:2,color:'var(--yellow)',fontWeight:600}},
             'Más de un año hasta el primer pago: revisa la fecha'))),
-      ofrecePrimerPeriodo&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px 14px',marginBottom:8}},
+      ofrecePrimerPeriodo&&h('div',{className:'v4m-grupo',style:{borderRadius:12,padding:'12px 14px',marginBottom:8}},
         h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:4}},'PRIMER PERIODO: '+infoPP.dias+' DÍAS'),
         h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4,marginBottom:10}},preguntaPP),
         opcionesPP.map(function(op){
           var sel=modoPP===op[0];
-          return h('label',{key:op[0],style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:6,border:'1px solid '+(sel?'var(--blue)':'var(--border)'),borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:sel?'rgba(88,166,255,.08)':'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
-            h('input',{type:'radio',name:'primerPeriodo',checked:sel,onChange:function(){if(!lockSens)setF(function(p){return Object.assign({},p,{primerPeriodo:op[0],primerPeriodoCaso:infoPP.caso});});},disabled:lockSens,style:{accentColor:'var(--blue)',cursor:lockSens?'not-allowed':'pointer',margin:0}}),
+          return h('label',{key:op[0],className:sel?'v4m-elegida-info':'',style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:6,border:sel?undefined:'1px solid var(--border)',borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:sel?undefined:'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
+            h('input',{type:'radio',name:'primerPeriodo',checked:sel,onChange:function(){if(!lockSens)setF(function(p){return Object.assign({},p,{primerPeriodo:op[0],primerPeriodoCaso:infoPP.caso});});},disabled:lockSens,style:{cursor:lockSens?'not-allowed':'pointer',margin:0}}),
             h('span',{style:{flex:1,minWidth:0}},
               h('span',{style:{display:'block',fontSize:12,color:'var(--text)',fontWeight:500}},op[1]),
               op[2]?h('span',{style:{display:'block',fontSize:10.5,color:'var(--text3)',marginTop:2,lineHeight:1.35}},op[2]):null),
@@ -493,24 +493,24 @@ export function LoanModal(props){
             'El interés de los '+infoPP.dias+' días se cobra completo en la primera cuota.'):null)))
     :h(Fld,{label:'Fecha de inicio'},h('input',{type:'date',value:f.fechaInicio,onChange:function(e){setFechaInicio(e.target.value);},className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}})),
     // v1.10.0 — Bloque Ganancia para modalidad Pago Unico: toggle %/monto + indicador de equivalencia
-    f.modalidad==='Pago Unico'&&h('div',{style:{background:'rgba(63,185,80,.04)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'12px 14px',marginBottom:8}},
+    f.modalidad==='Pago Unico'&&h('div',{className:'v4m-grupo',style:{borderRadius:12,padding:'12px 14px',marginBottom:8}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--green)',letterSpacing:.5,marginBottom:10,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'dollar',size:11,color:'var(--green)'}),' GANANCIA PACTADA'),
       // Toggle de modo: pct vs monto
       h('div',{style:{display:'flex',gap:8,marginBottom:10}},
-        h('label',{style:{flex:1,display:'flex',alignItems:'center',gap:6,padding:'8px 10px',border:'1px solid '+(f.gananciaMode==='pct'?'var(--green)':'var(--border)'),borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:f.gananciaMode==='pct'?'rgba(63,185,80,.08)':'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
-          h('input',{type:'radio',name:'gananciaMode',checked:f.gananciaMode==='pct',onChange:function(){if(!lockSens){set('gananciaMode','pct');set('gananciaInput','');}},disabled:lockSens,style:{accentColor:'var(--green)',cursor:lockSens?'not-allowed':'pointer'}}),
+        h('label',{className:f.gananciaMode==='pct'?'v4m-elegida-bien':'',style:{flex:1,display:'flex',alignItems:'center',gap:6,padding:'8px 10px',border:f.gananciaMode==='pct'?undefined:'1px solid var(--border)',borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:f.gananciaMode==='pct'?undefined:'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
+          h('input',{type:'radio',name:'gananciaMode',checked:f.gananciaMode==='pct',onChange:function(){if(!lockSens){set('gananciaMode','pct');set('gananciaInput','');}},disabled:lockSens,style:{cursor:lockSens?'not-allowed':'pointer'}}),
           h('span',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Por porcentaje')),
-        h('label',{style:{flex:1,display:'flex',alignItems:'center',gap:6,padding:'8px 10px',border:'1px solid '+(f.gananciaMode==='monto'?'var(--green)':'var(--border)'),borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:f.gananciaMode==='monto'?'rgba(63,185,80,.08)':'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
-          h('input',{type:'radio',name:'gananciaMode',checked:f.gananciaMode==='monto',onChange:function(){if(!lockSens){set('gananciaMode','monto');set('gananciaInput','');}},disabled:lockSens,style:{accentColor:'var(--green)',cursor:lockSens?'not-allowed':'pointer'}}),
+        h('label',{className:f.gananciaMode==='monto'?'v4m-elegida-bien':'',style:{flex:1,display:'flex',alignItems:'center',gap:6,padding:'8px 10px',border:f.gananciaMode==='monto'?undefined:'1px solid var(--border)',borderRadius:8,cursor:lockSens?'not-allowed':'pointer',background:f.gananciaMode==='monto'?undefined:'transparent',transition:'all .15s',opacity:lockSens?.5:1}},
+          h('input',{type:'radio',name:'gananciaMode',checked:f.gananciaMode==='monto',onChange:function(){if(!lockSens){set('gananciaMode','monto');set('gananciaInput','');}},disabled:lockSens,style:{cursor:lockSens?'not-allowed':'pointer'}}),
           h('span',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Por monto fijo'))),
       // Input principal
       f.gananciaMode==='pct'?h(Fld,{label:'Porcentaje sobre el capital (%)'},
         h('input',{type:'text',inputMode:'decimal',value:f.gananciaInput,onChange:function(e){if(!lockSens)set('gananciaInput',parseDecimalInput(e.target.value));},placeholder:'10.00',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
-        gananciaCOPCalc>0&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4,fontFamily:'monospace'}},'Equivale a '+fmt(gananciaCOPCalc)+' sobre '+fmt(montoCOP))
+        gananciaCOPCalc>0&&h('div',{className:'v4m-num',style:{fontSize:11,color:'var(--text3)',marginTop:4}},'Equivale a '+fmt(gananciaCOPCalc)+' sobre '+fmt(montoCOP))
       ):h(Fld,{label:f.moneda==='USD'?'Monto fijo de ganancia (USD)':'Monto fijo de ganancia (COP)'},
         h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(f.gananciaInput),onChange:function(e){if(!lockSens)set('gananciaInput',parseNum(e.target.value));},placeholder:'0',className:'inp',disabled:lockSens,style:lockSens?{background:'var(--bg3)',color:'var(--text3)',cursor:'not-allowed'}:{}}),
-        gananciaCOPCalc>0&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4,fontFamily:'monospace'}},
+        gananciaCOPCalc>0&&h('div',{className:'v4m-num',style:{fontSize:11,color:'var(--text3)',marginTop:4}},
           f.moneda==='USD'?'Equivale a '+fmt(gananciaCOPCalc)+' COP ('+gananciaPctImpl+'% del capital)':'Equivale al '+gananciaPctImpl+'% del capital'))),
     !isNew&&h(Fld,{label:'Estado'},h('select',{value:f.estado,onChange:function(e){set('estado',e.target.value);},className:'inp'},
       h('option',{value:'Activo'},'Activo'),
@@ -541,12 +541,12 @@ export function LoanModal(props){
         showCronoLoan?'Ocultar cronograma':'Ver cronograma tentativo'),
       showCronoLoan&&preview.rows&&preview.rows.length>0&&h('div',{style:{marginTop:10,borderTop:'1px solid var(--green-bd)',paddingTop:10,overflowX:'auto'}},
         h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:11}},
-          h('thead',null,h('tr',{style:{background:'rgba(63,185,80,.1)'}},
+          h('thead',null,h('tr',{className:'v4m-crono-th'},
             ['#','Interés','Abono a capital','Valor cuota','Saldo'].map(function(hd){
               return h('th',{key:hd,style:{padding:'6px 8px',textAlign:hd==='#'?'center':'right',fontWeight:600,color:'var(--text2)',whiteSpace:'nowrap'}},hd);}))),
           h('tbody',null,preview.rows.map(function(r){
             var t=trmEfectiva||1;
-            return h('tr',{key:r.n,style:{borderTop:'1px solid rgba(63,185,80,.12)'}},
+            return h('tr',{key:r.n,className:'v4m-crono-tr'},
               h('td',{style:{padding:'5px 8px',textAlign:'center',color:'var(--text3)'}},r.n),
               h('td',{className:'mono',style:{padding:'5px 8px',textAlign:'right',color:'var(--yellow)'}},fmtN(r.interes),
                 f.moneda==='USD'&&usdLinea(copToUsd(r.interes,t),{fontSize:9})),

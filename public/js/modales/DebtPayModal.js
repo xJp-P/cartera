@@ -37,30 +37,31 @@ export function DebtPayModal(props){
     if(excede){showError('El abono supera el saldo pendiente ('+fmt(saldo)+')');return;}
     _submitGuard(sending,setSending,function(){return onSave(debt.id,{monto_pagado:m,fecha_pago:fecha,notas:notas.trim(),tipo:tipo});});
   }
-  function tipoBtn(val,label,activeColor){
+  // Selector segmentado (`.v4m-seg` en modales.css): la opcion elegida es una pastilla; el cargo, en rojo.
+  function tipoBtn(val,label){
     var on=tipo===val;
-    return h('button',{type:'button',onClick:function(){setTipo(val);},style:{flex:1,padding:'9px 10px',border:'none',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:13,background:on?activeColor:'transparent',color:on?'#fff':'var(--text2)',transition:'all .15s'}},label);
+    return h('button',{type:'button',className:on?(val==='cargo'?'on rojo':'on'):'',onClick:function(){setTipo(val);},style:{padding:'9px 10px',fontSize:13}},label);
   }
 
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},'Registrar Movimiento'),
+    h('div',{className:'v4m-tit'},'Registrar Movimiento'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'12px 14px',border:'1px solid var(--border)'}},
       h('div',{style:{fontWeight:700,color:'var(--text)'}},properCase(debt.acreedor)),
       (debt.titulo||debt.concepto)?h('div',{style:{fontSize:12,color:'var(--text3)',marginTop:2}},debt.titulo||debt.concepto):null,
-      h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:8,textTransform:'uppercase',letterSpacing:'.5px'}},'Saldo pendiente'),
+      h('div',{className:'v4m-mayus',style:{fontSize:11,color:'var(--text3)',marginTop:8}},'Saldo pendiente'),
       h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--yellow)'}},fmt(saldo))),
     h('div',{style:{marginTop:6}},
       h('div',{style:{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:5}},'Tipo de movimiento'),
-      h('div',{style:{display:'flex',gap:6,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:3}},
-        tipoBtn('abono','Abono (-)','var(--green2)'),
-        tipoBtn('cargo','Cargo (+)','#b91c1c')),
+      h('div',{className:'v4m-seg'},
+        tipoBtn('abono','Abono (-)'),
+        tipoBtn('cargo','Cargo (+)')),
       h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:5}},esCargo?'Aumenta la deuda (te prestaron más dinero).':'Disminuye la deuda (pagaste / abonaste).')),
     h(Fld,{label:'Fecha'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
     h(Fld,{label:(esCargo?'Monto del cargo':'Monto a abonar')+' (COP) *'},
-      h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp',style:excede?{border:'1px solid var(--red)'}:{}}),
-      (m>0)?h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:excede?'var(--red)':'var(--text2)'}},
+      h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp'+(excede?' v4m-b-peligro':'')}),
+      (m>0)?h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:excede?'var(--red)':'var(--text2)'}},
         excede?('Supera el saldo por '+fmt(m-saldo)):(esCargo?('La deuda subiría a '+fmt(nuevoSaldo)):(m>=saldo?'Con este abono la deuda quedaría SALDADA':'Quedaría pendiente: '+fmt(saldo-m)))):null),
     h(Fld,{label:'Notas (opcional)'},h('input',{value:notas,onChange:function(e){setNotas(e.target.value);},placeholder:'Detalles del movimiento...',className:'inp'})),
     h('div',{style:{display:'flex',gap:8,marginTop:8}},
-      h(ABtn,{color:valido?(esCargo?'#b91c1c':'var(--green2)'):'var(--bg4)',disabled:sending,onClick:valido?submit:function(){},icon:'check',label:sending?'Registrando...':(esCargo?'Registrar cargo':'Registrar abono')})));
+      h(ABtn,{tono:valido?(esCargo?'peligro':'pri'):'neutro',disabled:sending,onClick:valido?submit:function(){},icon:'check',label:sending?'Registrando...':(esCargo?'Registrar cargo':'Registrar abono')})));
 }

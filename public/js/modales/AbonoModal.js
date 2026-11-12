@@ -175,14 +175,14 @@ export function AbonoModal(props){
   var btnOff=(esCapInt&&preview&&!!preview.error)||excedeAbonable||faltanCamposUSD||sending;
   // El rojo se reserva para "el prestamo quedaria SALDADO". Cubrir todo el capital amortizable
   // dejando mora viva es un estado NORMAL, no una alarma -> ambar.
-  var lineaSaldoTras=montoCapCOP>0&&!excedeAbonable&&h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:saldoTras<=0?(capEnMora>0?'var(--yellow)':'var(--red)'):'var(--text2)'}},
+  var lineaSaldoTras=montoCapCOP>0&&!excedeAbonable&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:saldoTras<=0?(capEnMora>0?'var(--yellow)':'var(--red)'):'var(--text2)'}},
     saldoTras<=0
       ?(capEnMora>0
           ?'Cubre todo el capital amortizable ('+(moraCount===1?'queda 1 cuota':'quedan '+moraCount+' cuotas')+' en mora)'
           :'El préstamo quedaría SALDADO')
       :'Saldo tras abono: '+fmt(saldoTras)+(esUSD?' ('+copToUsd(saldoTras,loan.trmAcordada)+')':''));
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4}},'Abono a Capital'),
+    h('div',{className:'v4m-tit'},'Abono a Capital'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'13px 14px',marginBottom:16,border:'1px solid var(--border)'}},
       h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},loan.nombre),
       h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},opModalidad(loan.modalidad)),
@@ -247,7 +247,7 @@ export function AbonoModal(props){
           {t:'Las cuotas futuras se recalculan automáticamente sobre el nuevo saldo.'}
         ];
       }
-      return h('div',{style:{background:'rgba(88,166,255,.06)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'10px 12px',marginBottom:12,marginTop:-8}},
+      return h('div',{className:'v4m-caja-info',style:{borderRadius:12,padding:'10px 12px',marginBottom:12,marginTop:-8}},
         h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
           h(Ico,{name:'alert',size:11,color:'var(--blue)',sw:2.4}),titulo.toUpperCase()),
         partes.map(function(p,i){
@@ -263,22 +263,22 @@ export function AbonoModal(props){
     // la caja real del dia; su diferencia es el efecto TRM, que antes era imposible de registrar
     // porque el unico campo (COP) hacia las dos veces. COP: campo unico de siempre.
     esUSD
-      ?h('div',{style:{background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+      ?h('div',{className:'v4m-caja-bien',style:{borderRadius:12,padding:'10px 12px',marginBottom:4}},
         h(Fld,{label:'Monto del abono (USD) *'},
-          h('input',{type:'text',inputMode:'decimal',value:montoUSD,onChange:function(e){setMontoUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 250.00',className:'inp',style:{border:'1px solid var(--green)'}}),
+          h('input',{type:'text',inputMode:'decimal',value:montoUSD,onChange:function(e){setMontoUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 250.00',className:'inp v4m-b-bien'}),
           h('div',{style:{fontSize:11,marginTop:3,color:'var(--text3)'}},
             (+montoUSD>0)
               ?'Descuenta '+fmt(montoCapCOP)+' de capital (TRM pactada $'+fmtN(loan.trmAcordada)+')'
               :'Define el capital que se descuenta. Máximo '+copToUsd(saldoAbonable,loan.trmAcordada))),
         h(Fld,{label:'COP realmente recibidos *'},
-          h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRecibido),onChange:function(e){setCopRecibido(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
+          h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRecibido),onChange:function(e){setCopRecibido(parseNum(e.target.value));},placeholder:'0',className:'inp v4m-b-bien'}),
           h('div',{style:{fontSize:11,marginTop:3,color:'var(--text3)'}},'Caja real del día. No altera el capital: mide el efecto de la TRM.')),
         trmImplicita>0&&h('div',{style:{fontSize:11,marginTop:7,paddingTop:7,borderTop:'1px solid var(--bg3)',color:efectoTRM<0?'var(--red)':'var(--green)'}},
           'TRM implícita $'+fmtN(trmImplicita)+' vs pactada $'+fmtN(loan.trmAcordada)+'  →  efecto TRM '+(efectoTRM>=0?'+':'-')+fmt(Math.abs(efectoTRM))),
         lineaSaldoTras)
-      :h('div',{style:{background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+      :h('div',{className:'v4m-caja-bien',style:{borderRadius:12,padding:'10px 12px',marginBottom:4}},
         h(Fld,{label:'Monto del abono (COP) *'},
-          h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--green)'}}),
+          h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(monto),onChange:function(e){setMonto(parseNum(e.target.value));},placeholder:'0',className:'inp v4m-b-bien'}),
           lineaSaldoTras)),
     // ── v2.0.0 — CTA "Liquidar deuda" ────────────────────────────────────────────
     // El monto excede el capital amortizable porque hay capital atrapado en cuotas En Mora.
@@ -286,7 +286,7 @@ export function AbonoModal(props){
     // saldo actual") aunque el usuario pagara justo lo que la pantalla decia que debia. Ahora
     // se explica el porque y se ofrece la herramienta correcta: la liquidacion, que SI cobra
     // capital futuro + capital en mora + intereses de mora en un solo movimiento.
-    ctaLiquidar&&h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow)',borderRadius:12,padding:'12px 13px',marginTop:8,marginBottom:4}},
+    ctaLiquidar&&h('div',{className:'v4m-caja-aviso',style:{borderRadius:12,padding:'12px 13px',marginTop:8,marginBottom:4}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--yellow)',letterSpacing:.5,marginBottom:7,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'alert',size:11,color:'var(--yellow)',sw:2.4}),'ESE MONTO SUPERA EL ABONO A CAPITAL'),
       h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.55}},
@@ -299,36 +299,36 @@ export function AbonoModal(props){
         ', que se cobran aparte junto con sus intereses.'),
       h('div',{style:{fontSize:11,color:'var(--text3)',lineHeight:1.5,marginTop:7}},
         'Para cobrar todo de una vez usa la liquidación (capital + intereses en mora):'),
-      onRequestLiquidar&&h('button',{onClick:function(){onRequestLiquidar(loan);},style:{width:'100%',marginTop:9,padding:'10px 12px',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontFamily:'inherit',background:'transparent',border:'1px solid var(--yellow)',color:'var(--yellow)',transition:'all .15s'}},
+      onRequestLiquidar&&h('button',{onClick:function(){onRequestLiquidar(loan);},className:'v4m-b-aviso v4m-pulsa',style:{width:'100%',marginTop:9,padding:'10px 12px',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontFamily:'inherit',background:'transparent',color:'var(--yellow)',transition:'all .15s'}},
         h(Ico,{name:'dollar',size:14,color:'var(--yellow)',sw:2.4}),'Liquidar deuda ('+(esUSD?copToUsd(liquidacion,loan.trmAcordada):fmt(liquidacion))+')')),
     // ── OPCIONES DE RECALCULO (solo Capital + Intereses y con monto válido) ──
-    esCapInt&&montoCapCOP>0&&saldoTras>0&&h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px',marginTop:4,marginBottom:4}},
+    esCapInt&&montoCapCOP>0&&saldoTras>0&&h('div',{className:'v4m-grupo',style:{borderRadius:12,padding:'12px',marginTop:4,marginBottom:4}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:8,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'calc',size:11,color:'var(--blue)'}),' OPCIONES DE RECÁLCULO'),
       // Radio: Mantener plazo
       h('label',{style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',cursor:'pointer'}},
-        h('input',{type:'radio',name:'recalcMode',value:'mantener',checked:recalcMode==='mantener',onChange:function(){setRecalcMode('mantener');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
+        h('input',{type:'radio',name:'recalcMode',value:'mantener',checked:recalcMode==='mantener',onChange:function(){setRecalcMode('mantener');},style:{marginTop:2,cursor:'pointer'}}),
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Mantener plazo (default)'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Conserva las '+cuotasRestantesActuales+' cuota'+(cuotasRestantesActuales!==1?'s':'')+' restantes. La cuota mensual baja.'))),
       // Radio: Modificar plazo
       h('label',{style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',cursor:'pointer'}},
-        h('input',{type:'radio',name:'recalcMode',value:'modificarPlazo',checked:recalcMode==='modificarPlazo',onChange:function(){setRecalcMode('modificarPlazo');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
+        h('input',{type:'radio',name:'recalcMode',value:'modificarPlazo',checked:recalcMode==='modificarPlazo',onChange:function(){setRecalcMode('modificarPlazo');},style:{marginTop:2,cursor:'pointer'}}),
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Modificar plazo'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tú eliges el nuevo número de cuotas restantes.'),
-          recalcMode==='modificarPlazo'&&h('input',{type:'text',inputMode:'numeric',value:nuevoPlazo,onChange:function(e){setNuevoPlazo(parseIntInput(e.target.value));},placeholder:'Ej: '+cuotasRestantesActuales,className:'inp',style:{marginTop:6,fontSize:13,border:'1px solid var(--blue)'}}))),
+          recalcMode==='modificarPlazo'&&h('input',{type:'text',inputMode:'numeric',value:nuevoPlazo,onChange:function(e){setNuevoPlazo(parseIntInput(e.target.value));},placeholder:'Ej: '+cuotasRestantesActuales,className:'inp v4m-b-info',style:{marginTop:6,fontSize:13}}))),
       // Radio: Fijar cuota
       h('label',{style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',cursor:'pointer'}},
-        h('input',{type:'radio',name:'recalcMode',value:'fijarCuota',checked:recalcMode==='fijarCuota',onChange:function(){setRecalcMode('fijarCuota');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
+        h('input',{type:'radio',name:'recalcMode',value:'fijarCuota',checked:recalcMode==='fijarCuota',onChange:function(){setRecalcMode('fijarCuota');},style:{marginTop:2,cursor:'pointer'}}),
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Fijar valor de cuota'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tú eliges cuánto pagar de cuota; el plazo se ajusta.'),
           recalcMode==='fijarCuota'&&(esUSD
             ?h('div',{style:{marginTop:6}},
-                h('input',{type:'text',inputMode:'decimal',value:nuevaCuotaFijaUSD,onChange:function(e){setNuevaCuotaFijaUSD(parseDecimalInput(e.target.value));},placeholder:'Cuota en USD (ej: 50.00)',className:'inp',style:{fontSize:13,border:'1px solid var(--blue)'}}),
-                (+nuevaCuotaFijaUSD)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},'Equivale a '+fmt(cuotaFijaEfectivaCOP)+' COP (TRM $'+fmtN(loan.trmAcordada)+')'))
-            :h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(nuevaCuotaFija),onChange:function(e){setNuevaCuotaFija(parseNum(e.target.value));},placeholder:'Cuota en COP',className:'inp',style:{marginTop:6,fontSize:13,border:'1px solid var(--blue)'}})))),
+                h('input',{type:'text',inputMode:'decimal',value:nuevaCuotaFijaUSD,onChange:function(e){setNuevaCuotaFijaUSD(parseDecimalInput(e.target.value));},placeholder:'Cuota en USD (ej: 50.00)',className:'inp v4m-b-info',style:{fontSize:13}}),
+                (+nuevaCuotaFijaUSD)>0&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:'var(--text3)'}},'Equivale a '+fmt(cuotaFijaEfectivaCOP)+' COP (TRM $'+fmtN(loan.trmAcordada)+')'))
+            :h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(nuevaCuotaFija),onChange:function(e){setNuevaCuotaFija(parseNum(e.target.value));},placeholder:'Cuota en COP',className:'inp v4m-b-info',style:{marginTop:6,fontSize:13}})))),
       // PREVIEW
       preview&&h('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--bg2)'}},
         preview.error?h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:8,padding:'8px 10px',fontSize:11,color:'var(--red)',display:'flex',alignItems:'flex-start',gap:6}},
@@ -360,7 +360,7 @@ export function AbonoModal(props){
     h(Fld,{label:'Observaciones'},h('input',{value:obs,onChange:function(e){setObs(e.target.value);},placeholder:'Notas opcionales...',className:'inp'})),
     // v1.17.1 — el usuario decide si quiere el PDF (mismo patron que PayModal :4256)
     h('label',{style:{display:'flex',alignItems:'center',gap:8,marginTop:14,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
-      h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--blue)',cursor:'pointer'}}),
+      h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,cursor:'pointer'}}),
       'Generar recibo de abono'),
-    h('button',{onClick:submit,disabled:btnOff,className:'btn-primary',style:{marginTop:8,background:btnOff?'var(--bg3)':'var(--blue-bg)',border:'1px solid '+(btnOff?'var(--border)':'var(--blue)'),color:btnOff?'var(--text3)':'var(--blue)',cursor:btnOff?'not-allowed':'pointer'}},sending?'Registrando...':'Registrar abono'));
+    h('button',{onClick:submit,disabled:btnOff,className:'btn-primary'+(btnOff?'':' v4m-b-info'),style:{marginTop:8,background:btnOff?'var(--bg3)':'var(--blue-bg)',border:btnOff?'1px solid var(--border)':undefined,color:btnOff?'var(--text3)':'var(--blue)',cursor:btnOff?'not-allowed':'pointer'}},sending?'Registrando...':'Registrar abono'));
 }

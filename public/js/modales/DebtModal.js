@@ -53,7 +53,7 @@ export function DebtModal(props){
   var acrOpen=showSug&&acrSugeridos.length>0;
 
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)'}},editing?'Editar Deuda':'Nueva Deuda'),
+    h('div',{className:'v4m-tit'},editing?'Editar Deuda':'Nueva Deuda'),
     h('div',{style:{fontSize:12,color:'var(--text3)'}},editing?'Actualiza los datos de esta deuda.':'Registra una deuda que tienes con un tercero.'),
     h(Fld,{label:'Acreedor *'},
       h('div',{style:{position:'relative'}},
@@ -73,5 +73,5 @@ export function DebtModal(props){
     (interes.trim()&&concepto.trim())?h('div',{style:{fontSize:11,color:'var(--text3)',fontStyle:'italic'}},'Se guardará como: "'+[interes.trim(),concepto.trim()].filter(Boolean).join(' - ')+'"'):null,
     (editing&&!lockMonto)?h('div',{style:{fontSize:11,color:'var(--text3)'}},'El saldo pendiente se recalcula automáticamente (monto - lo ya pagado).'):null,
     h('div',{style:{display:'flex',gap:8,marginTop:8}},
-      h(ABtn,{color:'var(--green2)',disabled:sending,onClick:submit,icon:'check',label:sending?'Guardando...':(editing?'Guardar cambios':'Crear deuda')})));
+      h(ABtn,{tono:'pri',disabled:sending,onClick:submit,icon:'check',label:sending?'Guardando...':(editing?'Guardar cambios':'Crear deuda')})));
 }

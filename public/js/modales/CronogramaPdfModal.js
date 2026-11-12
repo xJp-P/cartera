@@ -60,7 +60,7 @@ export function CronogramaPdfModal(props){
   }
 
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
+    h('div',{className:'v4m-tit',style:{display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'download',size:16,color:'var(--blue)',sw:2.4}),props.titulo||'Descargar cronograma'),
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:props.mensaje?10:14}},
       loan.nombre+' \u2022 '+opModalidad(loan.modalidad)+' \u2022 '+loan.tasaMensual+'% mensual'),
@@ -68,13 +68,13 @@ export function CronogramaPdfModal(props){
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:12,lineHeight:1.5}},
       'El cronograma termina con el valor de liquidación: lo que el deudor tendría que entregar para cancelar el crédito.'),
     h(CheckInteresMes,{L:L,checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},onDias:setDiasProxMes}),
-    h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 14px',marginBottom:14}},
+    h('div',{className:'v4m-total',style:{borderRadius:12,padding:'12px 14px',marginBottom:14}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}},
         h('div',null,
-          h('div',{style:{fontSize:10,color:'var(--yellow)',fontWeight:600,letterSpacing:.5}},'VALOR DE LIQUIDACIÓN EN EL PDF'),
+          h('div',{className:'v4m-total-l',style:{fontSize:10,fontWeight:600,letterSpacing:.5}},'VALOR DE LIQUIDACIÓN EN EL PDF'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},detalle)),
         h('div',{style:{textAlign:'right'}},
-          h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--yellow)'}},fmt(L.total)),
+          h('div',{className:'mono v4m-total-v',style:{fontSize:20,fontWeight:700}},fmt(L.total)),
           esUSD&&usdLinea(copToUsd(L.total,loan.trmAcordada),{fontSize:11,fontWeight:500}))),
       L.incluyeProxMes&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:8,lineHeight:1.45}},
         pv ? 'El PDF dirá que este valor es válido hasta el '+fmtD(pv)+(L.periodoIrregular?', hasta donde cubren los '+L.diasCobrados+' días.':', la fecha de la próxima cuota.')

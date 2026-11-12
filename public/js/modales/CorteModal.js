@@ -131,7 +131,7 @@ export function CorteModal(props){
     h(Fld,{label:'Observaciones'},
       h('input',{value:obs,onChange:function(e){setObs(e.target.value);},placeholder:'Notas opcionales...',className:'inp'})),
 
-    h('button',{onClick:submit,disabled:btnOff,className:'btn-primary',
-      style:{marginTop:8,background:btnOff?'var(--bg3)':'var(--green-bg)',border:'1px solid '+(btnOff?'var(--border)':'var(--green)'),color:btnOff?'var(--text3)':'var(--green)',cursor:btnOff?'not-allowed':'pointer'}},
+    h('button',{onClick:submit,disabled:btnOff,className:'btn-primary'+(btnOff?'':' v4m-b-bien'),
+      style:{marginTop:8,background:btnOff?'var(--bg3)':'var(--green-bg)',border:btnOff?'1px solid var(--border)':undefined,color:btnOff?'var(--text3)':'var(--green)',cursor:btnOff?'not-allowed':'pointer'}},
       sending?'Registrando...':'Registrar corte'));
 }

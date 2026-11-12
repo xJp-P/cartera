@@ -21,7 +21,8 @@ export function DeleteDebtModal(props){
     h('div',{style:{fontSize:14,color:'var(--text)',lineHeight:'1.5'}},'¿Eliminar la deuda "'+titulo+'" con '+properCase(debt.acreedor)+'?'),
     h('div',{style:{fontSize:12,color:'var(--text3)',lineHeight:'1.5'}},'Se borrará también su historial de pagos. Esta acción no se puede deshacer.'),
     h('div',{style:{display:'flex',gap:8,marginTop:14}},
-      h('button',{onClick:onClose,style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer',color:'var(--text2)',fontFamily:'inherit'}},'Cancelar'),
-      h('button',{onClick:onConfirm,style:{flex:1,background:'var(--red)',border:'none',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer',color:'#fff',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+      h('button',{onClick:onClose,className:'v4m-pulsa',style:{flex:1,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer',color:'var(--text2)',fontFamily:'inherit'}},'Cancelar'),
+      // Lo irreversible va en rojo (`v4m-rojo`).
+      h('button',{onClick:onConfirm,className:'v4m-rojo v4m-pulsa',style:{flex:1,border:'none',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
         h(Ico,{name:'trash',size:15,color:'#fff',sw:2.2}),'Eliminar')));
 }

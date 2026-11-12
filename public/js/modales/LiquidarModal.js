@@ -54,7 +54,7 @@ export function LiquidarModal(props){
         cEsUSD&&monto>0&&usdLinea(copToUsd(monto,cLoan.trmAcordada),{fontSize:10,fontWeight:400})));
   }
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)',marginBottom:2,display:'flex',alignItems:'center',gap:8}},
+    h('div',{className:'v4m-tit',style:{display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'dollar',size:16,color:'var(--red)',sw:2.4}),'Liquidar deuda'),
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:14}},cLoan.nombre+' • '+cLoan.modalidad+(aplicaInteres?' • '+cLoan.tasaMensual+'% mensual':'')),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'4px 14px',border:'1px solid var(--border)',marginBottom:12}},
@@ -78,15 +78,15 @@ export function LiquidarModal(props){
     // La casilla es compartida con CronogramaPdfModal (3.1.0): mismas palabras, misma cifra.
     // Con un periodo irregular en curso trae el campo de dias (3.2.0).
     h(CheckInteresMes,{L:L,checked:incluyeProxMes,onChange:function(){setIncluyeProxMes(!incluyeProxMes);},onDias:setDiasProxMes}),
-    h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}},
+    h('div',{className:'v4m-total',style:{borderRadius:12,padding:'12px 14px',marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,
-        h('div',{style:{fontSize:10,color:'var(--red)',fontWeight:600,letterSpacing:.5}},'TOTAL A LIQUIDAR'),
+        h('div',{className:'v4m-total-l',style:{fontSize:10,fontWeight:600,letterSpacing:.5}},'TOTAL A LIQUIDAR'),
         h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:2}},'Lo que debe entregarte el deudor')),
       h('div',{style:{textAlign:'right'}},
-        h('div',{className:'mono',style:{fontSize:20,fontWeight:700,color:'var(--red)'}},fmt(L.total)),
+        h('div',{className:'mono v4m-total-v',style:{fontSize:20,fontWeight:700}},fmt(L.total)),
         cEsUSD&&usdLinea(copToUsd(L.total,cLoan.trmAcordada),{fontSize:11,fontWeight:500}))),
     // Documento PREVIO al cobro: se entrega, el deudor paga, y solo entonces se confirma.
-    // SIN el monto en la etiqueta: el total ya esta destacado en rojo justo encima y
+    // SIN el monto en la etiqueta: el total ya esta destacado justo encima y
     // repetirlo aqui solo compite con el.
     // NO escribe en BD, asi que no necesita _submitGuard; la guarda local solo evita que un
     // doble clic abra dos ventanas de impresion.
@@ -99,6 +99,6 @@ export function LiquidarModal(props){
       h(Ico,{name:'receipt',size:15,color:'var(--text3)',sw:2}),
       'Generar PDF de liquidación'),
     h('div',{style:{fontSize:11,color:'var(--text3)',marginBottom:14,lineHeight:1.5}},'Al confirmar, las cuotas pendientes y en mora se marcarán como pagadas y el préstamo se cerrará.'),
-    h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){return onConfirm(cLoan.id,L.capitalPendiente,L.intExtra);});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':'var(--red-bg)',border:'1px solid '+(liqSending?'var(--border)':'var(--red-bd)'),color:liqSending?'var(--text3)':'var(--red)',cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidación'),
+    h('button',{onClick:function(){_submitGuard(liqSending,setLiqSending,function(){return onConfirm(cLoan.id,L.capitalPendiente,L.intExtra);});},disabled:liqSending,className:'btn-primary',style:{background:liqSending?'var(--bg3)':undefined,border:'1px solid '+(liqSending?'var(--border)':'transparent'),color:liqSending?'var(--text3)':undefined,cursor:liqSending?'not-allowed':'pointer',marginBottom:6}},liqSending?'Procesando...':'Confirmar liquidación'),
     h('button',{onClick:onClose,className:'btn-primary',style:{background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--text2)'}},'Cancelar'));
 }

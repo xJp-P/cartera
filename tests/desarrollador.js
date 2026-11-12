@@ -340,8 +340,9 @@ const E = { ruta: 0, moviendo: 1, version: 2, act: 3, datos: 4, guardando: 5, om
     const leer = p => fs.readFileSync(path.join(REPO, p), 'utf8');
     const compacto = c => c.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
     const dcss = compacto(leer('public/css/dev.css'));
-    R.check('I1 index.html carga dev.css al final, despues de deudas.css',
-      /href="\/css\/deudas\.css">\s*<link[^>]*href="\/css\/dev\.css">\s*<\/head>/.test(leer('public/index.html')));
+    // Desde la fase de los modales, detras de dev.css va modales.css (lo vigila tests/modales.js).
+    R.check('I1 index.html carga dev.css despues de deudas.css, y solo la hoja de los modales despues',
+      /href="\/css\/deudas\.css">\s*<link[^>]*href="\/css\/dev\.css">\s*<link[^>]*href="\/css\/modales\.css">\s*<\/head>/.test(leer('public/index.html')));
     const SOLO_NOMBRE = ['dvv-card-t'];
     const usadas = Array.from(new Set((fuente.match(/dvv-[a-z0-9-]+/g) || []).filter(c => !/-$/.test(c) && SOLO_NOMBRE.indexOf(c) === -1)));
     const sinRegla = usadas.filter(c => !new RegExp('\\.' + c + '(?![A-Za-z0-9_-])').test(dcss));

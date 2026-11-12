@@ -93,7 +93,7 @@ export function DevView(props){
   }
   function resetPath(){
     if (!hasAPI) return;
-    props.onConfirm({ title: 'Restaurar ubicación', message: '¿Volver a la ruta por defecto? La app usará la carpeta nativa del sistema.', okLabel: 'Restaurar', okColor: 'var(--yellow)', onConfirm: function(){
+    props.onConfirm({ title: 'Restaurar ubicación', message: '¿Volver a la ruta por defecto? La app usará la carpeta nativa del sistema.', okLabel: 'Restaurar', tono: 'aviso', onConfirm: function(){
       window.electronAPI.resetDbPath().then(function(res){
         if (res && res.ok){ setDbPath(res.path); onNeedsRestart(); }
         else showError(res && res.error ? res.error : 'Error al restaurar la base de datos');

@@ -37,7 +37,7 @@ export function PayModal(props){
   // la cuota unica de un Prestamo (o un Pago Unico sin ganancia) tambien la cumple y bloqueaba el pago.
   var filaEsAbono=esAbono(pay);
   if(filaEsAbono) return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:12}},'Detalle Abono Capital'),
+    h('div',{className:'v4m-tit'},'Detalle Abono Capital'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'14px',border:'1px solid var(--border)'}},
       h('div',{style:{fontWeight:700,color:'var(--text)',marginBottom:4}},pay.nombreCliente),
       h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:8}},fmtD(pay.fechaRecaudo||pay.fechaPago)),
@@ -97,33 +97,33 @@ export function PayModal(props){
   }
 
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:14}},'Actualizar Pago'),
+    h('div',{className:'v4m-tit'},'Actualizar Pago'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'13px 14px',marginBottom:16,border:'1px solid var(--border)'}},
       h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},pay.nombreCliente),
       h('div',{style:{fontSize:12,color:'var(--text2)',marginTop:3}},'Cuota '+pay.cuotaN+' - '+fmtD(pay.fechaPago)),
       h('div',{className:'mono',style:{fontWeight:700,fontSize:20,color:'var(--green)',marginTop:6}},fmt(pay.cuotaTotal),
         esUSD&&usdLinea(copToUsd(pay.cuotaTotal,loan.trmAcordada),{fontSize:13,fontWeight:600,marginLeft:8},'span')),
-      yaPagado>0&&pay.estadoPago!=='Pagado'&&h('div',{style:{marginTop:8,padding:'8px 10px',background:'rgba(63,185,80,.08)',border:'1px solid var(--green-bd)',borderRadius:8}},
+      yaPagado>0&&pay.estadoPago!=='Pagado'&&h('div',{className:'v4m-caja-bien',style:{marginTop:8,padding:'8px 10px',borderRadius:8}},
         h('div',{className:'mono',style:{fontSize:12,color:'var(--green)',fontWeight:700}},'Ya abonado: '+fmt(yaPagado)+' / '+fmt(pay.cuotaTotal)),
         h('div',{className:'mono',style:{fontSize:13,color:'var(--yellow)',fontWeight:700,marginTop:2}},'Pendiente: '+fmt(restante))),
       esUSD&&h('div',{style:{fontSize:11,color:'var(--text2)',marginTop:4}},'Préstamo USD (TRM $'+fmtN(loan.trmAcordada)+') - ingresa COP recibidos'),
       h('div',{style:{marginTop:8}},h('span',{style:{background:so.bg,color:so.color,fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:99}},so.icon+' '+pay.estadoPago))),
 
     // Toggle Completo / Parcial — solo si la cuota no esta Pagada
-    pay.estadoPago!=='Pagado'&&h('div',{style:{display:'flex',gap:6,marginBottom:12,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:10,padding:3}},
-      h('button',{type:'button',onClick:function(){setTipoPago('completo');},style:{flex:1,padding:'8px 10px',border:'none',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:12,background:tipoPago==='completo'?'var(--green2)':'transparent',color:tipoPago==='completo'?'#fff':'var(--text2)',transition:'all .15s'}},'Pago completo'),
-      h('button',{type:'button',onClick:function(){setTipoPago('parcial');},style:{flex:1,padding:'8px 10px',border:'none',borderRadius:8,cursor:'pointer',fontWeight:700,fontSize:12,background:tipoPago==='parcial'?'var(--yellow)':'transparent',color:tipoPago==='parcial'?'#fff':'var(--text2)',transition:'all .15s'}},'Pago parcial')),
+    pay.estadoPago!=='Pagado'&&h('div',{className:'v4m-seg',style:{marginBottom:12}},
+      h('button',{type:'button',className:tipoPago==='completo'?'on':'',onClick:function(){setTipoPago('completo');},style:{padding:'8px 10px',fontSize:12}},'Pago completo'),
+      h('button',{type:'button',className:tipoPago==='parcial'?'on':'',onClick:function(){setTipoPago('parcial');},style:{padding:'8px 10px',fontSize:12}},'Pago parcial')),
 
     h(Fld,{label:'Fecha de recaudo'},h('input',{type:'date',value:fecha,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
 
     // ── Modo Parcial ──
-    tipoPago==='parcial'&&pay.estadoPago!=='Pagado'&&h('div',{style:{background:'rgba(187,128,9,.08)',border:'1px solid var(--yellow)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+    tipoPago==='parcial'&&pay.estadoPago!=='Pagado'&&h('div',{className:'v4m-caja-aviso',style:{borderRadius:12,padding:'10px 12px',marginBottom:4}},
       h(Fld,{label:'Monto del pago parcial (COP) *'},
-        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(montoParcial),onChange:function(e){setMontoParcial(parseNum(e.target.value));},placeholder:'0',className:'inp',style:{border:'1px solid var(--yellow)'}}),
-        montoParcial>0&&h('div',{style:{fontSize:11,marginTop:4,fontFamily:'monospace',color:+montoParcial>=restante?'var(--green)':'var(--text2)'}},
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(montoParcial),onChange:function(e){setMontoParcial(parseNum(e.target.value));},placeholder:'0',className:'inp v4m-b-aviso'}),
+        montoParcial>0&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:+montoParcial>=restante?'var(--green)':'var(--text2)'}},
           +montoParcial>=restante?'Con este pago la cuota quedaría COMPLETA':'Quedarían pendientes: '+fmt(restante-(+montoParcial||0)))),
       esUSD&&h(Fld,{label:'USD recibidos *'},
-        h('input',{type:'text',inputMode:'decimal',value:parcialUSD,onChange:function(e){setParcialUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 120.00',className:'inp',style:{border:'1px solid var(--blue)'}})),
+        h('input',{type:'text',inputMode:'decimal',value:parcialUSD,onChange:function(e){setParcialUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 120.00',className:'inp v4m-b-info'})),
       // Doble entrada visible: el dolar define la deuda que se extingue, los COP son la caja
       // real. La diferencia entre ambos ES el efecto cambiario, y aqui se ve antes de guardar.
       esUSD&&(+parcialUSD||0)>0&&(+montoParcial||0)>0&&(function(){
@@ -138,22 +138,22 @@ export function PayModal(props){
       })()),
 
     // ── Modo Completo (USD fields) ──
-    tipoPago==='completo'&&esUSD&&pay.estadoPago!=='Pagado'&&h('div',{style:{background:'rgba(187,128,9,.1)',border:'1px solid var(--yellow)',borderRadius:12,padding:'10px 12px',marginBottom:4}},
+    tipoPago==='completo'&&esUSD&&pay.estadoPago!=='Pagado'&&h('div',{className:'v4m-caja-aviso',style:{borderRadius:12,padding:'10px 12px',marginBottom:4}},
       h(Fld,{label:'COP realmente recibidos *'},
-        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRec),onChange:function(e){setCopRec(parseNum(e.target.value));},placeholder:'Monto en pesos recibido',className:'inp',style:{border:'1px solid var(--yellow)'}})),
+        h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(copRec),onChange:function(e){setCopRec(parseNum(e.target.value));},placeholder:'Monto en pesos recibido',className:'inp v4m-b-aviso'})),
       h(Fld,{label:'USD recibidos *'},
-        h('input',{type:'text',inputMode:'decimal',value:usdRec,onChange:function(e){setUsdRec(parseDecimalInput(e.target.value));},placeholder:'Ej: 250.00',className:'inp',style:{border:'1px solid var(--blue)'}}))),
+        h('input',{type:'text',inputMode:'decimal',value:usdRec,onChange:function(e){setUsdRec(parseDecimalInput(e.target.value));},placeholder:'Ej: 250.00',className:'inp v4m-b-info'}))),
 
     h(Fld,{label:'Observaciones'},h('input',{value:obs,onChange:function(e){setObs(e.target.value);},placeholder:'Notas opcionales...',className:'inp'})),
     pay.estadoPago!=='Pagado'&&h('label',{style:{display:'flex',alignItems:'center',gap:8,marginTop:14,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
-      h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--green)',cursor:'pointer'}}),
+      h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,cursor:'pointer'}}),
       'Generar recibo de pago'),
     // Los 4 botones escriben en BD y comparten la MISMA guarda: mientras una operacion esta
     // en vuelo ninguno acepta clicks (evita tanto el doble submit como disparar dos cambios
     // de estado contradictorios sobre la misma cuota).
     h('div',{style:{display:'flex',gap:8,marginTop:14}},
-      pay.estadoPago!=='Pagado'&&tipoPago==='completo'&&h(ABtn,{color:'var(--green2)',disabled:sending,onClick:submitCompleto,icon:'check', label:sending?'Registrando...':(yaPagado>0?'Completar':'Pagado')}),
-      pay.estadoPago!=='Pagado'&&tipoPago==='parcial' &&h(ABtn,{color:'var(--yellow)', disabled:sending,onClick:submitParcial, icon:'check', label:sending?'Registrando...':'Registrar parcial'}),
-      pay.estadoPago!=='En Mora'   &&h(ABtn,{color:'#b91c1c',     disabled:sending,onClick:function(){_run(function(){return onMark(pay.id,'En Mora',  null, obs,0,0);});}, icon:'alert', label:sending?'...':'En Mora'}),
-      pay.estadoPago!=='Pendiente' &&h(ABtn,{color:'var(--bg4)',   disabled:sending,onClick:function(){_run(function(){return onMark(pay.id,'Pendiente',null, obs,0,0);});}, icon:'clock', label:sending?'...':'Pendiente'})));
+      pay.estadoPago!=='Pagado'&&tipoPago==='completo'&&h(ABtn,{tono:'pri',disabled:sending,onClick:submitCompleto,icon:'check', label:sending?'Registrando...':(yaPagado>0?'Completar':'Pagado')}),
+      pay.estadoPago!=='Pagado'&&tipoPago==='parcial' &&h(ABtn,{tono:'aviso',disabled:sending,onClick:submitParcial, icon:'check', label:sending?'Registrando...':'Registrar parcial'}),
+      pay.estadoPago!=='En Mora'   &&h(ABtn,{tono:'peligro',disabled:sending,onClick:function(){_run(function(){return onMark(pay.id,'En Mora',  null, obs,0,0);});}, icon:'alert', label:sending?'...':'En Mora'}),
+      pay.estadoPago!=='Pendiente' &&h(ABtn,{tono:'neutro',disabled:sending,onClick:function(){_run(function(){return onMark(pay.id,'Pendiente',null, obs,0,0);});}, icon:'clock', label:sending?'...':'Pendiente'})));
 }

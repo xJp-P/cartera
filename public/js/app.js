@@ -328,7 +328,7 @@ function App(){
         // Validacion de duplicados: mismo nombre + mismo monto activo
         var dupActivo=loans.find(function(l){return l.nombre.trim().toLowerCase()===nombreNorm&&l.estado==='Activo'&&Math.round(l.montoCOP)===Math.round(data.montoCOP);});
         if(dupActivo){
-          setConfirmDlg({title:'Préstamo duplicado',message:'Ya existe un préstamo activo para "'+existente.nombre+'" por '+fmt(data.montoCOP)+'.',okLabel:'Crear igual',okColor:'var(--yellow)',onConfirm:function(){setConfirmDlg(null);doSaveLoan(data);}});
+          setConfirmDlg({title:'Préstamo duplicado',message:'Ya existe un préstamo activo para "'+existente.nombre+'" por '+fmt(data.montoCOP)+'.',okLabel:'Crear igual',tono:'aviso',onConfirm:function(){setConfirmDlg(null);doSaveLoan(data);}});
           return Promise.resolve();
         }
       }
@@ -355,7 +355,7 @@ function App(){
             setCronoPdfModal({loan:lNuevo,pays:pNuevo});
             return;
           }
-          setConfirmDlg({title:'Cronograma PDF',message:'¿Deseas generar el cronograma de pagos en PDF para enviar al deudor?',okLabel:'Generar PDF',okColor:'var(--blue)',onConfirm:function(){
+          setConfirmDlg({title:'Cronograma PDF',message:'¿Deseas generar el cronograma de pagos en PDF para enviar al deudor?',okLabel:'Generar PDF',tono:'pri',onConfirm:function(){
             setConfirmDlg(null);
             API.get('/api/payments').then(function(allPays){
               var loanPays=allPays.filter(function(p2){return p2.prestamoId===savedLoan.id;});
@@ -368,7 +368,7 @@ function App(){
   }
 
   var delLoan=useCallback(function(id){
-    setConfirmDlg({title:'Eliminar préstamo',message:'Se eliminará el préstamo y todo su cronograma de pagos. Esta acción no se puede deshacer.',okLabel:'Eliminar',okColor:'#b91c1c',onConfirm:function(){setConfirmDlg(null);API.del('/api/loans/'+id).then(function(r){if(!r)return;reload();showToast('Préstamo eliminado','error');});}});
+    setConfirmDlg({title:'Eliminar préstamo',message:'Se eliminará el préstamo y todo su cronograma de pagos. Esta acción no se puede deshacer.',okLabel:'Eliminar',tono:'peligro',onConfirm:function(){setConfirmDlg(null);API.del('/api/loans/'+id).then(function(r){if(!r)return;reload();showToast('Préstamo eliminado','error');});}});
   },[reload]);
 
   var forceCloseLoan=useCallback(function(loan){
@@ -384,7 +384,7 @@ function App(){
       +'• Intereses en mora: $'+intPerd.toLocaleString('es-CO')+'\n'
       +'• Total perdido: $'+total.toLocaleString('es-CO')+'\n'
       +'Las cuotas pendientes y en mora se eliminarán. El préstamo pasará a "Cancelado" y no se podrá reactivar.';
-    setConfirmDlg({title:'Cerrar préstamo a la fuerza',message:msg,okLabel:'Cerrar préstamo',okColor:'#b91c1c',onConfirm:function(){
+    setConfirmDlg({title:'Cerrar préstamo a la fuerza',message:msg,okLabel:'Cerrar préstamo',tono:'peligro',onConfirm:function(){
       setConfirmDlg(null);
       API.post('/api/loans/'+loan.id+'/force-close',{}).then(function(r){
         if(!r)return;

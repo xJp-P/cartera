@@ -33,8 +33,8 @@ export function CheckInteresMes(props) {
   // El texto viejo ("¿Incluir 1 mes de interes adicional?") preguntaba sin dar contexto:
   // no decia de donde sale ese mes ni cuando corresponde cobrarlo. Ahora dice QUE se
   // cobra, POR QUE existe (se liquida a mitad de ciclo) y CUANDO activarlo.
-  return h('label',{style:{display:'flex',alignItems:'flex-start',gap:10,background:'var(--bg3)',border:'1px solid '+(checked?'var(--yellow)':'var(--border)'),borderRadius:10,padding:'11px 12px',marginBottom:12,cursor:'pointer',transition:'border-color .2s'}},
-    h('input',{type:'checkbox',checked:checked,onChange:onChange,style:{width:16,height:16,accentColor:'var(--yellow)',cursor:'pointer',margin:'1px 0 0',flex:'none'}}),
+  return h('label',{className:'v4m-casilla',style:{display:'flex',alignItems:'flex-start',gap:10,borderRadius:10,padding:'11px 12px',marginBottom:12,cursor:'pointer',transition:'border-color .2s'}},
+    h('input',{type:'checkbox',checked:checked,onChange:onChange,style:{width:16,height:16,cursor:'pointer',margin:'1px 0 0',flex:'none'}}),
     h('span',{style:{flex:1}},
       h('span',{style:{display:'flex',justifyContent:'space-between',gap:8}},
         h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Cobrar el '+lbl.toLowerCase()),
@@ -71,13 +71,14 @@ function casillaPeriodoIrregular(L, checked, onChange, onDias) {
   var atajo = function (txt, n) {
     var activo = L.diasCobrados === n;
     return h('button',{type:'button',onClick:function(){ setDias(n); },
+      className:activo?'v4m-b-aviso':'',
       style:{fontSize:11,padding:'4px 9px',borderRadius:999,cursor:'pointer',
-        border:'1px solid '+(activo?'var(--yellow)':'var(--border)'),
+        border:activo?undefined:'1px solid var(--border)',
         background:activo?'rgba(210,153,34,.12)':'transparent',color:activo?'var(--yellow)':'var(--text2)'}},txt);
   };
-  return h('div',{style:{background:'var(--bg3)',border:'1px solid '+(checked?'var(--yellow)':'var(--border)'),borderRadius:10,padding:'11px 12px',marginBottom:12,transition:'border-color .2s'}},
+  return h('div',{className:'v4m-casilla',style:{borderRadius:10,padding:'11px 12px',marginBottom:12,transition:'border-color .2s'}},
     h('label',{style:{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer'}},
-      h('input',{type:'checkbox',checked:checked,onChange:onChange,style:{width:16,height:16,accentColor:'var(--yellow)',cursor:'pointer',margin:'1px 0 0',flex:'none'}}),
+      h('input',{type:'checkbox',checked:checked,onChange:onChange,style:{width:16,height:16,cursor:'pointer',margin:'1px 0 0',flex:'none'}}),
       h('span',{style:{flex:1}},
         h('span',{style:{display:'flex',justifyContent:'space-between',gap:8}},
           h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Cobrar el interés del periodo en curso'),

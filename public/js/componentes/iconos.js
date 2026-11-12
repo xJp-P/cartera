@@ -13,10 +13,12 @@
 
 import { h } from '../core/react.js';
 
+// Rediseño v4 (modales): los colores de estado salen de los tokens del tema (base.css), asi que la
+// pildora de estado se ve bien en los dos temas; antes eran hexadecimales fijos del tema oscuro viejo.
 export var ST = {
-  'Pagado':   {bg:'#0f2b19',color:'#3fb950',bd:'#1b4332',icon:'OK'},
-  'Pendiente':{bg:'#2b2005',color:'#d29922',bd:'#3d2e08',icon:'...'},
-  'En Mora':  {bg:'#2d1117',color:'#f85149',bd:'#5c1b18',icon:'!'}
+  'Pagado':   {bg:'var(--good-soft)',color:'var(--good-text)',bd:'var(--green-bd)',icon:'✓'},
+  'Pendiente':{bg:'var(--warn-soft)',color:'var(--warn-text)',bd:'var(--yellow)',icon:'•'},
+  'En Mora':  {bg:'var(--crit-soft)',color:'var(--crit-text)',bd:'var(--red-bd)',icon:'!'}
 };
 
 export var ICONS = {

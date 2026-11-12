@@ -92,7 +92,7 @@ export function CondonarModal(props){
         border:'1px solid '+(on?'var(--yellow-bd)':'var(--border)'),borderRadius:10,padding:'9px 11px',
         background:on?'var(--yellow-bg)':'var(--bg3)',transition:'all .15s'}},
         h('input',{type:'checkbox',checked:on,onChange:function(){ toggle(p.id); },
-          style:{width:16,height:16,marginTop:1,accentColor:'var(--yellow)',cursor:'pointer',flexShrink:0}}),
+          style:{width:16,height:16,marginTop:1,cursor:'pointer',flexShrink:0}}),
         h('div',{style:{flex:1,minWidth:0}},
           h('div',{style:{display:'flex',alignItems:'baseline',gap:7}},
             h('span',{style:{fontSize:12,fontWeight:700,color:'var(--text)'}},'Cuota #'+p.cuotaN),
@@ -171,8 +171,8 @@ export function CondonarModal(props){
             :'Después cobra el capital con “Registrar cobro” y el crédito cerrará solo.'),
 
     h('div',{style:{display:'flex',gap:10,marginTop:10}},
-      h('button',{onClick:onClose,style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer'}},'Cancelar'),
-      h(ABtn,{color:'var(--yellow)',icon:'alert',
+      h('button',{onClick:onClose,className:'v4m-pulsa',style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer'}},'Cancelar'),
+      h(ABtn,{tono:'aviso',icon:'alert',
         label:sending?'Condonando…':(intCondonar>0?('Condonar '+money(intCondonar)):'Condonar intereses'),
         disabled:!puede||sending,
         onClick:submit})));

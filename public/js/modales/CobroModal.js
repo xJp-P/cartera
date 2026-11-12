@@ -347,7 +347,7 @@ export function CobroModal(props){
       cob.interesMes>0&&h('label',{style:{display:'flex',alignItems:'flex-start',gap:9,cursor:'pointer',
         background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',borderRadius:10,padding:'9px 11px'}},
         h('input',{type:'checkbox',checked:incMes,onChange:function(){setIncMes(!incMes);},
-          style:{marginTop:2,width:15,height:15,accentColor:'var(--blue)',cursor:'pointer'}}),
+          style:{marginTop:2,width:15,height:15,cursor:'pointer'}}),
         h('span',null,
           h('span',{style:{fontSize:12,fontWeight:700,color:'var(--blue)'}},'Incluir intereses del mes actual'),
           h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:2,lineHeight:1.5}},
@@ -361,7 +361,7 @@ export function CobroModal(props){
         background:omitMora?'var(--yellow-bg)':'transparent',
         border:'1px solid '+(omitMora?'var(--yellow-bd)':'var(--border)'),borderRadius:10,padding:'9px 11px'}},
         h('input',{type:'checkbox',checked:omitMora,onChange:function(){setOmitMora(!omitMora);},
-          style:{marginTop:2,width:15,height:15,accentColor:'var(--yellow)',cursor:'pointer'}}),
+          style:{marginTop:2,width:15,height:15,cursor:'pointer'}}),
         h('span',null,
           h('span',{style:{fontSize:12,fontWeight:700,color:omitMora?'var(--yellow)':'var(--text2)'}},
             'No cobrar las cuotas vencidas — destinar todo a capital'),
@@ -414,7 +414,7 @@ export function CobroModal(props){
         return h('label',{key:op[0],style:{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 0',cursor:'pointer'}},
           h('input',{type:'radio',name:'cobroRecalc',checked:recalcMode===op[0],
             onChange:function(){ setRecalcMode(op[0]); setRecalcInput(''); },
-            style:{marginTop:3,accentColor:'var(--blue)',cursor:'pointer'}}),
+            style:{marginTop:3,cursor:'pointer'}}),
           h('span',null,
             h('span',{style:{fontSize:12,color:'var(--text)',fontWeight:600}},op[1]),
             h('span',{style:{display:'block',fontSize:10.5,color:'var(--text3)',marginTop:1}},op[2])));
@@ -486,7 +486,7 @@ export function CobroModal(props){
                         h('b',null,money(proxPago.neto)))))];
                 })))),
             cronoPreview.filas.length>0&&cronoPreview.filas[0].antes>0&&
-              h('div',{style:{padding:'7px 10px',borderTop:'1px solid var(--border)',fontSize:11,color:'var(--text3)',background:'var(--bg3)'}},
+              h('div',{className:'v4m-pie',style:{padding:'7px 10px',fontSize:11,color:'var(--text3)'}},
                 'La cuota pasa de ',h('b',{className:'mono',style:{color:'var(--text2)'}},money(cronoPreview.filas[0].antes)),
                 ' a ',h('b',{className:'mono',style:{color:'var(--green)'}},money(cronoPreview.filas[0].cuota)),
                 ' · quedan ',h('b',null,cronoPreview.n),' cuota',cronoPreview.n===1?'':'s')))),
@@ -530,6 +530,7 @@ export function CobroModal(props){
           });
         }catch(e){ /* un fallo del PDF no puede romper el modal */ }
       },
+      className:'v4m-pulsa',
       style:{width:'100%',padding:'10px 12px',borderRadius:10,fontSize:12.5,fontWeight:700,cursor:'pointer',
         display:'flex',alignItems:'center',justifyContent:'center',gap:7,fontFamily:'inherit',
         background:'transparent',border:'1px solid var(--blue-bd)',color:'var(--blue)'}},
@@ -545,13 +546,13 @@ export function CobroModal(props){
         'Este cobro se registra como ',h('b',null,plan.pasos.length),' movimientos, cada uno reversible por separado desde el Historial. Se emite ',
         h('b',{style:{color:'var(--text2)'}},'un solo recibo'),' por el total recibido.'),
       h('label',{style:{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:12,color:'var(--text2)'}},
-        h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,accentColor:'var(--blue)',cursor:'pointer'}}),
+        h('input',{type:'checkbox',checked:genRecibo,onChange:function(){setGenRecibo(!genRecibo);},style:{width:16,height:16,cursor:'pointer'}}),
         'Generar recibo de cobro')),
 
     // ── Acciones ──
     h('div',{style:{display:'flex',gap:10,marginTop:8}},
-      h('button',{onClick:onClose,style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer'}},'Cancelar'),
-      h(ABtn,{color:'var(--green)',icon:'check',
+      h('button',{onClick:onClose,className:'v4m-pulsa',style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 8px',fontSize:13,fontWeight:700,cursor:'pointer'}},'Cancelar'),
+      h(ABtn,{tono:'pri',icon:'check',
         label:sending?'Registrando…':(plan&&plan.pasos.length>1?('Registrar cobro ('+plan.pasos.length+' pasos)'):'Registrar cobro'),
         disabled:!plan||!plan.ok||!plan.pasos.length||faltanCamposUSD||sending||
           !!(cronoPreview&&cronoPreview.error),

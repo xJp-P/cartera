@@ -32,8 +32,9 @@ export function ConfirmUndoModal(props){
   var afectaCaja=!!(+e.afecta_caja);
   var esDeuda=e.scope_tipo==='debt';
 
-  function aviso(color,bg,bd,icono,titulo,cuerpo){
-    return h('div',{style:{background:bg,border:'1px solid '+bd,borderRadius:10,padding:'10px 12px',marginTop:10,display:'flex',gap:9,alignItems:'flex-start'}},
+  // `caja` es la clase del recuadro (modales.css): aviso en amarillo suave, peligro en rojo suave.
+  function aviso(color,caja,icono,titulo,cuerpo){
+    return h('div',{className:caja,style:{borderRadius:10,padding:'10px 12px',marginTop:10,display:'flex',gap:9,alignItems:'flex-start'}},
       h(Ico,{name:icono,size:14,color:color,sw:2.4}),
       h('div',{style:{flex:1,minWidth:0}},
         h('div',{style:{fontSize:11,fontWeight:700,color:color,letterSpacing:'.3px',marginBottom:2}},titulo),
@@ -41,7 +42,7 @@ export function ConfirmUndoModal(props){
   }
 
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:3,display:'flex',alignItems:'center',gap:8}},
+    h('div',{className:'v4m-tit',style:{display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'refresh',size:16,color:'var(--purple)',sw:2.4}),'Deshacer operación'),
     h('div',{style:{fontSize:12,color:'var(--text3)',marginBottom:13}},'Se restaurará el estado exacto anterior a esta operación.'),
 
@@ -54,11 +55,11 @@ export function ConfirmUndoModal(props){
         String(e.created_at).slice(0,16)+' · '+antiguedad)),
 
     // ── CANDADO C — antigüedad ──
-    esVieja&&aviso('var(--yellow)','var(--yellow-bg)','var(--yellow)','alert','OPERACIÓN ANTIGUA',
+    esVieja&&aviso('var(--yellow)','v4m-caja-aviso','alert','OPERACIÓN ANTIGUA',
       'Se registró '+antiguedad+'. Revisa que no hayas construido nada sobre ella (reportes enviados, cierres de caja o conciliaciones ya hechas).'),
 
     // ── CANDADO D — recibo probablemente entregado ──
-    afectaCaja&&aviso('var(--red)','var(--red-bg)','var(--red-bd)','receipt','DINERO YA REGISTRADO',
+    afectaCaja&&aviso('var(--red)','v4m-caja-peligro','receipt','DINERO YA REGISTRADO',
       esDeuda
         ? 'Este movimiento registró dinero real. Al revertirlo, el saldo de la deuda volverá a su valor anterior: confirma que el pago efectivamente no ocurrió.'
         : 'Es probable que el cliente YA tenga en sus manos un recibo PDF con esta información. Si lo deshaces, tu sistema dejará de coincidir con ese documento. Asegúrate de acordarlo con el deudor.'),
@@ -68,9 +69,9 @@ export function ConfirmUndoModal(props){
       'La operación quedará marcada como revertida en el historial. El registro NO se borra: queda la huella de que ocurrió y de que se deshizo.'),
 
     h('div',{style:{display:'flex',gap:10,marginTop:16}},
-      h('button',{onClick:function(){_submitGuard(sending,setSending,function(){return onConfirm(e);});},disabled:sending,
+      h('button',{onClick:function(){_submitGuard(sending,setSending,function(){return onConfirm(e);});},disabled:sending,className:'v4m-pulsa',
         style:{flex:1,background:sending?'var(--bg3)':'var(--purple-bg)',color:sending?'var(--text3)':'var(--purple)',
           border:'1px solid '+(sending?'var(--border)':'var(--purple)'),borderRadius:10,padding:'11px 0',fontSize:13,fontWeight:700,
           cursor:sending?'not-allowed':'pointer',fontFamily:'inherit'}},sending?'Deshaciendo...':'Sí, deshacer'),
-      h('button',{onClick:onClose,style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:10,padding:'11px 0',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancelar')));
+      h('button',{onClick:onClose,className:'v4m-pulsa',style:{flex:1,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:10,padding:'11px 0',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancelar')));
 }

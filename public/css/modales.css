@@ -1,0 +1,155 @@
+/* public/css/modales.css — LOS MODALES del rediseño v4 (aprobados por el PO sobre el prototipo).
+ *
+ * Se carga despues de las hojas de las pestañas. Tres capas:
+ *   1. la VENTANA: `.v4m-*` de componentes/base.js (Modal, Fld, ABtn) y de modales/ConfirmModal.js — el
+ *      fondo oscuro con desenfoque, la tarjeta que entra con fundido y escala, la X, el cuerpo con su
+ *      desplazamiento, los rotulos y los botones con color semantico (principal negro/blanco, peligro en
+ *      rojo, aviso, info, neutro). Tambien los dos dialogos de App con `.modal-overlay` / `.modal-panel`.
+ *   2. los CAMPOS dentro de cualquier modal: `.inp` de 44 px con anillo azul al enfocar, fechas, selects
+ *      con su flecha, casillas con el acento.
+ *   3. las CLASES PROPIAS de los modales: los recuadros, bordes y cifras que antes se pintaban en linea con
+ *      los colores viejos (amarillo, verde, azul y rojo de GitHub). En el prototipo esto se armonizaba con
+ *      selectores de atributo sobre el estilo en linea; en produccion cada modal lleva su clase.
+ * Ninguna regla de esta hoja mira el atributo `style` (lo vigila tests/modales.js). */
+
+/* ── 1. LA VENTANA ─────────────────────────────────────────────────────────────── */
+@keyframes v4m-fondo { from { opacity: 0; } to { opacity: 1; } }
+@keyframes v4m-entra { from { opacity: 0; transform: translateY(12px) scale(.965); } to { opacity: 1; transform: none; } }
+
+.v4m-overlay, .modal-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(0, 0, 0, .62); -webkit-backdrop-filter: blur(8px) saturate(115%); backdrop-filter: blur(8px) saturate(115%); animation: v4m-fondo .22s ease both; }
+[data-theme="light"] .v4m-overlay, [data-theme="light"] .modal-overlay { background: rgba(24, 24, 20, .34); }
+.v4m-overlay.confirm, .modal-overlay { z-index: 200; }
+
+.v4m-sheet, .modal-panel { position: relative; width: 100%; max-width: 560px; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 22px;
+  box-shadow: 0 32px 90px -24px rgba(0, 0, 0, .65), 0 0 0 1px rgba(255, 255, 255, .02), var(--highlight); color: var(--ink);
+  animation: v4m-entra .34s var(--ease) both; }
+[data-theme="light"] .v4m-sheet, [data-theme="light"] .modal-panel { box-shadow: 0 30px 80px -26px rgba(20, 20, 16, .35), 0 2px 8px rgba(20, 20, 16, .06); }
+.v4m-sheet.ancho { max-width: 720px; }
+.v4m-sheet.alto { max-height: 92vh; }
+.modal-panel { padding: 24px 26px; }
+.modal-panel > div:first-child { color: var(--ink); }
+.modal-handle { width: 36px; height: 4px; background: var(--bg4); border-radius: 4px; margin: 0 auto 16px; }
+
+.v4m-x { position: absolute; top: 16px; right: 16px; z-index: 3; width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink-2); display: grid; place-items: center; cursor: pointer; transition: background-color .15s, color .15s, border-color .15s, transform .2s var(--ease); }
+.v4m-x:hover { background: var(--surface-2); color: var(--ink); border-color: var(--line-strong); }
+.v4m-x:active { transform: scale(.94); }
+.v4m-body { overflow-y: auto; padding: 26px 28px 28px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+/* El primer bloque de cada modal deja aire para la X */
+.v4m-body > div:first-child { padding-right: 44px; }
+/* El titulo: la tipografia de Control TC */
+.v4m-tit { font-size: 19px; font-weight: 650; letter-spacing: -.02em; color: var(--ink); margin-bottom: 6px; }
+
+/* Rotulo + campo */
+.v4m-fld { margin-top: 4px; }
+.v4m-fld-l { font-size: 12.5px; font-weight: 500; color: var(--ink-2); margin-bottom: 7px; }
+
+/* Botones de accion (ABtn y confirmaciones) */
+.v4m-btn { flex: 1; min-height: 46px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 13px; border: 1px solid transparent;
+  font: 600 14px var(--font); cursor: pointer; transition: opacity .15s, background-color .15s, border-color .15s, transform .15s var(--ease), filter .15s; }
+.v4m-btn svg { stroke: currentColor; }
+.v4m-btn:active:not(:disabled) { transform: scale(.98); }
+.v4m-btn.pri { background: var(--inverse-bg); color: var(--inverse-ink); }
+.v4m-btn.pri:hover:not(:disabled) { opacity: .88; }
+.v4m-btn.peligro { background: var(--crit); color: #fff; }
+.v4m-btn.peligro:hover:not(:disabled) { filter: brightness(1.08); }
+.v4m-btn.aviso { background: var(--warn-soft); color: var(--warn-text); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.v4m-btn.info { background: var(--accent-soft); color: var(--info-text); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.v4m-btn.neutro { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
+.v4m-btn.neutro:hover:not(:disabled), .v4m-btn.aviso:hover:not(:disabled), .v4m-btn.info:hover:not(:disabled) { border-color: var(--line-strong); }
+.v4m-btn:disabled { opacity: .42; cursor: not-allowed; }
+
+/* La confirmacion */
+.v4m-confirm { max-width: 400px; }
+.v4m-confirm-c { padding: 26px 26px 6px; display: flex; flex-direction: column; align-items: flex-start; }
+.v4m-confirm-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 16px; }
+.v4m-confirm-ico.pri { background: var(--surface-3); color: var(--ink-2); }
+.v4m-confirm-ico.peligro { background: var(--crit-soft); color: var(--crit-text); }
+.v4m-confirm-ico.aviso { background: var(--warn-soft); color: var(--warn-text); }
+.v4m-confirm-t { font-size: 18px; font-weight: 650; letter-spacing: -.02em; color: var(--ink); }
+.v4m-confirm-m { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin-top: 8px; white-space: pre-line; }
+.v4m-confirm-d { font-size: 18px; font-weight: 650; letter-spacing: -.02em; color: var(--ink); margin-top: 12px; font-variant-numeric: tabular-nums; }
+.v4m-confirm-acc { display: flex; gap: 10px; padding: 20px 26px 24px; }
+.v4m-check { display: flex; align-items: center; gap: 9px; margin-top: 14px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.v4-forzar) .v4m-overlay, html:not(.v4-forzar) .v4m-sheet, html:not(.v4-forzar) .modal-overlay, html:not(.v4-forzar) .modal-panel { animation: none; }
+}
+
+/* ── 2. LOS CAMPOS ─────────────────────────────────────────────────────────────── */
+.v4m-sheet .inp, .modal-panel .inp { min-height: 44px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--ink);
+  font: 14px var(--font); font-variant-numeric: tabular-nums; transition: border-color .15s, box-shadow .2s, background-color .15s; }
+/* Campos con borde de color (pago parcial, dolares, recalculo...): el tono suave. El paso del mouse y el
+   foco siguen mandando: van despues, con la misma especificidad. */
+.v4m-sheet .inp.v4m-b-aviso { border-color: color-mix(in srgb, var(--warn) 32%, transparent); }
+.v4m-sheet .inp.v4m-b-info { border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
+.v4m-sheet .inp.v4m-b-bien { border-color: color-mix(in srgb, var(--good) 32%, transparent); }
+.v4m-sheet .inp.v4m-b-peligro { border-color: color-mix(in srgb, var(--crit) 34%, transparent); }
+.v4m-sheet .inp:hover { border-color: var(--line-strong); }
+.v4m-sheet .inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }
+.v4m-sheet .inp::placeholder { color: var(--ink-3); }
+.v4m-sheet .inp:disabled { opacity: .55; cursor: not-allowed; }
+.v4m-sheet input[type="date"].inp { color-scheme: dark; }
+[data-theme="light"] .v4m-sheet input[type="date"].inp { color-scheme: light; }
+.v4m-sheet select.inp { appearance: none; -webkit-appearance: none; padding-right: 36px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23858580' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; }
+.v4m-sheet textarea.inp, .v4m-sheet textarea { min-height: 84px; line-height: 1.5; resize: vertical; }
+.v4m-sheet input[type="checkbox"], .v4m-sheet input[type="radio"], .modal-panel input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+/* ── 3. LAS CLASES PROPIAS DE LOS MODALES ──────────────────────────────────────── */
+/* Los iconos toman el color del texto que acompañan */
+.v4m-sheet svg { stroke: currentColor; }
+/* Las cifras: la tipografia de las cifras de la app, y el dolar en tinta terciaria */
+.v4m-sheet .mono { letter-spacing: -.01em; }
+.v4m-sheet .dp-usd { color: var(--ink-3); }
+.v4m-num { font-variant-numeric: tabular-nums; }
+/* Rotulo pequeño en mayusculas (el saldo pendiente de una deuda) */
+.v4m-mayus { text-transform: uppercase; font-weight: 600; letter-spacing: .06em; }
+
+/* El boton de bloque (.btn-primary) dentro de un modal: el primario de Control TC */
+.v4m-sheet .btn-primary { background: var(--inverse-bg); color: var(--inverse-ink); min-height: 46px; border-radius: 13px; font: 600 14px var(--font);
+  transition: opacity .15s, transform .15s var(--ease); }
+.v4m-sheet .btn-primary:hover { background: var(--inverse-bg); opacity: .88; }
+.v4m-sheet .btn-primary:active:not(:disabled) { transform: scale(.98); }
+/* Botones con forma propia (Cancelar, Eliminar, la propuesta...): la misma respuesta al toque */
+.v4m-pulsa { transition: opacity .15s, background-color .15s, border-color .15s, transform .15s var(--ease); }
+.v4m-pulsa:active:not(:disabled) { transform: scale(.98); }
+/* Lo irreversible va en rojo */
+.v4m-rojo { background: var(--crit); color: #fff; }
+
+/* Recuadros: aviso (amarillo suave), bien (verde suave), info (azul suave) y grupo de opciones (neutro) */
+.v4m-caja-aviso { background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 32%, transparent); }
+.v4m-caja-bien { background: var(--good-soft); border: 1px solid var(--green-bd); }
+.v4m-caja-info { background: var(--accent-soft); border: 1px solid var(--blue-bd); }
+.v4m-caja-peligro { background: var(--crit-soft); border: 1px solid var(--red-bd); }
+.v4m-grupo { background: var(--surface-2); border: 1px solid var(--line); }
+/* Bordes de color fuertes -> el mismo tono, suave */
+.v4m-b-aviso { border: 1px solid color-mix(in srgb, var(--warn) 32%, transparent); }
+.v4m-b-info { border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); }
+.v4m-b-bien { border: 1px solid color-mix(in srgb, var(--good) 32%, transparent); }
+.v4m-b-peligro { border: 1px solid color-mix(in srgb, var(--crit) 34%, transparent); }
+/* La opcion elegida dentro de un grupo (primer periodo, ganancia pactada) */
+.v4m-elegida-info { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); }
+.v4m-elegida-bien { background: var(--good-soft); border: 1px solid color-mix(in srgb, var(--good) 32%, transparent); }
+/* Las casillas de opcion (interes del mes, compras fraccionadas): marcarlas no cambia el borde */
+.v4m-casilla { background: var(--surface-2); border: 1px solid var(--line); }
+
+/* Los selectores segmentados (Completo / Parcial, Abono / Cargo): la pista y la pastilla */
+.v4m-seg { display: flex; gap: 6px; padding: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; }
+.v4m-seg > button { flex: 1; border: none; border-radius: 999px; cursor: pointer; font-weight: 700; background: transparent; color: var(--ink-2); transition: all .15s; }
+.v4m-seg > button.on { background: #2a2a2a; color: var(--ink); box-shadow: var(--highlight); }
+[data-theme="light"] .v4m-seg > button.on { background: #ffffff; box-shadow: 0 1px 2px rgba(20, 20, 16, .08), 0 0 0 1px var(--line); }
+.v4m-seg > button.on.rojo, [data-theme="light"] .v4m-seg > button.on.rojo { background: #b91c1c; color: #fff; box-shadow: none; }
+
+/* El monto a cobrar (Liquidar deuda, Descargar cronograma) es una cifra, no una alarma */
+.v4m-total { background: var(--surface-2); border: 1px solid var(--line-strong); }
+.v4m-total-l, .v4m-total-v { color: var(--ink); }
+
+/* El cronograma tentativo del prestamo nuevo: encabezado neutro y solo la linea entre filas */
+.v4m-crono-th { background: var(--surface-2); }
+.v4m-crono-tr { border-top: 1px solid var(--line); }
+/* El pie de la tabla del cobro ("La cuota pasa de ... a ..."): superficie 2 con su radio */
+.v4m-pie { background: var(--surface-2); border-top: 1px solid var(--line); border-radius: 14px; }

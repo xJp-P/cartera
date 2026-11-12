@@ -22,7 +22,7 @@ export function PreflightMoraModal(props){
   // Sin guarda, un doble clic aqui reintroducia exactamente el bug que se cerro en AbonoModal.
   var pfs=useState(false); var pfSending=pfs[0]; var setPfSending=pfs[1];
   return h(Modal,{onClose:onCancel},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4,display:'flex',alignItems:'center',gap:8}},
+    h('div',{className:'v4m-tit',style:{display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'alert',size:18,color:'var(--yellow)',sw:2.4}),
       'Cuotas próximas a vencer'),
     h('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.5,marginBottom:12,marginTop:4}},
@@ -40,15 +40,15 @@ export function PreflightMoraModal(props){
             h('div',{style:{color:'var(--green)',fontWeight:600}},fmt(p.cuotaTotal)),
             esUSD&&usdLinea(copToUsd(p.cuotaTotal,loan.trmAcordada),{fontSize:10})));
       })),
-    h('button',{onClick:function(){_submitGuard(pfSending,setPfSending,function(){return onMarkMora();});},disabled:pfSending,className:'btn-primary',style:{width:'100%',marginBottom:8,background:pfSending?'var(--bg3)':'var(--yellow-bg)',border:'1px solid '+(pfSending?'var(--border)':'var(--yellow)'),color:pfSending?'var(--text3)':'var(--yellow)',cursor:pfSending?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+    h('button',{onClick:function(){_submitGuard(pfSending,setPfSending,function(){return onMarkMora();});},disabled:pfSending,className:'btn-primary'+(pfSending?'':' v4m-b-aviso'),style:{width:'100%',marginBottom:8,background:pfSending?'var(--bg3)':'var(--yellow-bg)',border:pfSending?'1px solid var(--border)':undefined,color:pfSending?'var(--text3)':'var(--yellow)',cursor:pfSending?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
       h(Ico,{name:'alert',size:14,color:pfSending?'var(--text3)':'var(--yellow)'}),pfSending?' Procesando...':' Marcar en Mora primero (recomendado)'),
     h('div',{style:{fontSize:10,color:'var(--text3)',textAlign:'center',marginBottom:10,padding:'0 8px'}},
       'Las cuotas se preservan como deuda independiente. Podrás cobrarlas desde Cobros.'),
-    h('button',{onClick:function(){_submitGuard(pfSending,setPfSending,function(){return onContinue();});},disabled:pfSending,style:{width:'100%',padding:13,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:12,color:'var(--text2)',fontSize:13,fontWeight:600,cursor:pfSending?'not-allowed':'pointer',opacity:pfSending?.6:1,fontFamily:'inherit',marginBottom:8}},
+    h('button',{onClick:function(){_submitGuard(pfSending,setPfSending,function(){return onContinue();});},disabled:pfSending,className:'v4m-pulsa',style:{width:'100%',padding:13,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:12,color:'var(--text2)',fontSize:13,fontWeight:600,cursor:pfSending?'not-allowed':'pointer',opacity:pfSending?.6:1,fontFamily:'inherit',marginBottom:8}},
       pfSending?'Procesando...':'Continuar sin marcar'),
     h('div',{style:{fontSize:10,color:'var(--text3)',textAlign:'center',marginBottom:10,padding:'0 8px'}},
       'Las cuotas se absorberán en el nuevo cronograma.'),
     // Cancelar no escribe: se deja siempre habilitado para no atrapar al usuario si algo se cuelga.
-    h('button',{onClick:onCancel,style:{width:'100%',padding:11,background:'transparent',border:'1px solid var(--border2)',borderRadius:12,color:'var(--text3)',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},
+    h('button',{onClick:onCancel,className:'v4m-pulsa',style:{width:'100%',padding:11,background:'transparent',border:'1px solid var(--border2)',borderRadius:12,color:'var(--text3)',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}},
       'Cancelar'));
 }

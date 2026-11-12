@@ -84,7 +84,7 @@ export function RestructureModal(props){
     _submitGuard(isSubmitting,setIsSubmitting,function(){return onSave(loan.id,recalcMode,valor);});
   }
   return h(Modal,{onClose:onClose},
-    h('div',{style:{fontWeight:700,fontSize:16,color:'var(--text)',marginBottom:4,display:'flex',alignItems:'center',gap:8}},
+    h('div',{className:'v4m-tit',style:{display:'flex',alignItems:'center',gap:8}},
       h(Ico,{name:'calc',size:18,color:'var(--blue)'}),' Reestructurar cuotas'),
     h('div',{style:{background:'var(--bg3)',borderRadius:12,padding:'13px 14px',marginBottom:14,border:'1px solid var(--border)'}},
       h('div',{style:{fontWeight:700,fontSize:14,color:'var(--text)'}},loan.nombre),
@@ -93,7 +93,7 @@ export function RestructureModal(props){
         esUSD&&usdLinea(copToUsd(saldoActual,loan.trmAcordada),{fontSize:13,fontWeight:600,marginLeft:8},'span')),
       intMora>0&&h('div',{className:'mono',style:{fontSize:11,color:'var(--yellow)',marginTop:4}},'Intereses en mora (no se tocan): '+fmt(intMora))),
     // Info box
-    h('div',{style:{background:'rgba(88,166,255,.06)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'10px 12px',marginBottom:12}},
+    h('div',{className:'v4m-caja-info',style:{borderRadius:12,padding:'10px 12px',marginBottom:12}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:6,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'alert',size:11,color:'var(--blue)',sw:2.4}),'CÓMO FUNCIONA'),
       h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.5}},
@@ -101,25 +101,25 @@ export function RestructureModal(props){
         '• Las cuotas ',h('b',null,'Pagadas y En Mora'),' quedan intactas como deuda independiente.',h('br',null),
         '• El saldo de capital pendiente ',h('b',null,'no cambia'),' (no hay abono).')),
     // Radios
-    h('div',{style:{background:'rgba(88,166,255,.04)',border:'1px solid var(--blue-bd)',borderRadius:12,padding:'12px',marginBottom:12}},
+    h('div',{className:'v4m-grupo',style:{borderRadius:12,padding:'12px',marginBottom:12}},
       h('div',{style:{fontSize:10,fontWeight:700,color:'var(--blue)',letterSpacing:.5,marginBottom:8,display:'flex',alignItems:'center',gap:5}},
         h(Ico,{name:'calc',size:11,color:'var(--blue)'}),' OPCIONES'),
       h('label',{style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',cursor:'pointer'}},
-        h('input',{type:'radio',name:'reestrMode',value:'modificarPlazo',checked:recalcMode==='modificarPlazo',onChange:function(){setRecalcMode('modificarPlazo');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
+        h('input',{type:'radio',name:'reestrMode',value:'modificarPlazo',checked:recalcMode==='modificarPlazo',onChange:function(){setRecalcMode('modificarPlazo');},style:{marginTop:2,cursor:'pointer'}}),
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Modificar plazo'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tú eliges el nuevo número de cuotas restantes (actual: '+cuotasRestantesActuales+').'),
-          recalcMode==='modificarPlazo'&&h('input',{type:'text',inputMode:'numeric',value:nuevoPlazo,onChange:function(e){setNuevoPlazo(parseIntInput(e.target.value));},placeholder:'Ej: '+cuotasRestantesActuales,className:'inp',style:{marginTop:6,fontSize:13,border:'1px solid var(--blue)'}}))),
+          recalcMode==='modificarPlazo'&&h('input',{type:'text',inputMode:'numeric',value:nuevoPlazo,onChange:function(e){setNuevoPlazo(parseIntInput(e.target.value));},placeholder:'Ej: '+cuotasRestantesActuales,className:'inp v4m-b-info',style:{marginTop:6,fontSize:13}}))),
       h('label',{style:{display:'flex',alignItems:'flex-start',gap:8,padding:'6px 0',cursor:'pointer'}},
-        h('input',{type:'radio',name:'reestrMode',value:'fijarCuota',checked:recalcMode==='fijarCuota',onChange:function(){setRecalcMode('fijarCuota');},style:{marginTop:2,accentColor:'var(--blue)',cursor:'pointer'}}),
+        h('input',{type:'radio',name:'reestrMode',value:'fijarCuota',checked:recalcMode==='fijarCuota',onChange:function(){setRecalcMode('fijarCuota');},style:{marginTop:2,cursor:'pointer'}}),
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},'Fijar valor de cuota'),
           h('div',{style:{fontSize:10,color:'var(--text3)',marginTop:1}},'Tú eliges cuánto pagar de cuota; el plazo se ajusta.'),
           recalcMode==='fijarCuota'&&(esUSD
             ?h('div',{style:{marginTop:6}},
-                h('input',{type:'text',inputMode:'decimal',value:nuevaCuotaFijaUSD,onChange:function(e){setNuevaCuotaFijaUSD(parseDecimalInput(e.target.value));},placeholder:'Cuota en USD (ej: 50.00)',className:'inp',style:{fontSize:13,border:'1px solid var(--blue)'}}),
-                (+nuevaCuotaFijaUSD)>0&&h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)',fontFamily:'monospace'}},'Equivale a '+fmt(cuotaFijaEfectivaCOP)+' COP (TRM $'+fmtN(loan.trmAcordada)+')'))
-            :h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(nuevaCuotaFija),onChange:function(e){setNuevaCuotaFija(parseNum(e.target.value));},placeholder:'Cuota en COP',className:'inp',style:{marginTop:6,fontSize:13,border:'1px solid var(--blue)'}})))),
+                h('input',{type:'text',inputMode:'decimal',value:nuevaCuotaFijaUSD,onChange:function(e){setNuevaCuotaFijaUSD(parseDecimalInput(e.target.value));},placeholder:'Cuota en USD (ej: 50.00)',className:'inp v4m-b-info',style:{fontSize:13}}),
+                (+nuevaCuotaFijaUSD)>0&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:'var(--text3)'}},'Equivale a '+fmt(cuotaFijaEfectivaCOP)+' COP (TRM $'+fmtN(loan.trmAcordada)+')'))
+            :h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(nuevaCuotaFija),onChange:function(e){setNuevaCuotaFija(parseNum(e.target.value));},placeholder:'Cuota en COP',className:'inp v4m-b-info',style:{marginTop:6,fontSize:13}})))),
       // PREVIEW
       preview&&h('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--bg2)'}},
         preview.error?h('div',{style:{background:'var(--red-bg)',border:'1px solid var(--red-bd)',borderRadius:8,padding:'8px 10px',fontSize:11,color:'var(--red)',display:'flex',alignItems:'flex-start',gap:6}},
@@ -147,5 +147,5 @@ export function RestructureModal(props){
             h('div',{style:{textAlign:'right'}},
               h('div',{className:'mono',style:{color:'var(--yellow)',fontWeight:500}},fmt(preview.ultimaResidual)),
               esUSD&&usdLinea(copToUsd(preview.ultimaResidual,loan.trmAcordada),{fontSize:10})))))),
-    h('button',{onClick:submit,disabled:isSubmitting||(preview&&!!preview.error),className:'btn-primary',style:{marginTop:8,opacity:isSubmitting?.6:1,background:(preview&&preview.error)?'var(--bg3)':'var(--blue-bg)',border:'1px solid '+((preview&&preview.error)?'var(--border)':'var(--blue)'),color:(preview&&preview.error)?'var(--text3)':'var(--blue)',cursor:(isSubmitting||(preview&&preview.error))?'not-allowed':'pointer'}},isSubmitting?'Reestructurando...':'Aplicar reestructuración'));
+    h('button',{onClick:submit,disabled:isSubmitting||(preview&&!!preview.error),className:'btn-primary'+((preview&&preview.error)?'':' v4m-b-info'),style:{marginTop:8,opacity:isSubmitting?.6:1,background:(preview&&preview.error)?'var(--bg3)':'var(--blue-bg)',border:(preview&&preview.error)?'1px solid var(--border)':undefined,color:(preview&&preview.error)?'var(--text3)':'var(--blue)',cursor:(isSubmitting||(preview&&preview.error))?'not-allowed':'pointer'}},isSubmitting?'Reestructurando...':'Aplicar reestructuración'));
 }
