@@ -140,9 +140,10 @@ export function rbTokens(C){
 }
 // El mismo bloque de impresion de siempre (el marco, la carta, el fondo a sangre), con el fondo y el
 // texto impresos del papel v4 del tema: sin el #0d1117 ni el #1f2328 de los documentos viejos.
-// `extra`: reglas propias de un documento dentro del @media print (como en rbImpresion).
-export function rbImpresionPapel(dark, extra){
-  return rbImpresion(!!dark, '', extra || '', { bg: 'var(--r-bg)', tx: 'var(--r-text)' });
+// `extra`: reglas propias de un documento dentro del @media print y `cuerpo`, declaraciones del
+// body impreso (el `font-size:11px;` del cronograma y el reporte), como en rbImpresion.
+export function rbImpresionPapel(dark, extra, cuerpo){
+  return rbImpresion(!!dark, cuerpo || '', extra || '', { bg: 'var(--r-bg)', tx: 'var(--r-text)' });
 }
 
 export function rbCss(C){

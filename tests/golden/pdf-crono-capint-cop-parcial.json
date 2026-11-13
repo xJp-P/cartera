@@ -34,7 +34,7 @@
     ]
   },
   "valores": {
-    "bytes": 7811,
+    "bytes": 9273,
     "nFilas": 12,
     "nCeldas": 84,
     "celdasPorTr": [
@@ -60,6 +60,7 @@
       "badge badge-pagado",
       "badge badge-parcial",
       "badge badge-pendiente",
+      "cr-logo",
       "footer",
       "header",
       "label",

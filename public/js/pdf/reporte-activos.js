@@ -19,7 +19,7 @@ import { saldoConCaja, esDiario, estadoDiario } from '../core/dominio.js';
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
-import { rbImpresion, rbMixto, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, rbMixto, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // ── Reporte de Prestamos Activos (PDF) ────────────────────────────────────
 // Reusa el pipeline printToPDF (electronAPI.printPDF) con fallback a window.print,
@@ -31,6 +31,8 @@ import { rbImpresion, rbMixto, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-e
 // Totalizador del "capital total en la calle" al final. Tema-aware (claro/oscuro).
 export function generateReportePrestamosPDF(loans, pays, darkMode) {
   var dark = !!darkMode;
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema que pide quien imprime.
+  var C = rbPaleta(dark);
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   var hoy = new Date(); hoy.setHours(12, 0, 0, 0);
   function diasAtraso(iso) { if (!iso) return 0; var d = new Date(iso + 'T12:00:00'); return Math.max(0, Math.round((hoy - d) / 86400000)); }
@@ -186,12 +188,12 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
         notaParcial = cuotaC - pendC > 0 ? ' &middot; abonado ' + fmtUSD((cuotaC - pendC) / 100) + ' de ' + fmtUSD(cuotaC / 100) : '';
       }
       return '<tr class="mora-sub"><td colspan="8"><div class="mora-detalle">' +
-        '<span>&#8627; Cuota #' + p.cuotaN + ' &middot; venció el ' + fmtD(p.fechaPago) + ' &middot; ' + dias + (dias === 1 ? ' día' : ' días') + ' de atraso' + notaParcial + '</span>' +
+        '<span><span class="gl">&#8627;</span> Cuota #' + p.cuotaN + ' &middot; venció el ' + fmtD(p.fechaPago) + ' &middot; ' + dias + (dias === 1 ? ' día' : ' días') + ' de atraso' + notaParcial + '</span>' +
         '<span><strong>' + pendTxt + '</strong></span></div></td></tr>';
     }).join('');
     // Sub-fila ambar: cuota transitoria (interes prorrateado por cambio de fecha)
     var transTr = r.esTransitoria ? ('<tr class="tran-sub"><td colspan="8"><div class="tran-detalle">' +
-      '<span>&#8627; Cuota transitoria &middot; vence ' + r.transFechaLabel + ' &middot; interés prorrateado</span>' +
+      '<span><span class="gl">&#8627;</span> Cuota transitoria &middot; vence ' + r.transFechaLabel + ' &middot; interés prorrateado</span>' +
       '<span><strong>' + r.money(r.transValor) + '</strong></span></div></td></tr>') : '';
     return loanTr + moraTrs + transTr;
   }).join('');
@@ -200,56 +202,57 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reporte de Préstamos Activos</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
-    dark ? 'body{font-family:Arial,sans-serif;padding:30px;max-width:780px;margin:0 auto;color:#e6edf3;background:#0d1117;font-size:12px}' :
-           'body{font-family:Arial,sans-serif;padding:30px;max-width:780px;margin:0 auto;color:#1f2328;font-size:12px}',
-    dark ? '.header{text-align:center;border-bottom:2px solid #30363d;padding-bottom:14px;margin-bottom:12px}' :
-           '.header{text-align:center;border-bottom:2px solid #333;padding-bottom:14px;margin-bottom:12px}',
-    '.header h1{font-size:20px;margin-bottom:4px}',
-    dark ? '.header p{font-size:11px;color:#8b949e}' : '.header p{font-size:11px;color:#656d76}',
-    dark ? '.summary{display:flex;gap:20px;justify-content:center;margin-bottom:16px;font-size:11px;color:#8b949e}' :
-           '.summary{display:flex;gap:20px;justify-content:center;margin-bottom:16px;font-size:11px;color:#656d76}',
-    '.summary strong{color:' + (dark ? '#e6edf3' : '#1f2328') + '}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';padding:30px;max-width:780px;margin:0 auto;color:var(--r-text);background:var(--r-bg);font-size:12px;line-height:1.3;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    // Encabezado con el logo de la app (el maletin en un cuadro inverso); el titulo sigue siendo el h1.
+    '.header{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--r-bd);padding-bottom:13px;margin-bottom:12px}',
+    '.ra-logo{width:34px;height:34px;border-radius:11px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.header h1{font-size:19px;font-weight:600;letter-spacing:-.02em;line-height:1.2;margin-bottom:1px}',
+    '.header p{font-size:11px;color:var(--r-muted)}',
+    '.summary{display:flex;gap:20px;margin-bottom:14px;font-size:11px;color:var(--r-muted)}',
+    '.summary strong{color:var(--r-text);font-weight:600}',
     'table{width:100%;border-collapse:collapse}',
-    dark ? 'th{background:#161b22;border:1px solid #30363d;padding:7px 9px;text-align:left;font-size:10px;font-weight:700;color:#8b949e;text-transform:uppercase}' :
-           'th{background:#f6f8fa;border:1px solid #d0d7de;padding:7px 9px;text-align:left;font-size:10px;font-weight:700;color:#656d76;text-transform:uppercase}',
-    dark ? 'td{border:1px solid #30363d;padding:7px 9px;font-size:11px;vertical-align:top}' :
-           'td{border:1px solid #d0d7de;padding:7px 9px;font-size:11px;vertical-align:top}',
-    dark ? 'tr.loan-row.mora td{background:#2d1117}' : 'tr.loan-row.mora td{background:#fff1f0}',
-    dark ? 'tr.mora-sub td{border-top:none;background:#1a0e11;padding:3px 9px}' : 'tr.mora-sub td{border-top:none;background:#fff8f7;padding:3px 9px}',
-    '.mora-detalle{display:flex;justify-content:space-between;gap:12px;padding-left:16px;font-size:10px;color:' + (dark ? '#f85149' : '#cf222e') + '}',
-    dark ? 'tr.tran-sub td{border-top:none;background:#2b2005;padding:4px 9px}' : 'tr.tran-sub td{border-top:none;background:#fff8e1;padding:4px 9px}',
-    '.tran-detalle{display:flex;justify-content:space-between;gap:12px;padding-left:16px;font-size:10px;font-weight:700;color:' + (dark ? '#d29922' : '#7a5900') + '}',
-    '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700}',
-    dark ? '.badge-pagado{background:#0f2b19;color:#3fb950;border:1px solid #1b4332}' : '.badge-pagado{background:#dafbe1;color:#166534}',
-    dark ? '.badge-mora{background:#2d1117;color:#f85149;border:1px solid #5c1b18}' : '.badge-mora{background:#ffebe9;color:#cf222e}',
-    dark ? '.badge-pend{background:#21262d;color:#8b949e;border:1px solid #30363d}' : '.badge-pend{background:#eef1f4;color:#57606a;border:1px solid #d0d7de}',
-    dark ? '.footer{text-align:center;margin-top:22px;padding-top:14px;border-top:1px solid #30363d;font-size:10px;color:#6e7681}' :
-           '.footer{text-align:center;margin-top:22px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
-    rbImpresion(dark, 'font-size:11px;'),
+    // La rejilla v4 es de lineas horizontales: cada prestamo abre con el borde superior de su
+    // fila y las sub-filas (mora, transitoria) se le pegan debajo sin linea propia.
+    'th{padding:6px 9px;text-align:left;font-size:10px;font-weight:500;color:var(--r-muted);border-bottom:1px solid var(--r-bd-2)}',
+    'td{padding:7px 9px;font-size:11px;vertical-align:top}',
+    'tr.loan-row td{border-top:1px solid var(--r-bd)}',
+    'tr.loan-row.mora td{background:var(--r-red-bg)}',
+    'tr.mora-sub td{padding:3px 9px}',
+    '.mora-detalle{display:flex;justify-content:space-between;gap:12px;padding-left:16px;font-size:10px;color:var(--r-red)}',
+    'tr.tran-sub td{padding:4px 9px;background:var(--r-amber-bg)}',
+    '.tran-detalle{display:flex;justify-content:space-between;gap:12px;padding-left:16px;font-size:10px;font-weight:600;color:var(--r-amber)}',
+    // Las insignias llevan borde: dentro de una fila teñida del mismo tono, sin el se funden.
+    '.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:600;line-height:1.2;border:1px solid transparent}',
+    '.badge-pagado{background:var(--r-green-bg);color:var(--r-green);border-color:var(--r-green-bd)}',
+    '.badge-mora{background:var(--r-red-bg);color:var(--r-red);border-color:' + C.redBd + '}',
+    '.badge-pend{background:var(--r-soft-2);color:var(--r-text-2);border-color:var(--r-bd-2)}',
+    // Los glifos &#8627; y &#9632; no estan en los subconjuntos de Inter: sin una letra del
+    // sistema que SI los tenga como TrueType, Chromium los saca de CambriaMath en Type3.
+    '.gl{font-family:"Segoe UI Symbol","Segoe UI",Arial,sans-serif}',
+    '.footer{text-align:center;margin-top:22px;padding-top:12px;border-top:1px solid var(--r-bd);font-size:10px;color:var(--r-muted)}',
+    rbImpresionPapel(dark, '', 'font-size:11px;'),
     '</style></head><body>' + RB_MARCO_ABRE,
-    '<div class="header"><h1>Reporte de Préstamos Activos</h1><p>Fecha de emisión: ' + fechaEmision + '</p></div>',
+    '<div class="header"><div class="ra-logo">' + RB_LOGO + '</div><div><h1>Reporte de Préstamos Activos</h1><p>Fecha de emisión: ' + fechaEmision + '</p></div></div>',
     '<div class="summary"><span><strong>' + rows.length + '</strong> préstamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + '</span>' +
       '<span><strong>' + countMora + '</strong> en mora</span>' +
       '<span>Total vencido: <strong>' + totalTxt(totalVencido) + '</strong></span></div>',
     rows.length === 0 ?
-      '<div style="text-align:center;padding:36px 0;font-size:12px;color:' + (dark ? '#8b949e' : '#656d76') + '">No hay préstamos activos.</div>' :
+      '<div style="text-align:center;padding:36px 0;font-size:12px;color:' + C.muted + '">No hay préstamos activos.</div>' :
       '<table><thead><tr><th>Vencimiento</th><th>Deudor</th><th>Modalidad</th><th>Tasa</th><th style="text-align:center">Cuota</th><th style="text-align:right">Valor cuota</th><th style="text-align:right">Saldo Pendiente</th><th style="text-align:center">Estado</th></tr></thead><tbody>' + filasHTML + '</tbody></table>',
-    '<div style="margin-top:18px;padding:14px 18px;background:' + (dark ? '#0f2b19' : '#f0fdf4') + ';border:1px solid ' + (dark ? '#1b4332' : '#4ade80') + ';border-radius:8px;display:flex;justify-content:space-between;align-items:center">' +
-      '<div><div style="font-size:11px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + ';text-transform:uppercase;letter-spacing:1px">Capital total en la calle</div>' +
-      '<div style="font-size:10px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:2px">' + rows.length + ' préstamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + (countMora > 0 ? ' &middot; ' + countMora + ' en mora' : '') + '</div></div>' +
-      '<div style="text-align:right"><div style="font-size:24px;font-weight:700;color:' + (dark ? '#3fb950' : '#166534') + '">' + totalTxt(totalSaldo) + '</div>' + (dosMonedas ? '<div style="font-size:11px;color:' + (dark ? '#3fb950' : '#166534') + ';margin-top:2px">pesos y dólares por separado: no se suman entre sí</div>' : '') + '</div></div>',
+    '<div style="margin-top:18px;padding:14px 18px;background:' + C.greenBg + ';border:1px solid ' + C.greenBd + ';border-radius:16px;display:flex;justify-content:space-between;align-items:center">' +
+      '<div><div style="font-size:11px;font-weight:600;color:' + C.green + '">Capital total en la calle</div>' +
+      '<div style="font-size:10px;color:' + C.green + ';margin-top:2px">' + rows.length + ' préstamo' + (rows.length === 1 ? '' : 's') + ' activo' + (rows.length === 1 ? '' : 's') + (countMora > 0 ? ' &middot; ' + countMora + ' en mora' : '') + '</div></div>' +
+      '<div style="text-align:right"><div style="font-size:24px;font-weight:600;letter-spacing:-.02em;color:' + C.green + '">' + totalTxt(totalSaldo) + '</div>' + (dosMonedas ? '<div style="font-size:11px;color:' + C.green + ';margin-top:2px">pesos y dólares por separado: no se suman entre sí</div>' : '') + '</div></div>',
     rows.length > 0 ? function() {
-      var borde = dark ? '#30363d' : '#eaeef2';
-      var txt = dark ? '#8b949e' : '#656d76';
-      var rojo = dark ? '#f85149' : '#cf222e';
-      var ambar = dark ? '#d29922' : '#7a5900';
+      var borde = C.bd, txt = C.muted, rojo = C.red, ambar = C.amber;
       function item(chip, desc) {
         return '<div style="display:flex;gap:9px;align-items:baseline;margin-bottom:4px">' +
           '<span style="flex-shrink:0;width:72px">' + chip + '</span><span>' + desc + '</span></div>';
       }
-      var cuad = function(c) { return '<span style="color:' + c + ';font-size:11px">&#9632;</span>'; };
+      var cuad = function(c) { return '<span class="gl" style="color:' + c + ';font-size:11px">&#9632;</span>'; };
       return '<div style="margin-top:14px;border-top:1px solid ' + borde + ';padding-top:10px;font-size:9px;color:' + txt + '">' +
-        '<div style="font-size:9px;font-weight:700;color:' + txt + ';text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Referencia de estados</div>' +
+        '<div style="font-size:9px;font-weight:600;color:' + txt + ';letter-spacing:.3px;margin-bottom:7px">Referencia de estados</div>' +
         item('<span class="badge badge-pagado">Al día</span>', 'Sin cuotas vencidas.') +
         item('<span class="badge badge-pend">Pendiente</span>', 'El préstamo tiene mora, pero la fila principal proyecta la próxima cuota (aún no vence); lo vencido se detalla en las sub-filas rojas.') +
         item('<span class="badge badge-mora">En Mora</span>', 'Cronograma vencido por completo (sin ninguna cuota futura pendiente).') +

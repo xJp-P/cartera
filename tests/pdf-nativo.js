@@ -141,14 +141,18 @@ const ID = '1776205975507jkph';   // C+I COP del fixture con abono intercalado
 // de la hoja 2. El cronograma es el del credito de 24 cuotas: desde 3.6.0 el margen de impresion
 // es de 1,3 cm (antes 2) y el de 14 cuotas ya cabe en una hoja.
 const LARGO = '1773657323435hkkb';   // C+I USD de 24 cuotas
-// v4: el documento ya va con el sistema de la app (rediseño por familias, 2026-11-13). Su PDF
-// tiene que llevar SOLO la Inter que incrusta desktop/pdf.js, como fuente estandar (sin Type 3:
-// esa es la firma de la Inter VARIABLE, que hacia el PDF de 2,5 a 3,9 veces mas pesado). Los que
-// aun no se rediseñan no piden Inter: la @font-face sin uso no puede colarse en su PDF.
+// v4: el documento ya va con el sistema de la app (rediseño por familias, 2026-11-13; con P4
+// estan los 12). Su PDF tiene que llevar SOLO la Inter que incrusta desktop/pdf.js, como fuente
+// estandar (sin Type 3: esa es la firma de la Inter VARIABLE, que hacia el PDF de 2,5 a 3,9
+// veces mas pesado). `letrasExtra`: las letras del sistema que un documento tiene permitidas —
+// los glifos ↳ y ■ del reporte no estan en los subconjuntos de Inter y salen de Segoe UI
+// Symbol (el reporte VIEJO ya los incrustaba de letra del sistema, y encima en Type 3, de
+// CambriaMath; por eso el check de Type 3 aplica entero tambien ahi). Un caso con `v4: false`
+// (ya no queda ninguno) exigiria que la Inter no se cuele.
 const CASOS = [
-  { doc: 'cronograma-oscuro', tema: 'dark',  paginasMin: 2, v4: false, gen: () => S.generateCronogramaPDF(L(LARGO), pays, true) },
+  { doc: 'cronograma-oscuro', tema: 'dark',  paginasMin: 2, v4: true,  gen: () => S.generateCronogramaPDF(L(LARGO), pays, true) },
   { doc: 'recibo-claro',      tema: 'light', paginasMin: 1, v4: true,  gen: () => S.generateRecibo(cuota(ID, 4), L(ID), 393610, 0, pays, { fechaRecaudo: '2026-08-14' }) },
-  { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, v4: false, gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
+  { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, v4: true,  letrasExtra: ['SegoeUISymbol'], gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
   // Con la app en tema oscuro: el documento v4 sale en el oscuro de la app.
   { doc: 'general-app-oscura', tema: 'dark', paginasMin: 2, v4: true,  gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Bruno Salgado'), pays, '', { hasta: '2026-11-02' }) },
 ];
@@ -195,8 +199,9 @@ for (const d of res.docs) {
   R.eq(`${d.doc}: no deja la ventana oculta viva`, d.ventanasVivas, 0);
   const letras = d.letras || [];
   if (c.v4) {
-    R.check(`${d.doc}: v4 — solo la Inter incrustada, en sus pesos fijos`,
-            letras.length > 0 && letras.every(l => LETRAS_V4.indexOf(l) !== -1), letras);
+    R.check(`${d.doc}: v4 — solo la Inter incrustada, en sus pesos fijos` + (c.letrasExtra ? ` (y ${c.letrasExtra.join(', ')}: sus glifos fuera de Inter)` : ''),
+            letras.some(l => LETRAS_V4.indexOf(l) !== -1) &&
+            letras.every(l => LETRAS_V4.indexOf(l) !== -1 || (c.letrasExtra || []).indexOf(l) !== -1), letras);
     R.check(`${d.doc}: v4 — sin fuentes Type 3 (la Inter variable)`, d.type3 === false, d.type3);
   } else {
     R.check(`${d.doc}: aun sin rediseñar — la letra de la app no se cuela`, letras.every(l => !/^Inter/.test(l)), letras);

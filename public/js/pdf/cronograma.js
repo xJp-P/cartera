@@ -19,7 +19,7 @@ import { imputarCobros, computeLiquidacion, proximoVencimiento, periodoEnCursoDe
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
-import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // `opts.incluyeProxMes` (3.1.0): si el valor de liquidacion del pie incluye el interes del
 // mes en curso. Es la MISMA decision que la casilla de Liquidar deuda y la toma quien
@@ -41,6 +41,8 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
   function fmtDisp(v) { return esUSD ? '$' + new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0) : fmt(v); }
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   var dark = !!darkMode;
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema que pide quien imprime.
+  var C = rbPaleta(dark);
   // Todas las cuotas del préstamo
   var allCuotas = payments.filter(function(p) {
     return p.prestamoId === loan.id;
@@ -75,55 +77,50 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cronograma de Pagos</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
-    dark ? 'body{font-family:Arial,sans-serif;padding:30px;max-width:700px;margin:0 auto;color:#e6edf3;background:#0d1117;font-size:12px}' :
-           'body{font-family:Arial,sans-serif;padding:30px;max-width:700px;margin:0 auto;color:#1f2328;font-size:12px}',
-    dark ? '.header{text-align:center;border-bottom:2px solid #30363d;padding-bottom:14px;margin-bottom:18px}' :
-           '.header{text-align:center;border-bottom:2px solid #333;padding-bottom:14px;margin-bottom:18px}',
-    '.header h1{font-size:20px;margin-bottom:4px}',
-    dark ? '.header p{font-size:11px;color:#8b949e}' : '.header p{font-size:11px;color:#656d76}',
-    '.section{margin-bottom:14px}',
-    dark ? '.section-title{font-size:10px;font-weight:700;color:#8b949e;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}' :
-           '.section-title{font-size:10px;font-weight:700;color:#656d76;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}',
-    dark ? '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #21262d}' :
-           '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #eee}',
-    dark ? '.row .label{color:#8b949e}' : '.row .label{color:#656d76}',
-    '.row .value{font-weight:600;text-align:right}',
-    'table{width:100%;border-collapse:collapse;margin-top:8px}',
-    // Cronograma de 7 columnas en ~640px utiles: el padding lateral baja de 8px a 4px
-    // (ahorra ~56px de cromo) y las cabeceras largas ("ABONO A CAPITAL", "VALOR CUOTA")
-    // envuelven a dos lineas en vez de ensanchar su columna.
-    dark ? 'th{background:#161b22;border:1px solid #30363d;padding:5px 4px;text-align:right;font-size:9px;font-weight:700;color:#8b949e;text-transform:uppercase;line-height:1.2}' :
-           'th{background:#f6f8fa;border:1px solid #d0d7de;padding:5px 4px;text-align:right;font-size:9px;font-weight:700;color:#656d76;text-transform:uppercase;line-height:1.2}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';padding:30px;max-width:700px;margin:0 auto;color:var(--r-text);background:var(--r-bg);font-size:12px;line-height:1.3;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    // Encabezado con el logo de la app (el maletin en un cuadro inverso); el titulo sigue siendo el h1.
+    '.header{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--r-bd);padding-bottom:12px;margin-bottom:14px}',
+    '.cr-logo{width:34px;height:34px;border-radius:11px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.header h1{font-size:19px;font-weight:600;letter-spacing:-.02em;line-height:1.2;margin-bottom:1px}',
+    '.header p{font-size:11px;color:var(--r-muted)}',
+    '.section{margin-bottom:12px}',
+    '.section-title{font-size:12.5px;font-weight:600;color:var(--r-text);margin-bottom:3px}',
+    '.row{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:13px;border-bottom:1px solid var(--r-bd)}',
+    '.row .label{color:var(--r-muted)}',
+    '.row .value{font-weight:500;text-align:right}',
+    'table{width:100%;border-collapse:collapse;margin-top:6px}',
+    // Cronograma de 7 columnas en ~640px utiles: el padding lateral se queda en 4px y las
+    // cabeceras largas ("Abono a capital", "Valor cuota") siguen pudiendo envolver a dos
+    // lineas (sin nowrap en th) para no ensanchar su columna.
+    'th{padding:5px 4px;text-align:right;font-size:9px;font-weight:500;color:var(--r-muted);border-bottom:1px solid var(--r-bd-2);line-height:1.2}',
     'th:first-child,td:first-child{text-align:center}',
     // nowrap en los importes: sin el, el espacio duro de fmt() ("$ 3.445.494") parte el
     // simbolo del numero en dos lineas al apretarse la columna.
-    dark ? 'td{border:1px solid #30363d;padding:4px 4px;text-align:right;font-size:10px;white-space:nowrap}' :
-           'td{border:1px solid #d0d7de;padding:4px 4px;text-align:right;font-size:10px;white-space:nowrap}',
-    dark ? 'tr:nth-child(even){background:#161b22}' : 'tr:nth-child(even){background:#f6f8fa}',
-    dark ? 'tr.pagado{background:#0f2b19 !important}' : 'tr.pagado{background:#f0fdf4 !important}',
-    dark ? 'tr.pagado td{color:#3fb950}' : 'tr.pagado td{color:#166534}',
-    dark ? 'tr.mora{background:#2d1117 !important}' : 'tr.mora{background:#fff1f0 !important}',
-    dark ? 'tr.mora td{color:#f85149;font-weight:600}' : 'tr.mora td{color:#cf222e;font-weight:600}',
-    dark ? 'tr.pendiente td{color:#e6edf3}' : 'tr.pendiente td{color:#1f2328}',
-    '.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700}',
-    dark ? '.badge-pagado{background:#0f2b19;color:#3fb950;border:1px solid #1b4332}' : '.badge-pagado{background:#dafbe1;color:#166534}',
-    dark ? '.badge-mora{background:#2d1117;color:#f85149;border:1px solid #5c1b18}' : '.badge-mora{background:#ffebe9;color:#cf222e}',
-    dark ? '.badge-pendiente{background:#2b2005;color:#d29922;border:1px solid #3d2e08}' : '.badge-pendiente{background:#fff8c5;color:#9a6700}',
-    dark ? '.badge-abono{background:#1d3a6e;color:#79c0ff;border:1px solid #388bfd}' : '.badge-abono{background:#ddf4ff;color:#0969da}',
-    dark ? '.badge-parcial{background:#1d3a6e;color:#79c0ff;border:1px solid #388bfd}' : '.badge-parcial{background:#ddf4ff;color:#0969da}',
-    dark ? 'tr.abono{background:#131d2e !important}' : 'tr.abono{background:#f0f8ff !important}',
-    dark ? 'tr.abono td{color:#79c0ff;font-style:italic}' : 'tr.abono td{color:#0969da;font-style:italic}',
-    dark ? '.total-row{background:#0f2b19 !important;font-weight:700}' : '.total-row{background:#f0fdf4 !important;font-weight:700}',
-    dark ? '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #30363d;font-size:10px;color:#6e7681}' :
-           '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
-    dark ? '.nota{margin-top:12px;padding:10px 14px;background:#2b2005;border:1px solid #3d2e08;border-radius:8px;font-size:11px;color:#d29922}' :
-           '.nota{margin-top:12px;padding:10px 14px;background:#fff8c5;border:1px solid #d4a72c;border-radius:8px;font-size:11px;color:#7a5900}',
-    rbImpresion(dark, 'font-size:11px;'),
+    'td{border-bottom:1px solid var(--r-bd);padding:4px 4px;text-align:right;font-size:10px;line-height:1.2;white-space:nowrap}',
+    // Los estados tiñen las CELDAS, no la fila: asi no pelean con la regla del marco
+    // (`.r-marco>tbody>tr{background:none}`) y no hace falta ningun `!important`.
+    'tr.pagado td{background:var(--r-green-bg);color:var(--r-green)}',
+    'tr.mora td{background:var(--r-red-bg);color:var(--r-red);font-weight:600}',
+    'tr.pendiente td{color:var(--r-text)}',
+    // Las insignias llevan borde: dentro de una fila teñida del mismo tono, sin el se funden.
+    '.badge{display:inline-block;padding:0 7px;border-radius:99px;font-size:9px;font-weight:600;line-height:1.2;border:1px solid transparent}',
+    '.badge-pagado{background:var(--r-green-bg);color:var(--r-green);border-color:var(--r-green-bd)}',
+    '.badge-mora{background:var(--r-red-bg);color:var(--r-red);border-color:' + C.redBd + '}',
+    '.badge-pendiente{background:var(--r-soft-2);color:var(--r-text-2);border-color:var(--r-bd-2)}',
+    '.badge-abono{background:var(--r-blue-bg);color:var(--r-blue);border-color:' + C.blueBd + '}',
+    '.badge-parcial{background:var(--r-amber-bg);color:var(--r-amber);border-color:var(--r-amber-bd)}',
+    'tr.abono td{background:var(--r-blue-bg);color:var(--r-blue);font-weight:600}',
+    'tr.total-row td{background:var(--r-green-bg);color:var(--r-green);font-weight:600}',
+    'tr.total-row.abonos td{background:var(--r-blue-bg);color:var(--r-blue)}',
+    '.footer{text-align:center;margin-top:20px;padding-top:12px;border-top:1px solid var(--r-bd);font-size:10px;color:var(--r-muted)}',
+    '.nota{margin-top:12px;padding:10px 14px;background:var(--r-amber-bg);border:1px solid var(--r-amber-bd);border-radius:12px;font-size:11px;color:var(--r-amber)}',
+    rbImpresionPapel(dark, '', 'font-size:11px;'),
     '</style></head><body>' + RB_MARCO_ABRE,
-    '<div class="header">',
+    '<div class="header"><div class="cr-logo">' + RB_LOGO + '</div><div>',
     '<h1>Cronograma de Pagos</h1>',
     '<p>Fecha de emisión: ' + fechaEmision + '</p>',
-    '</div>',
+    '</div></div>',
     '<div class="section">',
     '<div class="section-title">Deudor</div>',
     '<div class="row"><span class="label">Nombre</span><span class="value">' + loan.nombre + '</span></div>',
@@ -179,7 +176,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     // los intereses en INTERES (3a) y el capital en ABONO A CAPITAL (4a). Antes todos
     // caian en la 4a celda, que en el layout viejo era la de "Cuota".
     loan.modalidad === 'Intereses' ? function(){var intPagados=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.interes;},0);return intPagados>0?'<tr class="total-row"><td></td><td style="text-align:left">INTERESES PAGADOS</td><td><strong>'+fvT(intPagados)+'</strong></td><td></td><td></td><td></td><td></td></tr>':'';}() : loan.modalidad === 'Capital + Intereses' ? function(){var capPagado=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.capital;},0);return capPagado>0?'<tr class="total-row"><td></td><td style="text-align:left">CAPITAL PAGADO</td><td></td><td><strong>'+fvT(capPagado)+'</strong></td><td></td><td></td><td></td></tr>':'';}() : '',
-    totalAbonos > 0 ? '<tr class="total-row" style="background:' + (dark ? '#131d2e' : '#ddf4ff') + ' !important;color:' + (dark ? '#79c0ff' : '#0969da') + '"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fvT(totalAbonos) + '</strong></td><td></td><td></td><td></td></tr>' : '',
+    totalAbonos > 0 ? '<tr class="total-row abonos"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fvT(totalAbonos) + '</strong></td><td></td><td></td><td></td></tr>' : '',
     '</tbody></table>',
     loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este préstamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuarán hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '',
     function(){
@@ -197,9 +194,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
         (L.moraConsolidada > 0 ? ' + mora consolidada ' + fv(L.moraConsolidada) : '') +
         (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '') +
         (L.intExtra > 0 ? (L.periodoIrregular ? ' + interés de ' + L.diasCobrados + ' días del periodo en curso ' : ' + interés ' + periodoEnCursoDe(L.frecuencia) + ' ') + fv(L.intExtra) : '');
-      var bg = dark ? '#2b2005' : '#fff8c5';
-      var bd = dark ? '#3d2e08' : '#d4a72c';
-      var cl = dark ? '#d29922' : '#7a5900';
+      var bg = C.amberBg, bd = C.amberBd, cl = C.amber;
       // Vigencia SOLO cuando la cifra incluye el interes del mes: el deudor queda cubierto
       // hasta la proxima cuota, y sin la fecha podria pagar semanas despues creyendose al
       // dia. La fecha sale del mismo helper que usa el Estado de Liquidacion. Sin la opcion
@@ -215,10 +210,10 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
               : 'Valor calculado al ' + fmtD(hoy) + '.</b> Si el pago se hace más adelante, solicita un valor actualizado.') +
           '</div>';
       }
-      return '<div style="margin-top:14px;padding:12px 16px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:12px">' +
-        '<div><div style="font-size:10px;font-weight:700;color:'+cl+';text-transform:uppercase;letter-spacing:1px">Valor de liquidación</div>' +
+      return '<div style="margin-top:14px;padding:12px 16px;background:'+bg+';border:1px solid '+bd+';border-radius:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">' +
+        '<div><div style="font-size:10.5px;font-weight:600;color:'+cl+'">Valor de liquidación</div>' +
         '<div style="font-size:10px;color:'+cl+';margin-top:2px">' + detalle + '</div>' + vig + '</div>' +
-        '<div style="font-size:20px;font-weight:700;color:'+cl+';white-space:nowrap">' + fv(L.total) + '</div></div>';
+        '<div style="font-size:20px;font-weight:600;letter-spacing:-.02em;color:'+cl+';white-space:nowrap">' + fv(L.total) + '</div></div>';
     }(),
     '</div>',
     '<div class="footer">',

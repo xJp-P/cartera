@@ -148,6 +148,10 @@ const L = id => loans.find(x => x.id === id);
 const TRM_DIARIO_USD = 4000;
 const diarioUSD = () => { const b = L('fixture-diario-01'); return Object.assign({}, b, { moneda: 'USD', trmAcordada: TRM_DIARIO_USD, montoOrigen: b.montoOrigen / TRM_DIARIO_USD }); };
 const ultimoCorteDiario = () => pays.filter(p => p.prestamoId === 'fixture-diario-01' && S.esCorte(p)).sort((a, b) => a.cuotaN - b.cuotaN).pop();
+// El cronograma y el reporte reciben el tema por PARAMETRO (quien imprime les pasa el de la app):
+// sus casos lo leen del sandbox, de modo que `generar` (que pone el tema del caso) produce el
+// mismo golden de siempre y la seccion V4 y el volcado pueden renderizarlos de verdad en los dos temas.
+const temaOscuro = () => FE.sandbox.document.documentElement.getAttribute('data-theme') === 'dark';
 const cuota = (loanId, n, arr) => (arr || pays).find(p => p.prestamoId === loanId && p.cuotaN === n);
 
 // Un PAGO PARCIAL EN VUELO (partialPaid > 0 sobre una cuota que sigue Pendiente) es el caso
@@ -402,7 +406,7 @@ const CASOS = [
   // ── generateCronogramaPDF — 4 modalidades, COP y USD, mora, abono, parcial ────────────
   { nombre: 'crono-capint-cop-abono', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1776205975507jkph', tema: 'light', dark: false }),
-    ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, false),
+    ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, temaOscuro()),
     contiene: ['badge-abono', 'ABONOS', 'Capital + Intereses', 'Valor de liquidación'],
     // Sin la opcion (3.1.0) el pie sigue siendo el de siempre: ni el interes del mes ni una
     // fecha de vigencia. Si alguno aparece, la opcion se filtro al camino por defecto.
@@ -410,27 +414,29 @@ const CASOS = [
 
   { nombre: 'crono-capint-usd-mora', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
     entrada: () => ({ loanId: '1782151590658w66y', tema: 'dark', dark: true }),
-    ejecutar: () => S.generateCronogramaPDF(L('1782151590658w66y'), pays, true),
-    contiene: ['badge-mora', 'USD $', '#0d1117'] },
+    ejecutar: () => S.generateCronogramaPDF(L('1782151590658w66y'), pays, temaOscuro()),
+    // Rediseño v4: con la app en tema oscuro, el oscuro de la app (el #0d1117 viejo ya no aparece).
+    contiene: ['badge-mora', 'USD $', '--r-bg:#000000'],
+    noContiene: ['#0d1117'] },
 
   { nombre: 'crono-intereses-cop-mora', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1773655076017', tema: 'light', dark: false }),
-    ejecutar: () => S.generateCronogramaPDF(L('1773655076017'), pays, false),
+    ejecutar: () => S.generateCronogramaPDF(L('1773655076017'), pays, temaOscuro()),
     contiene: ['INTERESES PAGADOS', 'plazo indefinido'] },
 
   { nombre: 'crono-prestamo-cop', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1782442889816wjhf', tema: 'light', dark: false }),
-    ejecutar: () => S.generateCronogramaPDF(L('1782442889816wjhf'), pays, false),
+    ejecutar: () => S.generateCronogramaPDF(L('1782442889816wjhf'), pays, temaOscuro()),
     contiene: ['>Préstamo sin interés</span>'] },
 
   { nombre: 'crono-pagounico-usd', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
     entrada: () => ({ loanId: '1784667444678qsmr', tema: 'dark', dark: true }),
-    ejecutar: () => S.generateCronogramaPDF(L('1784667444678qsmr'), pays, true),
+    ejecutar: () => S.generateCronogramaPDF(L('1784667444678qsmr'), pays, temaOscuro()),
     contiene: ['ganancia pactada', 'Pago único'] },
 
   { nombre: 'crono-capint-cop-parcial', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: LOAN_PARCIAL, parcial: true, tema: 'light', dark: false }),
-    ejecutar: () => S.generateCronogramaPDF(L(LOAN_PARCIAL), paysParcial, false),
+    ejecutar: () => S.generateCronogramaPDF(L(LOAN_PARCIAL), paysParcial, temaOscuro()),
     contiene: ['badge-parcial', 'Abonado'] },
 
   // ── 3.1.0 — el valor de liquidacion con el interes del mes en curso ──────────────────
@@ -440,7 +446,7 @@ const CASOS = [
   // rojo si la opcion deja de viajar hasta `computeLiquidacion`.
   { nombre: 'crono-capint-cop-con-mes', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
     entrada: () => ({ loanId: '1776205975507jkph', tema: 'light', dark: false, incluyeProxMes: true }),
-    ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, false, { incluyeProxMes: true }),
+    ejecutar: () => S.generateCronogramaPDF(L('1776205975507jkph'), pays, temaOscuro(), { incluyeProxMes: true }),
     contiene: ['Valor de liquidación', 'interés del mes en curso', '215.177', '3.100.671',
                'Válido hasta el 14 de ago de 2026'],
     noContiene: ['Valor calculado al'] },
@@ -449,13 +455,14 @@ const CASOS = [
   // suma DETRAS de la mora, y la vigencia es la de su propia proxima cuota (19-ago).
   { nombre: 'crono-capint-usd-con-mes', gen: 'generateCronogramaPDF', tema: 'dark', celdas: 7,
     entrada: () => ({ loanId: '1782151590658w66y', tema: 'dark', dark: true, incluyeProxMes: true }),
-    ejecutar: () => S.generateCronogramaPDF(L('1782151590658w66y'), pays, true, { incluyeProxMes: true }),
-    contiene: ['+ mora ', 'interés del mes en curso', 'USD $', 'Válido hasta el 19 de ago de 2026', '#0d1117'] },
+    ejecutar: () => S.generateCronogramaPDF(L('1782151590658w66y'), pays, temaOscuro(), { incluyeProxMes: true }),
+    contiene: ['+ mora ', 'interés del mes en curso', 'USD $', 'Válido hasta el 19 de ago de 2026', '--r-bg:#000000'],
+    noContiene: ['#0d1117'] },
 
   // ── generateReportePrestamosPDF — cartera completa, ambos temas ───────────────────────
   { nombre: 'reporte-activos-claro', gen: 'generateReportePrestamosPDF', tema: 'light', celdas: 8,
     entrada: () => ({ todos: true, tema: 'light', dark: false }),
-    ejecutar: () => S.generateReportePrestamosPDF(loans, pays, false),
+    ejecutar: () => S.generateReportePrestamosPDF(loans, pays, temaOscuro()),
     contiene: ['Capital total en la calle', 'Referencia de estados', 'mora-sub'] },
 
   // Este caso es el unico que ejercita `saldoMora`/`saldoMoraUSD`: los parciales inyectados
@@ -463,9 +470,9 @@ const CASOS = [
   // total vencido como su equivalente en dolares descuenten lo ya recibido.
   { nombre: 'reporte-activos-oscuro-parcial', gen: 'generateReportePrestamosPDF', tema: 'dark', celdas: 8,
     entrada: () => ({ todos: true, parcial: true, tema: 'dark', dark: true }),
-    ejecutar: () => S.generateReportePrestamosPDF(loans, paysParcial, true),
-    contiene: ['Capital total en la calle', '#0d1117', 'abonado ', ' + USD $', 'pesos y dólares por separado'],
-    noContiene: ['Incluye'] },
+    ejecutar: () => S.generateReportePrestamosPDF(loans, paysParcial, temaOscuro()),
+    contiene: ['Capital total en la calle', '--r-bg:#000000', 'abonado ', ' + USD $', 'pesos y dólares por separado'],
+    noContiene: ['Incluye', '#0d1117'] },
 
   // ── generateRecibo — pago completo, parcial y USD ─────────────────────────────────────
   // Se cobra una cuota PENDIENTE, no una ya Pagada: el recibo se emite ANTES de persistir
@@ -1225,7 +1232,7 @@ for (const caso of CASOS) {
 const GENERADORES_V4 = ['generateReciboCobro', 'generateReciboGeneral',
                         'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono', 'generatePropuestaAbono',
                         'generateEstadoLiquidacion', 'generateEstadoCuentaDiario', 'generateReciboCorte',
-                        'generateFacturaCobroDiario'];
+                        'generateFacturaCobroDiario', 'generateCronogramaPDF', 'generateReportePrestamosPDF'];
 R.seccion('V4 · los documentos rediseñados: Inter, el logo de la app y el papel del tema');
 {
   const casosV4 = CASOS.filter(c => GENERADORES_V4.indexOf(c.gen) !== -1);
@@ -1356,7 +1363,7 @@ function loansDelCaso(caso) {
                             usd: arr2.filter(t => /USD/.test(t)).reduce((a, t) => a + centDe(t), 0) });
     const sS = suma(saldos), sV = suma(moras);
     const totV = sinTags((/Total vencido: <strong>([^<]*)<\/strong>/.exec(rep.html) || [, ''])[1]);
-    const totS = sinTags((/font-size:24px;font-weight:700;color:[^"]*">([^<]*)<\/div>/.exec(rep.html) || [, ''])[1]);
+    const totS = sinTags((/font-size:24px;[^"]*">([^<]*)<\/div>/.exec(rep.html) || [, ''])[1]);
     R.check('N6 reporte mixto (' + etq + ') · ANTI-VACIO: hay filas en pesos y en dolares, y mora en las dos monedas',
             sS.cop > 0 && sS.usd > 0 && sV.cop > 0 && sV.usd > 0, JSON.stringify({ sS, sV }));
     R.eq('N6 reporte mixto (' + etq + ') · capital en la calle = suma de las ' + filas.length + ' filas, cada moneda por su lado',

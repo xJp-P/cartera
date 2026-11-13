@@ -22,7 +22,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 12150,
+    "bytes": 13627,
     "nFilas": 23,
     "nCeldas": 184,
     "celdasPorTr": [
@@ -59,11 +59,13 @@
       "badge badge-pagado",
       "badge badge-pend",
       "footer",
+      "gl",
       "header",
       "loan-row",
       "loan-row mora",
       "mora-detalle",
       "mora-sub",
+      "ra-logo",
       "summary",
       "tran-detalle",
       "tran-sub"
