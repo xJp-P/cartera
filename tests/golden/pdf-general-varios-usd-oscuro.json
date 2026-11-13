@@ -26,7 +26,7 @@
     ]
   },
   "valores": {
-    "bytes": 11562,
+    "bytes": 12397,
     "nFilas": 6,
     "nCeldas": 30,
     "celdasPorTr": [
@@ -40,7 +40,7 @@
     "nMontos": 22,
     "hashMontos": "9b6ed0800e8f5e6e3bbf773aaa48ba6da010bac0",
     "hashFname": "af9aab7a51b4f1f6f6883bf4ab2ecaa63ba28143",
-    "hashTexto": "6c042fb94d40ff6aa9dc8d57d65a846bfd4dd485",
+    "hashTexto": "bb216e1f22e0f78a22eae39af5a852e4534b14c4",
     "clases": [
       "",
       "chip venc",

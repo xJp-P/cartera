@@ -23,7 +23,7 @@
     ]
   },
   "valores": {
-    "bytes": 11174,
+    "bytes": 12030,
     "nFilas": 5,
     "nCeldas": 20,
     "celdasPorTr": [
@@ -36,7 +36,7 @@
     "nMontos": 16,
     "hashMontos": "b6d1fdfbe078da35650b767ef89ffc8588f6994b",
     "hashFname": "992a0b643ef78d92a2f7d5c6b1cc2684f5aae230",
-    "hashTexto": "adc236fa90dce1441f4ed477693b83986711d2df",
+    "hashTexto": "738dd8825d314f29b3be4e6d2f66dfaa4e1b34ba",
     "clases": [
       "",
       "chip pend",

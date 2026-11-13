@@ -557,10 +557,11 @@ const CASOS = [
       cobroDe(L('1782151590658w66y'), pays)),
     // Solo dolares (3.7.0: sin la caja del dia en pesos ni la TRM debajo); mora + abono = dos frases
     // y la nota del orden de imputacion. El recibo viejo repetia la cifra en "Total aplicado": ya no existe.
+    // Rediseño v4 (decision del PO, 2026-11-13): con la app en tema OSCURO el recibo sale en CLARO.
     contiene: ['Recibo de pago', 'Recibimos tu pago', 'Cómo se aplicó tu pago', 'Saldamos tu', 'Abonamos',
-               'class="r-a"', 'USD $', 'RC-', '#0d1117', 'Así va tu crédito',
+               'class="r-a"', 'USD $', 'RC-', '--r-bg:#ffffff', 'Así va tu crédito',
                'Te falta por pagar', 'De eso, capital', 'Tus cuotas', 'Total por pagar', 'Cómo se imputa el pago'],
-    noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos', 'Equivalen a', 'TRM'] },
+    noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos', 'Equivalen a', 'TRM', '#0d1117'] },
 
   // ── generatePropuestaAbono — el papel que se manda ANTES de cobrar ────────────────────
   // Lo que este caso fija: que el documento NO se presente como comprobante. Un papel con
@@ -691,8 +692,9 @@ const CASOS = [
   { nombre: 'general-varios-usd-oscuro', gen: 'generateReciboGeneral', tema: 'dark', celdas: 5,
     entrada: () => ({ loanIds: ['1773657323435hkkb', '1782151590658w66y'], hasta: '2026-11-02', tema: 'dark' }),
     ejecutar: () => S.generateReciboGeneral([L('1773657323435hkkb'), L('1782151590658w66y')], pays, config.datos_pago, { hasta: '2026-11-02' }),
-    contiene: ['Crédito 1', 'Crédito 2', 'en 2 créditos', 'Liquidar tus créditos', 'liquidarlo hoy', 'USD $', '#0d1117', '-2C-'],
-    noContiene: ['Así va tu crédito'] },
+    // Rediseño v4 (decision del PO, 2026-11-13): con la app en tema OSCURO el aviso sale en CLARO.
+    contiene: ['Crédito 1', 'Crédito 2', 'en 2 créditos', 'Liquidar tus créditos', 'liquidarlo hoy', 'USD $', '--r-bg:#ffffff', '-2C-'],
+    noContiene: ['Así va tu crédito', '#0d1117'] },
 
   // `Intereses` con muchas cuotas vencidas: las mas viejas se resumen en UNA fila con su total
   // (nunca se omiten), y no hay "lo que falta por pagar" (el capital vence fuera de las cuotas).
@@ -977,7 +979,31 @@ function generar(caso) {
   if (CAP.pdfs.length !== 1) {
     throw new Error(`emitio ${CAP.pdfs.length} documento(s) por electronAPI.printPDF, se esperaba 1`);
   }
-  return { html: sinMarco(CAP.pdfs[0].html), fname: CAP.pdfs[0].fname };
+  return { html: sinMarco(CAP.pdfs[0].html), fname: CAP.pdfs[0].fname, crudo: CAP.pdfs[0].html };
+}
+
+// VOLCADO (rediseño v4 de los documentos, 2026-11-13): con `PDF_VOLCAR=<carpeta>`, cada caso
+// deja el HTML TAL CUAL lo recibe la capa nativa (con el marco) y un `casos.json` con su
+// generador, tema y nombre de archivo. Lo usa el arnes que compara el antes y el despues de un
+// cambio de diseño: los mismos casos, los mismos datos, otro codigo. La carpeta va fuera del
+// repo (los documentos llevan nombres del fixture y el repo es publico).
+const VOLCAR = process.env.PDF_VOLCAR || '';
+const volcados = [];
+if (VOLCAR) fs.mkdirSync(VOLCAR, { recursive: true });
+
+// Regla D (rediseño v4 de los documentos, 2026-11-13): `PDF_GOLDEN_DISENO=1` re-establece una
+// linea base cuando cambia SOLO la presentacion. Puede mover el tamaño del HTML (`bytes`), las
+// clases y el digesto del texto (`hashTexto`: el logo deja su letra "C"); todo lo demas tiene que
+// quedar IDENTICO —la estructura entera (titulo, h1, cabeceras, rotulos), los importes, las filas,
+// las celdas, el nombre de archivo y la entrada—, o el caso sale en rojo y NO se reescribe (regla
+// A). Que el texto no cambio, salvo esa letra, lo prueba aparte la comparacion EXACTA del arnes
+// de diseño (sin normalizar digitos ni meses), que el digesto no puede dar.
+const DISENO_GOLDEN = process.env.PDF_GOLDEN_DISENO === '1';
+const LIBRES_DE_DISENO = ['bytes', 'clases', 'hashTexto'];
+function sinLibres(v) {
+  const o = {};
+  for (const k of Object.keys(v)) if (LIBRES_DE_DISENO.indexOf(k) === -1) o[k] = v[k];
+  return o;
 }
 
 console.log('[pdf-render] frontend: ' + FE.meta.origen + ' (lineas ' + FE.meta.lineas + ', ' +
@@ -986,7 +1012,7 @@ console.log('[pdf-render] reloj congelado en ' + INSTANTE_FIJO.toISOString() + '
 
 const generadoresVistos = new Set();
 const bytesPorCaso = [];
-let nCreados = 0, nEstrictos = 0, nRebaseline = 0, nCasosOK = 0, nSinBase = 0, nDriftRoto = 0;
+let nCreados = 0, nEstrictos = 0, nRebaseline = 0, nCasosOK = 0, nSinBase = 0, nDriftRoto = 0, nDiseno = 0;
 
 for (const caso of CASOS) {
   R.seccion(caso.nombre + '  [' + caso.gen + ' · tema ' + caso.tema + ']');
@@ -1001,6 +1027,10 @@ for (const caso of CASOS) {
   }
   generadoresVistos.add(caso.gen);
   nCasosOK++;
+  if (VOLCAR) {
+    fs.writeFileSync(path.join(VOLCAR, caso.nombre + '.html'), salida1.crudo);
+    volcados.push({ caso: caso.nombre, gen: caso.gen, tema: caso.tema, fname: salida1.fname });
+  }
 
   const html = salida1.html, fname = salida1.fname;
   bytesPorCaso.push({ caso: caso.nombre, bytes: html.length });
@@ -1092,6 +1122,21 @@ for (const caso of CASOS) {
               'La linea base de "' + caso.nombre + '" ' + motivo + ', asi que este caso no\n' +
               'comparo ni estructura ni valores.\n' + COMO_INICIAR);
     }
+  } else if (prev.entradaHash === entradaHash && DISENO_GOLDEN) {
+    // Regla D: solo la presentacion puede moverse.
+    nEstrictos++;
+    const okE = R.eq('golden (diseño) · estructura del documento, idéntica', actual.estructura, prev.estructura);
+    const okV = R.eq('golden (diseño) · importes, filas, celdas y nombre de archivo, idénticos',
+                     sinLibres(actual.valores), sinLibres(prev.valores));
+    const movio = LIBRES_DE_DISENO.filter(k => JSON.stringify(actual.valores[k]) !== JSON.stringify(prev.valores[k]));
+    if (okE && okV && movio.length) {
+      nDiseno++;
+      escribirGolden(caso.nombre, actual);
+      console.log('  re-establecida por DISEÑO (se movio: ' + movio.join(', ') + ')');
+    } else if (!(okE && okV)) {
+      nDriftRoto++;
+      console.log('  la linea base NO se re-establecio: cambio algo mas que la presentacion.');
+    }
   } else if (prev.entradaHash === entradaHash) {
     nEstrictos++;
     R.eq('golden · estructura del documento', actual.estructura, prev.estructura);
@@ -1120,6 +1165,33 @@ for (const caso of CASOS) {
       console.log('        ' + COMO_INICIAR.split('\n')[1].trim() +
                   '   (tras borrar tests/golden/pdf-' + caso.nombre + '.json)');
     }
+  }
+}
+
+// ── V4 — los documentos ya rediseñados con el sistema de la app (2026-11-13) ──────────────
+// Se migran por familias (decision del PO); esta lista crece con cada una. Lo que garantiza que
+// un documento quedo en v4, en TODOS sus casos: pide la letra Inter (la incrusta desktop/pdf.js,
+// ver pdf-nativo), lleva el logo nuevo (el maletin; la "C" vieja era el unico texto que cambiaba),
+// usa el papel claro y no deja rastro del tema oscuro, aunque la app este en oscuro. Que el texto,
+// las cifras y las filas no se movieron lo prueba el golden (regla D al rediseñar).
+const GENERADORES_V4 = ['generateReciboCobro', 'generateReciboGeneral'];
+R.seccion('V4 · los documentos rediseñados: Inter, el logo de la app y el papel claro');
+{
+  const casosV4 = CASOS.filter(c => GENERADORES_V4.indexOf(c.gen) !== -1);
+  R.check('V0 cada generador v4 tiene casos (y alguno en tema oscuro)',
+          GENERADORES_V4.every(g => casosV4.some(c => c.gen === g)) && casosV4.some(c => c.tema === 'dark'),
+          casosV4.map(c => c.nombre + ':' + c.tema));
+  for (const caso of casosV4) {
+    let html;
+    try { html = generar(caso).html; } catch (e) { R.check(caso.nombre + ': genera', false, String(e && e.message)); continue; }
+    const fallas = [];
+    if (html.indexOf("font-family:'Inter'") === -1) fallas.push('no pide la letra Inter');
+    if (!/<div class="r-logo"><svg[^>]*>[\s\S]*?<\/svg><\/div>/.test(html)) fallas.push('sin el logo de la app');
+    if (/<div class="r-logo">C<\/div>/.test(html)) fallas.push('conserva la "C" vieja');
+    if (html.indexOf('--r-bg:#ffffff') === -1) fallas.push('no usa el papel claro');
+    if (/#0d1117|#161b22|#e6edf3/i.test(html)) fallas.push('deja colores del tema oscuro viejo');
+    if (/font-weight:\s*(?:800|900|650)/.test(html)) fallas.push('pide un peso que no se incrusta (solo 400, 500, 600 y 700)');
+    R.check('V1 ' + caso.nombre + ' (tema ' + caso.tema + ' en la app): documento v4', fallas.length === 0, fallas.join(' · '));
   }
 }
 
@@ -1483,7 +1555,12 @@ for (const b of bytesPorCaso) console.log('   ' + String(b.bytes).padStart(6) + 
 console.log('   ' + String(bytesPorCaso.reduce((s, b) => s + b.bytes, 0)).padStart(6) + '  TOTAL (' + bytesPorCaso.length + ' documentos)');
 console.log('\n-- golden master: ' + nEstrictos + ' comparados en estricto · ' +
             nRebaseline + ' re-establecidos por cambio de datos · ' + nCreados + ' creados · ' +
-            nSinBase + ' SIN linea base · ' + nDriftRoto + ' con estructura rota (no re-establecidos)');
+            nSinBase + ' SIN linea base · ' + nDriftRoto + ' con estructura rota (no re-establecidos)' +
+            (DISENO_GOLDEN ? ' · ' + nDiseno + ' re-establecidos por DISEÑO (regla D)' : ''));
+if (VOLCAR) {
+  fs.writeFileSync(path.join(VOLCAR, 'casos.json'), JSON.stringify(volcados, null, 2));
+  console.log('-- volcados ' + volcados.length + ' documentos en ' + VOLCAR);
+}
 
 if (nCasosOK < 8) {
   abortar(`Solo ${nCasosOK} casos produjeron documento (minimo exigido: 8). La suite no cubre nada.`);

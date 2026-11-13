@@ -66,6 +66,9 @@ if (process.argv.includes('--app')) {
         paginas: (s.match(/\/Type\s*\/Page[^s]/g) || []).length,
         cajas: [...new Set(s.match(/\/MediaBox\s*\[[^\]]*\]/g) || [])],
         alturas: alturasPorHoja(buf),
+        // Las letras incrustadas, sin el prefijo de subconjunto ("AAAAAA+"), y si alguna es Type 3.
+        letras: [...new Set((s.match(/\/BaseFont\s*\/[A-Za-z0-9+_-]+/g) || []).map(x => x.replace(/\/BaseFont\s*\/([A-Z]{6}\+)?/, '')))].sort(),
+        type3: /\/Subtype\s*\/Type3/.test(s),
         ventanasVivas: BrowserWindow.getAllWindows().length,
       });
     }
@@ -138,12 +141,18 @@ const ID = '1776205975507jkph';   // C+I COP del fixture con abono intercalado
 // de la hoja 2. El cronograma es el del credito de 24 cuotas: desde 3.6.0 el margen de impresion
 // es de 1,3 cm (antes 2) y el de 14 cuotas ya cabe en una hoja.
 const LARGO = '1773657323435hkkb';   // C+I USD de 24 cuotas
+// v4: el documento ya va con el sistema de la app (rediseño por familias, 2026-11-13). Su PDF
+// tiene que llevar SOLO la Inter que incrusta desktop/pdf.js, como fuente estandar (sin Type 3:
+// esa es la firma de la Inter VARIABLE, que hacia el PDF de 2,5 a 3,9 veces mas pesado). Los que
+// aun no se rediseñan no piden Inter: la @font-face sin uso no puede colarse en su PDF.
 const CASOS = [
-  { doc: 'cronograma-oscuro', tema: 'dark',  paginasMin: 2, gen: () => S.generateCronogramaPDF(L(LARGO), pays, true) },
-  { doc: 'recibo-claro',      tema: 'light', paginasMin: 1, gen: () => S.generateRecibo(cuota(ID, 4), L(ID), 393610, 0, pays, { fechaRecaudo: '2026-08-14' }) },
-  { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
-  { doc: 'general-oscuro',    tema: 'dark',  paginasMin: 2, gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Bruno Salgado'), pays, '', { hasta: '2026-11-02' }) },
+  { doc: 'cronograma-oscuro', tema: 'dark',  paginasMin: 2, v4: false, gen: () => S.generateCronogramaPDF(L(LARGO), pays, true) },
+  { doc: 'recibo-claro',      tema: 'light', paginasMin: 1, v4: false, gen: () => S.generateRecibo(cuota(ID, 4), L(ID), 393610, 0, pays, { fechaRecaudo: '2026-08-14' }) },
+  { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, v4: false, gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
+  // Con la app en tema oscuro: desde v4 el documento sale en claro (decision del PO).
+  { doc: 'general-app-oscura', tema: 'dark', paginasMin: 2, v4: true,  gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Bruno Salgado'), pays, '', { hasta: '2026-11-02' }) },
 ];
+const LETRAS_V4 = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold'];
 const dir = path.join(WORK, `pdf-nativo-${process.pid}-${Date.now()}`);
 fs.mkdirSync(dir, { recursive: true });
 for (const c of CASOS) {
@@ -184,6 +193,25 @@ for (const d of res.docs) {
     R.check(`${d.doc}: cada hoja que continua deja al menos 1 cm abajo`, abajo.slice(0, -1).every(v => v !== null && v >= 40), abajo);
   }
   R.eq(`${d.doc}: no deja la ventana oculta viva`, d.ventanasVivas, 0);
+  const letras = d.letras || [];
+  if (c.v4) {
+    R.check(`${d.doc}: v4 — solo la Inter incrustada, en sus pesos fijos`,
+            letras.length > 0 && letras.every(l => LETRAS_V4.indexOf(l) !== -1), letras);
+    R.check(`${d.doc}: v4 — sin fuentes Type 3 (la Inter variable)`, d.type3 === false, d.type3);
+  } else {
+    R.check(`${d.doc}: aun sin rediseñar — la letra de la app no se cuela`, letras.every(l => !/^Inter/.test(l)), letras);
+  }
+}
+// La inyeccion de la letra, en si: va tras <head>, trae los 4 pesos en los 2 subconjuntos y deja
+// el resto del documento intacto.
+{
+  const { conLetra } = require(path.join(DESKTOP, 'pdf.js'));
+  const doc = '<!DOCTYPE html><html><head><title>x</title></head><body>hola</body></html>';
+  const con = conLetra(doc);
+  const caras = (con.match(/@font-face\{font-family:'Inter';font-style:normal;font-weight:(\d+);src:url\(data:font\/woff2;base64,/g) || []).length;
+  R.eq('conLetra: 8 @font-face (4 pesos x 2 subconjuntos), incrustadas en base64', caras, 8);
+  R.check('conLetra: la letra va justo despues de <head> y el resto queda igual',
+          con.indexOf('<head><style>@font-face') !== -1 && con.replace(/<style>@font-face[\s\S]*?<\/style>/, '') === doc);
 }
 R.check('un documento que no se puede cargar rechaza la promesa', res.error && res.error.rechazo === true, res.error);
 R.eq('un documento que no se puede cargar tampoco deja la ventana oculta viva', res.error && res.error.ventanasVivas, 0);

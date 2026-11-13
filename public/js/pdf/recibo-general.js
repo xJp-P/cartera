@@ -244,10 +244,10 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
   ].concat(rbCss(C)).concat([
     '.r-t .sub{white-space:normal}',
     '.r-linea{margin-left:auto;font-size:12.5px;color:var(--r-muted)}',
-    '.r-linea b{color:var(--r-text)}',
+    '.r-linea b{color:var(--r-text);font-weight:600}',
     '.r-rojo{color:var(--r-red)}',
     '.r-aparte{margin-top:10px;font-size:12px;color:var(--r-muted)}',
-    '.r-pagar{padding:7px 14px;border:1px dashed var(--r-bd);border-radius:12px;font-size:13px;white-space:pre-wrap}',
+    '.r-pagar{padding:7px 14px;border-radius:12px;background:var(--r-soft);font-size:12.5px;line-height:1.42;white-space:pre-wrap}',
     '.r-credito{break-inside:avoid}',
     '</style></head><body>' + RB_MARCO_ABRE,
     rbCabecera('Recibo de cobro general', codigo, hasta),

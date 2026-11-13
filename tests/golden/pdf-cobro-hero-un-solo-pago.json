@@ -22,7 +22,7 @@
     ]
   },
   "valores": {
-    "bytes": 9635,
+    "bytes": 10491,
     "nFilas": 3,
     "nCeldas": 12,
     "celdasPorTr": [
@@ -33,7 +33,7 @@
     "nMontos": 11,
     "hashMontos": "312098ef768200539d4255e056d5c3ef492b048b",
     "hashFname": "ead9d7d36d8131deb73b323dfb739455b56be663",
-    "hashTexto": "ec37f70f0735fe355831f2550abd26882ef4612b",
+    "hashTexto": "c144a9ef8c277a551b5538e36986e3088cee94d8",
     "clases": [
       "abonada",
       "chip prox",

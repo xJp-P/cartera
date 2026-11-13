@@ -17,14 +17,14 @@
     ]
   },
   "valores": {
-    "bytes": 9161,
+    "bytes": 9996,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 8,
     "hashMontos": "6f29283f9eeeec259cf65345c24b29c625336bc7",
     "hashFname": "c13be1945ce6f64aa8f9d7839f421d525f8daae4",
-    "hashTexto": "68a1b5516f7b35c4fd53e36876bbe5a8a14fe66c",
+    "hashTexto": "78601c0c200e30511dbf7c910d1bbf63875f1d50",
     "clases": [
       "",
       "pagada",
