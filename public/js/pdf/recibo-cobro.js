@@ -272,7 +272,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     '.r-paso+.r-paso{margin-top:6px}',
     '.r-n{flex-shrink:0;width:20px;height:20px;margin-top:1px;border-radius:99px;background:var(--r-soft-2);color:var(--r-text-2);font-size:11px;font-weight:600;line-height:20px;text-align:center}',
     '.r-frase{font-size:13.5px;line-height:1.42}',
-    '.r-cuota{margin-top:8px;padding:10px 14px;border:1px solid var(--r-bd);border-radius:14px}',
+    '.r-cuota{margin-top:8px;padding:10px 14px;border:1px solid var(--r-bd);border-radius:14px;background:var(--r-card)}',
     '.r-barra{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--r-track)}',
     '.r-barra .pag{background:var(--r-green-2)}',
     '.r-ley{display:flex;justify-content:space-between;gap:12px;margin-top:7px;font-size:12px}',

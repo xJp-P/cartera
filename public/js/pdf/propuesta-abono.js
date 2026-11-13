@@ -23,7 +23,7 @@
 import { fmt, fmtUSD, fmtD } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
 import { esDiario } from '../core/dominio.js';
-import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // `propuesta` = { fecha, plan, cajaCOP, proyeccion }
 //   - plan       : resultado de `planCascada` (pasos + totales). NO aplicado.
@@ -52,9 +52,6 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
 
   var proy  = (propuesta && propuesta.proyeccion) || {};
   var pasos = plan.pasos;
-  var dark  = opts.dark !== undefined ? opts.dark
-            : (typeof document !== 'undefined' &&
-               document.documentElement.getAttribute('data-theme') !== 'light');
   var esUSD = loan.moneda === 'USD';
   var trm   = +loan.trmAcordada || 1;
   var fechaProp    = (propuesta && propuesta.fecha) || nowStr();
@@ -95,19 +92,13 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
   var paCode = 'PA-' + (ini || 'XX') + '-' + String(loan.id || '').slice(-3) + '-' +
                String(fechaProp).slice(8,10) + String(fechaProp).slice(5,7);
 
-  var C = dark ? {
-    bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
-    blue:'#58a6ff', blueBg:'#0d2136', blueBd:'#1f3d5c',
-    green:'#3fb950', red:'#f85149',
-    amber:'#d29922', amberBg:'#2b2005', amberBd:'#3d2e08',
-    headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
-  } : {
-    bg:'#ffffff', text:'#1f2328', muted:'#656d76', bd:'#d0d7de', rowbd:'#eeeeee', panel:'#f6f8fa',
-    blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#54aeff',
-    green:'#166534', red:'#cf222e',
-    amber:'#9a6700', amberBg:'#fff8e1', amberBd:'#eac54f',
-    headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
-  };
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app (o el de
+  // `opts.dark`, como siempre). El azul queda para marcar que esto es una PROYECCION; el ambar,
+  // para el aviso.
+  var dark  = opts.dark !== undefined ? opts.dark
+            : (typeof document !== 'undefined' &&
+               document.documentElement.getAttribute('data-theme') !== 'light');
+  var C = rbPaleta(dark);
 
   function row(l, v, color){
     return '<div class="pa-row"><span class="pa-lab">' + l + '</span>' +
@@ -273,69 +264,69 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Propuesta de Abono</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
-    'body{font-family:Arial,Helvetica,sans-serif;padding:22px;max-width:640px;margin:0 auto;color:' + C.text + ';background:' + C.bg + ';line-height:1.3;font-variant-numeric:tabular-nums}',
-    '.pa-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:10px;border-bottom:2px solid ' + C.headBd + '}',
-    '.pa-brand{display:flex;align-items:center;gap:10px}',
-    '.pa-wm{font-size:19px;font-weight:700;color:' + C.text + ';line-height:1.1}',
-    '.pa-sub{font-size:10px;color:' + C.muted + ';margin-top:2px}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';padding:22px;max-width:660px;margin:0 auto;color:var(--r-text);background:var(--r-bg);line-height:1.3;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    '.pa-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:11px;border-bottom:1px solid var(--r-bd)}',
+    '.pa-brand{display:flex;align-items:center;gap:11px}',
+    '.pa-logo{width:34px;height:34px;border-radius:11px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.pa-wm{font-size:17px;font-weight:600;letter-spacing:-.02em;color:var(--r-text);line-height:1.15}',
+    '.pa-sub{font-size:11.5px;color:var(--r-muted);margin-top:1px}',
     '.pa-meta{text-align:right}',
-    '.pa-type{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:' + C.muted + '}',
-    '.pa-num{font-size:15px;font-weight:700;color:' + C.text + ';margin-top:3px}',
-    '.pa-date{font-size:11px;color:' + C.muted + ';margin-top:3px}',
-    '.pa-st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:' + C.muted + ';margin:13px 0 5px}',
-    '.pa-name{font-size:16px;font-weight:700;color:' + C.text + '}',
-    '.pa-cc{font-size:12px;color:' + C.muted + ';margin-top:2px}',
-    '.pa-total{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.blueBg + ';border:2px solid ' + C.blueBd + ';border-radius:14px}',
-    '.pa-tl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:' + C.blue + '}',
-    '.pa-ta{font-size:32px;font-weight:700;color:' + C.blue + ';line-height:1.05;margin:3px 0 0;letter-spacing:-1px}',
-    '.pa-ts{font-size:11px;color:' + C.muted + ';margin-top:4px}',
-    '.pa-paso{border:1px solid ' + C.bd + ';border-radius:9px;padding:8px 11px;margin-top:6px;background:' + C.panel + '}',
-    '.pa-paso-h{display:flex;align-items:center;gap:7px}',
-    '.pa-n{width:17px;height:17px;border-radius:99px;background:' + C.blueBg + ';color:' + C.blue + ';font-size:9.5px;font-weight:700;display:inline-block;text-align:center;line-height:17px;flex-shrink:0}',
-    '.pa-paso-t{font-size:12px;font-weight:700;color:' + C.text + '}',
-    '.pa-paso-v{margin-left:auto;font-size:13px;font-weight:700;color:' + C.text + ';white-space:nowrap}',
-    '.pa-paso-d{font-size:10.5px;color:' + C.muted + ';margin-top:3px;padding-left:24px;line-height:1.45}',
-    '.pa-chip{font-size:8.5px;font-weight:700;letter-spacing:.4px;padding:2px 6px;border-radius:5px}',
-    '.pa-chip-b{background:' + C.blueBg + ';color:' + C.blue + ';border:1px solid ' + C.blueBd + '}',
-    '.pa-chip-g{background:' + C.blueBg + ';color:' + C.green + ';border:1px solid ' + C.blueBd + '}',
-    '.pa-chip-a{background:' + C.amberBg + ';color:' + C.amber + ';border:1px solid ' + C.amberBd + '}',
-    '.pa-panel{background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:10px;padding:6px 14px;margin-top:9px}',
-    '.pa-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid ' + C.rowbd + ';font-size:12px}',
+    '.pa-type{font-size:11.5px;font-weight:500;color:var(--r-muted)}',
+    '.pa-num{font-size:13.5px;font-weight:600;color:var(--r-text);margin-top:2px}',
+    '.pa-date{font-size:11.5px;color:var(--r-muted);margin-top:2px}',
+    '.pa-st{font-size:12.5px;font-weight:600;color:var(--r-text);margin:12px 0 4px}',
+    '.pa-name{font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--r-text)}',
+    '.pa-cc{font-size:12px;color:var(--r-muted);margin-top:2px}',
+    // Lo que se propone: la cifra en tinta; el azul del rotulo marca que es una proyeccion.
+    '.pa-total{margin:12px 0 4px;padding:13px 16px;text-align:center;border:1px solid var(--r-bd);border-radius:18px;background:var(--r-card)}',
+    '.pa-tl{font-size:12.5px;font-weight:600;color:var(--r-blue)}',
+    '.pa-ta{font-size:32px;font-weight:600;color:var(--r-text);line-height:1.1;margin:2px 0 0;letter-spacing:-.035em}',
+    '.pa-ts{font-size:11.5px;color:var(--r-muted);margin-top:4px}',
+    '.pa-paso{border:1px solid var(--r-bd);border-radius:12px;padding:7px 11px;margin-top:6px;background:var(--r-card)}',
+    '.pa-paso-h{display:flex;align-items:center;gap:8px}',
+    '.pa-n{width:18px;height:18px;border-radius:99px;background:var(--r-soft-2);color:var(--r-text-2);font-size:10px;font-weight:600;display:inline-block;text-align:center;line-height:18px;flex-shrink:0}',
+    '.pa-paso-t{font-size:12.5px;font-weight:600;color:var(--r-text)}',
+    '.pa-paso-v{margin-left:auto;font-size:13px;font-weight:600;color:var(--r-text);white-space:nowrap}',
+    '.pa-paso-d{font-size:11px;color:var(--r-muted);margin-top:3px;padding-left:26px;line-height:1.45}',
+    '.pa-chip{font-size:9.5px;font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:99px}',
+    '.pa-chip-b{background:var(--r-blue-bg);color:var(--r-blue)}',
+    '.pa-chip-g{background:var(--r-green-bg);color:var(--r-green)}',
+    '.pa-chip-a{background:var(--r-amber-bg);color:var(--r-amber)}',
+    '.pa-panel{border:1px solid var(--r-bd);border-radius:14px;padding:4px 14px;margin-top:9px;background:var(--r-card)}',
+    '.pa-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;border-bottom:1px solid var(--r-bd);font-size:12px}',
     '.pa-row:last-child{border-bottom:none}',
-    '.pa-lab{color:' + C.muted + '}',
-    '.pa-val{font-weight:700;color:' + C.text + ';white-space:nowrap}',
-    '.pa-row-tot .pa-lab{color:' + C.text + ';font-weight:700}',
+    '.pa-lab{color:var(--r-muted)}',
+    '.pa-val{font-weight:600;color:var(--r-text);white-space:nowrap}',
+    '.pa-row-tot .pa-lab{color:var(--r-text);font-weight:600}',
     '.pa-row-tot .pa-val{font-size:14px}',
     '.pa-imp{display:flex;gap:8px;margin-top:4px}',
-    '.pa-card{flex:1;background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:9px;padding:9px 10px;text-align:center}',
-    '.pa-cl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:' + C.muted + '}',
-    '.pa-old{font-size:11px;color:' + C.muted + ';text-decoration:line-through;margin-top:3px}',
-    '.pa-new{font-size:15px;font-weight:700;color:' + C.blue + ';margin-top:1px}',
-    '.pa-cnota{font-size:9px;color:' + C.muted + ';margin-top:3px;line-height:1.35}',
-    '.pa-hero{background:' + C.blueBg + ';border-color:' + C.blueBd + ';padding:13px 12px}',
-    '.pa-hero .pa-cl{color:' + C.blue + '}',
-    '.pa-hero .pa-cnota{color:' + C.blue + ';font-size:10px;margin-top:5px}',
+    '.pa-card{flex:1;border:1px solid var(--r-bd);border-radius:14px;padding:9px 10px;text-align:center;background:var(--r-card)}',
+    '.pa-cl{font-size:11px;font-weight:500;color:var(--r-text-2)}',
+    '.pa-old{font-size:11px;color:var(--r-muted);text-decoration:line-through;margin-top:3px}',
+    '.pa-new{font-size:15px;font-weight:600;color:var(--r-text);margin-top:1px}',
+    '.pa-cnota{font-size:10px;color:var(--r-muted);margin-top:3px;line-height:1.35}',
+    '.pa-hero{background:var(--r-blue-bg);border-color:' + C.blueBd + ';padding:12px 12px}',
+    '.pa-hero .pa-cl{color:var(--r-blue)}',
+    '.pa-hero .pa-cnota{color:var(--r-blue);font-size:10.5px;margin-top:5px}',
     // El CSS de la sub-linea SOLO se emite si el documento la lleva (misma doctrina que el
-    // `cssExtra` del recibo). Va colgado de la regla de arriba y no como elemento propio
-    // del array: un elemento vacio deja igual su separador, y ese byte movia los golden de
-    // documentos que no cambiaron.
-    '.pa-hnew{font-size:26px;margin-top:3px}' + (abonadoProx > 0
+    // `cssExtra` del recibo), colgado de la regla de arriba y no como elemento propio del array.
+    '.pa-hnew{font-size:26px;letter-spacing:-.03em;margin-top:3px}' + (abonadoProx > 0
       ? '.pa-tb tr.ab td{border-bottom:none;padding:0 5px 5px}' +
-        '.pa-ab{display:inline-block;background:' + C.blueBg + ';border:1px solid ' + C.blueBd +
-        ';color:' + C.blue + ';border-radius:5px;padding:2px 7px;font-size:8.5px}'
+        '.pa-ab{display:inline-block;background:var(--r-blue-bg);color:var(--r-blue);border-radius:99px;padding:2px 8px;font-size:9.5px}'
       : ''),
     '.pa-tb{width:100%;border-collapse:collapse;margin-top:5px;font-size:10.5px}',
-    '.pa-tb th{text-align:right;font-size:8.5px;letter-spacing:.4px;color:' + C.muted + ';font-weight:700;padding:3px 5px;border-bottom:1px solid ' + C.bd + ';white-space:nowrap}',
+    '.pa-tb th{text-align:right;font-size:10px;color:var(--r-muted);font-weight:500;padding:3px 5px 5px;border-bottom:1px solid var(--r-bd-2);white-space:nowrap}',
     '.pa-tb th.l,.pa-tb td.l{text-align:left}',
-    '.pa-tb td{text-align:right;padding:4px 5px;border-bottom:1px solid ' + C.rowbd + ';white-space:nowrap}',
-    '.pa-saldado{margin-top:9px;padding:10px 12px;text-align:center;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + ';border-radius:10px;font-size:12px;color:' + C.text + '}',
-    '.pa-aviso{margin-top:11px;padding:9px 12px;background:' + C.amberBg + ';border:1px solid ' + C.amberBd + ';border-radius:9px;font-size:10.5px;line-height:1.45;color:' + C.amber + '}',
-    '.pa-foot{margin-top:14px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:10px;line-height:1.5}',
-    '.pa-foot b{color:' + C.blue + '}',
-    rbImpresion(dark),
+    '.pa-tb td{text-align:right;padding:4px 5px;border-bottom:1px solid var(--r-bd);white-space:nowrap}',
+    '.pa-saldado{margin-top:9px;padding:10px 12px;text-align:center;background:var(--r-blue-bg);border:1px solid ' + C.blueBd + ';border-radius:14px;font-size:12.5px;color:var(--r-text)}',
+    '.pa-aviso{margin-top:10px;padding:8px 12px;background:var(--r-amber-bg);border:1px solid var(--r-amber-bd);border-radius:12px;font-size:11.5px;line-height:1.45;color:var(--r-amber)}',
+    '.pa-foot{margin-top:12px;padding-top:8px;border-top:1px solid var(--r-bd);text-align:center;color:var(--r-muted);font-size:11px;line-height:1.5}',
+    '.pa-foot b{color:var(--r-text);font-weight:600}',
+    rbImpresionPapel(dark),
     '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="pa-head"><div class="pa-brand">',
-    '<svg width="34" height="34" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.blue + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
+    '<div class="pa-logo">' + RB_LOGO + '</div>',
     '<div><div class="pa-wm">Cartera</div><div class="pa-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="pa-meta"><div class="pa-type">Propuesta de Abono</div><div class="pa-num">' + paCode + '</div><div class="pa-date">Emisión: ' + fechaEmision + '</div></div></div>',
     '<div class="pa-st">Preparada para</div>',

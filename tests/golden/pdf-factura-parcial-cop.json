@@ -28,14 +28,14 @@
     ]
   },
   "valores": {
-    "bytes": 7977,
+    "bytes": 8615,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 7,
     "hashMontos": "f7842f0a0d7462fb7ac68885e87c95b5950794b4",
     "hashFname": "bde6d9acb6a8a46525fe22b4931bc6e2a3dcaff1",
-    "hashTexto": "6fe099633f389e07751bf33700888d9c23ad4dd5",
+    "hashTexto": "f4a87dcfc19c9ef71cf828b242d85ed6fb4d346d",
     "clases": [
       "rc-brand",
       "rc-brand-sub",
@@ -54,6 +54,7 @@
       "rc-hero-msg",
       "rc-hero-top",
       "rc-lab",
+      "rc-logo",
       "rc-meta",
       "rc-next",
       "rc-next-txt",

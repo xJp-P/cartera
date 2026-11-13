@@ -22,14 +22,14 @@
     ]
   },
   "valores": {
-    "bytes": 6809,
+    "bytes": 7734,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
     "nMontos": 9,
     "hashMontos": "bdc5ea9848a47b6726a39bb8cadac346ec06d4ea",
     "hashFname": "f5577f210993122fba65e3caa1d2b2c6dbd54512",
-    "hashTexto": "5d9d1ffdeaf07a3338c0ff9eb3e8130a7f73f5f3",
+    "hashTexto": "b7591affe9b659d333496a11107ca4d0ed2ebc8e",
     "clases": [
       "ab-brand",
       "ab-cc",
@@ -42,6 +42,7 @@
       "ab-liq-q",
       "ab-liq-s",
       "ab-liq-v",
+      "ab-logo",
       "ab-meta",
       "ab-name",
       "ab-num",

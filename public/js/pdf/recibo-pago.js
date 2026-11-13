@@ -19,11 +19,13 @@ import { nowStr } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
-import { rbImpresion, rbEsc, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, rbEsc, RB_LETRA, RB_LOGO, RB_ICONO_OK, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   opts = opts || {};
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app.
   var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var C = rbPaleta(dark);
   var esUSD = loan && loan.moneda === 'USD';
   var montoRecibido = copRec || pay.cuotaTotal;
   // Fase 3 — imputacion de ESTE pago y saldo resultante.
@@ -88,22 +90,22 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   var diasRetraso = (pay.fechaPago && fechaRealPago && !esAbono(pay))
     ? Math.round((new Date(fechaRealPago + 'T12:00:00') - new Date(pay.fechaPago + 'T12:00:00')) / 86400000) : 0;
   function bannerBox(bg, bd, tx, titulo, sub) {
-    return '<div style="margin:16px 0;padding:14px 16px;background:' + bg + ';border:1px solid ' + bd + ';border-radius:8px;text-align:center">' +
-      '<div style="font-size:15px;font-weight:700;color:' + tx + '">' + titulo + '</div>' +
-      '<div style="font-size:11px;color:' + tx + ';margin-top:3px">' + sub + '</div></div>';
+    return '<div style="margin:14px 0;padding:11px 16px;background:' + bg + ';border:1px solid ' + bd + ';border-radius:14px;text-align:center">' +
+      '<div style="font-size:14px;font-weight:600;color:' + tx + '">' + titulo + '</div>' +
+      '<div style="font-size:12px;color:' + tx + ';margin-top:2px">' + sub + '</div></div>';
   }
   var bannerHTML = '';
   if (esLiquidacion) {
-    bannerHTML = bannerBox(dark ? '#0f2b19' : '#dafbe1', dark ? '#1b4332' : '#aceebb', dark ? '#3fb950' : '#166534',
+    bannerHTML = bannerBox(C.greenBg, C.greenBd, C.green,
       '¡Felicidades! Ha cancelado la totalidad de su préstamo',
       'Con este pago se salda el 100% del préstamo. ¡Gracias por tu cumplimiento!');
   } else if (!esParcial && pay.fechaPago && !esAbono(pay)) {
     if (diasRetraso > 0) {
-      bannerHTML = bannerBox(dark ? '#2d2410' : '#fff8c5', dark ? '#3d3115' : '#eac54f', dark ? '#d29922' : '#9a6700',
+      bannerHTML = bannerBox(C.amberBg, C.amberBd, C.amber,
         'Pago recibido con ' + diasRetraso + ' ' + (diasRetraso === 1 ? 'día' : 'días') + ' de retraso',
         'Procura pagar a tiempo para evitar inconvenientes.');
     } else {
-      bannerHTML = bannerBox(dark ? '#0d2440' : '#ddf4ff', dark ? '#1f3a5f' : '#b6e3ff', dark ? '#58a6ff' : '#0969da',
+      bannerHTML = bannerBox(C.blueBg, C.blueBd, C.blue,
         diasRetraso < 0 ? '¡Gracias por tu pago anticipado!' : '¡Gracias por tu pago puntual!',
         diasRetraso < 0 ? 'Recibimos tu pago antes de la fecha acordada. ¡Excelente!' : 'Recibimos tu pago en la fecha acordada. ¡Gracias por tu cumplimiento!');
     }
@@ -112,33 +114,31 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo de Pago</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
-    dark ? 'body{font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:0 auto;color:#e6edf3;background:#0d1117}' :
-           'body{font-family:Arial,sans-serif;padding:30px;max-width:500px;margin:0 auto;color:#1f2328}',
-    dark ? '.header{text-align:center;border-bottom:2px solid #30363d;padding-bottom:14px;margin-bottom:18px}' :
-           '.header{text-align:center;border-bottom:2px solid #333;padding-bottom:14px;margin-bottom:18px}',
-    '.header h1{font-size:20px;margin-bottom:4px}',
-    dark ? '.header p{font-size:11px;color:#8b949e}' : '.header p{font-size:11px;color:#656d76}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';padding:30px;max-width:520px;margin:0 auto;color:var(--r-text);background:var(--r-bg);line-height:1.3;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    // Encabezado con el logo de la app (el maletin en un cuadro inverso); el titulo sigue siendo el h1.
+    '.header{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--r-bd);padding-bottom:13px;margin-bottom:16px}',
+    '.rp-logo{width:34px;height:34px;border-radius:11px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.header h1{font-size:19px;font-weight:600;letter-spacing:-.02em;line-height:1.2}',
+    '.header p{font-size:12px;color:var(--r-muted)}',
     '.section{margin-bottom:14px}',
-    dark ? '.section-title{font-size:10px;font-weight:700;color:#8b949e;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}' :
-           '.section-title{font-size:10px;font-weight:700;color:#656d76;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}',
-    dark ? '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #21262d}' :
-           '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #eee}',
-    dark ? '.row .label{color:#8b949e}' : '.row .label{color:#656d76}',
-    '.row .value{font-weight:600;text-align:right}',
-    dark ? '.total-box{background:#0f2b19;border:1px solid #1b4332;border-radius:8px;padding:14px;text-align:center;margin:16px 0}' :
-           '.total-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;text-align:center;margin:16px 0}',
-    dark ? '.total-box .amount{font-size:24px;font-weight:700;color:#3fb950}' :
-           '.total-box .amount{font-size:24px;font-weight:700;color:#166534}',
-    dark ? '.total-box .sub{font-size:12px;color:#3fb950;margin-top:2px}' :
-           '.total-box .sub{font-size:12px;color:#166534;margin-top:2px}',
-    dark ? '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #30363d;font-size:10px;color:#6e7681}' :
-           '.footer{text-align:center;margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:10px;color:#8c959f}',
-    rbImpresion(dark),
+    '.section-title{font-size:12.5px;font-weight:600;color:var(--r-text);margin-bottom:3px}',
+    '.row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:13px;border-bottom:1px solid var(--r-bd)}',
+    '.row .label{color:var(--r-muted)}',
+    '.row .value{font-weight:500;text-align:right}',
+    // La cifra recibida en tinta, con el sello verde (decision del PO).
+    '.total-box{display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid var(--r-bd);background:var(--r-card);border-radius:18px;padding:11px 20px;margin:14px 0}',
+    '.total-box .amount{font-size:28px;font-weight:600;letter-spacing:-.03em;color:var(--r-text);line-height:1.15}',
+    '.total-box .sub{font-size:12px;color:var(--r-muted);margin-top:2px}',
+    '.rp-sello{flex-shrink:0;width:48px;height:48px;border-radius:99px;background:var(--r-green-bg);border:1px solid var(--r-green-bd);color:var(--r-green);display:flex;align-items:center;justify-content:center}',
+    '.rp-sello svg{width:24px;height:24px}',
+    '.footer{text-align:center;margin-top:16px;padding-top:11px;border-top:1px solid var(--r-bd);font-size:11px;color:var(--r-muted)}',
+    rbImpresionPapel(dark),
     '</style></head><body>' + RB_MARCO_ABRE,
-    '<div class="header">',
+    '<div class="header"><div class="rp-logo">' + RB_LOGO + '</div><div>',
     '<h1>' + tipoTitulo + '</h1>',
     '<p>Fecha de emisión: ' + fechaEmision + '</p>',
-    '</div>',
+    '</div></div>',
     '<div class="section">',
     '<div class="section-title">Deudor</div>',
     '<div class="row"><span class="label">Nombre</span><span class="value">' + rbEsc(pay.nombreCliente) + '</span></div>',
@@ -154,7 +154,7 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="section">',
     '<div class="section-title">Detalle del pago</div>',
     '<div class="row"><span class="label">Tipo</span><span class="value">' + tipoEtiqueta + '</span></div>',
-    '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + ((pay && pay.extraConsolidado && pay.extraConsolidado !== 0) ? ' <span style="color:' + (dark ? '#d29922' : '#9a6700') + ';font-weight:700">(Cuota Transitoria / Interés Prorrateado)</span>' : '') + '</span></div>',
+    '<div class="row"><span class="label">Cuota</span><span class="value">#' + pay.cuotaN + ((pay && pay.extraConsolidado && pay.extraConsolidado !== 0) ? ' <span style="color:' + C.amber + ';font-weight:600">(Cuota Transitoria / Interés Prorrateado)</span>' : '') + '</span></div>',
     '<div class="row"><span class="label">Fecha vencimiento</span><span class="value">' + fmtD(pay.fechaPago) + '</span></div>',
     '<div class="row"><span class="label">Fecha recaudo</span><span class="value">' + fmtD(opts.fechaRecaudo || pay.fechaRecaudo || nowStr()) + '</span></div>',
     // Fase 3: se imputa ESTE pago (cascada interes -> capital), no la composicion nominal de la
@@ -166,18 +166,18 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '<div class="row"><span class="label">Monto cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>',
     yaAbonadoPrev > 0 ? '<div class="row"><span class="label">Abonado previamente</span><span class="value">' + fv(yaAbonadoPrev) + '</span></div>' : '',
     '</div>',
-    '<div class="total-box">',
-    '<div style="font-size:10px;color:' + (dark ? '#8b949e' : '#656d76') + ';margin-bottom:4px">' + (esParcial ? 'ABONO RECIBIDO' : 'MONTO RECIBIDO') + '</div>',
+    '<div class="total-box"><div>',
+    '<div style="font-size:12px;font-weight:600;letter-spacing:.04em;color:' + C.green + ';margin-bottom:2px">' + (esParcial ? 'ABONO RECIBIDO' : 'MONTO RECIBIDO') + '</div>',
     '<div class="amount">' + (esUSD && usdRec ? fmtUSD(usdRec) : fv(montoRecibido)) + '</div>',
     // 3.7.0 (decision del PO): un credito en dolares se imprime SOLO en dolares: sin el equivalente en
     // pesos debajo del monto recibido (la caja en COP vive en la app, no en el papel del cliente).
     '',   // (el elemento vacio conserva el separador: los documentos en pesos quedan identicos byte a byte)
-    '</div>',
+    '</div><div class="rp-sello">' + RB_ICONO_OK + '</div></div>',
     bannerHTML,
     esParcial ? '<div class="section"><div class="section-title">Estado de la cuota</div>' +
       '<div class="row"><span class="label">Total cuota</span><span class="value">' + fv(pay.cuotaTotal) + '</span></div>' +
       '<div class="row"><span class="label">Total abonado (con este pago)</span><span class="value">' + fv(totalAcum) + '</span></div>' +
-      '<div class="row"><span class="label">Restante por pagar</span><span class="value" style="color:' + (dark?'#d29922':'#9a6700') + '">' + fv(restanteTrasEste) + '</span></div>' +
+      '<div class="row"><span class="label">Restante por pagar</span><span class="value" style="color:' + C.amber + ';font-weight:600">' + fv(restanteTrasEste) + '</span></div>' +
       '</div>' : '',
     '<div class="section">',
     !esParcial ? '<div class="row"><span class="label">Saldo restante del préstamo</span><span class="value">' + fv(saldoRestante) + '</span></div>' : '',
@@ -185,7 +185,7 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     '</div>',
     proxCuotas.length > 0 ? '<div class="section"><div class="section-title">Próximas cuotas (quedan ' + totalPending + ' de ' + loan.plazoMeses + ')</div>' + proxCuotas.map(function(pc) {
       return '<div class="row"><span class="label">Cuota #' + pc.cuotaN + ' - ' + fmtD(pc.fechaPago) + '</span><span class="value">' + fv(pc.cuotaTotal) + '</span></div>';
-    }).join('') + (totalPending > 3 ? '<div style="text-align:center;color:var(--text2,#888);font-size:11px;margin-top:6px">... y ' + (totalPending - 3) + ' cuotas más</div>' : '') + '</div>' : '',
+    }).join('') + (totalPending > 3 ? '<div style="text-align:center;color:var(--r-muted);font-size:11.5px;margin-top:6px">... y ' + (totalPending - 3) + ' cuotas más</div>' : '') + '</div>' : '',
     '<div class="footer">',
     '<p>Este recibo es un comprobante de pago</p>',
     '<p style="margin-top:4px">Cartera</p>',

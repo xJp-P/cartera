@@ -147,9 +147,9 @@ const LARGO = '1773657323435hkkb';   // C+I USD de 24 cuotas
 // aun no se rediseñan no piden Inter: la @font-face sin uso no puede colarse en su PDF.
 const CASOS = [
   { doc: 'cronograma-oscuro', tema: 'dark',  paginasMin: 2, v4: false, gen: () => S.generateCronogramaPDF(L(LARGO), pays, true) },
-  { doc: 'recibo-claro',      tema: 'light', paginasMin: 1, v4: false, gen: () => S.generateRecibo(cuota(ID, 4), L(ID), 393610, 0, pays, { fechaRecaudo: '2026-08-14' }) },
+  { doc: 'recibo-claro',      tema: 'light', paginasMin: 1, v4: true,  gen: () => S.generateRecibo(cuota(ID, 4), L(ID), 393610, 0, pays, { fechaRecaudo: '2026-08-14' }) },
   { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, v4: false, gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
-  // Con la app en tema oscuro: desde v4 el documento sale en claro (decision del PO).
+  // Con la app en tema oscuro: el documento v4 sale en el oscuro de la app.
   { doc: 'general-app-oscura', tema: 'dark', paginasMin: 2, v4: true,  gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Bruno Salgado'), pays, '', { hasta: '2026-11-02' }) },
 ];
 const LETRAS_V4 = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold'];

@@ -486,7 +486,7 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', cuotaN: 2, cop: 1272258, usd: 400, tema: 'dark' }),
     ejecutar: () => S.generateRecibo(cuota('1782151590658w66y', 2), L('1782151590658w66y'),
                                      1272258, 400, pays, { fechaRecaudo: '2026-07-31' }),
-    contiene: ['USD $400.00', 'Pago completo', 'Intereses', 'Abono a capital', '#0d1117'] },
+    contiene: ['USD $400.00', 'Pago completo', 'Intereses', 'Abono a capital', '--r-bg:#000000'] },
 
   // ── generateFacturaCobro — mora / hoy / proximo, USD, transitoria y parcial ───────────
   { nombre: 'factura-mora-cop', gen: 'generateFacturaCobro', tema: 'light', celdas: null,
@@ -499,7 +499,7 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', cuotaN: 2, tema: 'dark' }),
     ejecutar: () => S.generateFacturaCobro(cuota('1782151590658w66y', 2), L('1782151590658w66y'),
                                            pays, config.datos_pago, {}),
-    contiene: ['Aviso de mora', 'USD $', '#0d1117'] },
+    contiene: ['Aviso de mora', 'USD $', '--r-bg:#000000'] },
 
   { nombre: 'factura-hoy-pagounico', gen: 'generateFacturaCobro', tema: 'light', celdas: null,
     entrada: () => ({ loanId: '1783874778375ziu4', cuotaN: 1, tema: 'light' }),
@@ -532,7 +532,7 @@ const CASOS = [
     ejecutar: () => S.generateReciboAbono(L('1782151590658w66y'), pays, {
       monto: 1000000, montoUSD: 271.66, fecha: '2026-07-20', recalcMode: 'modificarPlazo',
       pre: snapshotPrevio(L('1782151590658w66y'), pays, 1000000) }),
-    contiene: ['Plazo restante', 'USD $', '#0d1117'] },
+    contiene: ['Plazo restante', 'USD $', '--r-bg:#000000'] },
 
   { nombre: 'abono-corta-intereses-cop', gen: 'generateReciboAbono', tema: 'light', celdas: null,
     entrada: () => ({ loanId: '1773656070840', monto: 100000, mode: 'mantener', tema: 'light' }),
@@ -557,9 +557,9 @@ const CASOS = [
       cobroDe(L('1782151590658w66y'), pays)),
     // Solo dolares (3.7.0: sin la caja del dia en pesos ni la TRM debajo); mora + abono = dos frases
     // y la nota del orden de imputacion. El recibo viejo repetia la cifra en "Total aplicado": ya no existe.
-    // Rediseño v4 (decision del PO, 2026-11-13): con la app en tema OSCURO el recibo sale en CLARO.
+    // Rediseño v4: con la app en tema oscuro, el oscuro de la app (el #0d1117 viejo ya no aparece).
     contiene: ['Recibo de pago', 'Recibimos tu pago', 'Cómo se aplicó tu pago', 'Saldamos tu', 'Abonamos',
-               'class="r-a"', 'USD $', 'RC-', '--r-bg:#ffffff', 'Así va tu crédito',
+               'class="r-a"', 'USD $', 'RC-', '--r-bg:#000000', 'Así va tu crédito',
                'Te falta por pagar', 'De eso, capital', 'Tus cuotas', 'Total por pagar', 'Cómo se imputa el pago'],
     noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos', 'Equivalen a', 'TRM', '#0d1117'] },
 
@@ -573,7 +573,7 @@ const CASOS = [
       propuestaDe(L('1782151590658w66y'), pays)),
     contiene: ['Propuesta de Abono', 'Si abonas', 'Así se aplicaría tu pago',
                'Así quedaría tu crédito', 'Total por pagar', 'Cronograma que quedaría',
-               'no un comprobante', 'PA-', '#0d1117'],
+               'no un comprobante', 'PA-', '--r-bg:#000000'],
     noContiene: ['TOTAL RECIBIDO', 'Total recibido', 'certifica el dinero', 'Recibido el'] },
 
   { nombre: 'propuesta-cop-claro', gen: 'generatePropuestaAbono', tema: 'light', celdas: 6,
@@ -692,8 +692,8 @@ const CASOS = [
   { nombre: 'general-varios-usd-oscuro', gen: 'generateReciboGeneral', tema: 'dark', celdas: 5,
     entrada: () => ({ loanIds: ['1773657323435hkkb', '1782151590658w66y'], hasta: '2026-11-02', tema: 'dark' }),
     ejecutar: () => S.generateReciboGeneral([L('1773657323435hkkb'), L('1782151590658w66y')], pays, config.datos_pago, { hasta: '2026-11-02' }),
-    // Rediseño v4 (decision del PO, 2026-11-13): con la app en tema OSCURO el aviso sale en CLARO.
-    contiene: ['Crédito 1', 'Crédito 2', 'en 2 créditos', 'Liquidar tus créditos', 'liquidarlo hoy', 'USD $', '--r-bg:#ffffff', '-2C-'],
+    // Rediseño v4: con la app en tema oscuro, el oscuro de la app (el #0d1117 viejo ya no aparece).
+    contiene: ['Crédito 1', 'Crédito 2', 'en 2 créditos', 'Liquidar tus créditos', 'liquidarlo hoy', 'USD $', '--r-bg:#000000', '-2C-'],
     noContiene: ['Así va tu crédito', '#0d1117'] },
 
   // `Intereses` con muchas cuotas vencidas: las mas viejas se resumen en UNA fila con su total
@@ -769,7 +769,7 @@ const CASOS = [
       optsLiquidacion(L('1782151590658w66y'), pays, 387370)),
     contiene: ['Total recibido', 'USD $1,537.37', 'USD $1,326.90', 'USD $105.24', 'USD $105.23',
                'Cómo se aplicó tu pago', 'Intereses atrasados cubiertos',
-               'Interés del mes en curso', '#0d1117'],
+               'Interés del mes en curso', '--r-bg:#000000'],
     // 1.326,89 es lo que imprimiria el capital sin reconciliar: es el aserto que se pone rojo
     // si alguien vuelve a formatear cada rubro por separado.
     noContiene: ['Abono recibido a capital', 'USD $1,326.89'] },
@@ -1029,6 +1029,12 @@ for (const caso of CASOS) {
   nCasosOK++;
   if (VOLCAR) {
     fs.writeFileSync(path.join(VOLCAR, caso.nombre + '.html'), salida1.crudo);
+    // Ademas, el MISMO caso en los dos temas de la app (`<caso>.light.html` / `<caso>.dark.html`):
+    // los documentos siguen el tema, y un cambio de diseño se revisa en los dos.
+    for (const t of ['light', 'dark']) {
+      const otro = t === caso.tema ? salida1 : generar(Object.assign({}, caso, { tema: t }));
+      fs.writeFileSync(path.join(VOLCAR, caso.nombre + '.' + t + '.html'), otro.crudo);
+    }
     volcados.push({ caso: caso.nombre, gen: caso.gen, tema: caso.tema, fname: salida1.fname });
   }
 
@@ -1170,28 +1176,34 @@ for (const caso of CASOS) {
 
 // ── V4 — los documentos ya rediseñados con el sistema de la app (2026-11-13) ──────────────
 // Se migran por familias (decision del PO); esta lista crece con cada una. Lo que garantiza que
-// un documento quedo en v4, en TODOS sus casos: pide la letra Inter (la incrusta desktop/pdf.js,
-// ver pdf-nativo), lleva el logo nuevo (el maletin; la "C" vieja era el unico texto que cambiaba),
-// usa el papel claro y no deja rastro del tema oscuro, aunque la app este en oscuro. Que el texto,
-// las cifras y las filas no se movieron lo prueba el golden (regla D al rediseñar).
-const GENERADORES_V4 = ['generateReciboCobro', 'generateReciboGeneral'];
-R.seccion('V4 · los documentos rediseñados: Inter, el logo de la app y el papel claro');
+// un documento quedo en v4, en TODOS sus casos y en LOS DOS temas de la app: pide la letra Inter (la
+// incrusta desktop/pdf.js, ver pdf-nativo), lleva el logo nuevo (el maletin; la "C" vieja era el
+// unico texto que cambiaba), pinta el papel del TEMA (blanco en claro, el negro de la app en oscuro:
+// el PO revirtio el "siempre en claro" el mismo dia) y no deja colores del tema oscuro viejo. Que el
+// texto, las cifras y las filas no se movieron lo prueba el golden (regla D al rediseñar).
+const GENERADORES_V4 = ['generateReciboCobro', 'generateReciboGeneral',
+                        'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono', 'generatePropuestaAbono'];
+R.seccion('V4 · los documentos rediseñados: Inter, el logo de la app y el papel del tema');
 {
   const casosV4 = CASOS.filter(c => GENERADORES_V4.indexOf(c.gen) !== -1);
   R.check('V0 cada generador v4 tiene casos (y alguno en tema oscuro)',
           GENERADORES_V4.every(g => casosV4.some(c => c.gen === g)) && casosV4.some(c => c.tema === 'dark'),
           casosV4.map(c => c.nombre + ':' + c.tema));
   for (const caso of casosV4) {
-    let html;
-    try { html = generar(caso).html; } catch (e) { R.check(caso.nombre + ': genera', false, String(e && e.message)); continue; }
-    const fallas = [];
-    if (html.indexOf("font-family:'Inter'") === -1) fallas.push('no pide la letra Inter');
-    if (!/<div class="r-logo"><svg[^>]*>[\s\S]*?<\/svg><\/div>/.test(html)) fallas.push('sin el logo de la app');
-    if (/<div class="r-logo">C<\/div>/.test(html)) fallas.push('conserva la "C" vieja');
-    if (html.indexOf('--r-bg:#ffffff') === -1) fallas.push('no usa el papel claro');
-    if (/#0d1117|#161b22|#e6edf3/i.test(html)) fallas.push('deja colores del tema oscuro viejo');
-    if (/font-weight:\s*(?:800|900|650)/.test(html)) fallas.push('pide un peso que no se incrusta (solo 400, 500, 600 y 700)');
-    R.check('V1 ' + caso.nombre + ' (tema ' + caso.tema + ' en la app): documento v4', fallas.length === 0, fallas.join(' · '));
+    for (const tema of ['light', 'dark']) {
+      let html;
+      try { html = generar(Object.assign({}, caso, { tema: tema })).html; }
+      catch (e) { R.check(caso.nombre + ' (' + tema + '): genera', false, String(e && e.message)); continue; }
+      const fallas = [];
+      if (html.indexOf("font-family:'Inter'") === -1) fallas.push('no pide la letra Inter');
+      if (!/<div class="[a-z]+-logo"><svg[^>]*>[\s\S]*?<\/svg><\/div>/.test(html)) fallas.push('sin el logo de la app');
+      if (/<div class="r-logo">C<\/div>|<text[^>]*>C<\/text>/.test(html)) fallas.push('conserva la "C" vieja');
+      const fondo = tema === 'dark' ? '--r-bg:#000000' : '--r-bg:#ffffff';
+      if (html.indexOf(fondo) === -1) fallas.push('no pinta el papel del tema (' + fondo + ')');
+      if (/#0d1117|#161b22|#e6edf3/i.test(html)) fallas.push('deja colores del tema oscuro viejo');
+      if (/font-weight:\s*(?:800|900|650)/.test(html)) fallas.push('pide un peso que no se incrusta (solo 400, 500, 600 y 700)');
+      R.check('V1 ' + caso.nombre + ' (tema ' + tema + ' en la app): documento v4', fallas.length === 0, fallas.join(' · '));
+    }
   }
 }
 

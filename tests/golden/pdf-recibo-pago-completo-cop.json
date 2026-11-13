@@ -35,7 +35,7 @@
     ]
   },
   "valores": {
-    "bytes": 4798,
+    "bytes": 6556,
     "nFilas": 0,
     "nCeldas": 0,
     "celdasPorTr": [],
@@ -49,6 +49,8 @@
       "header",
       "label",
       "row",
+      "rp-logo",
+      "rp-sello",
       "section",
       "section-title",
       "total-box",

@@ -19,7 +19,7 @@ import { nowStr, properCase } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota, computeLiquidacion, esDiario, periodoEnCursoDe, detalleInteresEnCurso } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
-import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // ── Recibo de Abono a Capital (v1.17.0) ──────────────────────────────────────
 // Se genera automaticamente tras registrar un abono. Los 3 puntos de entrada
@@ -38,7 +38,6 @@ export function generateReciboAbono(loan, allPays, opts) {
   // documento SIN SENTIDO: un "cronograma actualizado" vacio y un impacto sobre una
   // cuota que no existe. Se prefiere no emitir nada a emitir algo falso.
   if (esDiario(loan)) return;
-  var dark = document.documentElement.getAttribute('data-theme') === 'dark';
   var esUSD = loan.moneda === 'USD';
   var trm = loan.trmAcordada || 1;
   var monto = Math.round(+opts.monto || 0);
@@ -81,15 +80,9 @@ export function generateReciboAbono(loan, allPays, opts) {
   var liquidacion = _L.total;
   var moraMesTxt = money(_L.moraValorMes) + '/mes' + (_L.moraUniforme ? '' : ' prom.');
 
-  var C = dark ? {
-    bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
-    green:'#3fb950', greenBg:'#0f2b19', greenBd:'#1b4332', blue:'#79c0ff', blueBg:'#0d2440', blueBd:'#1f3a5f',
-    amber:'#d29922', amberBg:'#2b2005', amberBd:'#3d2e08', headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
-  } : {
-    bg:'#ffffff', text:'#1f2328', muted:'#656d76', bd:'#d0d7de', rowbd:'#eeeeee', panel:'#f6f8fa',
-    green:'#166534', greenBg:'#f0fdf4', greenBd:'#4ade80', blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#b6e3ff',
-    amber:'#9a6700', amberBg:'#fff8e1', amberBd:'#eac54f', headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
-  };
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app.
+  var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var C = rbPaleta(dark);
   // En prestamos USD el dolar es la moneda protagonista (misma doctrina que el Recibo de Cobro)
   function money(cop){ return esUSD ? copToUsd(cop, trm) : fmt(cop); }
   // Unidades ENTERAS de la moneda visible (centavos en USD, pesos en COP). Hacen falta para
@@ -295,63 +288,67 @@ export function generateReciboAbono(loan, allPays, opts) {
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + titulo + '</title>',
     '<style>',
     '*{margin:0;padding:0;box-sizing:border-box}',
-    'body{font-family:Arial,Helvetica,sans-serif;padding:22px;max-width:640px;margin:0 auto;color:' + C.text + ';background:' + C.bg + ';line-height:1.3}',
-    '.ab-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:10px;border-bottom:2px solid ' + C.headBd + '}',
-    '.ab-brand{display:flex;align-items:center;gap:10px}',
-    '.ab-wm{font-size:19px;font-weight:700;color:' + C.text + ';line-height:1.1}',
-    '.ab-sub{font-size:10px;color:' + C.muted + ';margin-top:2px}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';padding:22px;max-width:660px;margin:0 auto;color:var(--r-text);background:var(--r-bg);line-height:1.3;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    '.ab-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:11px;border-bottom:1px solid var(--r-bd)}',
+    '.ab-brand{display:flex;align-items:center;gap:11px}',
+    '.ab-logo{width:34px;height:34px;border-radius:11px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.ab-wm{font-size:17px;font-weight:600;letter-spacing:-.02em;color:var(--r-text);line-height:1.15}',
+    '.ab-sub{font-size:11.5px;color:var(--r-muted);margin-top:1px}',
     '.ab-meta{text-align:right}',
-    '.ab-type{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:' + C.muted + '}',
-    '.ab-num{font-size:15px;font-weight:700;color:' + C.text + ';margin-top:3px}',
-    '.ab-date{font-size:11px;color:' + C.muted + ';margin-top:3px}',
-    '.ab-st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:' + C.muted + ';margin:13px 0 5px}',
-    '.ab-name{font-size:16px;font-weight:700;color:' + C.text + '}',
-    '.ab-cc{font-size:12px;color:' + C.muted + ';margin-top:2px}',
-    '.ab-total{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.greenBg + ';border:2px solid ' + C.greenBd + ';border-radius:14px}',
-    '.ab-tl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:' + C.green + '}',
-    '.ab-ta{font-size:32px;font-weight:700;color:' + C.green + ';line-height:1.05;margin:3px 0 0;letter-spacing:-1px}',
-    '.ab-chip{display:inline-block;margin-top:7px;background:' + C.bg + ';border:1px solid ' + C.greenBd + ';color:' + C.green + ';border-radius:20px;padding:3px 13px;font-size:11px;font-weight:700}',
+    '.ab-type{font-size:11.5px;font-weight:500;color:var(--r-muted)}',
+    '.ab-num{font-size:13.5px;font-weight:600;color:var(--r-text);margin-top:2px}',
+    '.ab-date{font-size:11.5px;color:var(--r-muted);margin-top:2px}',
+    '.ab-st{font-size:12.5px;font-weight:600;color:var(--r-text);margin:12px 0 4px}',
+    '.ab-name{font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--r-text)}',
+    '.ab-cc{font-size:12px;color:var(--r-muted);margin-top:2px}',
+    // Lo recibido: la cifra en tinta sobre una tarjeta neutra; el verde va en el rotulo y la fecha.
+    '.ab-total{margin:12px 0 4px;padding:13px 16px;text-align:center;border:1px solid var(--r-bd);border-radius:18px;background:var(--r-card)}',
+    '.ab-tl{font-size:12.5px;font-weight:600;color:var(--r-green)}',
+    '.ab-ta{font-size:32px;font-weight:600;color:var(--r-text);line-height:1.1;margin:2px 0 0;letter-spacing:-.035em}',
+    '.ab-chip{display:inline-block;margin-top:7px;background:var(--r-green-bg);color:var(--r-green);border-radius:99px;padding:2px 11px;font-size:11.5px;font-weight:500}',
     '.ab-imp{display:flex;gap:8px;margin-top:4px}',
-    '.ab-card{flex:1;background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:9px;padding:9px 10px;text-align:center}',
-    '.ab-cl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:' + C.muted + '}',
-    '.ab-old{font-size:11px;color:' + C.muted + ';text-decoration:line-through;margin-top:3px}',
-    '.ab-new{font-size:15px;font-weight:700;color:' + C.green + ';margin-top:1px}',
-    '.ab-delta{font-size:9px;color:' + C.green + ';font-weight:700;margin-top:1px}',
-    '.ab-panel{background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:10px;padding:6px 14px;margin-top:4px}',
-    '.ab-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid ' + C.rowbd + '}',
+    '.ab-card{flex:1;border:1px solid var(--r-bd);border-radius:14px;padding:9px 10px;text-align:center;background:var(--r-card)}',
+    '.ab-cl{font-size:11px;font-weight:500;color:var(--r-text-2)}',
+    '.ab-old{font-size:11px;color:var(--r-muted);text-decoration:line-through;margin-top:3px}',
+    '.ab-new{font-size:15px;font-weight:600;color:var(--r-text);margin-top:1px}',
+    '.ab-delta{font-size:10.5px;color:var(--r-green);font-weight:600;margin-top:1px}',
+    '.ab-panel{border:1px solid var(--r-bd);border-radius:14px;padding:4px 14px;margin-top:4px;background:var(--r-card)}',
+    '.ab-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0;border-bottom:1px solid var(--r-bd)}',
     '.ab-row:last-child{border-bottom:none}',
-    '.ab-lab{font-size:12px;color:' + C.muted + '}',
-    '.ab-val{font-size:13px;font-weight:600;color:' + C.text + ';text-align:right}',
-    '.ab-row-tot{border-top:1px solid ' + C.bd + ';padding-top:7px;margin-top:2px}',
-    '.ab-row-tot .ab-lab{font-weight:700;color:' + C.text + '}',
-    '.ab-row-tot .ab-val{color:' + C.green + ';font-size:15px;font-weight:700}',
+    '.ab-lab{font-size:12px;color:var(--r-muted)}',
+    '.ab-val{font-size:13px;font-weight:500;color:var(--r-text);text-align:right}',
+    '.ab-row-tot{border-top:1px solid var(--r-bd-2);padding-top:7px;margin-top:2px}',
+    '.ab-row-tot .ab-lab{font-weight:600;color:var(--r-text)}',
+    '.ab-row-tot .ab-val{font-size:15px;font-weight:600}',
+    // El cronograma: lineas finas y cabecera en tinta suave, sin rejilla.
     'table.ab-t{width:100%;border-collapse:collapse;margin-top:4px}',
-    '.ab-t th{background:' + C.panel + ';border:1px solid ' + C.bd + ';padding:5px 7px;font-size:9px;font-weight:700;color:' + C.muted + ';text-transform:uppercase;letter-spacing:.3px}',
-    '.ab-t td{border:1px solid ' + C.bd + ';padding:4px 7px;font-size:10.5px}',
+    '.ab-t th{border-bottom:1px solid var(--r-bd-2);padding:3px 7px 5px;font-size:10px;font-weight:500;color:var(--r-muted);text-align:left}',
+    '.ab-t td{border-bottom:1px solid var(--r-bd);padding:4px 7px;font-size:10.5px}',
     '.ab-t td.r{text-align:right}',
     '.ab-t td.c{text-align:center}',
-    '.ab-t tr.tot td{background:' + C.greenBg + ';font-weight:700;color:' + C.green + ';border-color:' + C.greenBd + '}',
-    '.ab-paz{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.greenBg + ';border:2px solid ' + C.greenBd + ';border-radius:14px}',
-    '.ab-paz-t{font-size:20px;font-weight:700;letter-spacing:2px;color:' + C.green + '}',
-    '.ab-paz-s{font-size:12px;color:' + C.text + ';margin-top:5px}' + (esLiquidacion
-      ? '.ab-dsg{background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:10px;padding:2px 14px;margin-top:4px}' +
-        '.ab-d{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid ' + C.rowbd + '}' +
+    '.ab-t tr.tot td{font-weight:600;border-top:1px solid var(--r-bd-2);border-bottom:0;padding-top:6px}',
+    '.ab-paz{margin:12px 0 4px;padding:13px 16px;text-align:center;background:var(--r-green-bg);border:1px solid var(--r-green-bd);border-radius:16px}',
+    '.ab-paz-t{font-size:17px;font-weight:700;letter-spacing:.08em;color:var(--r-green)}',
+    '.ab-paz-s{font-size:12.5px;color:var(--r-text);margin-top:4px}' + (esLiquidacion
+      ? '.ab-dsg{border:1px solid var(--r-bd);border-radius:14px;padding:2px 14px;margin-top:4px;background:var(--r-card)}' +
+        '.ab-d{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--r-bd)}' +
         '.ab-d:last-child{border-bottom:none}' +
-        '.ab-d .t{font-size:12.5px;font-weight:700}' +
-        '.ab-d .s{font-size:10px;color:' + C.muted + ';margin-top:2px}' +
-        '.ab-d .v{font-size:15px;font-weight:700;white-space:nowrap}'
+        '.ab-d .t{font-size:12.5px;font-weight:600}' +
+        '.ab-d .s{font-size:11px;color:var(--r-muted);margin-top:2px}' +
+        '.ab-d .v{font-size:15px;font-weight:600;white-space:nowrap}'
       : ''),
-    '.ab-liq{margin-top:10px;padding:11px 14px;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + ';border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:12px}',
-    '.ab-liq-q{font-size:12.5px;font-weight:700;color:' + C.blue + '}',
-    '.ab-liq-s{font-size:10px;color:' + C.muted + ';margin-top:2px;line-height:1.35}',
-    '.ab-liq-v{font-size:20px;font-weight:700;color:' + C.blue + ';white-space:nowrap}',
-    '.ab-nota{margin-top:9px;padding:8px 12px;background:' + C.amberBg + ';border:1px solid ' + C.amberBd + ';border-radius:9px;font-size:11px;line-height:1.4;color:' + C.amber + '}',
-    '.ab-foot{margin-top:14px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:10px;line-height:1.5}',
-    '.ab-foot b{color:' + C.green + '}',
-    rbImpresion(dark),
+    '.ab-liq{margin-top:10px;padding:11px 14px;background:var(--r-blue-bg);border:1px solid ' + C.blueBd + ';border-radius:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}',
+    '.ab-liq-q{font-size:12.5px;font-weight:600;color:var(--r-blue)}',
+    '.ab-liq-s{font-size:11px;color:var(--r-muted);margin-top:2px;line-height:1.4}',
+    '.ab-liq-v{font-size:20px;font-weight:600;letter-spacing:-.02em;color:var(--r-blue);white-space:nowrap}',
+    '.ab-nota{margin-top:9px;padding:8px 12px;background:var(--r-amber-bg);border:1px solid var(--r-amber-bd);border-radius:12px;font-size:11.5px;line-height:1.45;color:var(--r-amber)}',
+    '.ab-foot{margin-top:14px;padding-top:9px;border-top:1px solid var(--r-bd);text-align:center;color:var(--r-muted);font-size:11px;line-height:1.5}',
+    '.ab-foot b{color:var(--r-text);font-weight:600}',
+    rbImpresionPapel(dark),
     '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="ab-head"><div class="ab-brand">',
-    '<svg width="34" height="34" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
+    '<div class="ab-logo">' + RB_LOGO + '</div>',
     '<div><div class="ab-wm">Cartera</div><div class="ab-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="ab-meta"><div class="ab-type">' + titulo + '</div><div class="ab-num">' + abCode + '</div><div class="ab-date">Emisión: ' + fechaEmision + '</div></div></div>',
     '<div class="ab-st">' + (esLiquidacion ? 'Liquidación pagada por' : 'Abono realizado por') + '</div>',

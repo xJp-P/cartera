@@ -59,23 +59,30 @@ export function rbMixto(t){
 }
 
 // ── Paleta del PAPEL (rediseño v4) ──────────────────────────────────────────
-// La paleta clara de Control TC v7 que usa la app, llevada al papel. Decisiones del PO
-// (2026-11-13): los documentos van SIEMPRE en claro, sigan el tema que siga la app (un PDF
-// negro impreso gasta una hoja de tinta, y el cliente recibia papeles distintos segun el tema
-// de ese dia); el `dark` que reciben se ignora a proposito.
-//   - fondo blanco puro: el perla de la pantalla (#f6f6f3) queda para los bloques suaves;
-//   - tinta en tres niveles (la de la app) y lineas SOLIDAS: las de la app son translucidas
-//     al 7 %, casi no se imprimen y en un PDF abren grupos de transparencia;
-//   - el color solo donde informa: verde = pagado o recibido, ambar = aviso, rojo = vencido,
-//     azul = la proxima cuota. Los tonos suaves son los `*-soft` de la app ya mezclados sobre
-//     blanco (colores solidos, sin transparencias).
+// Las paletas de Control TC v7 que usa la app, llevadas al papel. El documento SIGUE EL TEMA de
+// la app, como siempre (decision del PO, 2026-11-13: probo "siempre en claro" en la galeria y
+// lo revirtio).
+//   CLARO: fondo blanco puro (el perla de la pantalla, #f6f6f3, queda para los bloques suaves);
+//   OSCURO: el negro real de la app de fondo y sus superficies (#0a0a0a las tarjetas, #111 y
+//     #191919 los bloques suaves), la tinta perla y los tonos de estado del tema oscuro.
+//   En los dos: tinta en tres niveles y lineas SOLIDAS (las de la app son translucidas, casi no
+//   se imprimen y en un PDF abren grupos de transparencia); el color solo donde informa: verde =
+//   pagado o recibido, ambar = aviso, rojo = vencido, azul = la proxima cuota. Los tonos suaves
+//   son los `*-soft` de la app ya mezclados sobre el fondo (colores solidos).
 export function rbPaleta(dark){
-  return { bg: '#ffffff', text: '#0a0a0a', text2: '#4b4b47', muted: '#6b6b66', soft: '#f6f6f3', soft2: '#ecece8',
-           bd: '#e6e6e1', bd2: '#d6d6d0',
-           green: '#17804f', greenBg: '#eaf6ea', greenBd: '#c4e5c4', green2: '#17804f',
-           amber: '#a86400', amberBg: '#fef5de', amberBd: '#f5dfa8',
-           red: '#c62f35', redBg: '#fbeded', red2: '#d03b3b',
-           blue: '#2a6fd1', blueBg: '#ecf2fb', track: '#ecece8' };
+  return dark
+    ? { oscuro: true, bg: '#000000', card: '#0a0a0a', text: '#f5f5f4', text2: '#a3a3a0', muted: '#858580', soft: '#111111', soft2: '#1b1b1b',
+        bd: '#1f1f1f', bd2: '#2e2e2e',
+        green: '#3fb37f', greenBg: '#0b1d12', greenBd: '#1c4029', green2: '#3fb37f',
+        amber: '#f2b33d', amberBg: '#1f1709', amberBd: '#4a3712',
+        red: '#f06b6b', redBg: '#240f0f', red2: '#d03b3b',
+        blue: '#5b9bf0', blueBg: '#0c1828', blueBd: '#1f3a5f', track: '#2a2a2a' }
+    : { oscuro: false, bg: '#ffffff', card: '#ffffff', text: '#0a0a0a', text2: '#4b4b47', muted: '#6b6b66', soft: '#f6f6f3', soft2: '#ecece8',
+        bd: '#e6e6e1', bd2: '#d6d6d0',
+        green: '#17804f', greenBg: '#eaf6ea', greenBd: '#c4e5c4', green2: '#17804f',
+        amber: '#a86400', amberBg: '#fef5de', amberBd: '#f5dfa8',
+        red: '#c62f35', redBg: '#fbeded', red2: '#d03b3b',
+        blue: '#2a6fd1', blueBg: '#ecf2fb', blueBd: '#cddcf3', track: '#ecece8' };
 }
 
 // ── EL MARCO Y LA IMPRESION DE TODOS LOS DOCUMENTOS (3.5.0 los recibos; 3.6.0 los 12) ──
@@ -105,8 +112,10 @@ var RB_PCA = '-webkit-print-color-adjust:exact!important;print-color-adjust:exac
 // mismo fondo a sangre en todos. Va AL FINAL de cada <style>, para ganar los empates de
 // especificidad. `cuerpo` agrega declaraciones al body impreso (p. ej. `font-size:11px;`) y
 // `extra`, reglas propias de un documento dentro del @media print.
-export function rbImpresion(dark, cuerpo, extra){
-  var bg = dark ? '#0d1117' : '#ffffff', tx = dark ? '#e6edf3' : '#1f2328';
+// `colores` ({bg, tx}): los del papel v4 (rbImpresionPapel). Sin ellos, los de los documentos aun no
+// migrados, que salen byte a byte como antes.
+export function rbImpresion(dark, cuerpo, extra, colores){
+  var bg = colores ? colores.bg : (dark ? '#0d1117' : '#ffffff'), tx = colores ? colores.tx : (dark ? '#e6edf3' : '#1f2328');
   return RB_CSS_MARCO + '@media print{html,body{' + RB_PCA + '}*{' + RB_PCA + '}@page{size:letter;margin:0}' +
     'html{background:' + bg + '!important}body{max-width:none;padding:0 1.3cm;' + (cuerpo || '') +
     'background:' + bg + '!important;color:' + tx + '!important;min-height:100vh}' +
@@ -118,12 +127,26 @@ export function rbImpresion(dark, cuerpo, extra){
 // solo se usan esos cuatro. Fuera de Electron cae a la letra del sistema.
 // LAS CIFRAS siguen siendo texto corrido ("$ 1.234.567" en un solo nodo): partir la moneda en su
 // propio <span>, como hace V4Dinero en la app, rompe la lectura de importes de las pruebas.
+// ── Las piezas comunes del papel v4 ─────────────────────────────────────────
+// Las usan rbCss (los recibos de 3.5.0) y cada documento que se migra con su propia hoja de
+// estilo (factura, recibo de una cuota, recibo de abono, propuesta...): asi todos comparten la
+// misma paleta, la misma letra, el mismo logo y el mismo bloque de impresion.
+export var RB_LETRA = "'Inter','Segoe UI',-apple-system,Roboto,Arial,sans-serif";
+export function rbTokens(C){
+  return ':root{--r-bg:' + C.bg + ';--r-card:' + C.card + ';--r-text:' + C.text + ';--r-text-2:' + C.text2 + ';--r-muted:' + C.muted + ';--r-soft:' + C.soft + ';--r-soft-2:' + C.soft2 +
+    ';--r-bd:' + C.bd + ';--r-bd-2:' + C.bd2 +
+    ';--r-green:' + C.green + ';--r-green-bg:' + C.greenBg + ';--r-green-bd:' + C.greenBd + ';--r-green-2:' + C.green2 + ';--r-amber:' + C.amber + ';--r-amber-bg:' + C.amberBg +
+    ';--r-amber-bd:' + C.amberBd + ';--r-red:' + C.red + ';--r-red-bg:' + C.redBg + ';--r-red-2:' + C.red2 + ';--r-blue:' + C.blue + ';--r-blue-bg:' + C.blueBg + ';--r-track:' + C.track + '}';
+}
+// El mismo bloque de impresion de siempre (el marco, la carta, el fondo a sangre), con el fondo y el
+// texto impresos del papel v4 del tema: sin el #0d1117 ni el #1f2328 de los documentos viejos.
+export function rbImpresionPapel(dark){
+  return rbImpresion(!!dark, '', '', { bg: 'var(--r-bg)', tx: 'var(--r-text)' });
+}
+
 export function rbCss(C){
   return [
-    ':root{--r-bg:' + C.bg + ';--r-text:' + C.text + ';--r-text-2:' + C.text2 + ';--r-muted:' + C.muted + ';--r-soft:' + C.soft + ';--r-soft-2:' + C.soft2 +
-      ';--r-bd:' + C.bd + ';--r-bd-2:' + C.bd2 +
-      ';--r-green:' + C.green + ';--r-green-bg:' + C.greenBg + ';--r-green-bd:' + C.greenBd + ';--r-green-2:' + C.green2 + ';--r-amber:' + C.amber + ';--r-amber-bg:' + C.amberBg +
-      ';--r-amber-bd:' + C.amberBd + ';--r-red:' + C.red + ';--r-red-bg:' + C.redBg + ';--r-red-2:' + C.red2 + ';--r-blue:' + C.blue + ';--r-blue-bg:' + C.blueBg + ';--r-track:' + C.track + '}',
+    rbTokens(C),
     '*{margin:0;padding:0;box-sizing:border-box}',
     'html{background:var(--r-bg)}',
     "body{max-width:816px;margin:0 auto;padding:1.3cm;font-family:'Inter','Segoe UI',-apple-system,Roboto,Arial,sans-serif;font-size:13px;font-variant-numeric:tabular-nums;" +
@@ -139,7 +162,7 @@ export function rbCss(C){
     '.r-doc b{display:block;font-size:13.5px;font-weight:600;color:var(--r-text);letter-spacing:-.01em}',
     // La cifra protagonista: en tinta, sobre una tarjeta neutra. El color lo pone el SELLO (y el
     // rotulo): verde = recibido o al dia, ambar = hay algo vencido.
-    '.r-hero{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:12px;padding:11px 22px;border-radius:18px;border:1px solid var(--r-bd);background:var(--r-bg)}',
+    '.r-hero{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:12px;padding:11px 22px;border-radius:18px;border:1px solid var(--r-bd);background:var(--r-card)}',
     '.r-hero-l{min-width:0}',
     '.r-hero-l small{font-size:13px;color:var(--r-green);font-weight:600}',
     '.r-monto{font-size:40px;font-weight:600;letter-spacing:-.035em;color:var(--r-text);line-height:1.05;margin:1px 0 5px}',
@@ -156,7 +179,7 @@ export function rbCss(C){
     '.r-dos{display:grid;grid-template-columns:1fr 1fr;gap:10px}',
     '.r-tres{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}',
     '.r-uno{display:grid;grid-template-columns:1fr;gap:10px}',
-    '.r-tar{border-radius:14px;padding:9px 14px;border:1px solid var(--r-bd);position:relative}',
+    '.r-tar{border-radius:14px;padding:9px 14px;border:1px solid var(--r-bd);background:var(--r-card);position:relative}',
     '.r-tar.ambar{background:var(--r-amber-bg);border-color:var(--r-amber-bd)}',
     '.r-tar-l{font-size:12.5px;font-weight:500;color:var(--r-text-2)}',
     '.r-tar.ambar .r-tar-l{color:var(--r-amber)}',
@@ -194,9 +217,7 @@ export function rbCss(C){
     '.r-pie{margin-top:13px;padding-top:11px;break-inside:avoid;border-top:1px solid var(--r-bd);display:flex;justify-content:space-between;gap:16px;font-size:11.5px;line-height:1.42;color:var(--r-muted)}',
     '.r-pie b{color:var(--r-text);font-size:13px;font-weight:600;display:block;margin-bottom:2px}',
     '.r-pie-d{text-align:right;white-space:nowrap}',
-    // Siempre en claro (decision del PO). El bloque comun de impresion fija el texto del cuerpo en
-    // el gris de los documentos viejos: se devuelve a la tinta de la app.
-    rbImpresion(false) + '@media print{body{color:var(--r-text)!important}}'
+    rbImpresionPapel(C.oscuro)
   ];
 }
 
@@ -207,7 +228,7 @@ export var RB_ICONO_ORDEN = '<svg width="18" height="18" viewBox="0 0 24 24" fil
 
 // El logo de la app: el maletin (`briefcase` de iconos.js) en un cuadro inverso. Decision del PO
 // (2026-11-13): reemplaza a la "C" de los documentos viejos, y es el UNICO texto que cambia.
-var RB_LOGO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+export var RB_LOGO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>';
 
 export function rbCabecera(tipo, codigo, emision){
