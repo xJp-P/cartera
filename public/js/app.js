@@ -65,6 +65,7 @@ import { DebtPayModal } from './modales/DebtPayModal.js';
 import { DeleteDebtModal } from './modales/DeleteDebtModal.js';
 import { ConfirmUndoModal } from './modales/ConfirmUndoModal.js';
 import { ConfirmModal } from './modales/ConfirmModal.js';
+import { V4Arranque, NovedadesModal, NOVEDADES_RETARDO_MS } from './componentes/arranque.js';
 import { esAbono, esCuotaRegular } from './core/ids.js';
 import { opBuscarGlobal } from './core/operacion.js';
 
@@ -161,8 +162,15 @@ function App(){
     var next=theme==='dark'?'light':'dark';
     setTheme(next);localStorage.setItem('theme',next);
     document.documentElement.setAttribute('data-theme',next);
+    guardarTemaArranque(next);
   }
-  useEffect(function(){document.documentElement.setAttribute('data-theme',theme);},[]);
+  // Rediseño v4 (arranque): la ventana de arranque se dibuja antes de que exista esta pagina, asi que no
+  // puede leer el localStorage. Electron guarda el tema en userData/apariencia.json cada vez que cambia
+  // (y una vez al abrir, por si el archivo aun no existe); sin Electron no hace nada.
+  function guardarTemaArranque(t){
+    if(typeof window.electronAPI!=='undefined'&&window.electronAPI.guardarTema) window.electronAPI.guardarTema(t);
+  }
+  useEffect(function(){document.documentElement.setAttribute('data-theme',theme);guardarTemaArranque(theme);},[]);
   useEffect(function(){
     if(typeof window.electronAPI!=='undefined'&&window.electronAPI.getPlatform){
       window.electronAPI.getPlatform().then(function(p){setPlatform(p);});
@@ -175,6 +183,9 @@ function App(){
   },[]);
   // ── Changelog post-actualización ──────────────────────────────────────────
   var s23=useState(null); var changelogDlg=s23[0]; var setChangelogDlg=s23[1];
+  // Rediseño v4: las novedades no se abren apenas se sabe la version (todavia cargando), sino
+  // NOVEDADES_RETARDO_MS despues de que la app entra, para no cortar la entrada del Resumen.
+  var s23b=useState(null); var novedadesPend=s23b[0]; var setNovedadesPend=s23b[1];
   useEffect(function(){
     if(typeof window.electronAPI==='undefined'||!window.electronAPI.getAppVersion) return;
     window.electronAPI.getAppVersion().then(function(ver){
@@ -186,11 +197,16 @@ function App(){
       // difiera de la actual (incluido null) y exista changelog. El setItem de abajo
       // garantiza que solo se muestre una vez por version.
       if(lastSeen !== ver && CHANGELOGS[ver]){
-        setChangelogDlg({version:ver, items:CHANGELOGS[ver]});
+        setNovedadesPend({version:ver, items:CHANGELOGS[ver]});
       }
       localStorage.setItem('lastSeenVersion', ver);
     });
   },[]);
+  useEffect(function(){
+    if(loading||!novedadesPend) return;
+    var t=setTimeout(function(){ setChangelogDlg(novedadesPend); setNovedadesPend(null); },NOVEDADES_RETARDO_MS);
+    return function(){ clearTimeout(t); };
+  },[loading,novedadesPend]);
 
   var toastTimer=React.useRef(null);
   function showToast(msg,type){
@@ -856,9 +872,8 @@ function App(){
     onNewLoan:function(d){setLoanModal({_prefill:{nombre:d.nombre,cedula:d.cedula,telefono:d.telefono}});}
   };
 
-  if(loading) return h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--bg)',gap:16}},
-    h('div',{className:'spinner'}),
-    h('p',{style:{color:'var(--text3)',fontSize:13}},'Cargando...'));
+  // Mientras llegan los datos: la misma marca y la misma barra de la ventana de arranque (rediseño v4).
+  if(loading) return h(V4Arranque);
 
   var navSections=[
     {key:'prestamos',label:'Préstamos',items:[
@@ -1026,26 +1041,8 @@ function App(){
     confirmDlg&&h(ConfirmModal,Object.assign({},confirmDlg,{onCancel:function(){setConfirmDlg(null);}})),
     // "La Bestia" Fase 2 — confirmacion de deshacer, con los candados C (>24h) y D (recibo).
     undoDlg&&h(ConfirmUndoModal,{entry:undoDlg,onConfirm:confirmarUndo,onClose:function(){setUndoDlg(null);}}),
-    // v1.9.x — Changelog modal con max-height + scroll interno. Header (titulo) y
-    // footer (boton Entendido) quedan fijos; solo la lista de items hace scroll.
-    changelogDlg&&h('div',{className:'modal-overlay',onClick:function(){setChangelogDlg(null);}},
-      h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:380,maxHeight:'min(620px,80vh)',display:'flex',flexDirection:'column'}},
-        // Header fijo (handle + icono + titulo)
-        h('div',{style:{flexShrink:0}},
-          h('div',{className:'modal-handle'}),
-          h('div',{style:{textAlign:'center',marginBottom:14}},
-            h('div',{style:{marginBottom:6}},h(Ico,{name:'sparkle',size:28,color:'var(--green)'})),
-            h('div',{style:{fontWeight:700,fontSize:17,color:'var(--text)'}},'Novedades de la versión '+changelogDlg.version),
-            h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:4,fontStyle:'italic'}},changelogDlg.items.length+' '+(changelogDlg.items.length===1?'cambio':'cambios')))),
-        // Cuerpo scrolleable (la lista de items)
-        h('div',{style:{flex:'1 1 auto',minHeight:0,overflowY:'auto',marginBottom:14,paddingRight:6,borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)',paddingTop:6,paddingBottom:6}},
-          changelogDlg.items.map(function(item,i){
-            return h('div',{key:i,style:{display:'flex',alignItems:'flex-start',gap:8,padding:'7px 0',fontSize:13,color:'var(--text2)',lineHeight:1.45}},
-              h('div',{style:{flexShrink:0,marginTop:2}},h(Ico,{name:'check',size:14,color:'var(--green)',sw:2.4})),
-              h('span',null,item));
-          })),
-        // Footer fijo (boton)
-        h('button',{onClick:function(){setChangelogDlg(null);},style:{flexShrink:0,width:'100%',padding:'10px 0',background:'var(--green2)',color:'#fff',border:'none',borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}},'Entendido'))),
+    // Rediseño v4: las novedades de la version (componentes/arranque.js), medio segundo despues de entrar.
+    changelogDlg&&h(NovedadesModal,{version:changelogDlg.version,items:changelogDlg.items,onClose:function(){setChangelogDlg(null);}}),
     errorDlg&&h('div',{className:'modal-overlay',onClick:function(){setErrorDlg(null);}},
       h('div',{className:'modal-panel',onClick:function(e){e.stopPropagation();},style:{maxWidth:400}},
         h('div',{className:'modal-handle'}),

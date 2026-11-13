@@ -413,7 +413,9 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   const mcss = crudo.replace(/\/\*[\s\S]*?\*\//g, '');
   const mc = mcss.replace(/\s+/g, ' ');
   const scss = leer('public/css/styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
-  R.check('E1 index.html carga modales.css al final, despues de dev.css', /href="\/css\/dev\.css">\s*<link[^>]*href="\/css\/modales\.css">\s*<\/head>/.test(leer('public/index.html')));
+  // Detras solo va arranque.css (las novedades usan la ventana de los modales; la vigila tests/arranque.js).
+  R.check('E1 index.html carga modales.css despues de dev.css, y detras solo la hoja del arranque',
+    /href="\/css\/dev\.css">\s*<link[^>]*href="\/css\/modales\.css">\s*<link[^>]*href="\/css\/arranque\.css">\s*<\/head>/.test(leer('public/index.html')));
   R.check('E2 ninguna regla mira el atributo `style` (eso era solo del prototipo)', !/\[style/.test(mcss));
   R.check('E2 sin `!important`: nada pelea contra estilos en linea', mcss.indexOf('!important') === -1);
   const fuentesV4m = ['public/js/componentes/base.js', 'public/js/componentes/CheckInteresMes.js'].concat(archivos.map(f => 'public/js/modales/' + f + '.js')).map(leer).join('\n');
@@ -438,14 +440,14 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   R.check('E4 la pastilla del selector y el monto a cobrar neutro',
     mc.indexOf('.v4m-seg { display: flex; gap: 6px; padding: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; }') !== -1 &&
     mc.indexOf('.v4m-total { background: var(--surface-2); border: 1px solid var(--line-strong); }') !== -1);
-  R.check('E4 "reducir movimiento" del sistema apaga la entrada', /@media \(prefers-reduced-motion: reduce\) \{ html:not\(\.v4-forzar\) \.v4m-overlay, html:not\(\.v4-forzar\) \.v4m-sheet, html:not\(\.v4-forzar\) \.modal-overlay, html:not\(\.v4-forzar\) \.modal-panel \{ animation: none; \} \}/.test(mc));
+  R.check('E4 "reducir movimiento" del sistema apaga la entrada', /@media \(prefers-reduced-motion: reduce\) \{ \.v4m-overlay, \.v4m-sheet, \.modal-overlay, \.modal-panel \{ animation: none; \} \}/.test(mc));
   R.check('E5 styles.css ya no trae la ventana vieja (`.modal-sheet`, `slideUp`, `.modal-overlay`, `.modal-panel`, `.modal-handle`)',
     !/\.modal-(sheet|overlay|panel|handle)\b|slideUp/.test(scss));
   R.check('E5 los dialogos de App (aviso al iniciar y novedades) siguen teniendo su ventana: vive en modales.css',
     /\.modal-overlay \{/.test(mc.replace(/\.v4m-overlay, \.modal-overlay/g, '.modal-overlay')) && mc.indexOf('.modal-panel { padding: 24px 26px; }') !== -1 &&
     mc.indexOf('.modal-handle {') !== -1 && /className:'modal-overlay'/.test(app) && /className:'modal-handle'/.test(app));
   R.check('E5 la animacion fadeIn sigue en styles.css (la usan otras vistas)', /@keyframes fadeIn/.test(scss));
-  R.check('E6 nada del prototipo en produccion', ['PROTOTIPO', 'proto-chip', 'v4mVariante', 'v4cVariante'].every(s => crudo.indexOf(s) === -1 && fuentesV4m.indexOf(s) === -1));
+  R.check('E6 nada del prototipo en produccion', ['PROTOTIPO', 'proto-chip', 'v4-forzar', 'v4mVariante', 'v4cVariante'].every(s => crudo.indexOf(s) === -1 && fuentesV4m.indexOf(s) === -1));
 
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

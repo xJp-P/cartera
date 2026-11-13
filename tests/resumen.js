@@ -828,8 +828,10 @@ function metricsComoApp(X, loans, pays) {
     !!pad && !!alto && panelCss.indexOf('.v4p.op-lado:not(.superpuesto){top:-' + pad + 'px;max-height:calc(100vh-' + alto + 'px);') !== -1 &&
     base.indexOf('.op-lado') === -1, { pad, alto });
   R.check('E7 App le pasa a Rendimiento la navegacion a Cartera', /h\(PortfolioView,\{[^}]*onNameClick:openDebtorByName/.test(app));
-  R.check('E8 la ventana principal nace con el fondo del tema oscuro (#000000), sin el azul de antes',
-    /async function createWindow\(\)\s*\{[\s\S]{0,300}backgroundColor:\s*'#000000'/.test(leerRepo('desktop/main.js')));
+  // Desde el arranque v4 el fondo sale de la paleta del tema guardado (desktop/splash.js): #000000 en oscuro.
+  R.check('E8 la ventana principal nace con el fondo del tema (#000000 en oscuro), sin el azul de antes',
+    /async function createWindow\(\)\s*\{[\s\S]{0,300}backgroundColor:\s*PALETAS\[leerTemaArranque\(\)\]\.bg/.test(leerRepo('desktop/main.js')) &&
+    require(require('path').join(__dirname, '..', 'desktop', 'splash.js')).PALETAS.dark.bg === '#000000');
   R.check('E9 nada del prototipo en produccion (ni ?anim=1 ni el chip de prototipo)',
     ['__V4_FORZAR_MOV', 'v4-forzar', 'proto-chip', 'rendimiento-actual', 'resumen-actual'].every(s => ['public/js/vistas/DashView.js', 'public/js/vistas/PortfolioView.js',
       'public/css/base.css', 'public/css/resumen.css', 'public/css/rendimiento.css'].every(f => leerRepo(f).indexOf(s) === -1)));

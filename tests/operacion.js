@@ -1078,17 +1078,17 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   // ── K — HISTORIAL (3.7.0) ────────────────────────────────────────────────
   // Rediseno pedido por el PO: el historial completo, agrupado por dia, con busqueda (sin tildes) y
   // filtros por periodo y tipo. El candado LIFO del boton Deshacer no cambia.
-  R.seccion('K — Historial: dia por dia, busqueda, periodo, tipo y el candado de Deshacer (3.7.0)');
+  R.seccion('K — Historial: dia por dia, busqueda, periodo, tipo y el candado de Deshacer (3.7.0, rediseño v4)');
   R.check('K0 ANTI-VACIO: el historial completo trae mas que las 100 de siempre, y las incluye',
     historial.length > 100 && historial100.length === 100 && historial100.every((r, i) => r.id === historial[i].id), historial.length);
   const diaK = it => String(it.fecha).slice(0, 10);
   const navK = [];
   const propsK = { actLog: historial, undoLog: journal, loans, onUndo: () => {}, onRefresh: () => {}, onNameClick: n => navK.push(n) };
-  // Clase exacta: `\b` corta en el guion, y `hs-dia` tambien encontraria a `hs-dia-n`.
+  // Clase exacta: `\b` corta en el guion. Rediseño v4: las clases de la vista llevan el prefijo `hsv-`.
   const conClaseK = c => n => ((n.props && typeof n.props.className === 'string') ? n.props.className.split(/\s+/) : []).indexOf(c) !== -1;
-  const filasK = arbol => nodos(arbol, conClaseK('hs-fila'));
-  const diasK = arbol => nodos(arbol, conClaseK('hs-dia')).map(d => textos(d)[0]);
-  // Estado sembrado por posicion: q, periodo, desde, hasta, grupo, limite.
+  const filasK = arbol => nodos(arbol, conClaseK('hsv-fila'));
+  const diasK = arbol => nodos(arbol, conClaseK('hsv-dia')).map(d => textos(d)[0]);
+  // Estado sembrado por posicion: q, periodo, desde, hasta, grupo, limite (y la animacion al final).
   const hist = (estado) => montar(X.HistorialView, propsK, estado || []);
   let hk = null, errK = null;
   try { hk = hist(); } catch (e) { errK = e; }
@@ -1096,7 +1096,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   if (hk) {
     const f0 = filasK(hk.arbol);
     R.eq('K2 muestra de a 120 acciones, y avisa cuantas quedan', f0.length, Math.min(120, historial.length));
-    R.check('K2 "Ver más" con las restantes', hk.todo.indexOf('Ver más (' + (historial.length - 120) + ' restantes)') !== -1);
+    R.check('K2 "Ver más" con las restantes', hk.todo.indexOf('Ver más · ' + (historial.length - 120) + ' restantes') !== -1);
     const diasEsperados = []; historial.slice(0, 120).forEach(it => { if (diasEsperados.indexOf(diaK(it)) === -1) diasEsperados.push(diaK(it)); });
     R.eq('K3 agrupa por dia, del mas reciente al mas viejo (un encabezado por dia)', diasK(hk.arbol), diasEsperados.map(d => X.hsDia(d, HOY)));
     R.check('K3 los rotulos del dia: Hoy, Ayer, el dia de la semana y el año si no es el actual',
@@ -1143,7 +1143,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const malasT = casosT.filter(g => filasK(hist([undefined, undefined, undefined, undefined, g, 5000]).arbol).length !== historial.filter(it => grupoDe(it) === g).length)
       .map(g => g + ': ' + historial.filter(it => grupoDe(it) === g).length);
     R.check('K6 el filtro por tipo (cobros, prestamos, mis deudas, deshechos) muestra solo ese tipo', malasT.length === 0, malasT);
-    const chips = nodos(hk.arbol, n => n.tag === 'button' && /\bhs-filtro\b/.test(n.props.className || '')).map(b => textos(b).join(''));
+    const chips = nodos(hk.arbol, n => n.tag === 'button' && conClaseK('ctv-filtro')(n)).map(b => textos(b).join(''));
     R.check('K6 cada tipo con su conteo', casosT.every((g, i) => chips.indexOf(['Cobros', 'Préstamos', 'Mis deudas', 'Deshechos'][i] + historial.filter(it => grupoDe(it) === g).length) !== -1) &&
       chips.indexOf('Todo' + historial.length) !== -1, chips);
     // "Ver en Cartera" cuando la accion nombra a un deudor (no en Mis Deudas).
@@ -1177,10 +1177,49 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('K8 el boton activo pide deshacer esa misma accion', deshechos.join() === 'u3', deshechos);
   R.check('K8 la bloqueada explica cual deshacer primero', textos(fl[1]).join(' ').indexOf('Primero debes deshacer la operación más reciente de este préstamo: "Abono de $50.000"') !== -1);
   R.check('K8 la ya deshecha sale con "Revertida" y sin boton', /\brevertida\b/.test(fl[2].props.className) && textos(fl[2]).join(' ').indexOf('Revertida') !== -1 && !btnD(fl[2]));
+  R.check('K8 Deshacer: morado (`hsv-deshacer on`) cuando se puede, apagado y sin accion cuando el candado lo bloquea',
+    btnD(fl[0]).props.className === 'hsv-deshacer on' && btnD(fl[1]).props.className === 'hsv-deshacer' && btnD(fl[1]).props.onClick === null);
+  R.check('K8 cada tipo con su etiqueta suave (y "Revertida" en morado)', nodos(fl[0], n => n.props && n.props.className === 'v4-tag good').length === 1 &&
+    nodos(fl[2], n => n.props && n.props.className === 'v4-tag purple' && textos(n).join('') === 'Revertida').length === 1);
+
+  // ── El encabezado v4: cuantas acciones, la actividad de 30 dias y el dia elegido con un clic ──
+  if (hk) {
+    const enc = nodos(hk.arbol, conClaseK('hsv-cifra-v'))[0];
+    R.check('K10 el encabezado dice cuantas acciones hay en lo filtrado', !!enc && textos(enc).join('') === historial.length.toLocaleString('es-CO'));
+    const barras = nodos(hk.arbol, n => n.tag === 'button' && n.props && /(^|\s)b(\s|$)/.test(n.props.className || ''));
+    const conteo30 = d => historial.filter(it => diaK(it) === d).length;
+    const malasBar = barras.filter((b, i) => b.props['aria-label'] !== X.hsDia(X.addDays(HOY, i - 29), HOY) + ': ' + conteo30(X.addDays(HOY, i - 29)));
+    R.check('K10 la actividad: 30 barras, de hace 29 dias a hoy, cada una con sus acciones', barras.length === 30 && malasBar.length === 0, malasBar.slice(0, 3).map(b => b.props['aria-label']));
+    const iUna = barras.findIndex(b => !/vacia/.test(b.props.className));
+    const vk = montar(X.HistorialView, propsK, []);
+    const bk = nodos(vk.arbol, n => n.tag === 'button' && n.props && /(^|\s)b(\s|$)/.test(n.props.className || ''))[iUna];
+    bk.props.onClick();
+    const dElegido = X.addDays(HOY, iUna - 29);
+    const puestos = {}; vk.llamadas.forEach(l => { puestos[l.k] = l.nuevo; });
+    R.check('K10 un clic en una barra muestra solo ese dia (rango desde = hasta = ese dia)', iUna !== -1 && puestos[1] === 'rango' && puestos[2] === dElegido && puestos[3] === dElegido, puestos);
+    R.check('K10 las barras sin acciones no se pueden pulsar', barras.filter(b => /vacia/.test(b.props.className)).every(b => b.props.onClick === null && b.props.tabIndex === -1));
+  }
+  const hcss = fs.readFileSync(path.join(REPO, 'public', 'css', 'historial.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const fHist = fs.readFileSync(path.join(REPO, 'public', 'js', 'vistas', 'HistorialView.js'), 'utf8');
+  // `hsv-cifra` solo nombra el bloque de la cifra (sin estilo propio, como en el prototipo aprobado).
+  const usadasH = Array.from(new Set(fHist.match(/hsv-[a-z0-9-]+/g) || [])).filter(c => c !== 'hsv-cifra');
+  const sinReglaH = usadasH.filter(c => !new RegExp('\\.' + c + '(?![A-Za-z0-9_-])').test(hcss));
+  R.check('K11 cada clase hsv- que pinta la vista tiene su regla en historial.css (' + usadasH.length + ' clases)', usadasH.length > 25 && sinReglaH.length === 0, sinReglaH);
+  R.check('K11 lo propio vive bajo `.v4h`, con las etiquetas que el Historial agrega (rojo, morado, neutro) acotadas a la vista',
+    /\.v4h \{ display: flex; flex-direction: column;/.test(hcss) && ['crit', 'purple', 'neutral'].every(t => new RegExp('\\.v4h \\.v4-tag\\.' + t + ' \\{').test(hcss)) &&
+    !/(^|\})\s*\.v4-tag\./.test(hcss));
+  R.check('K11 Deshacer en morado cuando se puede', /\.hsv-deshacer\.on \{[^}]*color: var\(--purple\); border-color: var\(--purple-bd\); background: var\(--purple-bg\);/.test(hcss));
+  const idxK = fs.readFileSync(path.join(REPO, 'public', 'index.html'), 'utf8');
+  R.check('K12 index.html carga historial.css despues de rendimiento.css (reutiliza las hojas anteriores)',
+    /href="\/css\/rendimiento\.css">\s*<link[^>]*href="\/css\/historial\.css">/.test(idxK));
+  R.check('K12 styles.css ya no trae nada del Historial viejo (.hs, .hs-)', !/\.hs[{-]/.test(fs.readFileSync(path.join(REPO, 'public', 'css', 'styles.css'), 'utf8')));
+  R.check('K12 nada del prototipo en produccion', ['v4-forzar', 'historial-actual', 'PROTOTIPO'].every(s => hcss.indexOf(s) === -1 && fHist.indexOf(s) === -1));
   // App le pasa el historial completo y la navegacion.
   const appK = fs.readFileSync(path.join(REPO, 'public', 'js', 'app.js'), 'utf8');
   R.check('K9 App pide el historial completo y le pasa a la vista los prestamos y la navegacion a Cartera',
     appK.indexOf("fetch('/api/activity?todo=1')") !== -1 && /h\(HistorialView,\{[^}]*loans:loans,onNameClick:openDebtorByName/.test(appK));
+  R.check('K9 Deshacer abre la confirmacion de App (ConfirmUndoModal, con sus candados) con esa operacion',
+    /h\(HistorialView,\{[^}]*onUndo:function\(entry\)\{setUndoDlg\(entry\);\}/.test(appK) && /undoDlg&&h\(ConfirmUndoModal,\{entry:undoDlg,onConfirm:confirmarUndo,/.test(appK));
 
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

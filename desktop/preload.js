@@ -17,5 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateStatus:  (cb) => {
     ipcRenderer.on('update-status', (_e, data) => cb(data));
     return () => ipcRenderer.removeAllListeners('update-status');
-  }
+  },
+  // Rediseño v4: el tema elegido, para que la ventana de arranque se dibuje igual la proxima vez.
+  guardarTema:     (tema) => ipcRenderer.send('tema-cambiado', tema)
 });

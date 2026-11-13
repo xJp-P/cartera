@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
@@ -6,6 +6,8 @@ const http  = require('http');
 const https = require('https');
 const os    = require('os');
 const { execSync } = require('child_process');
+// Rediseño v4: la ventana de arranque (su HTML y lo que se le cambia) vive en desktop/splash.js.
+const { buildSplashHtml, PALETAS, jsMensaje, jsCuenta, jsVista, jsTextos, TEXTOS } = require('./splash');
 
 const PORT = 3420;
 
@@ -23,6 +25,25 @@ function loadPrefs() {
   catch(_) { return {}; }
 }
 function savePrefs(p) { fs.writeFileSync(PREFS_FILE, JSON.stringify(p, null, 2)); }
+
+// ── Tema de la ventana de arranque (rediseño v4, como en Control TC) ──────────
+// El splash se dibuja antes de que exista la app, asi que no puede leer el localStorage de la ventana.
+// La app escribe el tema en userData/apariencia.json cada vez que cambia (IPC 'tema-cambiado'). Sin
+// archivo, o si no se puede leer: oscuro, el mismo valor por defecto de la app. No toca la base de datos.
+function aparienciaPath() { return path.join(app.getPath('userData'), 'apariencia.json'); }
+function leerTemaArranque() {
+  try { return JSON.parse(fs.readFileSync(aparienciaPath(), 'utf8')).tema === 'light' ? 'light' : 'dark'; }
+  catch (_) { return 'dark'; }
+}
+function guardarTemaArranque(tema) {
+  const t = tema === 'light' ? 'light' : 'dark';
+  if (leerTemaArranque() === t && fs.existsSync(aparienciaPath())) return;
+  try {
+    fs.mkdirSync(path.dirname(aparienciaPath()), { recursive: true });
+    fs.writeFileSync(aparienciaPath(), JSON.stringify({ tema: t }), 'utf8');
+  } catch (e) { console.log('[Arranque] no se pudo guardar el tema:', e.message); }
+}
+ipcMain.on('tema-cambiado', (_e, tema) => guardarTemaArranque(tema));
 
 // ── Ruta de la BD ─────────────────────────────────────────────────────────
 const prefs = loadPrefs();
@@ -77,12 +98,17 @@ function waitForServer(url, retries = 30, delay = 300) {
 let expressApp = null;
 let server = null;
 let serverError = null;
+// Rediseño v4: si el puerto no se puede abrir (EADDRINUSE: otra copia de la app abierta), el evento
+// 'error' del servidor ya no queda sin manejar (Electron lo mostraba en un cuadro nativo): se guarda
+// aqui y el arranque lo muestra en la ventana de arranque, con el detalle para copiar.
+let errorPuerto = null;
 
 function startBackend() {
   if (server) return; // ya iniciado, idempotente
   try {
     expressApp = require('../backend/server')(DB_PATH);
     server = http.createServer(expressApp);
+    server.on('error', (err) => { err.fase = 'puerto'; errorPuerto = err; });
     server.listen(PORT, '127.0.0.1');
   } catch(err) {
     serverError = 'Error al iniciar el servidor:\n' + err.message;
@@ -152,7 +178,7 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 1000, minHeight: 700,
     title: 'Cartera',
-    backgroundColor: '#000000',   // rediseño v4: el fondo del tema oscuro (--page), sin destello de otro color
+    backgroundColor: PALETAS[leerTemaArranque()].bg,   // rediseño v4: el fondo del tema (--page), sin destello de otro color
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -165,19 +191,58 @@ async function createWindow() {
   win.setMenu(null);
 
   try {
+    // Un tick para que un error del puerto (EADDRINUSE) llegue antes de preguntarle al servidor: si no,
+    // waitForServer podria contestarse con la OTRA copia de la app que ocupa el puerto.
+    await new Promise((r) => setImmediate(r));
+    if (errorPuerto) throw errorPuerto;
     await waitForServer(`http://127.0.0.1:${PORT}/`);
+    if (errorPuerto) throw errorPuerto;
     await win.loadURL(`http://127.0.0.1:${PORT}`);
   } catch(err) {
-    // Si el servidor no arrancó, mostrar error nativo
-    dialog.showErrorBox('Error de arranque', 'El servidor interno no pudo iniciar.\n\n' + err.message + '\n\nLa aplicación se cerrará.');
+    // Rediseño v4: ya no hay cuadro nativo "Error de arranque". La ventana de arranque muestra la vista
+    // "La app no pudo iniciar", con el detalle para copiar, y la app se cierra al elegir "Cerrar".
+    if (!win.isDestroyed()) win.destroy();
+    await showFatalInSplash(err);
     app.quit();
     return null;
   }
 
-  win.maximize();
-  win.show();
+  // Se muestra con el fundido del orquestador (abrirVentanaPrincipal), cuando la ventana de arranque
+  // ya se fue.
   win.on('closed', () => { if (server) server.close(); app.quit(); });
   return win;
+}
+
+// Rediseño v4: fundido de una ventana (opacidad nativa; en Windows y macOS) en `ms` milisegundos.
+function fundir(win, de, a, ms) {
+  return new Promise((resolve) => {
+    if (!win || win.isDestroyed()) return resolve();
+    const pasos = Math.max(1, Math.round(ms / 16));
+    let i = 0;
+    try { win.setOpacity(de); } catch (_) {}
+    const t = setInterval(() => {
+      i++;
+      if (!win || win.isDestroyed()) { clearInterval(t); return resolve(); }
+      const x = i / pasos, k = 1 - Math.pow(1 - x, 3);   // sale rapido y llega suave
+      try { win.setOpacity(de + (a - de) * k); } catch (_) {}
+      if (i >= pasos) { clearInterval(t); resolve(); }
+    }, 16);
+  });
+}
+
+// El paso del arranque a la app: la ventana de arranque se desvanece (180 ms) y la principal aparece
+// maximizada con un fundido (200 ms); adentro, el marco de la app hace su propia entrada (arranque.css).
+async function abrirVentanaPrincipal(win) {
+  if (splashAlive()) {
+    await fundir(splashWin, 1, 0, 180);
+    if (splashAlive()) splashWin.close();
+  }
+  splashWin = null;
+  if (!win || win.isDestroyed()) return;
+  try { win.setOpacity(0); } catch (_) {}
+  win.maximize();
+  win.show();
+  await fundir(win, 0, 1, 200);
 }
 
 // ── Auto-updater ────────────────────────────────────────────────────────
@@ -198,9 +263,9 @@ function sendUpdateStatus(status, info) {
   // v1.9.2: si el splash esta activo y la ventana principal aun no — rutear al splash
   if (splashWin && !splashWin.isDestroyed() && (!mainWin || mainWin.isDestroyed())) {
     if (status === 'downloading') {
-      updateSplashMessage('Descargando v' + (info.version || macUpdateVersion || ''), info.percent);
+      updateSplashMessage(TEXTOS.descargando(info.version || macUpdateVersion), info.percent, '');
     } else if (status === 'downloaded') {
-      updateSplashMessage('Listo. Reiniciando para instalar');
+      updateSplashMessage(TEXTOS.instalando(info.version || macUpdateVersion), 100, TEXTOS.notaInstalando);
     } else if (status === 'error') {
       updateSplashMessage('Error: ' + (info.message || 'desconocido'));
     }
@@ -257,9 +322,9 @@ function cleanUpdaterPending() {
 // rechaza si el reintento tambien falla -> el llamador (FASE 4a) muestra la vista de error.
 function downloadUpdateWindows() {
   const attempt = () => new Promise((resolve, reject) => {
-    const onProgress = (prog) => updateSplashMessage('Descargando v' + macUpdateVersion, Math.round(prog.percent));
+    const onProgress = (prog) => updateSplashMessage(TEXTOS.descargando(macUpdateVersion), Math.round(prog.percent), '');
     const onDownloaded = () => {
-      updateSplashMessage('Instalando v' + macUpdateVersion);
+      updateSplashMessage(TEXTOS.instalando(macUpdateVersion), 100, TEXTOS.notaInstalando);
       setTimeout(() => autoUpdater.quitAndInstall(false, true), 1000);
       // app sale; la promesa no se resuelve a proposito
     };
@@ -277,7 +342,7 @@ function downloadUpdateWindows() {
   cleanUpdaterPending();
   return attempt().catch(function() {
     cleanUpdaterPending();
-    updateSplashMessage('Reintentando descarga de v' + macUpdateVersion, 0);
+    updateSplashMessage(TEXTOS.reintentando(macUpdateVersion), 0, '');
     return attempt();
   });
 }
@@ -404,10 +469,12 @@ ipcMain.handle('print-pdf', async (_e, html, filename) => {
 // antes de que el usuario tenga la oportunidad de instalar actualizaciones.
 
 // ── Splash window: se muestra inmediatamente al arrancar ──────────────────
-// v1.9.3: tiene 2 vistas (loading + offline decision) y countdown visible.
-// nodeIntegration habilitado para que los botones puedan enviar IPC al main.
+// Rediseño v4: el HTML es el de desktop/splash.js (diseño de Control TC v7), con el tema que la app dejo
+// en apariencia.json y la tipografia Inter de public/fonts. Cuatro vistas: carga, sin conexion, error
+// de la descarga y error grave. nodeIntegration habilitado para que los botones envien IPC al main.
 // Contenido 100% local (data: URL) controlado por nosotros — sin riesgo.
 function createSplashWindow() {
+  const tema = leerTemaArranque();
   const w = new BrowserWindow({
     width: 440, height: 290,
     frame: false,
@@ -415,158 +482,112 @@ function createSplashWindow() {
     movable: true,
     transparent: false,
     alwaysOnTop: true,
-    backgroundColor: '#0d1117',
+    backgroundColor: PALETAS[tema].bg,
     center: true,
     skipTaskbar: false,
     title: 'Cartera',
+    show: false,
     webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
   w.setMenu(null);
-  const version = app.getVersion();
-  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
-    + 'body{margin:0;padding:0;background:#0d1117;color:#e6edf3;'
-    + "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-    + 'display:flex;align-items:center;justify-content:center;'
-    + 'height:100vh;flex-direction:column;'
-    + 'border:1px solid #30363d;border-radius:12px;overflow:hidden;'
-    + '-webkit-app-region:drag;-webkit-user-select:none;}'
-    + '.view{display:flex;flex-direction:column;align-items:center;'
-    + 'justify-content:center;width:100%;padding:0 24px;box-sizing:border-box;}'
-    + '.view.hidden{display:none;}'
-    + '.countdown{font-size:11px;color:#6e7681;margin-bottom:10px;'
-    + "font-family:'Cascadia Code','Consolas',monospace;letter-spacing:.5px;}"
-    + '.spinner{width:36px;height:36px;border:3px solid #21262d;'
-    + 'border-top-color:#3fb950;border-radius:50%;'
-    + 'animation:spin 1s linear infinite;margin-bottom:16px;}'
-    + '@keyframes spin{to{transform:rotate(360deg);}}'
-    + 'h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px;}'
-    + 'p#msg,p#offlineMsg{font-size:13px;color:#8b949e;margin:8px 0 0;'
-    + 'text-align:center;padding:0 8px;line-height:1.5;}'
-    + '.barwrap{display:none;align-items:center;gap:8px;margin-top:14px;}'
-    + '.barwrap.show{display:flex;}'
-    + '.bar{width:248px;height:5px;background:#21262d;border-radius:99px;overflow:hidden;}'
-    + '.bar-fill{height:100%;background:linear-gradient(90deg,#2ea043,#3fb950);'
-    + 'width:0%;transition:width .3s ease;border-radius:99px;}'
-    + "#pct{font-size:12px;color:#8b949e;font-family:'Cascadia Code','Consolas',monospace;min-width:34px;text-align:right;}"
-    + 'small{font-size:11px;color:#6e7681;margin-top:14px;}'
-    + '.warn-icon{font-size:36px;line-height:1;margin-bottom:12px;color:#d29922;}'
-    + '.btns{display:flex;gap:8px;margin-top:18px;-webkit-app-region:no-drag;}'
-    + '.btns button{padding:9px 18px;font-size:12px;font-weight:700;'
-    + 'border-radius:8px;border:none;cursor:pointer;font-family:inherit;'
-    + 'transition:background .15s;}'
-    + '.btn-primary{background:#238636;color:white;}'
-    + '.btn-primary:hover{background:#2ea043;}'
-    + '.btn-secondary{background:#21262d;color:#e6edf3;border:1px solid #30363d;}'
-    + '.btn-secondary:hover{background:#30363d;}'
-    + '</style></head><body>'
-    + '<div id="vLoading" class="view">'
-    + '<div class="countdown" id="countdown">60s</div>'
-    + '<div class="spinner"></div>'
-    + '<h1>Cartera</h1>'
-    + '<p id="msg">Buscando actualizaciones</p>'
-    + '<div class="barwrap" id="barwrap"><div class="bar" id="bar"><div class="bar-fill" id="fill"></div></div><span id="pct"></span></div>'
-    + '<small>v' + version + '</small>'
-    + '</div>'
-    + '<div id="vOffline" class="view hidden">'
-    + '<div class="warn-icon">⚠</div>'
-    + '<h1>Problemas de conexión</h1>'
-    + '<p id="offlineMsg">No pudimos verificar si hay una actualización pendiente. ¿Deseas continuar de todas formas?</p>'
-    + '<div class="btns">'
-    + '<button class="btn-primary" id="btnContinue">Continuar</button>'
-    + '<button class="btn-secondary" id="btnQuit">Cerrar app</button>'
-    + '</div>'
-    + '</div>'
-    + '<div id="vDownloadError" class="view hidden">'
-    + '<div class="warn-icon" style="color:#f85149">⚠</div>'
-    + '<h1 style="color:#f85149">Error al actualizar</h1>'
-    + '<p id="dlErrorMsg">No se pudo descargar la nueva versión. Puedes cerrar la app e intentar nuevamente, o continuar usando la versión actual bajo tu propio riesgo.</p>'
-    + '<div class="btns">'
-    + '<button class="btn-secondary" id="btnContinueError">Continuar de todos modos</button>'
-    + '<button class="btn-primary" id="btnQuitError">Cerrar app</button>'
-    + '</div>'
-    + '</div>'
-    + '<script>'
-    + "var ipc = require('electron').ipcRenderer;"
-    + "document.getElementById('btnContinue').addEventListener('click', function(){ ipc.send('splash-decision', 'continue'); });"
-    + "document.getElementById('btnQuit').addEventListener('click', function(){ ipc.send('splash-decision', 'quit'); });"
-    + "document.getElementById('btnQuitError').addEventListener('click', function(){ ipc.send('splash-decision', 'quit'); });"
-    + "document.getElementById('btnContinueError').addEventListener('click', function(){ ipc.send('splash-decision', 'continue'); });"
-    + '</script>'
-    + '</body></html>';
+  let fuente = null;
+  try { fuente = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'fonts', 'inter-latin-wght.woff2')).toString('base64'); } catch (_) {}
+  const html = buildSplashHtml(tema, { fuente, version: app.getVersion() });
   w.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(html));
+  // Se muestra ya dibujada (sin destello blanco) y con un fundido corto.
+  w.once('ready-to-show', () => {
+    if (w.isDestroyed()) return;
+    try { w.setOpacity(0); } catch (_) {}
+    w.show();
+    fundir(w, 0, 1, 220);
+  });
   return w;
 }
 
-function updateSplashMessage(msg, percent) {
-  if (!splashWin || splashWin.isDestroyed()) return;
-  const showBar = typeof percent === 'number';
-  const pctClamped = Math.min(100, Math.max(0, percent || 0));
-  // v1.11.2: el % se muestra JUNTO a la barra (#pct), ya NO concatenado al mensaje (evita ruido visual).
-  const safe = String(msg || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const code = `
-    (function(){
-      var m = document.getElementById('msg'); if (m) m.textContent = '${safe}';
-      var w = document.getElementById('barwrap'); var f = document.getElementById('fill'); var p = document.getElementById('pct');
-      if (w && f) {
-        ${showBar ? "w.classList.add('show'); f.style.width = '" + pctClamped + "%'; if(p) p.textContent = '" + pctClamped + "%';" : "w.classList.remove('show'); if(p) p.textContent = '';"}
-      }
-    })();
-  `;
-  splashWin.webContents.executeJavaScript(code).catch(() => {});
+function splashAlive() { return !!(splashWin && !splashWin.isDestroyed()); }
+function splashJs(codigo) {
+  if (!splashAlive()) return;
+  splashWin.webContents.executeJavaScript(codigo).catch(() => {});
 }
 
-// v1.9.3: actualiza la cuenta regresiva visible arriba del spinner
-function updateSplashCountdown(seconds) {
-  if (!splashWin || splashWin.isDestroyed()) return;
-  const s = Math.max(0, Math.round(seconds));
-  const code = `
-    (function(){
-      var c = document.getElementById('countdown');
-      if (c) c.textContent = ${s} + 's';
-    })();
-  `;
-  splashWin.webContents.executeJavaScript(code).catch(() => {});
-}
+// La linea de estado: con `percent`, la barra con su porcentaje; sin el, la barra fina que avanza sola.
+// `nota`, si viene, es la frase de abajo.
+function updateSplashMessage(msg, percent, nota) { splashJs(jsMensaje(msg, percent, nota)); }
+
+// La cuenta atras de la busqueda de actualizaciones, como frase de abajo.
+function updateSplashCountdown(seconds) { splashJs(jsCuenta(seconds)); }
 
 // v1.9.3: cambia la vista del splash a la decision de offline y espera input del usuario
 function showOfflineDecisionInSplash() {
   return new Promise((resolve) => {
-    if (!splashWin || splashWin.isDestroyed()) return resolve('continue');
-    // Cambiar a vista de decisión
-    splashWin.webContents.executeJavaScript(`
-      (function(){
-        var l = document.getElementById('vLoading'); if (l) l.classList.add('hidden');
-        var o = document.getElementById('vOffline'); if (o) o.classList.remove('hidden');
-      })();
-    `).catch(() => {});
-    // Escuchar la decision una sola vez
+    if (!splashAlive()) return resolve('continue');
+    splashJs(jsVista('vOffline', 'btnContinue'));
     ipcMain.once('splash-decision', (_e, choice) => {
       resolve(choice === 'quit' ? 'quit' : 'continue');
     });
   });
 }
 
-// v1.9.4: cuando la descarga de actualizacion falla, mostrar vista de error con boton
-// "Cerrar app" para forzar reintento al reabrir.
-// v1.9.5: se agrega "Continuar de todos modos" como escape hatch — si el usuario necesita
-// trabajar y el update fallo por algo transitorio (servidor caido, WiFi inestable), puede
-// abrir la app con la version actual asumiendo el riesgo. Devuelve 'continue' | 'quit'.
+// v1.9.4: cuando la descarga de actualizacion falla, mostrar vista de error con boton "Cerrar y
+// reintentar" (el seguro, por eso tiene el foco) para forzar el reintento al reabrir.
+// v1.9.5: se agrega "Seguir con la actual" como escape hatch — si el usuario necesita trabajar y el
+// update fallo por algo transitorio (servidor caido, WiFi inestable), puede abrir la app con la version
+// actual asumiendo el riesgo. Devuelve 'continue' | 'quit'. El mensaje tecnico va en "Detalle tecnico".
 function showDownloadErrorInSplash(errMessage) {
   return new Promise((resolve) => {
-    if (!splashWin || splashWin.isDestroyed()) return resolve('quit');
-    const safe = String(errMessage || 'desconocido').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    splashWin.webContents.executeJavaScript(`
-      (function(){
-        var l = document.getElementById('vLoading'); if (l) l.classList.add('hidden');
-        var o = document.getElementById('vOffline'); if (o) o.classList.add('hidden');
-        var e = document.getElementById('vDownloadError'); if (e) e.classList.remove('hidden');
-        var em = document.getElementById('dlErrorMsg');
-        if (em) em.textContent = 'No se pudo descargar la nueva versión (' + '${safe}' + '). Puedes cerrar la app e intentar nuevamente, o continuar usando la versión actual bajo tu propio riesgo.';
-      })();
-    `).catch(() => {});
+    if (!splashAlive()) return resolve('quit');
+    splashJs(jsTextos({ tUpdate: TEXTOS.tituloErrorUpdate(macUpdateVersion), updateErrorDetail: errMessage || 'desconocido' }));
+    splashJs(jsVista('vUpdateError', 'btnQuitUpdate'));
     ipcMain.once('splash-decision', (_e, choice) => {
       resolve(choice === 'continue' ? 'continue' : 'quit');
     });
+  });
+}
+
+// Rediseño v4: lo que se le dice al usuario cuando la app no puede iniciar (antes, el cuadro nativo
+// "Error de arranque"). Un texto humano y el detalle tecnico aparte, para copiarlo.
+function describirFalloArranque(err) {
+  const code = (err && err.code) || '';
+  const msg = (err && err.message) || String(err || 'desconocido');
+  if (err && err.fase === 'puerto') {
+    return {
+      texto: code === 'EADDRINUSE'
+        ? `Otro programa está usando el puerto ${PORT}. Puede que Cartera ya esté abierta: ciérrala y vuelve a abrirla.`
+        : `No se pudo abrir el puerto ${PORT} que usa la app.`,
+      detalle: `${code || 'ERROR'} · 127.0.0.1:${PORT}`,
+    };
+  }
+  return {
+    texto: 'El servidor interno de la app no pudo iniciar. Tus datos no se tocaron: cierra la app y vuelve a abrirla; si se repite, copia el detalle.',
+    detalle: msg + (serverError ? ' · ' + String(serverError).replace(/\s+/g, ' ') : '') + ' · ' + DB_PATH,
+  };
+}
+
+// Muestra la vista "La app no pudo iniciar" y espera a que el usuario la cierre ("Copiar el detalle" lo
+// deja en el portapapeles). Si la ventana de arranque ya no existe, abre una para decirlo.
+async function showFatalInSplash(err) {
+  const f = describirFalloArranque(err);
+  console.log('[Arranque] error grave:', f.detalle);
+  if (!splashAlive()) {
+    splashWin = createSplashWindow();
+    await new Promise((r) => splashWin.webContents.once('did-finish-load', r));
+  }
+  await new Promise((resolve) => {
+    splashJs(jsTextos({ fatalMsg: f.texto, fatalDetail: f.detalle }));
+    splashJs(jsVista('vFatal', 'btnFatalQuit'));
+    let listo = false;
+    const fin = () => { if (listo) return; listo = true; ipcMain.removeListener('splash-fatal', alElegir); resolve(); };
+    const alElegir = (_e, accion) => {
+      if (accion === 'copiar') {
+        clipboard.writeText(f.detalle);
+        splashJs(jsTextos({ btnFatalCopy: 'Copiado' }));
+        return;
+      }
+      fin();
+    };
+    ipcMain.on('splash-fatal', alElegir);
+    // Si la ventana se cierra por otra via (Alt+F4), tambien se sale.
+    splashWin.once('closed', fin);
   });
 }
 
@@ -668,7 +689,7 @@ async function macDownloadAndInstallAtBoot(version) {
   const zipPath = path.join(tmpDir, 'update.zip');
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  updateSplashMessage('Descargando v' + version, 0);
+  updateSplashMessage(TEXTOS.descargando(version), 0, '');
 
   await new Promise((resolve, reject) => {
     httpsGet(zipUrl).then((res) => {
@@ -677,7 +698,7 @@ async function macDownloadAndInstallAtBoot(version) {
       const file = fs.createWriteStream(zipPath);
       res.on('data', (chunk) => {
         downloaded += chunk.length;
-        if (total > 0) updateSplashMessage('Descargando v' + version, Math.round((downloaded/total)*100));
+        if (total > 0) updateSplashMessage(TEXTOS.descargando(version), Math.round((downloaded/total)*100));
       });
       res.pipe(file);
       file.on('finish', () => { file.close(); resolve(); });
@@ -685,7 +706,7 @@ async function macDownloadAndInstallAtBoot(version) {
     }).catch(reject);
   });
 
-  updateSplashMessage('Instalando v' + version, 100);
+  updateSplashMessage(TEXTOS.instalando(version), 100, TEXTOS.notaInstalando);
   execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}"`);
   const extractedApp = path.join(tmpDir, 'Cartera.app');
   if (!fs.existsSync(extractedApp)) throw new Error('No se encontró la app en el zip');
@@ -717,7 +738,7 @@ app.whenReady().then(async () => {
 
   if (decision === 'install') {
     // FASE 4a: hay update — instalar SIN tocar BD
-    updateSplashMessage('Descargando v' + macUpdateVersion, 0);
+    updateSplashMessage(TEXTOS.descargando(macUpdateVersion), 0, '');
     try {
       if (process.platform === 'darwin') {
         await macDownloadAndInstallAtBoot(macUpdateVersion);
@@ -753,25 +774,14 @@ app.whenReady().then(async () => {
     // userChoice === 'continue' → caer a FASE 4b
   }
 
-  // FASE 4b: sin update (skip, timeout-continue, o continue tras error de descarga) — arranque normal
-  updateSplashMessage('Iniciando');
-  // Volver a vista loading si veniamos de la vista offline o de la vista de error de descarga
-  if (splashWin && !splashWin.isDestroyed()) {
-    splashWin.webContents.executeJavaScript(`
-      (function(){
-        var l = document.getElementById('vLoading'); if (l) l.classList.remove('hidden');
-        var o = document.getElementById('vOffline'); if (o) o.classList.add('hidden');
-        var e = document.getElementById('vDownloadError'); if (e) e.classList.add('hidden');
-        var c = document.getElementById('countdown'); if (c) c.textContent = '';
-      })();
-    `).catch(() => {});
-  }
+  // FASE 4b: sin update (skip, timeout-continue, o continue tras error de descarga) — arranque normal.
+  // Vuelve a la vista de carga si veniamos de la vista sin conexion o de la de error de la descarga.
+  splashJs(jsVista('vLoading'));
+  updateSplashMessage(TEXTOS.abriendo, undefined, TEXTOS.notaAbriendo);
   startBackend();
   mainWin = await createWindow();
-  if (splashWin && !splashWin.isDestroyed()) {
-    splashWin.close();
-    splashWin = null;
-  }
+  if (!mainWin) return;   // la app no pudo iniciar: ya se mostro la vista de error y la app sale
+  await abrirVentanaPrincipal(mainWin);
 });
 
 app.on('window-all-closed', () => { if (server) server.close(); app.quit(); });

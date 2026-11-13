@@ -45,6 +45,7 @@ const SUITES = [
   { nombre: 'deudas',        archivo: 'deudas.js',        desc: 'Mis deudas: la cuenta de cada deuda contra el saldo del backend, y la vista v4' },
   { nombre: 'desarrollador', archivo: 'desarrollador.js', desc: 'Desarrollador: el cable con Electron (preload) y con el backend real, y la vista v4' },
   { nombre: 'modales',       archivo: 'modales.js',       desc: 'los modales v4: la base comun, la confirmacion y los 16 modales con sus clases propias' },
+  { nombre: 'arranque',      archivo: 'arranque.js',      desc: 'el arranque v4: la ventana de arranque, la carga dentro de la app y las novedades' },
 ];
 
 const args  = process.argv.slice(2);

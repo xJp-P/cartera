@@ -75,7 +75,7 @@
 .v4m-check { display: flex; align-items: center; gap: 9px; margin-top: 14px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
-  html:not(.v4-forzar) .v4m-overlay, html:not(.v4-forzar) .v4m-sheet, html:not(.v4-forzar) .modal-overlay, html:not(.v4-forzar) .modal-panel { animation: none; }
+  .v4m-overlay, .v4m-sheet, .modal-overlay, .modal-panel { animation: none; }
 }
 
 /* ── 2. LOS CAMPOS ─────────────────────────────────────────────────────────────── */

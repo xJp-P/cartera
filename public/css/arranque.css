@@ -1,0 +1,54 @@
+/* public/css/arranque.css — la ENTRADA a la app y las NOVEDADES (rediseño v4, diseño de Control TC v7).
+ * Se carga despues de modales.css (las novedades usan su ventana: .v4m-overlay, .v4m-sheet, .v4m-x).
+ *   1. la pantalla de carga dentro de la ventana (V4Arranque, componentes/arranque.js): continua la
+ *      ventana de arranque (desktop/splash.js), con la misma marca y la misma barra fina;
+ *   2. la entrada del marco de la app: un fundido corto cuando llegan los datos;
+ *   3. las novedades de la version (NovedadesModal). */
+
+/* ── 1. CARGA DENTRO DE LA VENTANA ─────────────────────────────────────────────── */
+@keyframes v4a-aparece { from { opacity: 0; } to { opacity: 1; } }
+@keyframes v4a-barra { to { left: 100%; } }
+.v4a { position: fixed; inset: 0; display: grid; place-items: center; background: var(--page); color: var(--ink); font-family: var(--font); }
+/* Retardo de 280 ms: una carga rapida (lo normal en local) pasa directo del fondo a la app, sin parpadeo. */
+.v4a-c { display: flex; flex-direction: column; align-items: center; text-align: center; animation: v4a-aparece .35s ease .28s both; }
+.v4a-marca { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; background: var(--inverse-bg); color: var(--inverse-ink); }
+.v4a-nombre { margin-top: 14px; font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
+.v4a-msg { margin-top: 6px; font-size: 13px; color: var(--ink-2); }
+.v4a-barra { position: relative; width: 200px; height: 3px; margin-top: 18px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.v4a-barra i { position: absolute; top: 0; bottom: 0; left: -35%; width: 35%; border-radius: 2px; background: var(--ink-2); animation: v4a-barra 1.5s cubic-bezier(.2, .7, .2, 1) infinite; }
+
+/* ── 2. LA APP ENTRA ───────────────────────────────────────────────────────────── */
+/* El marco (menu + encabezado) aparece con un fundido y un leve ascenso; el Resumen hace luego su propia
+   entrada escalonada. El fondo ya es el de la pagina: no hay salto de color. */
+@keyframes v4a-app { from { opacity: 0; } to { opacity: 1; } }
+@keyframes v4a-menu { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+@keyframes v4a-cab { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+/* Se anima el CONTENIDO del menu, no el menu: el menu se pliega con su propio transform y una animacion
+   sobre el se repetiria cada vez que se despliega. */
+.app-layout { animation: v4a-app .42s ease both; }
+.app-layout .sidebar-header, .app-layout .sidebar-nav, .app-layout .sidebar-footer { animation: v4a-menu .5s var(--ease) .04s both; }
+.app-layout .main-header { animation: v4a-cab .5s var(--ease) .08s both; }
+
+/* ── 3. NOVEDADES DE LA VERSION ────────────────────────────────────────────────── */
+@keyframes v4n-li { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.v4n { max-width: 560px; max-height: min(680px, 84vh); }
+.v4n-cab { padding: 26px 70px 0 28px; flex-shrink: 0; }
+.v4n-t { font-size: 19px; font-weight: 650; letter-spacing: -.02em; line-height: 1.3; color: var(--ink); }
+.v4n-sub { margin-top: 3px; font-size: 13px; color: var(--ink-3); }
+.v4n-lista { list-style: none; margin: 0; padding: 22px 28px 26px; display: grid; gap: 16px; align-content: start; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.v4n-lista li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2);
+  animation: v4n-li .42s var(--ease) both; animation-delay: calc(160ms + var(--i, 0) * 40ms); }
+.v4n-lista li > svg { margin-top: 2px; stroke: var(--ink-3); }
+.v4n-lista b { display: block; font-weight: 600; color: var(--ink); }
+.v4n-pie { flex-shrink: 0; display: flex; justify-content: flex-end; padding: 16px 22px 18px 28px; border-top: 1px solid var(--line); background: var(--surface); }
+.v4n-ok { height: 38px; padding: 0 18px; border: 0; border-radius: 11px; background: var(--inverse-bg); color: var(--inverse-ink); font: 600 13.5px var(--font); cursor: pointer;
+  transition: opacity .15s, transform .15s var(--ease); }
+.v4n-ok:hover { opacity: .88; }
+.v4n-ok:active { transform: scale(.98); }
+.v4n-ok:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .v4a-c, .v4a-barra i, .app-layout, .app-layout .sidebar-header, .app-layout .sidebar-nav, .app-layout .sidebar-footer,
+  .app-layout .main-header, .v4n-lista li { animation: none; }
+  .v4a-barra i { left: 0; width: 40%; }
+}

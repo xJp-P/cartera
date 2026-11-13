@@ -1,0 +1,89 @@
+/* public/css/historial.css — HISTORIAL (rediseño v4, aprobado por el PO sobre el prototipo).
+ *
+ * Se carga despues de las hojas de las pestañas anteriores: reutiliza el buscador y el "Ver mas" de
+ * Cobros (cbv-), las pastillas de tipo de Cartera (ctv-filtro), el control segmentado (CbvSeg), y las
+ * etiquetas, los enlaces, las ayudas de las barras y las animaciones del Resumen (v4-). Lo propio vive
+ * bajo `.v4h` con prefijo `hsv-` (vistas/HistorialView.js). */
+
+/* Etiquetas que el Historial necesita ademas de las del Resumen */
+.v4h .v4-tag.crit { background: var(--crit-soft); color: var(--crit-text); }
+.v4h .v4-tag.purple { background: var(--purple-bg); color: var(--purple); }
+.v4h .v4-tag.neutral { background: var(--surface-3); color: var(--ink-2); }
+
+.v4h { display: flex; flex-direction: column; gap: 18px; color: var(--ink); }
+.hsv-intro { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: var(--ink-3); margin: 0 2px -4px; }
+
+/* ── Encabezado: la cifra, la actividad y los filtros ────────────────────────────── */
+.hsv-hero { padding: 22px 24px 18px; }
+.hsv-hero-top { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 32px; align-items: stretch; }
+.hsv-cifra-v { font-size: 44px; font-weight: 650; letter-spacing: -.045em; line-height: 1.05; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.hsv-act { display: flex; flex-direction: column; min-width: 0; padding-left: 28px; border-left: 1px solid var(--line); }
+.hsv-act-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
+.hsv-act-h b { font-size: 12.5px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.hsv-act-barras { flex: 1; display: flex; align-items: flex-end; gap: 3px; min-height: 64px; margin-top: 10px; }
+.hsv-act-barras .b { position: relative; flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; padding: 0; border: 0; background: none; cursor: pointer; outline: none; }
+.hsv-act-barras .b.vacia { cursor: default; }
+.hsv-act-barras .b i { display: block; width: 100%; border-radius: 3px 3px 1px 1px; background: var(--bar-muted); opacity: .45; transform-origin: bottom; transition: opacity .2s, background-color .15s; }
+.hsv-act-barras .b.en i { opacity: 1; }
+.hsv-act-barras .b.hoy i { background: var(--accent); }
+.hsv-act-barras .b:not(.vacia):hover i, .hsv-act-barras .b:focus-visible i { background: var(--accent); opacity: 1; }
+.hsv-act-barras .b.vacia::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px; background: var(--track); }
+.hsv-act-pie { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--ink-3); }
+
+.hsv-controles { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.hsv-controles .cbv-buscar { flex: 1 1 280px; }
+.hsv-rango { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.hsv-rango label { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); }
+.hsv-rango input { height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font: 13px var(--font); color-scheme: dark; }
+.hsv-rango input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+[data-theme="light"] .hsv-rango input { color-scheme: light; }
+.hsv-tipos { margin-top: 14px; }
+
+/* ── La lista ──────────────────────────────────────────────────────────────────── */
+.hsv-lista { padding: 4px 10px 12px; }
+.hsv-filas { display: flex; flex-direction: column; }
+.hsv-dia { position: sticky; top: -28px; z-index: 2; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 16px 12px 8px; background: var(--surface);
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+.hsv-dia .n { font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-3); }
+.hsv-fila { position: relative; display: grid; grid-template-columns: 44px 32px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px; border-radius: var(--r-md); transition: background-color .15s var(--ease); }
+.hsv-fila + .hsv-fila::before { content: ''; position: absolute; left: 12px; right: 12px; top: 0; height: 1px; background: var(--line); }
+.hsv-fila:hover { background: var(--surface-2); }
+.hsv-fila:hover::before, .hsv-fila:hover + .hsv-fila::before { opacity: 0; }
+.hsv-hora { font-size: 12px; color: var(--ink-3); padding-top: 7px; font-variant-numeric: tabular-nums; }
+.hsv-ico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-3); color: var(--ink-2); }
+.hsv-c { min-width: 0; }
+.hsv-tipo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hsv-msg { font-size: 13.5px; color: var(--ink); line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
+.hsv-fila.revertida .hsv-msg { text-decoration: line-through; color: var(--ink-3); }
+.hsv-motivo { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--ink-3); line-height: 1.45; }
+.hsv-motivo svg { flex-shrink: 0; margin-top: 1px; }
+.hsv-acc { display: flex; align-items: center; gap: 8px; padding-top: 2px; }
+/* Deshacer: sobrio y apagado mientras el candado LIFO lo bloquea; morado cuando se puede. */
+.hsv-deshacer { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 10px; border: 1px solid var(--line); background: transparent;
+  color: var(--ink-3); font: 550 12.5px var(--font); cursor: not-allowed; opacity: .55; white-space: nowrap; }
+.hsv-deshacer.on { opacity: 1; cursor: pointer; color: var(--purple); border-color: var(--purple-bd); background: var(--purple-bg); transition: filter .15s, transform .15s var(--ease); }
+.hsv-deshacer.on:hover { filter: brightness(1.15); }
+.hsv-deshacer.on:active { transform: scale(.97); }
+.hsv-mas { width: auto; margin: 10px auto 2px; padding: 9px 18px; }
+.hsv-nada { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 16px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+.hsv-nada .ico { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-3); color: var(--ink-2); }
+.hsv-vacio { align-items: center; text-align: center; padding: 56px 28px; }
+.hsv-vacio .ico { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: var(--surface-3); color: var(--ink-2); margin-bottom: 14px; }
+.hsv-vacio p { font-size: 13px; color: var(--ink-3); max-width: 44ch; margin-top: 6px; }
+
+@media (max-width: 1180px) {
+  .hsv-hero-top { grid-template-columns: 1fr; gap: 18px; }
+  .hsv-act { padding-left: 0; border-left: 0; padding-top: 16px; border-top: 1px solid var(--line); }
+}
+@media (max-width: 1100px) {
+  .hsv-fila { grid-template-columns: 40px 30px minmax(0, 1fr); }
+  .hsv-acc { grid-column: 3; padding-top: 0; }
+}
+
+/* ── Movimiento ─────────────────────────────────────────────────────────────────── */
+.v4h.anima .hsv-intro, .v4h.anima .v4-card { animation: v4-in .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 60ms); }
+.v4h.anima .hsv-act-barras .b i { animation: v4-crece .6s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 14ms + 260ms); }
+.v4h.anima .hsv-fila { animation: v4-fade .4s var(--ease) backwards; animation-delay: calc(min(var(--i, 0), 14) * 25ms + 220ms); }
+@media (prefers-reduced-motion: reduce) {
+  .v4h *, .v4h *::before, .v4h *::after { animation: none !important; transition: none !important; }
+}
