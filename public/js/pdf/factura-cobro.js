@@ -18,7 +18,7 @@ import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, facturaCode, fcCodigoDiario } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota, estadoDiario } from '../core/dominio.js';
 import { opModalidad } from '../core/operacion.js';
-import { rbImpresion, rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // ── Recibo de Cobro / Factura (v1.16.0) ──────────────────────────────────────
 // Documento PROSPECTIVO (antes de pagar) para gestion de cartera. Distinto de
@@ -234,15 +234,8 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   var fcCode = fcCodigoDiario(loan, hasta);
 
-  var K = dark ? {
-    bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', rowbd:'#21262d', panel:'#161b22',
-    green:'#3fb950', greenBg:'#0f2b19', greenBd:'#1b4332', blue:'#79c0ff', blueBg:'#0d2440', blueBd:'#1f3a5f',
-    headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
-  } : {
-    bg:'#ffffff', text:'#1f2328', muted:'#656d76', rowbd:'#eeeeee', panel:'#f6f8fa',
-    green:'#166534', greenBg:'#f0fdf4', greenBd:'#4ade80', blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#b6e3ff',
-    headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
-  };
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app (claro, u oscuro v4).
+  var K = rbPaleta(dark), C = K;
   function rowD(l, v, color){
     return '<div class="fd-row"><span class="fd-lab">' + l + '</span><span class="fd-val"' +
       (color ? ' style="color:' + color + '"' : '') + '>' + v + '</span></div>';
@@ -253,37 +246,40 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
   var htmlD = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cobro - ' + escD(loan.nombre) + '</title><style>',
     '*{box-sizing:border-box}',
-    'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:26px 30px;background:' + K.bg + ';color:' + K.text + ';font-size:12px;line-height:1.45;max-width:520px}',
-    '.fd-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:11px;border-bottom:2px solid ' + K.headBd + ';margin-bottom:14px}',
-    '.fd-brand{display:flex;align-items:center;gap:9px}',
-    '.fd-wm{font-size:17px;font-weight:700;letter-spacing:-.3px}',
-    '.fd-sub{font-size:9.5px;color:' + K.muted + ';margin-top:1px}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';margin:0;padding:26px 30px;background:var(--r-bg);color:var(--r-text);font-size:12px;line-height:1.45;max-width:540px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    '.fd-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:11px;border-bottom:1px solid var(--r-bd);margin-bottom:14px}',
+    '.fd-brand{display:flex;align-items:center;gap:10px}',
+    '.fd-logo{width:32px;height:32px;border-radius:10px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.fd-wm{font-size:16px;font-weight:600;letter-spacing:-.02em}',
+    '.fd-sub{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
     '.fd-meta{text-align:right}',
-    '.fd-type{font-size:11px;font-weight:700;color:' + K.green + ';letter-spacing:.5px;text-transform:uppercase}',
-    '.fd-num{font-family:ui-monospace,monospace;font-size:10.5px;color:' + K.muted + ';margin-top:2px}',
-    '.fd-date{font-size:9.5px;color:' + K.foot + ';margin-top:1px}',
-    '.fd-st{font-size:9.5px;color:' + K.muted + ';text-transform:uppercase;letter-spacing:.7px}',
-    '.fd-name{font-size:16px;font-weight:700;margin:2px 0 1px}',
-    '.fd-cc{font-size:10px;color:' + K.muted + '}',
-    '.fd-info{margin-top:12px;padding:9px 13px;background:' + K.blueBg + ';border:1px solid ' + K.blueBd + ';border-radius:9px;font-size:10.5px;line-height:1.5;color:' + K.blue + '}',
-    '.fd-hero{margin:14px 0 2px;padding:15px;text-align:center;background:' + K.greenBg + ';border:1px solid ' + K.greenBd + ';border-radius:12px}',
-    '.fd-hero .l{font-size:9.5px;color:' + K.muted + ';text-transform:uppercase;letter-spacing:.8px}',
-    '.fd-hero .a{font-size:29px;font-weight:700;color:' + K.green + ';font-family:ui-monospace,monospace;margin-top:3px}',
-    '.fd-sec{font-size:9.5px;font-weight:700;color:' + K.muted + ';letter-spacing:.8px;text-transform:uppercase;margin:16px 0 6px}',
-    '.fd-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid ' + K.rowbd + ';font-size:11.5px}',
-    '.fd-lab{color:' + K.muted + '}',
-    '.fd-val{font-family:ui-monospace,monospace;font-weight:600;white-space:nowrap}',
-    '.fd-sm{font-size:9.5px;color:' + K.foot + '}',
-    '.fd-caja{margin-top:11px;padding:11px 14px;border-radius:9px;display:flex;justify-content:space-between;align-items:center;gap:12px;background:' + K.blueBg + ';border:1px solid ' + K.blueBd + '}',
-    '.fd-caja .q{font-size:12px;font-weight:700;color:' + K.blue + '}',
-    '.fd-caja .v{font-size:18px;font-weight:700;font-family:ui-monospace,monospace;color:' + K.blue + ';white-space:nowrap}',
-    '.fd-pay{font-size:11px;line-height:1.6;white-space:pre-line}',
-    '.fd-foot{margin-top:17px;padding-top:9px;border-top:1px solid ' + K.footBd + ';text-align:center;color:' + K.foot + ';font-size:9.5px;line-height:1.55}',
-    '.fd-foot b{color:' + K.green + '}',
-    rbImpresion(dark),
+    '.fd-type{font-size:11px;font-weight:500;color:var(--r-muted)}',
+    '.fd-num{font-size:12.5px;font-weight:600;color:var(--r-text);margin-top:1px}',
+    '.fd-date{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
+    '.fd-st{font-size:11px;color:var(--r-muted)}',
+    '.fd-name{font-size:16px;font-weight:600;letter-spacing:-.01em;margin:1px 0}',
+    '.fd-cc{font-size:10.5px;color:var(--r-muted)}',
+    '.fd-sec{font-size:12px;font-weight:600;color:var(--r-text);margin:16px 0 6px}',
+    '.fd-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--r-bd);font-size:11.5px}',
+    '.fd-lab{color:var(--r-muted)}',
+    '.fd-val{font-weight:600;white-space:nowrap}',
+    '.fd-sm{font-size:9.5px;color:var(--r-muted)}',
+    '.fd-info{margin-top:12px;padding:9px 13px;background:var(--r-blue-bg);border:1px solid ' + C.blueBd + ';border-radius:12px;font-size:10.5px;line-height:1.5;color:var(--r-blue)}',
+    // Lo que se cobra hoy (el interes devengado): la cifra en tinta, sobre una tarjeta neutra.
+    '.fd-hero{margin:14px 0 2px;padding:14px;text-align:center;background:var(--r-card);border:1px solid var(--r-bd);border-radius:18px}',
+    '.fd-hero .l{font-size:11.5px;font-weight:500;color:var(--r-text-2)}',
+    '.fd-hero .a{font-size:29px;font-weight:600;letter-spacing:-.03em;color:var(--r-text);margin-top:2px}',
+    '.fd-caja{margin-top:11px;padding:11px 14px;border-radius:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--r-blue-bg);border:1px solid ' + C.blueBd + '}',
+    '.fd-caja .q{font-size:12px;font-weight:600;color:var(--r-blue)}',
+    '.fd-caja .v{font-size:18px;font-weight:600;letter-spacing:-.02em;color:var(--r-blue);white-space:nowrap}',
+    '.fd-pay{font-size:11px;line-height:1.6;white-space:pre-line;padding:8px 12px;background:var(--r-soft);border-radius:12px}',
+    '.fd-foot{margin-top:17px;padding-top:9px;border-top:1px solid var(--r-bd);text-align:center;color:var(--r-muted);font-size:9.5px;line-height:1.55}',
+    '.fd-foot b{color:var(--r-text);font-weight:600}',
+    rbImpresionPapel(dark),
     '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="fd-head"><div class="fd-brand">',
-    '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + K.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
+    '<div class="fd-logo">' + RB_LOGO + '</div>',
     '<div><div class="fd-wm">Cartera</div><div class="fd-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="fd-meta"><div class="fd-type">Cobro</div><div class="fd-num">' + fcCode + '</div>',
     '<div class="fd-date">Emisión: ' + fechaEmision + '</div></div></div>',
@@ -298,7 +294,7 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
     rowD('Días desde el último movimiento<div class="fd-sm">' +
       (dev.fechaUltimoCorte ? ('Último corte: ' + fmtD(dev.fechaUltimoCorte)) : ('Inicio del crédito: ' + fmtD(loan.fechaInicio))) + '</div>',
       String(dev.diasDesdeUltimoCorte)),
-    rowD('<b>Total a pagar</b>', '<b>' + money(dev.interesPendiente) + '</b>', K.green),
+    rowD('<b>Total a pagar</b>', '<b>' + money(dev.interesPendiente) + '</b>', K.text),
     '<div class="fd-caja"><span class="q">Si prefieres liquidar todo hoy</span><span class="v">' +
       money(dev.capitalVivo + dev.interesPendiente) + '</span></div>',
     (datosPago && String(datosPago).trim()

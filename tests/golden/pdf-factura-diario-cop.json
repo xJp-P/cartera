@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "caso": "factura-diario-cop",
+  "generador": "generateFacturaCobroDiario",
+  "tema": "light",
+  "entradaHash": "8b1a603990fc9ee5c4b11edb235e15905701e542",
+  "estructura": {
+    "docTitle": "Cobro - Nilda Paredes",
+    "h1": [],
+    "cabeceras": [],
+    "etiquetas": []
+  },
+  "valores": {
+    "bytes": 5897,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 5,
+    "hashMontos": "f97bb407c722a71341c50e72bbef2fd93b0e1bf3",
+    "hashFname": "382f6fb6a9b96bb547417d5152c50796385aace1",
+    "hashTexto": "831513515ca5d80e40d103848b39a8af41582bc4",
+    "clases": [
+      "a",
+      "fd-brand",
+      "fd-caja",
+      "fd-cc",
+      "fd-date",
+      "fd-foot",
+      "fd-head",
+      "fd-hero",
+      "fd-info",
+      "fd-lab",
+      "fd-logo",
+      "fd-meta",
+      "fd-name",
+      "fd-num",
+      "fd-pay",
+      "fd-row",
+      "fd-sec",
+      "fd-sm",
+      "fd-st",
+      "fd-sub",
+      "fd-type",
+      "fd-val",
+      "fd-wm",
+      "l",
+      "q",
+      "v"
+    ]
+  }
+}

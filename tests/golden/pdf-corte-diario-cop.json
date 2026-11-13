@@ -1,0 +1,56 @@
+{
+  "version": 2,
+  "caso": "corte-diario-cop",
+  "generador": "generateReciboCorte",
+  "tema": "light",
+  "entradaHash": "6f6174ef6caf86d0074eedb5d58d0d1d49eb3f9b",
+  "estructura": {
+    "docTitle": "Recibo de Corte - Nilda Paredes",
+    "h1": [],
+    "cabeceras": [],
+    "etiquetas": [
+      "Intereses # día(s) x $ #.#/día desde # de M de #",
+      "Abono a capital",
+      "Capital vivo",
+      "Interés por cobrar",
+      "Desde mañana genera Antes generaba $ #.#/día"
+    ]
+  },
+  "valores": {
+    "bytes": 6149,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 9,
+    "hashMontos": "9fea5a8ce4a05c8ff085fdc0be804a657a6add86",
+    "hashFname": "080e143ceb44d7eb9a4188410350144f5cb71403",
+    "hashTexto": "e30028b738f9fb8d233a61d875db42c777055ade",
+    "clases": [
+      "a",
+      "l",
+      "q",
+      "rc-brand",
+      "rc-caja",
+      "rc-cc",
+      "rc-chip",
+      "rc-date",
+      "rc-foot",
+      "rc-head",
+      "rc-hero",
+      "rc-lab",
+      "rc-logo",
+      "rc-meta",
+      "rc-name",
+      "rc-num",
+      "rc-row",
+      "rc-sec",
+      "rc-sm",
+      "rc-st",
+      "rc-sub",
+      "rc-type",
+      "rc-val",
+      "rc-wm",
+      "v"
+    ]
+  }
+}

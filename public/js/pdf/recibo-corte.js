@@ -14,7 +14,7 @@
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { estadoDiario } from '../core/dominio.js';
-import { rbImpresion, rbIniciales, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, rbIniciales, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 function campoValido(v){
   if (v === null || v === undefined) return false;
@@ -52,15 +52,8 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
   // Iniciales con la lista blanca comun (con dieresis): antes un apellido con "ü" perdia esa letra.
   var rcCode = 'RC-' + rbIniciales(loan.nombre) + '-' + String(loan.id).slice(-3) + '-' + String(corte.cuotaN).padStart(2,'0');
 
-  var C = dark ? {
-    bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
-    green:'#3fb950', greenBg:'#0f2b19', greenBd:'#1b4332', blue:'#79c0ff', blueBg:'#0d2440', blueBd:'#1f3a5f',
-    headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
-  } : {
-    bg:'#ffffff', text:'#1f2328', muted:'#656d76', bd:'#d0d7de', rowbd:'#eeeeee', panel:'#f6f8fa',
-    green:'#166534', greenBg:'#f0fdf4', greenBd:'#4ade80', blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#b6e3ff',
-    headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
-  };
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app (claro, u oscuro v4).
+  var C = rbPaleta(dark);
 
   function row(l, v, color){
     return '<div class="rc-row"><span class="rc-lab">' + l + '</span>' +
@@ -75,39 +68,42 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
   var html = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo de Corte - ' + esc(loan.nombre) + '</title><style>',
     '*{box-sizing:border-box}',
-    'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:26px 30px;background:' + C.bg + ';color:' + C.text + ';font-size:12px;line-height:1.45;max-width:560px}',
-    '.rc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:11px;border-bottom:2px solid ' + C.headBd + ';margin-bottom:14px}',
-    '.rc-brand{display:flex;align-items:center;gap:9px}',
-    '.rc-wm{font-size:17px;font-weight:700;letter-spacing:-.3px}',
-    '.rc-sub{font-size:9.5px;color:' + C.muted + ';margin-top:1px}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';margin:0;padding:26px 30px;background:var(--r-bg);color:var(--r-text);font-size:12px;line-height:1.45;max-width:580px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    '.rc-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:11px;border-bottom:1px solid var(--r-bd);margin-bottom:14px}',
+    '.rc-brand{display:flex;align-items:center;gap:10px}',
+    '.rc-logo{width:32px;height:32px;border-radius:10px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.rc-wm{font-size:16px;font-weight:600;letter-spacing:-.02em}',
+    '.rc-sub{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
     '.rc-meta{text-align:right}',
-    '.rc-type{font-size:11px;font-weight:700;color:' + C.green + ';letter-spacing:.5px;text-transform:uppercase}',
-    '.rc-num{font-family:ui-monospace,monospace;font-size:10.5px;color:' + C.muted + ';margin-top:2px}',
-    '.rc-date{font-size:9.5px;color:' + C.foot + ';margin-top:1px}',
-    '.rc-st{font-size:9.5px;color:' + C.muted + ';text-transform:uppercase;letter-spacing:.7px}',
-    '.rc-name{font-size:16px;font-weight:700;margin:2px 0 1px}',
-    '.rc-cc{font-size:10px;color:' + C.muted + '}',
-    '.rc-hero{margin:14px 0 2px;padding:15px;text-align:center;background:' + C.greenBg + ';border:1px solid ' + C.greenBd + ';border-radius:12px}',
-    '.rc-hero .l{font-size:9.5px;color:' + C.muted + ';text-transform:uppercase;letter-spacing:.8px}',
-    '.rc-hero .a{font-size:29px;font-weight:700;color:' + C.green + ';font-family:ui-monospace,monospace;margin-top:3px}',
-    '.rc-chip{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:99px;background:' + C.panel + ';color:' + C.muted + ';font-size:10px}',
-    '.rc-sec{font-size:9.5px;font-weight:700;color:' + C.muted + ';letter-spacing:.8px;text-transform:uppercase;margin:16px 0 6px}',
-    '.rc-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid ' + C.rowbd + ';font-size:11.5px}',
-    '.rc-lab{color:' + C.muted + '}',
-    '.rc-val{font-family:ui-monospace,monospace;font-weight:600;white-space:nowrap}',
-    '.rc-sm{font-size:9.5px;color:' + C.foot + '}',
-    '.rc-caja{margin-top:11px;padding:11px 14px;border-radius:9px;display:flex;justify-content:space-between;align-items:center;gap:12px;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + '}',
-    '.rc-caja .q{font-size:12px;font-weight:700;color:' + C.blue + '}',
-    '.rc-caja .v{font-size:18px;font-weight:700;font-family:ui-monospace,monospace;color:' + C.blue + ';white-space:nowrap}',
-    '.rc-paz{margin:12px 0 4px;padding:14px;text-align:center;background:' + C.greenBg + ';border:2px solid ' + C.greenBd + ';border-radius:14px}',
-    '.rc-paz-t{font-size:20px;font-weight:700;letter-spacing:2px;color:' + C.green + '}',
-    '.rc-paz-s{font-size:12px;color:' + C.text + ';margin-top:5px}',
-    '.rc-foot{margin-top:17px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:9.5px;line-height:1.55}',
-    '.rc-foot b{color:' + C.green + '}',
-    rbImpresion(dark),
+    '.rc-type{font-size:11px;font-weight:500;color:var(--r-muted)}',
+    '.rc-num{font-size:12.5px;font-weight:600;color:var(--r-text);margin-top:1px}',
+    '.rc-date{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
+    '.rc-st{font-size:11px;color:var(--r-muted)}',
+    '.rc-name{font-size:16px;font-weight:600;letter-spacing:-.01em;margin:1px 0}',
+    '.rc-cc{font-size:10.5px;color:var(--r-muted)}',
+    '.rc-sec{font-size:12px;font-weight:600;color:var(--r-text);margin:16px 0 6px}',
+    '.rc-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--r-bd);font-size:11.5px}',
+    '.rc-lab{color:var(--r-muted)}',
+    '.rc-val{font-weight:600;white-space:nowrap}',
+    '.rc-sm{font-size:9.5px;color:var(--r-muted)}',
+    // Lo recibido: la cifra en tinta sobre una tarjeta neutra; el verde va en el rotulo y la fecha.
+    '.rc-hero{margin:14px 0 2px;padding:14px;text-align:center;background:var(--r-card);border:1px solid var(--r-bd);border-radius:18px}',
+    '.rc-hero .l{font-size:12px;font-weight:600;color:var(--r-green)}',
+    '.rc-hero .a{font-size:29px;font-weight:600;letter-spacing:-.03em;color:var(--r-text);margin-top:2px}',
+    '.rc-chip{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:99px;background:var(--r-green-bg);color:var(--r-green);font-size:10.5px;font-weight:500}',
+    '.rc-caja{margin-top:11px;padding:11px 14px;border-radius:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--r-blue-bg);border:1px solid ' + C.blueBd + '}',
+    '.rc-caja .q{font-size:12px;font-weight:600;color:var(--r-blue)}',
+    '.rc-caja .v{font-size:18px;font-weight:600;letter-spacing:-.02em;color:var(--r-blue);white-space:nowrap}',
+    '.rc-paz{margin:12px 0 4px;padding:13px;text-align:center;background:var(--r-green-bg);border:1px solid var(--r-green-bd);border-radius:16px}',
+    '.rc-paz-t{font-size:17px;font-weight:700;letter-spacing:.08em;color:var(--r-green)}',
+    '.rc-paz-s{font-size:12px;color:var(--r-text);margin-top:4px}',
+    '.rc-foot{margin-top:17px;padding-top:9px;border-top:1px solid var(--r-bd);text-align:center;color:var(--r-muted);font-size:9.5px;line-height:1.55}',
+    '.rc-foot b{color:var(--r-text);font-weight:600}',
+    rbImpresionPapel(dark),
     '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="rc-head"><div class="rc-brand">',
-    '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
+    '<div class="rc-logo">' + RB_LOGO + '</div>',
     '<div><div class="rc-wm">Cartera</div><div class="rc-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="rc-meta"><div class="rc-type">Recibo de Corte</div><div class="rc-num">' + rcCode + '</div>',
     '<div class="rc-date">Emisión: ' + fechaEmision + '</div></div></div>',

@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "caso": "factura-diario-usd-oscuro",
+  "generador": "generateFacturaCobroDiario",
+  "tema": "dark",
+  "entradaHash": "3103ee307724e70c3e954879d2fe8c9ee59d3470",
+  "estructura": {
+    "docTitle": "Cobro - Nilda Paredes",
+    "h1": [],
+    "cabeceras": [],
+    "etiquetas": []
+  },
+  "valores": {
+    "bytes": 5917,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 5,
+    "hashMontos": "d4c3d2e41b7a2fe8514ef5ef30eec6cf43b1fa62",
+    "hashFname": "382f6fb6a9b96bb547417d5152c50796385aace1",
+    "hashTexto": "0b0bbb35b6191cc70d650ecad0e8c8772ed8782f",
+    "clases": [
+      "a",
+      "fd-brand",
+      "fd-caja",
+      "fd-cc",
+      "fd-date",
+      "fd-foot",
+      "fd-head",
+      "fd-hero",
+      "fd-info",
+      "fd-lab",
+      "fd-logo",
+      "fd-meta",
+      "fd-name",
+      "fd-num",
+      "fd-pay",
+      "fd-row",
+      "fd-sec",
+      "fd-sm",
+      "fd-st",
+      "fd-sub",
+      "fd-type",
+      "fd-val",
+      "fd-wm",
+      "l",
+      "q",
+      "v"
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "caso": "cuenta-diario-cop",
+  "generador": "generateEstadoCuentaDiario",
+  "tema": "light",
+  "entradaHash": "8b1a603990fc9ee5c4b11edb235e15905701e542",
+  "estructura": {
+    "docTitle": "Estado de Cuenta - Nilda Paredes",
+    "h1": [],
+    "cabeceras": [
+      "Desde",
+      "Hasta",
+      "Días",
+      "Capital base",
+      "Interés"
+    ],
+    "etiquetas": []
+  },
+  "valores": {
+    "bytes": 7812,
+    "nFilas": 8,
+    "nCeldas": 40,
+    "celdasPorTr": [
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5
+    ],
+    "nMontos": 19,
+    "hashMontos": "2f7d76592443d6d6e9865a0bd9fcb801008d344b",
+    "hashFname": "2bd7d805415cae47abd12725ff3d95dae7da2e9a",
+    "hashTexto": "d5293b1fe0546cc3668be4b0d12300a4d2d0ffd9",
+    "clases": [
+      "ec-brand",
+      "ec-caja",
+      "ec-cc",
+      "ec-date",
+      "ec-foot",
+      "ec-head",
+      "ec-lab",
+      "ec-logo",
+      "ec-meta",
+      "ec-name",
+      "ec-nota",
+      "ec-num",
+      "ec-row",
+      "ec-sec",
+      "ec-sm",
+      "ec-st",
+      "ec-sub",
+      "ec-type",
+      "ec-val",
+      "ec-wm",
+      "ev",
+      "n",
+      "q",
+      "tot",
+      "v"
+    ]
+  }
+}

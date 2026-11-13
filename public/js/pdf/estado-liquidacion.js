@@ -32,7 +32,7 @@ import { nowStr, properCase } from '../core/ui.js';
 import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento, periodoEnCursoDe, detalleInteresEnCurso } from '../core/dominio.js';
 import { esAbono, esCorte } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
-import { rbImpresion, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
 function campoValido(v){
@@ -82,19 +82,8 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   var lqCode = 'LQ-' + (ini || 'XX') + '-' + String(loan.id).slice(-3) + '-' +
                String(hasta).slice(8,10) + String(hasta).slice(5,7);
 
-  var C = dark ? {
-    bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
-    green:'#3fb950', blue:'#79c0ff', blueBg:'#0d2440', blueBd:'#1f3a5f',
-    red:'#f85149', redBg:'#2d1214', redBd:'#5c2226',
-    amber:'#d29922', amberBg:'#2b2312', amberBd:'#5c4813',
-    headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
-  } : {
-    bg:'#ffffff', text:'#1f2328', muted:'#656d76', bd:'#d0d7de', rowbd:'#eeeeee', panel:'#f6f8fa',
-    green:'#166534', blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#b6e3ff',
-    red:'#cf222e', redBg:'#ffebe9', redBd:'#ffcecb',
-    amber:'#9a6700', amberBg:'#fff8e5', amberBd:'#e8d3a0',
-    headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
-  };
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app (claro, u oscuro v4).
+  var C = rbPaleta(dark);
 
   function row(l, v, color){
     return '<div class="lq-row"><span class="lq-lab">' + l + '</span>' +
@@ -311,63 +300,64 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   var html = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estado de Liquidación - ' + esc(loan.nombre) + '</title><style>',
     '*{box-sizing:border-box}',
-    // Una sola familia en todo el documento. Los valores NO llevan monoespaciada: la
-    // mezcla desentonaba junto al texto. `tabular-nums` mantiene las cifras alineadas
-    // en columna, que es lo unico que aportaba la monoespaciada.
-    'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:26px 30px;background:' + C.bg + ';color:' + C.text + ';font-size:12px;line-height:1.45;max-width:700px;font-variant-numeric:tabular-nums}',
-    '.lq-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:11px;border-bottom:2px solid ' + C.headBd + ';margin-bottom:14px}',
-    '.lq-brand{display:flex;align-items:center;gap:9px}',
-    '.lq-wm{font-size:17px;font-weight:700;letter-spacing:-.3px}',
-    '.lq-sub{font-size:9.5px;color:' + C.muted + ';margin-top:1px}',
+    // Una sola familia en todo el documento (Inter, como la app) con cifras tabulares: alinean en
+    // columna sin la monoespaciada.
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';margin:0;padding:26px 30px;background:var(--r-bg);color:var(--r-text);font-size:12px;line-height:1.45;max-width:700px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    '.lq-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:11px;border-bottom:1px solid var(--r-bd);margin-bottom:14px}',
+    '.lq-brand{display:flex;align-items:center;gap:10px}',
+    '.lq-logo{width:32px;height:32px;border-radius:10px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.lq-wm{font-size:16px;font-weight:600;letter-spacing:-.02em}',
+    '.lq-sub{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
     '.lq-meta{text-align:right}',
-    '.lq-type{font-size:11px;font-weight:700;color:' + C.red + ';letter-spacing:.5px;text-transform:uppercase}',
-    '.lq-num{font-size:10.5px;color:' + C.muted + ';margin-top:2px}',
-    '.lq-date{font-size:9.5px;color:' + C.foot + ';margin-top:1px}',
-    '.lq-st{font-size:9.5px;color:' + C.muted + ';text-transform:uppercase;letter-spacing:.7px}',
-    '.lq-name{font-size:16px;font-weight:700;margin:2px 0 1px}',
-    '.lq-cc{font-size:10px;color:' + C.muted + '}',
-    '.lq-sec{font-size:9.5px;font-weight:700;color:' + C.muted + ';letter-spacing:.8px;text-transform:uppercase;margin:16px 0 6px}',
-    '.lq-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid ' + C.rowbd + ';font-size:11.5px}',
-    '.lq-lab{color:' + C.muted + '}',
+    '.lq-type{font-size:11px;font-weight:500;color:var(--r-muted)}',
+    '.lq-num{font-size:12.5px;font-weight:600;color:var(--r-text);margin-top:1px}',
+    '.lq-date{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
+    '.lq-st{font-size:11px;color:var(--r-muted)}',
+    '.lq-name{font-size:16px;font-weight:600;letter-spacing:-.01em;margin:1px 0}',
+    '.lq-cc{font-size:10.5px;color:var(--r-muted)}',
+    '.lq-sec{font-size:12px;font-weight:600;color:var(--r-text);margin:16px 0 6px}',
+    '.lq-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--r-bd);font-size:11.5px}',
+    '.lq-lab{color:var(--r-muted)}',
     '.lq-val{font-weight:600;white-space:nowrap}',
-    '.lq-sm{font-size:9.5px;color:' + C.foot + '}',
-    '.lq-vig{margin-top:14px;padding:9px 13px;background:' + C.amberBg + ';border:1px solid ' + C.amberBd + ';border-radius:9px;font-size:10.5px;line-height:1.5;color:' + C.amber + '}',
-    '.lq-desg{margin-top:6px;border:1px solid ' + C.bd + ';border-radius:9px;overflow:hidden}',
-    '.lq-d{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:9px 13px;border-bottom:1px solid ' + C.rowbd + '}',
+    '.lq-sm{font-size:9.5px;color:var(--r-muted)}',
+    '.lq-vig{margin-top:14px;padding:9px 13px;background:var(--r-amber-bg);border:1px solid var(--r-amber-bd);border-radius:12px;font-size:10.5px;line-height:1.5;color:var(--r-amber)}',
+    '.lq-desg{margin-top:6px;border:1px solid var(--r-bd);border-radius:14px;overflow:hidden;background:var(--r-card)}',
+    '.lq-d{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:9px 13px;border-bottom:1px solid var(--r-bd)}',
     '.lq-d:last-child{border-bottom:none}',
     '.lq-d .t{font-size:11.5px;font-weight:600}',
-    '.lq-d .s{font-size:9.5px;color:' + C.foot + ';margin-top:1px}',
+    '.lq-d .s{font-size:9.5px;color:var(--r-muted);margin-top:1px}',
     '.lq-d .v{font-size:12.5px;font-weight:600;white-space:nowrap}',
-    '.lq-total{margin-top:11px;padding:13px 16px;border-radius:9px;display:flex;justify-content:space-between;align-items:center;gap:14px;background:' + C.redBg + ';border:1px solid ' + C.redBd + '}',
-    '.lq-total .q{font-size:11px;font-weight:700;color:' + C.red + ';letter-spacing:.4px;text-transform:uppercase}',
-    '.lq-total .qs{font-size:9.5px;color:' + C.foot + ';margin-top:2px;font-weight:400;letter-spacing:0;text-transform:none}',
-    '.lq-total .v{font-size:25px;font-weight:700;color:' + C.red + ';white-space:nowrap}',
-    // 8 columnas en ~640px utiles: padding lateral 4px, tipografia 9/10px y nowrap
-    // (mismo tratamiento que absorbio la 7a columna del cronograma en v1.18.0).
+    // El total a liquidar: la cifra en tinta sobre una tarjeta neutra (era un bloque rojo).
+    '.lq-total{margin-top:11px;padding:13px 16px;border-radius:16px;display:flex;justify-content:space-between;align-items:center;gap:14px;background:var(--r-card);border:1px solid var(--r-bd-2)}',
+    '.lq-total .q{font-size:12.5px;font-weight:600;color:var(--r-text)}',
+    '.lq-total .qs{font-size:9.5px;color:var(--r-muted);margin-top:2px;font-weight:400}',
+    '.lq-total .v{font-size:25px;font-weight:600;letter-spacing:-.03em;color:var(--r-text);white-space:nowrap}',
+    // 8 columnas en ~640px utiles: padding lateral 4px, tipografia 9/10px y nowrap (el tratamiento
+    // del cronograma desde v1.18.0); lineas finas y cabecera en tinta suave, sin rejilla.
     'table{width:100%;border-collapse:collapse;font-size:10px}',
-    'th{text-align:left;background:' + C.panel + ';color:' + C.muted + ';font-size:9px;letter-spacing:.3px;text-transform:uppercase;padding:5px 4px;border-bottom:1px solid ' + C.bd + ';white-space:nowrap}',
-    'td{padding:4px;border-bottom:1px solid ' + C.rowbd + ';white-space:nowrap}',
+    'th{text-align:left;color:var(--r-muted);font-size:9px;font-weight:500;padding:4px 4px 5px;border-bottom:1px solid var(--r-bd-2);white-space:nowrap}',
+    'td{padding:4px;border-bottom:1px solid var(--r-bd);white-space:nowrap}',
     'td.n,th.n{text-align:right}',
-    'tr.ab td{background:' + C.blueBg + ';color:' + C.blue + ';font-weight:600}',
-    'tr.tot td{background:' + C.panel + ';font-weight:700;border-top:2px solid ' + C.bd + ';border-bottom:none}',
-    '.bdg{display:inline-block;font-size:8.5px;font-weight:700;padding:1px 5px;border-radius:4px;letter-spacing:.2px}',
-    '.b-ok{background:' + C.blueBg + ';color:' + C.blue + '}',
-    '.b-mora{background:' + C.redBg + ';color:' + C.red + '}',
-    '.b-par{background:' + C.amberBg + ';color:' + C.amber + '}',
-    '.b-pen{background:' + C.panel + ';color:' + C.muted + '}',
-    '.lq-pagar{margin-top:13px;padding:10px 13px;background:' + C.panel + ';border:1px solid ' + C.bd + ';border-radius:9px}',
-    '.lq-pagar .h{font-size:9.5px;font-weight:700;color:' + C.muted + ';letter-spacing:.6px;text-transform:uppercase;margin-bottom:4px}',
+    'tr.ab td{background:var(--r-blue-bg);color:var(--r-blue);font-weight:600}',
+    'tr.tot td{font-weight:600;border-top:1px solid var(--r-bd-2);border-bottom:none}',
+    '.bdg{display:inline-block;font-size:8.5px;font-weight:600;padding:1px 6px;border-radius:99px}',
+    '.b-ok{background:var(--r-green-bg);color:var(--r-green)}',
+    '.b-mora{background:var(--r-red-bg);color:var(--r-red)}',
+    '.b-par{background:var(--r-amber-bg);color:var(--r-amber)}',
+    '.b-pen{background:var(--r-soft-2);color:var(--r-text-2)}',
+    '.lq-pagar{margin-top:13px;padding:10px 13px;background:var(--r-soft);border-radius:12px}',
+    '.lq-pagar .h{font-size:11px;font-weight:600;color:var(--r-text);margin-bottom:4px}',
     '.lq-pagar .b{font-size:10.5px;line-height:1.55}',
-    '.lq-foot{margin-top:11px;padding-top:8px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:9.5px;line-height:1.5}',
-    '.lq-foot b{color:' + C.green + '}',
-    // Inset de impresion 1.3cm (no 2cm) y secciones mas juntas: el documento tiene que
-    // caber en UNA hoja aun con desglose completo, respaldo y "Como pagar" — mismo
-    // ajuste que ya hizo `generateFacturaCobro` por la misma razon.
-    rbImpresion(dark, '', '.lq-sec{margin:11px 0 5px}'),
+    '.lq-foot{margin-top:11px;padding-top:8px;border-top:1px solid var(--r-bd);text-align:center;color:var(--r-muted);font-size:9.5px;line-height:1.5}',
+    '.lq-foot b{color:var(--r-text);font-weight:600}',
+    // Inset de impresion 1.3cm y secciones mas juntas: el documento tiene que caber en UNA hoja
+    // aun con desglose completo, respaldo y "Como pagar".
+    rbImpresionPapel(dark, '.lq-sec{margin:11px 0 5px}'),
     '</style></head><body>' + RB_MARCO_ABRE,
 
     '<div class="lq-head"><div class="lq-brand">',
-    '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
+    '<div class="lq-logo">' + RB_LOGO + '</div>',
     '<div><div class="lq-wm">Cartera</div><div class="lq-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="lq-meta"><div class="lq-type">Estado de Liquidación</div><div class="lq-num">' + lqCode + '</div>',
     '<div class="lq-date">Emisión: ' + fechaEmision + '</div></div></div>',

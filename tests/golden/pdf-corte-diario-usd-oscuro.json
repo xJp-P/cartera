@@ -1,0 +1,56 @@
+{
+  "version": 2,
+  "caso": "corte-diario-usd-oscuro",
+  "generador": "generateReciboCorte",
+  "tema": "dark",
+  "entradaHash": "d4595d39cb4be49df6ea366c3cec2b392c8939ec",
+  "estructura": {
+    "docTitle": "Recibo de Corte - Nilda Paredes",
+    "h1": [],
+    "cabeceras": [],
+    "etiquetas": [
+      "Intereses # día(s) x USD $#.#/día desde # de M de #",
+      "Abono a capital",
+      "Capital vivo",
+      "Interés por cobrar",
+      "Desde mañana genera Antes generaba USD $#.#/día"
+    ]
+  },
+  "valores": {
+    "bytes": 6172,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 9,
+    "hashMontos": "e95b3301d3c1a1cf7fdb3e6dfbcefbf0bdef2641",
+    "hashFname": "e8a0e61134a2e091468421d6fa08580fb19b00fe",
+    "hashTexto": "284b86248dfeec5e5d56598e20144b43c8092d76",
+    "clases": [
+      "a",
+      "l",
+      "q",
+      "rc-brand",
+      "rc-caja",
+      "rc-cc",
+      "rc-chip",
+      "rc-date",
+      "rc-foot",
+      "rc-head",
+      "rc-hero",
+      "rc-lab",
+      "rc-logo",
+      "rc-meta",
+      "rc-name",
+      "rc-num",
+      "rc-row",
+      "rc-sec",
+      "rc-sm",
+      "rc-st",
+      "rc-sub",
+      "rc-type",
+      "rc-val",
+      "rc-wm",
+      "v"
+    ]
+  }
+}

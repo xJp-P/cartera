@@ -18,7 +18,7 @@
 import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
 import { estadoDiario } from '../core/dominio.js';
-import { rbImpresion, rbIniciales, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { rbPaleta, rbTokens, rbImpresionPapel, rbIniciales, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
 function campoValido(v){
@@ -55,15 +55,8 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
   var interesDia = Math.round(dev.capitalVivo * (+loan.tasaMensual || 0) / 100 / 30);
   var tasaDia = Math.round((+loan.tasaMensual || 0) / 30 * 1000) / 1000;
 
-  var C = dark ? {
-    bg:'#0d1117', text:'#e6edf3', muted:'#8b949e', bd:'#30363d', rowbd:'#21262d', panel:'#161b22',
-    green:'#3fb950', greenBg:'#0f2b19', greenBd:'#1b4332', blue:'#79c0ff', blueBg:'#0d2440', blueBd:'#1f3a5f',
-    headBd:'#30363d', foot:'#6e7681', footBd:'#30363d'
-  } : {
-    bg:'#ffffff', text:'#1f2328', muted:'#656d76', bd:'#d0d7de', rowbd:'#eeeeee', panel:'#f6f8fa',
-    green:'#166534', greenBg:'#f0fdf4', greenBd:'#4ade80', blue:'#0969da', blueBg:'#ddf4ff', blueBd:'#b6e3ff',
-    headBd:'#333333', foot:'#8c959f', footBd:'#dddddd'
-  };
+  // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app (claro, u oscuro v4).
+  var C = rbPaleta(dark);
 
   function row(l, v, color){
     return '<div class="ec-row"><span class="ec-lab">' + l + '</span>' +
@@ -103,39 +96,42 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
   var html = [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estado de Cuenta - ' + esc(loan.nombre) + '</title><style>',
     '*{box-sizing:border-box}',
-    'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:26px 30px;background:' + C.bg + ';color:' + C.text + ';font-size:12px;line-height:1.45;max-width:700px}',
-    '.ec-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:11px;border-bottom:2px solid ' + C.headBd + ';margin-bottom:14px}',
-    '.ec-brand{display:flex;align-items:center;gap:9px}',
-    '.ec-wm{font-size:17px;font-weight:700;letter-spacing:-.3px}',
-    '.ec-sub{font-size:9.5px;color:' + C.muted + ';margin-top:1px}',
+    rbTokens(C),
+    'body{font-family:' + RB_LETRA + ';margin:0;padding:26px 30px;background:var(--r-bg);color:var(--r-text);font-size:12px;line-height:1.45;max-width:700px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}',
+    '.ec-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:11px;border-bottom:1px solid var(--r-bd);margin-bottom:14px}',
+    '.ec-brand{display:flex;align-items:center;gap:10px}',
+    '.ec-logo{width:32px;height:32px;border-radius:10px;background:var(--r-text);color:var(--r-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.ec-wm{font-size:16px;font-weight:600;letter-spacing:-.02em}',
+    '.ec-sub{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
     '.ec-meta{text-align:right}',
-    '.ec-type{font-size:11px;font-weight:700;color:' + C.green + ';letter-spacing:.5px;text-transform:uppercase}',
-    '.ec-num{font-family:ui-monospace,monospace;font-size:10.5px;color:' + C.muted + ';margin-top:2px}',
-    '.ec-date{font-size:9.5px;color:' + C.foot + ';margin-top:1px}',
-    '.ec-st{font-size:9.5px;color:' + C.muted + ';text-transform:uppercase;letter-spacing:.7px}',
-    '.ec-name{font-size:16px;font-weight:700;margin:2px 0 1px}',
-    '.ec-cc{font-size:10px;color:' + C.muted + '}',
-    '.ec-sec{font-size:9.5px;font-weight:700;color:' + C.muted + ';letter-spacing:.8px;text-transform:uppercase;margin:16px 0 6px}',
-    '.ec-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid ' + C.rowbd + ';font-size:11.5px}',
-    '.ec-lab{color:' + C.muted + '}',
-    '.ec-val{font-family:ui-monospace,monospace;font-weight:600;white-space:nowrap}',
-    '.ec-sm{font-size:9.5px;color:' + C.foot + '}',
+    '.ec-type{font-size:11px;font-weight:500;color:var(--r-muted)}',
+    '.ec-num{font-size:12.5px;font-weight:600;color:var(--r-text);margin-top:1px}',
+    '.ec-date{font-size:10.5px;color:var(--r-muted);margin-top:1px}',
+    '.ec-st{font-size:11px;color:var(--r-muted)}',
+    '.ec-name{font-size:16px;font-weight:600;letter-spacing:-.01em;margin:1px 0}',
+    '.ec-cc{font-size:10.5px;color:var(--r-muted)}',
+    '.ec-sec{font-size:12px;font-weight:600;color:var(--r-text);margin:16px 0 6px}',
+    '.ec-row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--r-bd);font-size:11.5px}',
+    '.ec-lab{color:var(--r-muted)}',
+    '.ec-val{font-weight:600;white-space:nowrap}',
+    '.ec-sm{font-size:9.5px;color:var(--r-muted)}',
     'table{width:100%;border-collapse:collapse;font-size:10.5px}',
-    'th{text-align:left;background:' + C.panel + ';color:' + C.muted + ';font-size:9px;letter-spacing:.4px;text-transform:uppercase;padding:6px 5px;border-bottom:1px solid ' + C.bd + ';white-space:nowrap}',
-    'td{padding:5px;border-bottom:1px solid ' + C.rowbd + ';white-space:nowrap}',
-    'td.n,th.n{text-align:right;font-family:ui-monospace,monospace}',
-    'tr.ev td{background:' + C.blueBg + ';color:' + C.blue + ';font-weight:600;font-size:10px}',
-    'tr.tot td{background:' + C.panel + ';font-weight:700;border-top:2px solid ' + C.bd + ';border-bottom:none}',
-    '.ec-caja{margin-top:11px;padding:12px 15px;border-radius:9px;display:flex;justify-content:space-between;align-items:center;gap:14px;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + '}',
-    '.ec-caja .q{font-size:12px;font-weight:700;color:' + C.blue + '}',
-    '.ec-caja .v{font-size:22px;font-weight:700;font-family:ui-monospace,monospace;color:' + C.blue + ';white-space:nowrap}',
-    '.ec-nota{margin-top:11px;padding:9px 13px;background:' + C.blueBg + ';border:1px solid ' + C.blueBd + ';border-radius:9px;font-size:10.5px;line-height:1.5;color:' + C.blue + '}',
-    '.ec-foot{margin-top:17px;padding-top:9px;border-top:1px solid ' + C.footBd + ';text-align:center;color:' + C.foot + ';font-size:9.5px;line-height:1.55}',
-    '.ec-foot b{color:' + C.green + '}',
-    rbImpresion(dark),
+    'th{text-align:left;color:var(--r-muted);font-size:9.5px;font-weight:500;padding:4px 5px 5px;border-bottom:1px solid var(--r-bd-2);white-space:nowrap}',
+    'td{padding:5px;border-bottom:1px solid var(--r-bd);white-space:nowrap}',
+    'td.n,th.n{text-align:right}',
+    'tr.ev td{background:var(--r-blue-bg);color:var(--r-blue);font-weight:600;font-size:10px}',
+    'tr.tot td{font-weight:600;border-top:1px solid var(--r-bd-2);border-bottom:none}',
+    '.ec-caja{margin-top:11px;padding:11px 14px;border-radius:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--r-blue-bg);border:1px solid ' + C.blueBd + '}',
+    '.ec-caja .q{font-size:12px;font-weight:600;color:var(--r-blue)}',
+    '.ec-caja .v{font-size:22px;font-weight:600;letter-spacing:-.02em;color:var(--r-blue);white-space:nowrap}',
+    '.ec-nota{margin-top:11px;padding:9px 13px;background:var(--r-soft);border-radius:12px;font-size:10.5px;line-height:1.5;color:var(--r-text-2)}',
+    '.ec-nota b{color:var(--r-text)}',
+    '.ec-foot{margin-top:17px;padding-top:9px;border-top:1px solid var(--r-bd);text-align:center;color:var(--r-muted);font-size:9.5px;line-height:1.55}',
+    '.ec-foot b{color:var(--r-text);font-weight:600}',
+    rbImpresionPapel(dark),
     '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="ec-head"><div class="ec-brand">',
-    '<svg width="32" height="32" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><rect width="36" height="36" rx="9" fill="' + C.green + '"/><text x="18" y="25" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle">C</text></svg>',
+    '<div class="ec-logo">' + RB_LOGO + '</div>',
     '<div><div class="ec-wm">Cartera</div><div class="ec-sub">Gestión de cartera de crédito</div></div></div>',
     '<div class="ec-meta"><div class="ec-type">Estado de Cuenta</div><div class="ec-num">' + ecCode + '</div>',
     '<div class="ec-date">Emisión: ' + fechaEmision + '</div></div></div>',

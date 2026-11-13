@@ -119,7 +119,9 @@ const CAP = FE.captura;
 const GENERADORES = ['generateCronogramaPDF', 'generateReportePrestamosPDF',
                      'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono',
                      'generateEstadoLiquidacion', 'generateReciboCobro',
-                     'generatePropuestaAbono', 'generateReciboGeneral'];
+                     'generatePropuestaAbono', 'generateReciboGeneral',
+                     // Los tres del credito abierto (golden desde el rediseño v4, 2026-11-13).
+                     'generateEstadoCuentaDiario', 'generateReciboCorte', 'generateFacturaCobroDiario'];
 const faltantes = GENERADORES.filter(n => typeof S[n] !== 'function');
 if (faltantes.length) {
   abortar('El frontend no expone estos generadores como funciones top-level: ' + faltantes.join(', ') +
@@ -142,6 +144,10 @@ function ponerTema(t) { FE.sandbox.document.documentElement.setAttribute('data-t
 // ── Datos de los casos ───────────────────────────────────────────────────────────────────
 
 const L = id => loans.find(x => x.id === id);
+// El credito abierto del fixture en dolares (copia en memoria, misma deuda en pesos) y su ultimo corte.
+const TRM_DIARIO_USD = 4000;
+const diarioUSD = () => { const b = L('fixture-diario-01'); return Object.assign({}, b, { moneda: 'USD', trmAcordada: TRM_DIARIO_USD, montoOrigen: b.montoOrigen / TRM_DIARIO_USD }); };
+const ultimoCorteDiario = () => pays.filter(p => p.prestamoId === 'fixture-diario-01' && S.esCorte(p)).sort((a, b) => a.cuotaN - b.cuotaN).pop();
 const cuota = (loanId, n, arr) => (arr || pays).find(p => p.prestamoId === loanId && p.cuotaN === n);
 
 // Un PAGO PARCIAL EN VUELO (partialPaid > 0 sobre una cuota que sigue Pendiente) es el caso
@@ -814,7 +820,9 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', incluye: true, tema: 'dark' }),
     ejecutar: () => S.generateEstadoLiquidacion(L('1782151590658w66y'), pays, config.datos_pago,
       { incluyeProxMes: true, hasta: '2026-07-31' }),
-    contiene: ['USD $', '#0d1117', 'Total a liquidar hoy'] },
+    // Rediseño v4: con la app en tema oscuro, el oscuro de la app (el #0d1117 viejo ya no aparece).
+    contiene: ['USD $', '--r-bg:#000000', 'Total a liquidar hoy'],
+    noContiene: ['#0d1117'] },
 
   // Rama propia del credito abierto: sin bloque de mora, con el devengo explicado en dias.
   { nombre: 'liq-diario-cop', gen: 'generateEstadoLiquidacion', tema: 'light', celdas: 5,
@@ -831,6 +839,39 @@ const CASOS = [
     ejecutar: () => S.generateEstadoLiquidacion(L(LOAN_PARCIAL), paysParcial, config.datos_pago,
       { incluyeProxMes: false, hasta: '2026-07-31' }),
     contiene: ['Abonos parciales ya recibidos', 'ya están descontados'] },
+
+  // ── El credito abierto: sus tres documentos propios (golden desde el rediseño v4, 2026-11-13) ──
+  // Hasta entonces solo los generaba la seccion N, sin linea base: un cambio de estructura pasaba sin
+  // que nadie se enterara, y el rediseño necesita la regla D para probar que su texto no se mueve.
+  // Cada uno en pesos (claro) y en dolares (oscuro). El de dolares es una COPIA en memoria del
+  // diario del fixture con la misma deuda en pesos (la misma que usa N5); la BD no se toca.
+  { nombre: 'cuenta-diario-cop', gen: 'generateEstadoCuentaDiario', tema: 'light', celdas: 5,
+    entrada: () => ({ loanId: 'fixture-diario-01', hasta: '2026-07-31', tema: 'light' }),
+    ejecutar: () => S.generateEstadoCuentaDiario(L('fixture-diario-01'), pays, { hasta: '2026-07-31' }),
+    contiene: ['Estado de Cuenta', 'Cómo se generó el interés', 'Corte #', 'Total devengado', 'Valor para liquidar al'] },
+  { nombre: 'cuenta-diario-usd-oscuro', gen: 'generateEstadoCuentaDiario', tema: 'dark', celdas: 5,
+    entrada: () => ({ loanId: 'fixture-diario-01', usdTrm: TRM_DIARIO_USD, hasta: '2026-07-31', tema: 'dark' }),
+    ejecutar: () => S.generateEstadoCuentaDiario(diarioUSD(), pays, { hasta: '2026-07-31' }),
+    contiene: ['Estado de Cuenta', 'USD $', 'Total cobrado', '--r-bg:#000000'],
+    noContiene: ['#0d1117'] },
+  { nombre: 'corte-diario-cop', gen: 'generateReciboCorte', tema: 'light', celdas: null,
+    entrada: () => ({ loanId: 'fixture-diario-01', corte: ultimoCorteDiario().id, tema: 'light' }),
+    ejecutar: () => S.generateReciboCorte(L('fixture-diario-01'), pays, ultimoCorteDiario(), {}),
+    contiene: ['Recibo de Corte', 'Total recibido', 'Detalle', 'Cómo queda tu crédito', 'Si liquidas hoy'] },
+  { nombre: 'corte-diario-usd-oscuro', gen: 'generateReciboCorte', tema: 'dark', celdas: null,
+    entrada: () => ({ loanId: 'fixture-diario-01', usdTrm: TRM_DIARIO_USD, corte: ultimoCorteDiario().id, tema: 'dark' }),
+    ejecutar: () => S.generateReciboCorte(diarioUSD(), pays, ultimoCorteDiario(), {}),
+    contiene: ['Recibo de Corte', 'USD $', '--r-bg:#000000'],
+    noContiene: ['#0d1117'] },
+  { nombre: 'factura-diario-cop', gen: 'generateFacturaCobroDiario', tema: 'light', celdas: null,
+    entrada: () => ({ loanId: 'fixture-diario-01', hasta: '2026-07-31', tema: 'light' }),
+    ejecutar: () => S.generateFacturaCobroDiario(L('fixture-diario-01'), pays, config.datos_pago, { hasta: '2026-07-31' }),
+    contiene: ['no tiene fecha de vencimiento', 'De dónde sale', 'Total a pagar', 'Si prefieres liquidar todo hoy', 'Cómo pagar'] },
+  { nombre: 'factura-diario-usd-oscuro', gen: 'generateFacturaCobroDiario', tema: 'dark', celdas: null,
+    entrada: () => ({ loanId: 'fixture-diario-01', usdTrm: TRM_DIARIO_USD, hasta: '2026-07-31', tema: 'dark' }),
+    ejecutar: () => S.generateFacturaCobroDiario(diarioUSD(), pays, config.datos_pago, { hasta: '2026-07-31' }),
+    contiene: ['no tiene fecha de vencimiento', 'USD $', '--r-bg:#000000'],
+    noContiene: ['#0d1117'] },
 ];
 
 // ── Extraccion de la huella ──────────────────────────────────────────────────────────────
@@ -1182,7 +1223,9 @@ for (const caso of CASOS) {
 // el PO revirtio el "siempre en claro" el mismo dia) y no deja colores del tema oscuro viejo. Que el
 // texto, las cifras y las filas no se movieron lo prueba el golden (regla D al rediseñar).
 const GENERADORES_V4 = ['generateReciboCobro', 'generateReciboGeneral',
-                        'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono', 'generatePropuestaAbono'];
+                        'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono', 'generatePropuestaAbono',
+                        'generateEstadoLiquidacion', 'generateEstadoCuentaDiario', 'generateReciboCorte',
+                        'generateFacturaCobroDiario'];
 R.seccion('V4 · los documentos rediseñados: Inter, el logo de la app y el papel del tema');
 {
   const casosV4 = CASOS.filter(c => GENERADORES_V4.indexOf(c.gen) !== -1);
@@ -1534,9 +1577,9 @@ for (const c of CASOS) {
   if (l) { modsCubiertas.add(l.modalidad); monedas.add(l.moneda); }
 }
 // 'Interes Diario' entra aqui con el Estado de Liquidacion: es el primer caso de
-// pdf-render que ejercita la 5a modalidad (los 2 generadores propios del credito
-// abierto, generateEstadoCuentaDiario y generateReciboCorte, siguen sin golden; desde 3.7.0 la
-// seccion N los renderiza en dolares y exige que no impriman pesos).
+// pdf-render que ejercita la 5a modalidad. Los 3 generadores propios del credito abierto
+// (estado de cuenta, recibo de corte y factura de interes) tienen golden desde el rediseño v4
+// (2026-11-13); la seccion N los renderiza ademas en dolares y exige que no impriman pesos.
 const MODALIDADES = ['Capital + Intereses', 'Interes Diario', 'Intereses', 'Pago Unico', 'Prestamo'];
 R.eq('las ' + MODALIDADES.length + ' modalidades estan cubiertas', [...modsCubiertas].sort(), MODALIDADES);
 R.eq('COP y USD cubiertos', [...monedas].sort(), ['COP', 'USD']);

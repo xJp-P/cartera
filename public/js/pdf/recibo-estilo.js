@@ -75,13 +75,13 @@ export function rbPaleta(dark){
         bd: '#1f1f1f', bd2: '#2e2e2e',
         green: '#3fb37f', greenBg: '#0b1d12', greenBd: '#1c4029', green2: '#3fb37f',
         amber: '#f2b33d', amberBg: '#1f1709', amberBd: '#4a3712',
-        red: '#f06b6b', redBg: '#240f0f', red2: '#d03b3b',
+        red: '#f06b6b', redBg: '#240f0f', redBd: '#4b1a1a', red2: '#d03b3b',
         blue: '#5b9bf0', blueBg: '#0c1828', blueBd: '#1f3a5f', track: '#2a2a2a' }
     : { oscuro: false, bg: '#ffffff', card: '#ffffff', text: '#0a0a0a', text2: '#4b4b47', muted: '#6b6b66', soft: '#f6f6f3', soft2: '#ecece8',
         bd: '#e6e6e1', bd2: '#d6d6d0',
         green: '#17804f', greenBg: '#eaf6ea', greenBd: '#c4e5c4', green2: '#17804f',
         amber: '#a86400', amberBg: '#fef5de', amberBd: '#f5dfa8',
-        red: '#c62f35', redBg: '#fbeded', red2: '#d03b3b',
+        red: '#c62f35', redBg: '#fbeded', redBd: '#f3caca', red2: '#d03b3b',
         blue: '#2a6fd1', blueBg: '#ecf2fb', blueBd: '#cddcf3', track: '#ecece8' };
 }
 
@@ -140,8 +140,9 @@ export function rbTokens(C){
 }
 // El mismo bloque de impresion de siempre (el marco, la carta, el fondo a sangre), con el fondo y el
 // texto impresos del papel v4 del tema: sin el #0d1117 ni el #1f2328 de los documentos viejos.
-export function rbImpresionPapel(dark){
-  return rbImpresion(!!dark, '', '', { bg: 'var(--r-bg)', tx: 'var(--r-text)' });
+// `extra`: reglas propias de un documento dentro del @media print (como en rbImpresion).
+export function rbImpresionPapel(dark, extra){
+  return rbImpresion(!!dark, '', extra || '', { bg: 'var(--r-bg)', tx: 'var(--r-text)' });
 }
 
 export function rbCss(C){

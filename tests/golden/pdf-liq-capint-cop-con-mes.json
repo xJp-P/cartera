@@ -20,7 +20,7 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 8735,
+    "bytes": 9416,
     "nFilas": 6,
     "nCeldas": 48,
     "celdasPorTr": [
@@ -34,7 +34,7 @@
     "nMontos": 23,
     "hashMontos": "c232ad71183e14516f2d0d7d7d4930c10babad02",
     "hashFname": "3ff0c891c5862d50fc94bcbb6cf71f28d8f71cfc",
-    "hashTexto": "b260a1468d34b12ecae1c858b64105540f8a5efc",
+    "hashTexto": "2f05a550c2935fa0ff1335faf7a3140501dec864",
     "clases": [
       "ab",
       "b",
@@ -48,6 +48,7 @@
       "lq-foot",
       "lq-head",
       "lq-lab",
+      "lq-logo",
       "lq-meta",
       "lq-name",
       "lq-num",

@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "caso": "cuenta-diario-usd-oscuro",
+  "generador": "generateEstadoCuentaDiario",
+  "tema": "dark",
+  "entradaHash": "3103ee307724e70c3e954879d2fe8c9ee59d3470",
+  "estructura": {
+    "docTitle": "Estado de Cuenta - Nilda Paredes",
+    "h1": [],
+    "cabeceras": [
+      "Desde",
+      "Hasta",
+      "Días",
+      "Capital base",
+      "Interés"
+    ],
+    "etiquetas": []
+  },
+  "valores": {
+    "bytes": 7848,
+    "nFilas": 8,
+    "nCeldas": 40,
+    "celdasPorTr": [
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5
+    ],
+    "nMontos": 19,
+    "hashMontos": "a3f7bdac0356b1f01eb11c9519d7072fd2453a0f",
+    "hashFname": "2bd7d805415cae47abd12725ff3d95dae7da2e9a",
+    "hashTexto": "77adc8fb41c12d41c9d45e8fc90d195fd964d809",
+    "clases": [
+      "ec-brand",
+      "ec-caja",
+      "ec-cc",
+      "ec-date",
+      "ec-foot",
+      "ec-head",
+      "ec-lab",
+      "ec-logo",
+      "ec-meta",
+      "ec-name",
+      "ec-nota",
+      "ec-num",
+      "ec-row",
+      "ec-sec",
+      "ec-sm",
+      "ec-st",
+      "ec-sub",
+      "ec-type",
+      "ec-val",
+      "ec-wm",
+      "ev",
+      "n",
+      "q",
+      "tot",
+      "v"
+    ]
+  }
+}
