@@ -73,7 +73,6 @@
   .mono{font-family:'Cascadia Code','Consolas',monospace}
   .tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  .fade-in{animation:fadeIn .2s ease}
   .pay-row:hover{background:var(--bg3)!important}
   .loan-card:hover{border-color:var(--green)!important}
   .debtor-card:hover{border-color:var(--blue)!important}

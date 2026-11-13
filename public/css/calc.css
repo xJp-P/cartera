@@ -1,0 +1,80 @@
+/* public/css/calc.css — CALCULADORA del rediseño v4 (vistas/CalcView.js).
+ *
+ * Se carga despues de las hojas de las pestañas anteriores: reutiliza las tarjetas, titulos, botones,
+ * enlaces, la cifra grande (V4Dinero) y las animaciones del Resumen (v4-), el control segmentado de Cobros
+ * (cbv-seg) y el rotulo de los campos de la base comun de los modales (v4m-fld). Los campos de texto
+ * llevan la misma estetica que en los modales: 44 px, superficie 2 y el anillo azul de foco. Todo lo
+ * propio vive bajo `.v4k` con prefijo `clv-`. */
+
+.v4k { display: flex; flex-direction: column; gap: 16px; color: var(--ink); }
+.clv-intro { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: var(--ink-3); margin: 0 2px -2px; }
+.clv-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+
+/* Tarjetas */
+.clv-card { padding: 22px 24px; gap: 14px; }
+.clv-card-h { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 2px; }
+.clv-ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; background: var(--surface-3); color: var(--ink-2); }
+
+/* Los campos: la misma estetica que en los modales (44 px, anillo azul de foco) */
+.v4k .v4m-fld { margin-top: 0; }
+.v4k .inp { min-height: 44px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--ink);
+  font: 14px var(--font); font-variant-numeric: tabular-nums; transition: border-color .15s, box-shadow .2s, background-color .15s; }
+.v4k .inp:hover { border-color: var(--line-strong); }
+.v4k .inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }
+.v4k .inp::placeholder { color: var(--ink-3); }
+.clv-campo { display: flex; flex-direction: column; gap: 7px; }
+.clv-campo-l { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.clv-campo .cbv-seg { align-self: flex-start; }
+.clv-pista { margin-top: 6px; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.clv-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* La ayuda de la modalidad */
+.clv-ayuda { display: inline-flex; }
+.clv-ayuda-i { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ink-3); font-size: 10px; font-weight: 700;
+  color: var(--ink-3); cursor: help; line-height: 1; }
+.clv-ayuda-box { background: var(--tt-bg); border-color: var(--line-strong); border-radius: 12px; color: var(--ink-2); font-size: 12px; box-shadow: var(--shadow); }
+.clv-ayuda-box b { color: var(--ink); }
+.clv-ayuda-nota { color: var(--ink-3); font-style: italic; }
+
+/* El resultado */
+.clv-vacio { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 36px 16px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+.clv-vacio .ico { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-3); color: var(--ink-2); }
+.clv-vacio p { max-width: 40ch; }
+.clv-cuota { display: flex; flex-direction: column; gap: 6px; }
+.clv-cuota-v { font-size: 40px; font-weight: 650; letter-spacing: -.04em; line-height: 1.05; }
+.clv-conv { padding: 9px 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.clv-kvs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.clv-kv { padding: 13px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.clv-kv:nth-child(odd) { border-right: 1px solid var(--line); }
+.clv-kv:nth-child(n+3) { border-top: 1px solid var(--line); }
+.clv-kv-l { font-size: 12px; color: var(--ink-3); }
+.clv-kv-v { font-size: 17px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.clv-kv.ganancia .clv-kv-v { color: var(--good-text); }
+.v4k .dp-usd { color: var(--ink-3); }
+.clv-ver { align-self: flex-start; margin-left: -8px; }
+
+/* El cronograma tentativo: columnas universales (sin VENCE ni ESTADO: el prestamo aun no existe) */
+.clv-crono { border: 1px solid var(--line); border-radius: 14px; overflow: auto; max-height: 420px; }
+.clv-crono table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.clv-crono th { position: sticky; top: 0; background: var(--surface-2); padding: 9px 12px; text-align: right; font-size: 11.5px; font-weight: 500; color: var(--ink-3); white-space: nowrap; }
+.clv-crono th:first-child, .clv-crono td:first-child { text-align: center; width: 44px; }
+.clv-crono td { padding: 8px 12px; text-align: right; border-top: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+.clv-crono td:first-child { color: var(--ink-3); }
+.clv-crono td.fuerte { color: var(--ink); font-weight: 600; }
+.clv-crono td.saldo { color: var(--ink-3); }
+.clv-crono tbody tr:hover td { background: var(--surface-2); }
+.clv-crono .dp-usd { display: block; font-size: 10.5px; }
+
+/* La accion */
+.clv-acc { display: flex; justify-content: flex-end; padding-top: 14px; border-top: 1px solid var(--line); }
+.clv-crear { height: 42px; padding: 0 18px; font-size: 13.5px; }
+
+@media (max-width: 1100px) {
+  .clv-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Movimiento ─────────────────────────────────────────────────────────────────── */
+.v4k.anima .clv-intro, .v4k.anima .v4-card { animation: v4-in .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 70ms + 60ms); }
+@media (prefers-reduced-motion: reduce) {
+  .v4k *, .v4k *::before, .v4k *::after { animation: none !important; transition: none !important; }
+}
