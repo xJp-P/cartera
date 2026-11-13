@@ -750,5 +750,12 @@ export const CHANGELOGS = {
     'Nueva tarjeta «Por cobrar»: lo vencido y lo de hoy, una fila por persona con sus días de atraso (si son muchas, la lista se desplaza como la de la meta del mes), y lo que entra esta semana, día por día. Al tocar una fila se abre esa persona en Cartera.',
     'Por cobrar, la meta del mes y los últimos movimientos van lado a lado y a la misma altura. La agenda de cobro y el radar salen del Resumen: lo que mostraban vive ahora en Por cobrar, en Cobros y en Cartera.',
     'En Rendimiento, debajo de la barra de «Recuperado» ahora ves cuánto capital te ha devuelto cada préstamo (y en dólares, si el crédito es en dólares): con el saldo de al lado, suman lo prestado.'
+  ],
+  '4.0.0': [
+    'Rediseño completo de la aplicación: todas las pestañas, los modales, la calculadora y la pantalla de arranque estrenan el diseño V4, en tema claro y oscuro.',
+    'Los documentos PDF (recibos, facturas, cronograma, estados de cuenta, liquidaciones y reportes) se rediseñaron con la misma línea: la letra de la app, el logo nuevo y el tema que tengas activo.',
+    'Los PDF pesan cerca de la mitad que antes, gracias a la nueva letra incorporada en el documento.',
+    'Estados más claros en pantalla y en papel: lo pagado en verde, lo vencido en rojo, los abonos en azul y lo pendiente en neutro, con el mismo lenguaje en toda la app.',
+    'Ninguna cifra, fila ni regla de negocio cambió: el rediseño es solo visual, y cada documento se comparó con el anterior caso por caso, en los dos temas.'
   ]
 };
