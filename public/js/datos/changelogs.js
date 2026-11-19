@@ -764,5 +764,11 @@ export const CHANGELOGS = {
     'Cierre forzoso sin perder abonos: si una cuota tenía un abono parcial en curso, se cierra por lo abonado y la pérdida se calcula descontando ese dinero (antes ese dinero se borraba).',
     'Recibo de cobro general más claro: un bloque «Tu deuda hoy» con lo vencido, lo que debe si liquida hoy y lo que pagaría si sigue con sus cuotas, crédito por crédito y en total.',
     'El interés en curso, antes del recibo: al generar el recibo de cobro general, la app pregunta si incluir el interés del periodo en curso de cada crédito (la misma casilla de Liquidar deuda) y muestra las cifras tal como saldrán en el papel.'
+  ],
+  '4.1.1': [
+    'Nombres de archivo claros en todos los PDF: cada documento se guarda como «Documento - Cliente - detalle - fecha» (por ejemplo, «Factura de cobro - Ana Ruiz - cuota 3 - vence 2026-11-30»), que se entiende al enviárselo al cliente y se ordena solo por fecha en la carpeta.',
+    'Sin choques entre documentos: el paz y salvo, la liquidación y el cronograma nombran el préstamo, y el recibo de corte deja de compartir nombre y código con el recibo de pago.',
+    'Nombres siempre válidos: los caracteres que Windows o Mac no aceptan (como / : ? *) se reemplazan solos, aunque estén en el nombre del cliente.',
+    'Historial: al unificar préstamos sumando los intereses al capital, el registro muestra el capital del préstamo nuevo.'
   ]
 };
