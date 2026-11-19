@@ -1,4 +1,4 @@
-// tests/modales.js — LOS MODALES (rediseño v4): la base comun, la confirmacion y los 17 modales.
+// tests/modales.js — LOS MODALES (rediseño v4): la base comun, la confirmacion y los 18 modales.
 //
 // La fase visual de los modales llevo a produccion la base que aprobo el PO sobre el prototipo: fondo
 // oscuro con desenfoque, la tarjeta que entra con fundido y escala, campos de 44 px con anillo azul al
@@ -13,7 +13,7 @@
 //      fondo que cancela, la tarjeta que no, la casilla que viaja en onConfirm; y que App y Desarrollador
 //      la llaman con `tono` (ya no con un color).
 //   C. LOS COLORES DE ESTADO DE LA CUOTA (`ST` de componentes/iconos.js): tokens del tema, no hexadecimales.
-//   D. LOS 17 MODALES RENDERIZADOS con el fixture, en varios estados sembrados: todos dentro de la
+//   D. LOS 18 MODALES RENDERIZADOS con el fixture, en varios estados sembrados: todos dentro de la
 //      tarjeta comun; el titulo con su clase; NINGUN estilo en linea de los que el prototipo armonizaba
 //      (tintes y bordes de la paleta vieja, monoespaciada, mayusculas, colores de casillas, botones de
 //      relleno de color); cada ABtn con su tono; los montos a cobrar como cifras neutras; los selectores
@@ -143,17 +143,17 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   const est = (id, e) => P(id).filter(p => reg(p) && p.estadoPago === e).sort((a, b) => a.cuotaN - b.cuotaN);
   const CI = '1773656997026zqmp', INT_MORA = '1773655076017', USD_MORA = '1782151590658w66y', DIARIO = 'fixture-diario-01', CI_AB = '1776205975507jkph';
 
-  R.seccion('0 — el arnes ve la base, la confirmacion y los 17 modales; el fixture trae los casos');
+  R.seccion('0 — el arnes ve la base, la confirmacion y los 18 modales; el fixture trae los casos');
   const MODALES = ['AbonoModal', 'CambiarDiaModal', 'CobroModal', 'CondonarModal', 'ConfirmModal', 'ConfirmUndoModal', 'CorteModal', 'CronogramaPdfModal',
-    'DebtModal', 'DebtPayModal', 'DeleteDebtModal', 'LiquidarModal', 'LoanModal', 'PayModal', 'PreflightMoraModal', 'RestructureModal', 'UnificarModal'];
+    'DebtModal', 'DebtPayModal', 'DeleteDebtModal', 'LiquidarModal', 'LoanModal', 'PayModal', 'PreflightMoraModal', 'ReciboGeneralModal', 'RestructureModal', 'UnificarModal'];
   const archivos = fs.readdirSync(path.join(REPO, 'public/js/modales')).filter(f => /\.js$/.test(f)).map(f => f.replace(/\.js$/, '')).sort();
-  R.eq('0 public/js/modales trae exactamente los 17 modales', archivos, MODALES.slice().sort());
-  R.check('0 el arnes ve Modal, Fld, ABtn, ST y los 17', ['Modal', 'Fld', 'ABtn', 'ST'].concat(MODALES).every(k => X[k] !== undefined));
+  R.eq('0 public/js/modales trae exactamente los 18 modales', archivos, MODALES.slice().sort());
+  R.check('0 el arnes ve Modal, Fld, ABtn, ST y los 18', ['Modal', 'Fld', 'ABtn', 'ST'].concat(MODALES).every(k => X[k] !== undefined));
   R.check('0 anti-vacio: el fixture trae un C+I con cuotas pendientes, un Intereses con mora, un USD con mora y el credito abierto',
     est(CI, 'Pendiente').length > 0 && est(INT_MORA, 'En Mora').length > 0 && est(USD_MORA, 'En Mora').length > 0 && !!L(DIARIO));
   const conBase = archivos.filter(f => /import \{[^}]*\bModal\b[^}]*\} from '\.\.\/componentes\/base\.js'/.test(leer('public/js/modales/' + f + '.js')));
-  R.check('0 16 de los 17 modales salen de la base comun (el 17, la confirmacion, arma su propia tarjeta)',
-    conBase.length === 16 && conBase.indexOf('ConfirmModal') === -1, conBase);
+  R.check('0 17 de los 18 modales salen de la base comun (el 18, la confirmacion, arma su propia tarjeta)',
+    conBase.length === 17 && conBase.indexOf('ConfirmModal') === -1, conBase);
 
   // ── A — LA BASE ───────────────────────────────────────────────────────────
   R.seccion('A — la base comun: Modal, Fld y ABtn');
@@ -239,8 +239,8 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   R.check('C2 el modal de pago pinta la pildora del estado con esos tokens', !!pildora && pildora.props.style.background === 'var(--crit-soft)' &&
     pildora.props.style.color === 'var(--crit-text)' && unir(pildora) === '! En Mora');
 
-  // ── D — LOS 17 MODALES RENDERIZADOS ───────────────────────────────────────
-  R.seccion('D — los 17 modales renderizados con el fixture, en varios estados');
+  // ── D — LOS 18 MODALES RENDERIZADOS ───────────────────────────────────────
+  R.seccion('D — los 18 modales renderizados con el fixture, en varios estados');
   const deuda = { id: 'd1', titulo: 'Compra del carro', acreedor: 'banco popular', concepto: '5% mensual - Cuota inicial', monto_original: 1000000,
     saldo_pendiente: 500000, estado: 'Activa', fecha_creacion: '2026-07-01', total_cargos: 0, total_abonos: 500000 };
   const pend = est(CI, 'Pendiente')[0];
@@ -304,6 +304,13 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     ['LoanModal (editar con actividad)', X.LoanModal, { loan: L(CI), trm: 4000, pays, clientes: [], onSave: nada, onClose: nada }],
     ['UnificarModal', X.UnificarModal, { deudor: 'Bruno Salgado', hoy: '2026-07-31', pays, onClose: nada, onPropuesta: nada, onConfirmar: prom,
       loans: loans.filter(l => l.nombre === 'Bruno Salgado' && l.estado === 'Activo') }],
+    // El recibo general (post-4.0.0, punto 4): sin marcar, con un credito marcado y en dolares.
+    ['ReciboGeneralModal', X.ReciboGeneralModal, { deudor: 'Bruno Salgado', hoy: '2026-07-31', pays, onClose: nada, onGenerar: nada,
+      loans: loans.filter(l => l.nombre === 'Bruno Salgado') }, [{}]],
+    ['ReciboGeneralModal (un credito marcado)', X.ReciboGeneralModal, { deudor: 'Bruno Salgado', hoy: '2026-07-31', pays, onClose: nada, onGenerar: nada,
+      loans: loans.filter(l => l.nombre === 'Bruno Salgado') }, [{ [loans.filter(l => l.nombre === 'Bruno Salgado' && l.estado === 'Activo')[0].id]: true }]],
+    ['ReciboGeneralModal (dolares)', X.ReciboGeneralModal, { deudor: 'Gabriela Rios', hoy: '2026-07-31', pays, onClose: nada, onGenerar: nada,
+      loans: loans.filter(l => l.nombre === 'Gabriela Rios') }, [{}]],
   ];
   const vistos = new Set(), errores = [], armonizados = [], botonesColor = [], abtnSinTono = [];
   const arboles = {};
@@ -319,7 +326,7 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     });
     conClase(v, 'v4m-btn').forEach(b => { if (clsDe(b).length !== 2) abtnSinTono.push(nom + ' · ' + unir(b)); });
   }
-  R.check('D1 las ' + ESCENAS.length + ' escenas se renderizan sin excepciones y cubren los 17 modales', errores.length === 0 && vistos.size === 17, errores.concat([[...vistos].length]));
+  R.check('D1 las ' + ESCENAS.length + ' escenas se renderizan sin excepciones y cubren los 18 modales', errores.length === 0 && vistos.size === 18, errores.concat([[...vistos].length]));
   R.check('D1 los 15 modales de la base van dentro de la tarjeta comun (y la confirmacion en la suya)',
     Object.entries(arboles).every(([n, a]) => conClase(a, 'v4m-sheet').length === 1 && conClase(a, n.indexOf('ConfirmModal') === 0 ? 'v4m-confirm' : 'v4m-body').length === 1));
   R.check('D2 ningun estilo en linea de los que el prototipo armonizaba (cada uno vive en una clase de modales.css)', armonizados.length === 0, armonizados.slice(0, 15));

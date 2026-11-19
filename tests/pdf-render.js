@@ -696,10 +696,12 @@ const CASOS = [
   { nombre: 'general-un-credito-mora', gen: 'generateReciboGeneral', tema: 'light', celdas: 4,
     entrada: () => ({ loanIds: ['1776205975507jkph'], hasta: '2026-11-02', tema: 'light' }),
     ejecutar: () => S.generateReciboGeneral([L('1776205975507jkph')], pays, config.datos_pago, { hasta: '2026-11-02' }),
-    contiene: ['Recibo de cobro general', 'Para ponerte al día', '3 cuotas vencidas', 'Lo que está vencido',
-               'de eso, intereses', 'Tus opciones de pago', 'LO MÍNIMO', 'Al día + la próxima cuota', 'Liquidar el crédito',
-               'válido hasta el', 'Así va tu crédito', 'abono a capital', 'Cómo pagar', 'no certifica ningún pago', 'CG-'],
-    noContiene: ['Crédito 1', 'Recibimos tu pago', 'Estás al día'] },
+    // Post-4.0.0 (punto 4 del PO): "Tu deuda hoy" con sus tres cifras (Vencido · Debes hoy · Si sigues
+    // con tus cuotas) reemplaza a "Tus opciones de pago"; las cifras del prototipo no cambiaron.
+    contiene: ['Recibo de cobro general', 'Para ponerte al día', '3 cuotas vencidas', 'Tu deuda hoy', 'Si sigues con tus cuotas',
+               '<b>Debes hoy</b> = capital', 'te ahorrarías', 'Para quedar al día y pagar también la próxima cuota', 'Lo que está vencido',
+               'de eso, intereses', 'válido hasta el', 'Así va tu crédito', 'abono a capital', 'Cómo pagar', 'no certifica ningún pago', 'CG-'],
+    noContiene: ['Crédito 1', 'Recibimos tu pago', 'Estás al día', 'Tus opciones de pago', 'LO MÍNIMO', 'interés del periodo en curso'] },
 
   // ── Unificacion de prestamos (post-4.0.0): los 3 de Bruno (pesos) y los 2 de Gabriela (dolares).
   { nombre: 'unif-propuesta-repartir', gen: 'generatePropuestaUnificacion', tema: 'light', celdas: [4, 6],
@@ -724,17 +726,20 @@ const CASOS = [
   { nombre: 'general-al-dia', gen: 'generateReciboGeneral', tema: 'light', celdas: null,
     entrada: () => ({ loanIds: ['1776205975507jkph'], hasta: '2026-07-31', tema: 'light' }),
     ejecutar: () => S.generateReciboGeneral([L('1776205975507jkph')], pays, config.datos_pago, { hasta: '2026-07-31' }),
-    contiene: ['Estás al día', 'Tu próxima cuota', 'Puedes adelantar cualquier valor', 'Gracias por estar al día'],
-    noContiene: ['Lo que está vencido', 'LO MÍNIMO', 'Para ponerte al día'] },
+    contiene: ['Estás al día', 'Tu próxima cuota', 'Puedes adelantar cualquier valor', 'Gracias por estar al día', 'Tu deuda hoy',
+               'no tienes cuotas vencidas', 'te ahorrarías'],
+    noContiene: ['Lo que está vencido', 'LO MÍNIMO', 'Para ponerte al día', 'Tus opciones de pago'] },
 
   // VARIOS CREDITOS (decision del PO): el total consolidado arriba y el desglose por credito
-  // debajo. La tabla de lo vencido gana la columna del credito (5 celdas).
-  { nombre: 'general-varios-usd-oscuro', gen: 'generateReciboGeneral', tema: 'dark', celdas: 5,
+  // debajo. La tabla de lo vencido gana la columna del credito (5 celdas) y "Tu deuda hoy" es una
+  // tabla de 4 (credito · vencido · debes hoy · si sigues con tus cuotas), con su fila de total.
+  { nombre: 'general-varios-usd-oscuro', gen: 'generateReciboGeneral', tema: 'dark', celdas: [4, 5],
     entrada: () => ({ loanIds: ['1773657323435hkkb', '1782151590658w66y'], hasta: '2026-11-02', tema: 'dark' }),
     ejecutar: () => S.generateReciboGeneral([L('1773657323435hkkb'), L('1782151590658w66y')], pays, config.datos_pago, { hasta: '2026-11-02' }),
     // Rediseño v4: con la app en tema oscuro, el oscuro de la app (el #0d1117 viejo ya no aparece).
-    contiene: ['Crédito 1', 'Crédito 2', 'en 2 créditos', 'Liquidar tus créditos', 'liquidarlo hoy', 'USD $', '--r-bg:#000000', '-2C-'],
-    noContiene: ['Así va tu crédito', '#0d1117'] },
+    contiene: ['Crédito 1', 'Crédito 2', 'en 2 créditos', 'Tu deuda hoy', 'r-deuda', '<td>Total</td>', 'Para quedar al día y pagar también',
+               'USD $', '--r-bg:#000000', '-2C-'],
+    noContiene: ['Así va tu crédito', '#0d1117', 'Tus opciones de pago', 'Liquidar tus créditos'] },
 
   // `Intereses` con muchas cuotas vencidas: las mas viejas se resumen en UNA fila con su total
   // (nunca se omiten), y no hay "lo que falta por pagar" (el capital vence fuera de las cuotas).
@@ -744,7 +749,7 @@ const CASOS = [
   { nombre: 'general-intereses-resumen', gen: 'generateReciboGeneral', tema: 'light', celdas: 4,
     entrada: () => ({ loanIds: ['1773655076017'], hasta: '2026-11-02', tema: 'light', parcial: true }),
     ejecutar: () => S.generateReciboGeneral([L('1773655076017')], paysParcial, '', { hasta: '2026-11-02' }),
-    contiene: ['8 cuotas vencidas', 'hasta ', ' cuotas</span>', 'Saldo de capital', 'plazo indefinido',
+    contiene: ['8 cuotas vencidas', 'hasta ', ' cuotas</span>', 'Sin plazo fijo', 'cuando quieras', 'plazo indefinido',
                'capital ' + S.fmt(S.computeLiquidacion(L('1773655076017'), paysParcial, { hasta: '2026-11-02' }).capitalPendiente) + ' + intereses vencidos',
                ' − lo ya abonado ' + S.fmt(120000)],
     noContiene: ['Te falta por pagar', 'Cómo pagar'] },
@@ -752,11 +757,11 @@ const CASOS = [
   // Un deudor con un credito en pesos y otro en dolares: los totales no se suman entre si, se
   // imprimen juntos. Y el credito abierto de interes diario no entra, pero se ANUNCIA (doctrina
   // "no silent caps"). El fixture no tiene ese deudor: se arma con creditos de otros.
-  { nombre: 'general-mixto-con-diario', gen: 'generateReciboGeneral', tema: 'light', celdas: 5,
+  { nombre: 'general-mixto-con-diario', gen: 'generateReciboGeneral', tema: 'light', celdas: [4, 5],
     entrada: () => ({ loanIds: ['1776205975507jkph', '1782151590658w66y', 'fixture-diario-01'], hasta: '2026-11-02', tema: 'light' }),
     ejecutar: () => S.generateReciboGeneral([L('1776205975507jkph'), L('1782151590658w66y'), L('fixture-diario-01')], pays, config.datos_pago, { hasta: '2026-11-02' }),
-    contiene: ['r-monto mixto', ' + USD $', 'Crédito 2', 'de interés diario no está en este documento'],
-    noContiene: ['Crédito 3'] },
+    contiene: ['r-monto mixto', ' + USD $', 'Crédito 2', 'de interés diario no está en este documento', 'r-deuda'],
+    noContiene: ['Crédito 3', 'Tus opciones de pago'] },
 
   { nombre: 'abono-paz-y-salvo', gen: 'generateReciboAbono', tema: 'light', celdas: null,
     entrada: () => ({ loanId: '1773652420812', monto: 200000, mode: 'mantener', tema: 'light' }),
@@ -1440,8 +1445,9 @@ function loansDelCaso(caso) {
              fechaRecaudo: '2026-07-01', montoCOPRecibido: origI, montoUSDRecibido: origI / 4000, partialPaid: origI, recibos: '[]', observaciones: '' });
   ponerTema('light');
   const g0 = emitir(() => S.generateReciboGeneral([iUSD], lpI, config.datos_pago, { hasta: '2026-11-02' }));
-  const tarjetaLiq = (/Liquidar el crédito[^·]{0,120}/.exec(g0.texto) || [''])[0];
-  R.check('N4b ANTI-VACIO: la tarjeta de liquidar lleva el capital en cero', /capital USD \$0\.00/.test(tarjetaLiq), tarjetaLiq);
+  // Post-4.0.0: lo que se liquida hoy se explica en la nota de "Debes hoy" (antes, una tarjeta de liquidar).
+  const tarjetaLiq = (/Debes hoy = capital[^·]{0,120}/.exec(g0.texto) || [''])[0];
+  R.check('N4b ANTI-VACIO: la nota de "Debes hoy" lleva el capital en cero', /capital USD \$0\.00/.test(tarjetaLiq), tarjetaLiq);
   R.check('N4b recibo general de un deudor en dolares con el capital en cero · solo dolares', pesosEn(g0.texto).length === 0,
           pesosEn(g0.texto).slice(0, 3).join('\n      '));
 
@@ -1595,6 +1601,72 @@ function loansDelCaso(caso) {
           /cronoPdfModal&&h\(CronogramaPdfModal,/.test(srcApp));
   R.check('M4 Liquidar deuda usa la MISMA casilla (sin copia inline del texto)',
           /h\(CheckInteresMes,/.test(srcLiq) && srcLiq.indexOf("'Cobrar el '") === -1);
+}
+
+{
+  // Post-4.0.0 (punto 4 del PO): "Tu deuda hoy" del recibo general, en TODOS los deudores con creditos
+  // de cuotas activos (de una sola moneda), a dos fechas de corte y con o sin el interes del periodo en
+  // curso. Lo que vale liquidar se recalcula APARTE con `computeLiquidacion` (la de Liquidar deuda), con
+  // la auto-mora del backend aplicada a la fecha; lo vencido y lo que queda, con `pendCuota`.
+  R.seccion('recibo general · "Tu deuda hoy" cuadra con Liquidar deuda y con sus filas (post-4.0.0)');
+  const porNombre = {};
+  loans.filter(l => l.estado === 'Activo' && !S.esDiario(l)).forEach(l => { (porNombre[l.nombre] = porNombre[l.nombre] || []).push(l); });
+  const celdasO = tr => (tr.match(/<td[^>]*>[\s\S]*?<\/td>/g) || []).map(sinTags);
+  // El fixture no trae un abono en vuelo en un deudor de varios creditos, y sin el, imprimir una fila
+  // sin restar lo ya abonado pasaba en verde (verificado): se arma en memoria sobre la primera cuota sin
+  // pagar del primer credito de un deudor de varios creditos en pesos.
+  const multiCOP = Object.values(porNombre).filter(ls => ls.length > 1 && ls.every(l => l.moneda !== 'USD'))[0];
+  const cuotaAb = multiCOP && pays.filter(p => p.prestamoId === multiCOP[0].id && S.esCuotaRegular(p) && p.estadoPago !== 'Pagado')
+    .sort((a, b) => a.cuotaN - b.cuotaN)[0];
+  const abO = cuotaAb ? Math.min(100000, Math.round(cuotaAb.cuotaTotal / 2)) : 0;
+  const paysAb = pays.map(p => p === cuotaAb ? Object.assign({}, p, { partialPaid: abO, montoCOPRecibido: abO,
+    recibos: JSON.stringify([{ fecha: '2026-07-20', cop: abO }]) }) : p);
+  let nO = 0, nTabla = 0, nMueve = 0, nAbono = 0; const malasO = [];
+  ponerTema('light');
+  for (const ls of Object.values(porNombre)) {
+    const usd = ls.every(l => l.moneda === 'USD');
+    if (!usd && !ls.every(l => l.moneda !== 'USD')) continue;
+    const enU = (l, cop) => usd ? S.rbMoneda(l).uni(cop) : Math.round(cop);
+    const fmtT = u => sinTags(usd ? S.fmtUSD(u / 100) : S.fmt(u));
+    const aNum = t => { const d = (t.match(usd ? /[\d,]+\.\d\d/ : /\$\s?[\d.]+/) || [''])[0]; return d ? (usd ? Math.round(+d.replace(/,/g, '') * 100) : +d.replace(/\D/g, '')) : 0; };
+    for (const P of (ls === multiCOP ? [pays, paysAb] : [pays])) for (const hasta of ['2026-07-31', '2026-11-02']) for (const incl of [false, true]) {
+      const lpDe = l => P.filter(p => p.prestamoId === l.id)
+        .map(p => (S.esCuotaRegular(p) && p.estadoPago === 'Pendiente' && p.fechaPago < hasta) ? Object.assign({}, p, { estadoPago: 'En Mora' }) : p);
+      const Ls = ls.map(l => S.computeLiquidacion(l, lpDe(l), { hasta, incluyeProxMes: incl }));
+      const liqU = ls.map((l, i) => enU(l, Ls[i].total));
+      const liqT = liqU.reduce((s, x) => s + x, 0);
+      const vencT = ls.reduce((s, l) => s + enU(l, lpDe(l).filter(p => S.esCuotaRegular(p) && p.estadoPago === 'En Mora').reduce((a, p) => a + S.pendCuota(p), 0)), 0);
+      const conMes = Ls.some(L => L.incluyeProxMes && L.intExtra > 0);
+      if (incl && conMes) nMueve++;
+      if (ls.length > 1 && Ls.some(L => L.partialPend > 0)) nAbono++;
+      CAP.pdfs.length = 0;
+      S.generateReciboGeneral(ls, P, '', { hasta, interesMes: incl });
+      const html = CAP.pdfs.length === 1 ? sinMarco(CAP.pdfs[0].html) : '';
+      const vis = sinTags(html.replace(/<style[\s\S]*?<\/style>/gi, ''));
+      const etq = ls[0].nombre.slice(0, 2) + '… ' + hasta + (incl ? ' con interés' : '') + (P === paysAb ? ' con abono' : '');
+      nO++;
+      if (vis.indexOf('Debes hoy') === -1 || vis.indexOf(fmtT(liqT)) === -1) malasO.push(etq + ': "Debes hoy" no imprime ' + fmtT(liqT));
+      if (conMes !== (vis.indexOf('interés del periodo en curso') !== -1)) malasO.push(etq + ': el interés en curso ' + (conMes ? 'no se nombra' : 'aparece sin marcarlo'));
+      if (ls.length > 1) {
+        const tabla = (/<table class="r-t r-deuda">[\s\S]*?<\/table>/.exec(html) || [''])[0];
+        const filas = ((/<tbody>([\s\S]*?)<\/tbody>/.exec(tabla) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || []).map(celdasO);
+        const total = celdasO((/<tfoot>([\s\S]*?)<\/tfoot>/.exec(tabla) || [, ''])[1]);
+        if (!tabla || filas.length !== ls.length || total.length !== 4) { malasO.push(etq + ': sin la tabla de 4 columnas'); continue; }
+        nTabla++;
+        filas.forEach((f, i) => { if (aNum(f[2]) !== liqU[i]) malasO.push(etq + ': fila ' + (i + 1) + ' "Debes hoy" ' + f[2] + ' != ' + fmtT(liqU[i])); });
+        [1, 2, 3].forEach(c => {
+          if (/sin plazo fijo|—/.test(total[c]) && c === 3) return;
+          const sumaF = filas.reduce((s, f) => s + aNum(f[c]), 0);
+          if (aNum(total[c]) !== sumaF) malasO.push(etq + ': el total de la columna ' + c + ' (' + total[c] + ') no es la suma de sus filas');
+        });
+        if (aNum(total[1]) !== vencT) malasO.push(etq + ': el total vencido ' + total[1] + ' != ' + fmtT(vencT));
+      }
+    }
+  }
+  R.check('O1 ANTI-VACIO: deudores con varios creditos (tabla), casos donde el interés en curso cambia el total y una tabla con un abono en vuelo',
+          nO >= 16 && nTabla >= 4 && nMueve >= 4 && nAbono >= 2, { casos: nO, tablas: nTabla, conInteres: nMueve, conAbono: nAbono });
+  R.check('O2 "Debes hoy" = Liquidar deuda (con su casilla), cada fila y el total de cada columna = la suma de sus filas',
+          malasO.length === 0, malasO.slice(0, 8).join('\n      '));
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────

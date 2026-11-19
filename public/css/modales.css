@@ -235,3 +235,30 @@
 .un-acc .btn-primary { flex: 1; margin: 0; }
 .un-acc .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 .un-k-nota { padding: 4px 11px 8px; margin: 0; }
+
+/* ── RECIBO DE COBRO GENERAL: el modal previo (post-4.0.0, punto 4 del PO; prefijo rg-) ──────
+   Las tres cifras de "Tu deuda hoy" tal como se imprimen y la casilla del interes del periodo en
+   curso, credito por credito. */
+.rg-sub { font-size: 13px; color: var(--ink-3); margin-top: -2px; }
+.rg-deuda { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.rg-cifra { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
+.rg-cifra span { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.rg-cifra b { font-size: 20px; font-weight: 650; letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.rg-cifra small { font-size: 11.5px; color: var(--ink-3); }
+.rg-cifra.ambar { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 32%, transparent); }
+.rg-cifra.ambar span { color: var(--warn-text); }
+.rg-cifra.fuerte { border-color: var(--line-strong); background: var(--surface-2); }
+.rg-corridos { border-radius: 12px; padding: 4px 12px 6px; display: flex; flex-direction: column; }
+.rg-corr-cab, .rg-corr { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 9px 0; cursor: pointer; }
+.rg-corr { border-top: 1px solid var(--line); }
+.rg-corr-cab input, .rg-corr input { margin-top: 2px; }
+.rg-corr-cab b { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.rg-corr-cab small, .rg-corr small { display: block; font-size: 12px; color: var(--ink-3); line-height: 1.45; margin-top: 1px; }
+.rg-corr-t b { display: block; font-size: 13px; font-weight: 600; color: var(--ink); }
+.rg-corr-tot, .rg-corr-v { text-align: right; font-size: 14px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rg-corr:not(.on) .rg-corr-v, .rg-corr-cab:not(.on) .rg-corr-tot { color: var(--ink-3); font-weight: 500; }
+.rg-nota { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.rg-nota svg { flex-shrink: 0; margin-top: 2px; color: var(--ink-3); }
+.rg-acc { display: flex; gap: 10px; margin-top: 4px; }
+.rg-acc .v4m-btn { flex: 0 0 auto; }
+.rg-acc .btn-primary { flex: 1; margin: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

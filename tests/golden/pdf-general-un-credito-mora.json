@@ -14,17 +14,17 @@
       "Te falta"
     ],
     "etiquetas": [
+      "Tu deuda hoy",
+      "Vencido",
+      "Debes hoy",
+      "Si sigues con tus cuotas",
       "Lo que está vencido",
-      "Tus opciones de pago",
-      "Ponerte al día",
-      "Al día + la próxima cuota",
-      "Liquidar el crédito",
       "Así va tu crédito · $ #.#.# desde el # de M de #",
       "Cómo pagar"
     ]
   },
   "valores": {
-    "bytes": 11167,
+    "bytes": 11413,
     "nFilas": 5,
     "nCeldas": 20,
     "celdasPorTr": [
@@ -34,10 +34,10 @@
       4,
       4
     ],
-    "nMontos": 15,
-    "hashMontos": "95b7fec7ab93a410c80d65d3ae87a7f13c2337e3",
+    "nMontos": 16,
+    "hashMontos": "e230106148482c7cde0d5fa8083b643c6e734d35",
     "hashFname": "0d711bf76428af260f41c4be5ec2a67912607f40",
-    "hashTexto": "717b25176c43d1e494ff24034edac5ef3961ba09",
+    "hashTexto": "10095ba95d0366e93730839e9a5199784331fd7f",
     "clases": [
       "",
       "chip venc",
@@ -47,18 +47,19 @@
       "r-av",
       "r-av-ley",
       "r-cab",
-      "r-cap",
       "r-doc",
       "r-hero ambar",
       "r-hero-l",
+      "r-linea",
       "r-logo",
       "r-marca",
       "r-monto",
+      "r-notas",
+      "r-orden",
       "r-pagar",
       "r-pie",
       "r-pie-d",
       "r-quien",
-      "r-saldos",
       "r-sec",
       "r-sec r-credito",
       "r-sec-t",
@@ -66,16 +67,13 @@
       "r-t",
       "r-tar",
       "r-tar ambar",
+      "r-tar r-fuerte",
       "r-tar-l",
       "r-tar-s",
-      "r-tar-tag",
       "r-tar-v",
-      "r-tip",
-      "r-tot",
       "r-tres",
       "sub",
-      "vencida",
-      "viejo"
+      "vencida"
     ]
   }
 }

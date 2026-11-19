@@ -56,6 +56,8 @@ import { AbonoModal } from './modales/AbonoModal.js';
 import { CobroModal } from './modales/CobroModal.js';
 import { CondonarModal } from './modales/CondonarModal.js';
 import { UnificarModal } from './modales/UnificarModal.js';
+import { ReciboGeneralModal, abrirReciboGeneral } from './modales/ReciboGeneralModal.js';
+import { generateReciboGeneral } from './pdf/recibo-general.js';
 import { CambiarDiaModal } from './modales/CambiarDiaModal.js';
 import { CorteModal } from './modales/CorteModal.js';
 import { LiquidarModal } from './modales/LiquidarModal.js';
@@ -108,6 +110,8 @@ function App(){
   var sCond=useState(null); var condonarModal=sCond[0]; var setCondonarModal=sCond[1];
   // Unificar (post-4.0.0): {nombre, ids} del deudor; los prestamos se leen frescos en cada render.
   var sUnif=useState(null); var unificarModal=sUnif[0]; var setUnificarModal=sUnif[1];
+  // Recibo de cobro general (post-4.0.0, punto 4): {nombre, ids} del deudor, como la unificacion.
+  var sRecGen=useState(null); var reciboGeneralModal=sRecGen[0]; var setReciboGeneralModal=sRecGen[1];
   // 3.5.0 — "Cambiar dia de pago", extraido del viejo perfil del deudor a su propio modal.
   var sCambioDia=useState(null); var cambioDiaModal=sCambioDia[0]; var setCambioDiaModal=sCambioDia[1];
   // 3.5.0 — a quien enfocar al abrir Cartera ({nombre, loanId, payId, t}) y que tramo abrir en
@@ -897,6 +901,8 @@ function App(){
     onCambiarDia:function(l){setCambioDiaModal({loan:l});},
     onCondonar:function(l){setCondonarModal({loan:l});},
     onUnificar:function(d,activos){setUnificarModal({nombre:d.nombre,ids:activos.map(function(l){return l.id;})});},
+    // El recibo general es del DEUDOR: pregunta por el interes en curso (si aplica) y lo imprime.
+    onReciboGeneral:function(nombre,ls){abrirReciboGeneral(ls,pays,nowStr(),cfg.datos_pago,function(){setReciboGeneralModal({nombre:nombre,ids:ls.map(function(l){return l.id;})});});},
     onEdit:function(l){setLoanModal(l);},
     onDelete:delLoan,
     onForceClose:forceCloseLoan,
@@ -1050,6 +1056,12 @@ function App(){
       onClose:function(){setUnificarModal(null);},
       onPropuesta:function(plan){generatePropuestaUnificacion(plan,properCase(unificarModal.nombre),{datosPago:cfg.datos_pago});},
       onConfirmar:_doUnificar}),
+    reciboGeneralModal&&h(ReciboGeneralModal,{deudor:properCase(reciboGeneralModal.nombre),hoy:nowStr(),pays:pays,
+      loans:loans.filter(function(l){return reciboGeneralModal.ids.indexOf(l.id)!==-1;}),
+      onClose:function(){setReciboGeneralModal(null);},
+      onGenerar:function(opts){
+        generateReciboGeneral(loans.filter(function(l){return reciboGeneralModal.ids.indexOf(l.id)!==-1;}),pays,cfg.datos_pago,opts);
+        setReciboGeneralModal(null);}}),
     condonarModal&&h(CondonarModal,{loan:condonarModal.loan||condonarModal,pays:pays,onConfirm:_doCondonar,
       onClose:function(){setCondonarModal(null);}}),
     corteModal&&h(CorteModal,{loan:corteModal.loan||corteModal,pays:pays,onSave:registrarCorte,

@@ -155,6 +155,10 @@ const CASOS = [
   { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, v4: true,  letrasExtra: ['SegoeUISymbol'], gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
   // Con la app en tema oscuro: el documento v4 sale en el oscuro de la app.
   { doc: 'general-app-oscura', tema: 'dark', paginasMin: 2, v4: true,  gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Bruno Salgado'), pays, '', { hasta: '2026-11-02' }) },
+  // Post-4.0.0 (punto 4): dos creditos con "Tu deuda hoy" en tabla y el interes en curso marcado en
+  // los dos, con "Como pagar": sigue en UNA hoja.
+  { doc: 'general-dos-con-interes', tema: 'light', paginasMin: 1, paginasMax: 1, v4: true,
+    gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Gabriela Rios'), pays, 'Nequi 300 000 0000 · Bancolombia ahorros 000-000000-00', { hasta: '2026-11-02', interesMes: true }) },
   // La constancia de una unificacion (post-4.0.0): el caso mas largo, 12 cuotas con el interes
   // corrido y "Como pagar", tiene que caber en UNA hoja.
   { doc: 'unificacion-12-cuotas', tema: 'light', paginasMin: 1, paginasMax: 1, v4: true,

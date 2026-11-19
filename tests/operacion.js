@@ -220,6 +220,21 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   const acciones = {};
   ['onCobro', 'onCorte', 'onLiquidar', 'onReestructurar', 'onCambiarDia', 'onCondonar', 'onEdit', 'onDelete', 'onForceClose', 'onNewLoan']
     .forEach(k => { acciones[k] = arg => llamadasAcc.push({ k, arg }); });
+  // El recibo general (post-4.0.0, punto 4): el boton le pide a App `onReciboGeneral(nombre, prestamos)`.
+  const llamadasRG = [];
+  acciones.onReciboGeneral = (nombre, ls) => llamadasRG.push({ nombre, ls });
+  // Lo que hace App con esa llamada: `abrirReciboGeneral` decide si pregunta; si pregunta, el modal
+  // REAL (con las casillas que se le pasen) y su boton "Generar el recibo". Devuelve si se abrio.
+  const rgEmitir = (ls, marcas) => {
+    let abrio = false;
+    X.abrirReciboGeneral(ls, pays, HOY, '', () => { abrio = true; });
+    if (abrio) {
+      const mo = montar(X.ReciboGeneralModal, { deudor: 'x', hoy: HOY, loans: ls, pays, onClose: () => {},
+        onGenerar: o => X.generateReciboGeneral(ls, pays, '', o) }, [marcas || {}]);
+      botones(mo.arbol, /Generar el recibo/)[0].props.onClick();
+    }
+    return abrio;
+  };
   const pagos = [];
   const propsCobros = { loans, pays, deudores, hoy: HOY, acciones, onPay: p => pagos.push(p), datosPago: '', showToast: () => {} };
   let cb = null, error = null;
@@ -316,14 +331,15 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       const cbB6 = montar(X.CobrosView, Object.assign({}, propsCobros, { loans: loansB6 }), []);
       const grupoB6 = conClase(cbB6.arbol, 'cbv-grupo').filter(g => textos(g).join(' ').indexOf(X.properCase(nomG)) !== -1)[0];
       const rgB6 = nodos(grupoB6, n => n.tag === 'button' && n.props && /Recibo de cobro general/.test(n.props.title || ''))[0];
-      const genReal = X.generateReciboGeneral, argsG = [];
-      X.generateReciboGeneral = function(){ argsG.push([].slice.call(arguments)); return genReal.apply(this, arguments); };
-      try { rgB6.props.onClick(); } finally { X.generateReciboGeneral = genReal; }
-      R.eq('B6 recibe TODOS los prestamos del deudor (no solo el de la fila), con hoy como corte',
-        argsG.length === 1 ? [argsG[0][0].map(x => x.id).sort(), argsG[0][3] && argsG[0][3].hasta] : null,
-        [loansB6.filter(x => x.nombre === nomG).map(x => x.id).sort(), HOY]);
+      llamadasRG.length = 0;
+      rgB6.props.onClick();
+      R.eq('B6 le pide a App el recibo de TODOS los prestamos del deudor (no solo el de la fila)',
+        llamadasRG.length === 1 ? [llamadasRG[0].nombre, llamadasRG[0].ls.map(x => x.id).sort()] : null,
+        [nomG, loansB6.filter(x => x.nombre === nomG).map(x => x.id).sort()]);
       FE.captura.pdfs.length = 0;
+      llamadasRG.length = 0;
       rg[0].props.onClick();
+      if (llamadasRG.length === 1) rgEmitir(llamadasRG[0].ls);
       const docG = FE.captura.pdfs[0];
       R.check('B6 emite el recibo general de ese deudor con TODA su mora (' + nDeudor + ' cuotas)',
         FE.captura.pdfs.length === 1 && docG.html.indexOf('Recibo de cobro general') !== -1 &&
@@ -560,7 +576,12 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       nodos(conClase(dp.arbol, 'dp-head-acc')[0], n => n.tag === 'button' && /^Recibo general$/.test(textos(n).join(''))).length === 1);
     if (rgP.length === 1) {
       FE.captura.pdfs.length = 0;
+      llamadasRG.length = 0;
       rgP[0].props.onClick();
+      R.eq('D8 le pide a App el recibo de ese deudor con sus prestamos activos',
+        llamadasRG.length === 1 ? [llamadasRG[0].nombre, llamadasRG[0].ls.map(x => x.id).sort()] : null,
+        [l.nombre, loans.filter(x => x.nombre === l.nombre && x.estado === 'Activo').map(x => x.id).sort()]);
+      if (llamadasRG.length === 1) rgEmitir(llamadasRG[0].ls);
       R.check('D8 emite el recibo general de ese deudor', FE.captura.pdfs.length === 1 &&
         FE.captura.pdfs[0].html.indexOf('Recibo de cobro general') !== -1 && FE.captura.pdfs[0].fname === 'CG ' + l.nombre + ' - ' + HOY,
         FE.captura.pdfs.length && FE.captura.pdfs[0].fname);
@@ -581,7 +602,9 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const nM = activosCon(dMulti).length;
     const dpM = montar(X.DeudorPanel, propsPanel(activosCon(dMulti)[0]), []);
     FE.captura.pdfs.length = 0;
+    llamadasRG.length = 0;
     botones(dpM.arbol, /^Recibo general$/)[0].props.onClick();
+    if (llamadasRG.length === 1) rgEmitir(llamadasRG[0].ls);
     const hM = FE.captura.pdfs.length === 1 ? FE.captura.pdfs[0].html : '';
     R.check('D9 el recibo de ' + nM + ' creditos trae un bloque por credito y su codigo lo dice',
       hM.indexOf('Crédito ' + nM + ' ·') !== -1 && hM.indexOf('Crédito ' + (nM + 1) + ' ·') === -1 && hM.indexOf('-' + nM + 'C-') !== -1);
@@ -968,6 +991,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     ['AbonoModal', X.AbonoModal, { loan: lC, pays: lpC, onSave: nada, onClose: nada, onRequestLiquidar: nada }],
     ['CobroModal', X.CobroModal, { loan: lC, pays: lpC, onConfirm: nada, onClose: nada, onRequestLiquidar: nada }],
     ['CronogramaPdfModal', X.CronogramaPdfModal, { loan: lC, pays: lpC, onClose: nada }],
+    ['ReciboGeneralModal', X.ReciboGeneralModal, { deudor: X.properCase(lC.nombre), hoy: HOY, loans: loans.filter(x => x.nombre === lC.nombre), pays, onClose: nada, onGenerar: nada }],
     ['CambiarDiaModal', X.CambiarDiaModal, { loan: lC, pays: lpC, onReload: nada, onClose: nada }],
     ['DeudorPanel', X.DeudorPanel, Object.assign({ deudor: deudores.filter(d => d.nombre === lC.nombre)[0], loans, pays, hoy: HOY, focoLoan: lC.id,
       datosPago: '', showToast: nada, onPay: nada }, acciones)],
@@ -1221,5 +1245,112 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('K9 Deshacer abre la confirmacion de App (ConfirmUndoModal, con sus candados) con esa operacion',
     /h\(HistorialView,\{[^}]*onUndo:function\(entry\)\{setUndoDlg\(entry\);\}/.test(appK) && /undoDlg&&h\(ConfirmUndoModal,\{entry:undoDlg,onConfirm:confirmarUndo,/.test(appK));
 
+
+  // ── L — EL RECIBO GENERAL: EL MODAL PREVIO (post-4.0.0, punto 4 del PO) ───
+  // Antes de imprimir, el modal pregunta por el interes del periodo en curso, credito por credito
+  // (la casilla de Liquidar deuda), y muestra las tres cifras de "Tu deuda hoy" tal como se imprimen.
+  // Las cifras se recalculan APARTE con `computeLiquidacion` (la de Liquidar deuda) y `pendCuota`.
+  R.seccion('L — el recibo general: el modal previo del interés en curso y "Tu deuda hoy"');
+  const lsDe = n => loans.filter(x => x.nombre === n);
+  const activosRG = n => lsDe(n).filter(x => x.estado === 'Activo' && !X.esDiario(x));
+  const preguntaN = n => X.modeloReciboGeneral(lsDe(n), pays, { hasta: HOY }).conMes.length;
+  const nombresRG = deudores.map(d => d.nombre).filter(n => X.puedeReciboGeneral(lsDe(n)));
+  const nCop = nombresRG.filter(n => preguntaN(n) >= 2 && activosRG(n).every(x => x.moneda !== 'USD'))[0];
+  const nUsd = nombresRG.filter(n => preguntaN(n) >= 2 && activosRG(n).every(x => x.moneda === 'USD'))[0];
+  const nSin = nombresRG.filter(n => preguntaN(n) === 0)[0];
+  R.check('L0 ANTI-VACIO: deudores con 2+ creditos que preguntan (pesos y dolares) y uno que no pregunta', !!(nCop && nUsd && nSin), [nCop, nUsd, nSin]);
+  const liqDe = (n, marcas) => suma(activosRG(n), x => X.computeLiquidacion(x, lpDe(x.id), { hasta: HOY, incluyeProxMes: !!(marcas && marcas[x.id]) }).total);
+  const cifrasModal = arbol => conClase(arbol, 'rg-cifra').map(c => textos(c)[1]);
+  if (nCop && nUsd && nSin) {
+    // L1 — la puerta: con pregunta abre el modal y no imprime; sin pregunta imprime directo, sin el interes.
+    let abrio = false;
+    FE.captura.pdfs.length = 0;
+    X.abrirReciboGeneral(lsDe(nCop), pays, HOY, '', () => { abrio = true; });
+    R.check('L1 con creditos que pueden cobrar el interes en curso, el boton abre el modal y no imprime nada todavia',
+      abrio && FE.captura.pdfs.length === 0 && X.rgPregunta(lsDe(nCop), pays, HOY));
+    abrio = false;
+    X.abrirReciboGeneral(lsDe(nSin), pays, HOY, '', () => { abrio = true; });
+    R.check('L1 sin nada que preguntar (' + activosRG(nSin).map(x => x.modalidad).join(', ') + ') imprime directo, con hoy como corte',
+      !abrio && FE.captura.pdfs.length === 1 && FE.captura.pdfs[0].fname === 'CG ' + nSin + ' - ' + HOY && !X.rgPregunta(lsDe(nSin), pays, HOY),
+      FE.captura.pdfs.length && FE.captura.pdfs[0].fname);
+    // L2 — las tres cifras del modal, recalculadas aparte.
+    const vencDe = n => suma(activosRG(n), x => suma(lpDe(x.id).filter(p => X.esCuotaRegular(p) && (p.estadoPago === 'En Mora' || (p.estadoPago === 'Pendiente' && p.fechaPago < HOY))), X.pendCuota));
+    const faltaDe = n => suma(activosRG(n), x => suma(lpDe(x.id).filter(p => X.esCuotaRegular(p) && p.estadoPago !== 'Pagado'), X.pendCuota));
+    const generados = [];
+    const propsRG = n => ({ deudor: X.properCase(n), hoy: HOY, loans: lsDe(n), pays, onClose: () => generados.push('cerrar'), onGenerar: o => generados.push(o) });
+    const moC = montar(X.ReciboGeneralModal, propsRG(nCop), [{}]);
+    const venc0 = vencDe(nCop);
+    R.eq('L2 el modal muestra Vencido · Debe hoy · Si sigue con sus cuotas (lo de Liquidar deuda y lo que falta de cada cuota)',
+      cifrasModal(moC.arbol), [venc0 ? X.fmt(venc0) : '—', X.fmt(liqDe(nCop)), X.fmt(faltaDe(nCop))]);
+    R.check('L2 una casilla por credito que puede cobrar el interes, todas desmarcadas',
+      conClase(moC.arbol, 'rg-corr').length === preguntaN(nCop) && conClase(moC.arbol, 'rg-corr on').length === 0);
+    // L3 — sin marcar: el recibo sale con el mismo "Debes hoy" del modal.
+    generados.length = 0;
+    botones(moC.arbol, /Generar el recibo/)[0].props.onClick();
+    FE.captura.pdfs.length = 0;
+    if (generados.length === 1) X.generateReciboGeneral(lsDe(nCop), pays, '', generados[0]);
+    const doc3 = FE.captura.pdfs.length === 1 ? FE.captura.pdfs[0].html : '';
+    R.check('L3 "Generar" pasa la fecha y las casillas, y el papel trae el mismo "Debes hoy" sin el interés en curso',
+      generados.length === 1 && generados[0].hasta === HOY && doc3.indexOf('Tu deuda hoy') !== -1 &&
+      doc3.indexOf(X.fmt(liqDe(nCop))) !== -1 && doc3.indexOf('interés del periodo en curso') === -1);
+    // L4 — una sola casilla marcada: sube "Debe hoy" en el interes de ESE credito, y el papel tambien.
+    const conMesC = X.modeloReciboGeneral(lsDe(nCop), pays, { hasta: HOY }).conMes.map(m => m.l.id);
+    const c1 = activosRG(nCop).filter(x => conMesC.indexOf(x.id) !== -1)[0];
+    const marcas1 = {}; marcas1[c1.id] = true;
+    const moC1 = montar(X.ReciboGeneralModal, propsRG(nCop), [marcas1]);
+    const liq1 = liqDe(nCop, marcas1);
+    R.check('L4 marcar un credito sube "Debe hoy" en su interés en curso (= computeLiquidacion con la casilla)',
+      cifrasModal(moC1.arbol)[1] === X.fmt(liq1) && liq1 > liqDe(nCop) && conClase(moC1.arbol, 'rg-corr on').length === 1,
+      [cifrasModal(moC1.arbol)[1], X.fmt(liq1)]);
+    R.eq('L4 lo vencido y las cuotas no se mueven', [cifrasModal(moC1.arbol)[0], cifrasModal(moC1.arbol)[2]], [cifrasModal(moC.arbol)[0], cifrasModal(moC.arbol)[2]]);
+    generados.length = 0;
+    botones(moC1.arbol, /Generar el recibo/)[0].props.onClick();
+    FE.captura.pdfs.length = 0;
+    if (generados.length === 1) X.generateReciboGeneral(lsDe(nCop), pays, '', generados[0]);
+    const doc4 = FE.captura.pdfs.length === 1 ? FE.captura.pdfs[0].html : '';
+    R.check('L4 el papel imprime ese mismo total y nombra el interés del periodo en curso',
+      generados.length === 1 && !!generados[0].interesMes && generados[0].interesMes[c1.id] === true &&
+      doc4.indexOf(X.fmt(liq1)) !== -1 && doc4.indexOf('interés del periodo en curso') !== -1);
+    // L5 — la casilla de arriba marca todas.
+    const cab = conClase(moC.arbol, 'rg-corr-cab')[0];
+    const chk = cab ? nodos(cab, n => n.tag === 'input')[0] : null;
+    if (chk) chk.props.onChange();
+    const ultima = moC.llamadas[moC.llamadas.length - 1];
+    R.check('L5 la casilla de arriba marca todos los creditos que preguntan',
+      !!ultima && Object.keys(ultima.nuevo).length === preguntaN(nCop) && Object.keys(ultima.nuevo).every(k => ultima.nuevo[k] === true));
+    // L5b — la casilla de arriba dice cuanto sumaria el interes ANTES de marcarla (con un solo credito
+    // es la unica cifra que se ve): la suma de lo que Liquidar deuda cobraria con su casilla.
+    const posC = suma(activosRG(nCop), x => { const L = X.computeLiquidacion(x, lpDe(x.id), { hasta: HOY, incluyeProxMes: true }); return L.incluyeProxMes ? L.intExtra : 0; });
+    const totCab = cab ? textos(conClase(cab, 'rg-corr-tot')[0]).join('') : '';
+    R.check('L5b sin marcar, la casilla de arriba ya muestra lo que sumaria el interés en curso (y va atenuada)',
+      posC > 0 && totCab === '+ ' + X.fmt(posC) && cab.props.className === 'rg-corr-cab', [totCab, X.fmt(posC)]);
+    const nUno = nombresRG.filter(n => preguntaN(n) === 1 && activosRG(n).length === 1)[0];
+    if (nUno) {
+      const moUno = montar(X.ReciboGeneralModal, propsRG(nUno), [{}]);
+      const lU = activosRG(nUno)[0], LU = X.computeLiquidacion(lU, lpDe(lU.id), { hasta: HOY, incluyeProxMes: true });
+      R.check('L5b con un solo credito: sin filas por credito, y la casilla dice cuanto suma',
+        conClase(moUno.arbol, 'rg-corr').length === 0 && textos(conClase(moUno.arbol, 'rg-corr-tot')[0]).join('') === '+ ' + X.fmt(LU.intExtra) && LU.intExtra > 0);
+    } else R.check('L5b ANTI-VACIO: el fixture tiene un deudor de un credito que pregunta', false);
+    // L6 — Cancelar no imprime.
+    generados.length = 0;
+    FE.captura.pdfs.length = 0;
+    botones(moC.arbol, /^Cancelar$/)[0].props.onClick();
+    R.check('L6 Cancelar cierra sin imprimir', generados.join() === 'cerrar' && FE.captura.pdfs.length === 0);
+    // L7 — en dolares: el modal, solo en dolares (decision del PO de 3.7.0).
+    const moU = montar(X.ReciboGeneralModal, propsRG(nUsd), [{}]);
+    const tU = moU.t.join(' ');
+    R.check('L7 un deudor en dolares: las tres cifras del modal en dolares y ningun peso',
+      cifrasModal(moU.arbol).every(v => v === '—' || /^USD \$[\d,]+\.\d\d$/.test(v)) && !/\$\s\d/.test(tU), cifrasModal(moU.arbol));
+  }
+  // L8 — el cableado: los dos botones van por App, y App abre el modal o imprime directo.
+  const appL = leer('public/js/app.js'), dpL = leer('public/js/componentes/DeudorPanel.js'), cbL = leer('public/js/vistas/CobrosView.js');
+  R.check('L8 App: onReciboGeneral pasa por abrirReciboGeneral y el modal imprime con los datos de pago',
+    /onReciboGeneral:function\(nombre,ls\)\{abrirReciboGeneral\(ls,pays,nowStr\(\),cfg\.datos_pago,/.test(appL) &&
+    /reciboGeneralModal&&h\(ReciboGeneralModal,\{/.test(appL) && /generateReciboGeneral\(loans\.filter\([\s\S]{0,120}?\),pays,cfg\.datos_pago,opts\)/.test(appL));
+  R.check('L8 el panel y Cobros ya no imprimen por su cuenta: le piden el recibo a App',
+    dpL.indexOf('generateReciboGeneral') === -1 && cbL.indexOf('generateReciboGeneral') === -1 &&
+    dpL.indexOf('props.onReciboGeneral(d.nombre') !== -1 && cbL.indexOf('props.acciones.onReciboGeneral(l.nombre') !== -1);
+  const cssL = leer('public/css/modales.css');
+  R.check('L8 el estilo del modal vive en modales.css, sin restos del prototipo', /\.rg-deuda \{/.test(cssL) && !/proto-/.test(cssL));
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

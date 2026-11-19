@@ -25,7 +25,7 @@ import { properCase } from '../core/ui.js';
 import { generateCronogramaPDF } from '../pdf/cronograma.js';
 import { generateEstadoCuentaDiario } from '../pdf/estado-cuenta.js';
 import { generateFacturaCobroDiario } from '../pdf/factura-cobro.js';
-import { generateReciboGeneral, puedeReciboGeneral } from '../pdf/recibo-general.js';
+import { puedeReciboGeneral } from '../pdf/recibo-general.js';
 import { usdLinea } from './CifraUSD.js';
 
 var DP_EST = {
@@ -268,8 +268,10 @@ export function DeudorPanel(props){
           M.ultimo && h('span', null, 'último pago ' + opCorta(M.ultimo.fecha) + ' · ' + fmt(M.ultimo.cop)))),
       h('div', { className: 'dp-head-acc' },
         // Del deudor, no de un prestamo: por eso va en la cabecera y no entre las acciones del credito.
-        puedeReciboGeneral(M.activos.map(function(x){ return x.loan; })) && h('button', { className: 'op-btn sm', title: 'Recibo de cobro general (PDF): toda su deuda vencida, sus opciones de pago y el estado de cada crédito',
-          onClick: function(){ generateReciboGeneral(M.activos.map(function(x){ return x.loan; }), pays, props.datosPago, { hasta: hoy }); } },
+        // Lo abre App (`onReciboGeneral`): antes pregunta por el interes del periodo en curso.
+        props.onReciboGeneral && puedeReciboGeneral(M.activos.map(function(x){ return x.loan; })) && h('button', { className: 'op-btn sm',
+          title: 'Recibo de cobro general (PDF): lo vencido, lo que debe hoy y lo que le queda, y el estado de cada crédito',
+          onClick: function(){ props.onReciboGeneral(d.nombre, M.activos.map(function(x){ return x.loan; })); } },
           h(Ico, { name: 'clipboard', size: 14, color: 'var(--text2)', sw: 2.3 }), 'Recibo general'),
         // Unificar (post-4.0.0): del deudor, como el recibo general. Hace falta mas de un prestamo activo
         // en la misma moneda (una unificacion es en una sola moneda).

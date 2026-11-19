@@ -28,7 +28,6 @@ import { bandejaCobro, opModalidad, opIniciales, opCorta, opRel, OP_MESES, OP_DI
 import { h, useEffect, useState } from '../core/react.js';
 import { properCase, payMatchesQuery } from '../core/ui.js';
 import { generateFacturaCobro } from '../pdf/factura-cobro.js';
-import { generateReciboGeneral } from '../pdf/recibo-general.js';
 import { usdLinea } from '../componentes/CifraUSD.js';
 import { V4Dinero, V4Chip, v4PuedeAnimar } from './DashView.js';
 
@@ -151,8 +150,8 @@ export function CobrosView(props){
           h('div', { className: 'cbv-monto' }, h('div', { className: 'v crit' }, fmt(total)), cbvUsd(l, total)),
           h('div', { className: 'cbv-acc', onClick: function(e){ e.stopPropagation(); } },
             // El recibo de cobro general es del DEUDOR, no de este credito (decision del PO).
-            h('button', { className: 'cbv-icono', title: 'Recibo de cobro general (PDF): toda su deuda vencida y sus opciones de pago', onClick: function(){
-              generateReciboGeneral(loans.filter(function(x){ return x.nombre === l.nombre; }), pays, props.datosPago, { hasta: hoy }); } },
+            h('button', { className: 'cbv-icono', title: 'Recibo de cobro general (PDF): lo vencido, lo que debe hoy y lo que le queda', onClick: function(){
+              props.acciones.onReciboGeneral(l.nombre, loans.filter(function(x){ return x.nombre === l.nombre; })); } },
               h(Ico, { name: 'clipboard', size: 15, sw: 2 })),
             h('button', { className: 'v4-btn pri sm', title: 'Cobrar lo que entregue, en cascada: intereses vencidos, capital vencido y abono', onClick: function(){ props.acciones.onCobro(l); } },
               h(Ico, { name: 'dollar', size: 14, sw: 2.4 }), 'Cobrar'))),
