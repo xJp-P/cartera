@@ -757,5 +757,12 @@ export const CHANGELOGS = {
     'Los PDF pesan cerca de la mitad que antes, gracias a la nueva letra incorporada en el documento.',
     'Estados más claros en pantalla y en papel: lo pagado en verde, lo vencido en rojo, los abonos en azul y lo pendiente en neutro, con el mismo lenguaje en toda la app.',
     'Ninguna cifra, fila ni regla de negocio cambió: el rediseño es solo visual, y cada documento se comparó con el anterior caso por caso, en los dos temas.'
+  ],
+  '4.1.0': [
+    'Lo que rinde un préstamo, antes de crearlo: el formulario muestra la ganancia en intereses y el total a recibir (en Solo intereses, lo que te deja en un año; en Pago único, la ganancia pactada).',
+    'Unificar préstamos: desde el panel de un cliente, sus préstamos activos se unen en uno solo. Eliges la fecha, qué hacer con los intereses pendientes (repartirlos en las cuotas, cobrarlos en la primera, sumarlos al capital o perdonarlos), la tasa y el plazo. Antes de confirmar puedes enviarle una propuesta en PDF y, al unificar, la constancia con su préstamo nuevo. Se puede deshacer desde el Historial.',
+    'Cierre forzoso sin perder abonos: si una cuota tenía un abono parcial en curso, se cierra por lo abonado y la pérdida se calcula descontando ese dinero (antes ese dinero se borraba).',
+    'Recibo de cobro general más claro: un bloque «Tu deuda hoy» con lo vencido, lo que debe si liquida hoy y lo que pagaría si sigue con sus cuotas, crédito por crédito y en total.',
+    'El interés en curso, antes del recibo: al generar el recibo de cobro general, la app pregunta si incluir el interés del periodo en curso de cada crédito (la misma casilla de Liquidar deuda) y muestra las cifras tal como saldrán en el papel.'
   ]
 };
