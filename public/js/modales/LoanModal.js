@@ -269,6 +269,27 @@ export function LoanModal(props){
     var totalPagar=rows.reduce(function(s,r){return s+r.cuota;},0);
     return {cuota:c,totalInt:totalInt,rows:rows,totalPagar:totalPagar};
   },[montoCOP,f.tasaMensual,f.plazoMeses,f.modalidad,f.frecuencia,gananciaCOPCalc,prorrateaPrimero,f.fechaInicio,f.primerPago]);
+  // Post-4.0.0 (punto 2 del PO): lo que RINDE el prestamo, sacado de las MISMAS filas del
+  // cronograma tentativo (la Calculadora ya lo mostraba como "Ganancia en intereses"). Por modalidad:
+  //  - C+I: el interes de todas las cuotas y el total a recibir (capital + intereses).
+  //  - Intereses: el plazo es indefinido y no hay "total": se proyecta UN AÑO de cuotas (12, 24 o 52),
+  //    con la primera tal como sale (si es proporcional, con sus dias reales).
+  //  - Pago Unico: la ganancia pactada (el total ya va en la primera linea). Prestamo: sin interes.
+  //  - Interes Diario: el interes de 30 dias sobre el capital (la convencion dias/30 del motor).
+  var rinde=(function(){
+    if(!(preview.cuota>0)) return null;
+    var m=f.modalidad;
+    if(m==='Prestamo') return null;
+    if(m==='Pago Unico') return gananciaCOPCalc>0?{rot:'Ganancia pactada',gan:gananciaCOPCalc}:null;
+    if(m===MODALIDAD_DIARIA) return {rot:'Interés de un mes (30 días)',gan:Math.round(montoCOP*(+f.tasaMensual||0)/100)};
+    if(m==='Intereses'){
+      var per=f.frecuencia==='Semanal'?52:f.frecuencia==='Quincenal'?24:12;
+      var prim=preview.rows.length?preview.rows[0].interes:preview.cuota;
+      return {rot:'Ganancia en un año ('+per+' cuotas)',gan:prim+preview.cuota*(per-1)};
+    }
+    return {rot:'Ganancia en intereses ('+preview.rows.length+' cuotas)',gan:preview.totalInt,
+      totRot:'Total a recibir (capital + intereses)',tot:preview.totalPagar};
+  })();
   var scs=useState(false); var showCronoLoan=scs[0]; var setShowCronoLoan=scs[1];
   // Anti-doble-clic: bloquea el boton tras el primer click para evitar duplicados
   var sub=useState(false); var isSubmitting=sub[0]; var setIsSubmitting=sub[1];
@@ -530,6 +551,14 @@ export function LoanModal(props){
       f.moneda==='USD'&&trmEfectiva>0&&h('div',{style:{display:'flex',justifyContent:'space-between'}},
         h('span',{style:{fontSize:12,color:'var(--text2)'}},'Cuota '+freqCuotaLabel(f.frecuencia)+' en USD'),
         h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:'var(--yellow)'}},fmtUSD(preview.cuota/(trmEfectiva||1)))),
+      rinde&&h('div',{style:{borderTop:'1px solid var(--green-bd)',marginTop:8,paddingTop:8}},
+        [[rinde.rot,rinde.gan,'var(--green)'],rinde.totRot?[rinde.totRot,rinde.tot,'var(--text)']:null].filter(Boolean).map(function(x,i){
+          return h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginTop:i?5:0}},
+            h('span',{style:{fontSize:12,color:'var(--text2)'}},x[0]),
+            h('span',{style:{textAlign:'right'}},
+              h('span',{className:'mono',style:{fontSize:12,fontWeight:700,color:x[2]}},fmt(x[1])),
+              f.moneda==='USD'&&trmEfectiva>0&&usdLinea(copToUsd(x[1],trmEfectiva),{fontSize:10})));
+        })),
       f.modalidad==='Intereses'&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:6}},'\u221E Plazo indefinido - paga intereses hasta abonar todo el capital'),
       esDiarioF&&h('div',{style:{fontSize:11,color:'var(--blue)',marginTop:6,lineHeight:1.5}},
         'Sin cuotas ni plazo: el interés se devenga cada día sobre el capital vivo. El cliente paga intereses o abona capital cuando quiera, y cada movimiento se registra como un CORTE.',

@@ -297,6 +297,10 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
       .concat([undefined, [{ monto: '700', tasa: '4000', totalCOP: '' }], true])],
     ['LoanModal (Pago Unico)', X.LoanModal, loanBase, conF({ montoOrigen: '1000000', modalidad: 'Pago Unico', fechaDevolucion: '2026-10-01', gananciaInput: '10' })],
     ['LoanModal (credito abierto)', X.LoanModal, loanBase, conF({ montoOrigen: '1000000', modalidad: 'Interes Diario', tasaMensual: '3', fechaInicio: '2026-07-01' })],
+    ['LoanModal (Intereses quincenal)', X.LoanModal, loanBase, conF({ montoOrigen: '1000000', tasaMensual: '4', frecuencia: 'Quincenal',
+      primerPago: X.primerPagoRegular(fIni.fechaInicio, 'Quincenal') })],
+    ['LoanModal (USD, C+I)', X.LoanModal, loanBase, conF({ moneda: 'USD', montoOrigen: '1000', modalidad: 'Capital + Intereses', tasaMensual: '5', plazoMeses: '6' })],
+    ['LoanModal (Prestamo)', X.LoanModal, loanBase, conF({ montoOrigen: '1000000', modalidad: 'Prestamo', tasaMensual: '0', plazoMeses: '1', fechaDevolucion: '2026-10-01' })],
     ['LoanModal (editar con actividad)', X.LoanModal, { loan: L(CI), trm: 4000, pays, clientes: [], onSave: nada, onClose: nada }],
   ];
   const vistos = new Set(), errores = [], armonizados = [], botonesColor = [], abtnSinTono = [];
@@ -406,6 +410,30 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   R.check('D8 la casilla del periodo irregular y sus atajos tambien (estatico: el fixture no trae ese periodo en curso)',
     (fuenteCasilla.match(/className:'v4m-casilla'/g) || []).length === 2 && /className:activo\?'v4m-b-aviso':''/.test(fuenteCasilla) &&
     !/accentColor|'var\(--yellow\)':'var\(--border\)'/.test(fuenteCasilla));
+  // D9 — lo que RINDE el prestamo nuevo (punto 2 post-4.0.0): sale de las MISMAS filas del cronograma tentativo.
+  const filaRinde = (t, rot) => nodos(arboles[t], n => n.tag === 'div' && n.kids.length === 2 && n.kids[0].tag === 'span' && unir(n.kids[0]) === rot)[0];
+  const pesos = s => +String(s).replace(/[^\d]/g, '');
+  const cifraRinde = (t, rot) => { const fr = filaRinde(t, rot); return fr ? pesos(unir(fr.kids[1].kids[0])) : null; };
+  const filasTent = nodos(arboles['LoanModal (C+I con cronograma)'], n => clsDe(n).indexOf('v4m-crono-tr') !== -1);
+  const sumaCol = i => filasTent.reduce((s, tr) => s + pesos(textos(tr.kids[i])[0]), 0);
+  const cuotaCI = Math.round(X.pmt(0.05, 6, 1000000)), filasCI = X.filasPreview(1000000, 0.05, 6, false, cuotaCI);
+  const intCI = filasCI.reduce((s, x) => s + x.interes, 0), totCI = filasCI.reduce((s, x) => s + x.cuota, 0);
+  R.check('D9 C+I: "Ganancia en intereses (6 cuotas)" y "Total a recibir" = la suma de las columnas Interés y Valor cuota del cronograma tentativo',
+    intCI > 0 && cifraRinde('LoanModal (C+I con cronograma)', 'Ganancia en intereses (6 cuotas)') === intCI && sumaCol(1) === intCI &&
+    cifraRinde('LoanModal (C+I con cronograma)', 'Total a recibir (capital + intereses)') === totCI && sumaCol(3) === totCI && totCI - intCI === 1000000,
+    [cifraRinde('LoanModal (C+I con cronograma)', 'Ganancia en intereses (6 cuotas)'), intCI, sumaCol(1), totCI, sumaCol(3)]);
+  R.check('D9 Intereses (plazo indefinido): un año de cuotas, sin "Total a recibir" (24 quincenas de $ 20.000)',
+    cifraRinde('LoanModal (Intereses quincenal)', 'Ganancia en un año (24 cuotas)') === 480000 &&
+    !filaRinde('LoanModal (Intereses quincenal)', 'Total a recibir (capital + intereses)'));
+  R.check('D9 Pago Unico: la ganancia pactada; credito abierto: el interes de 30 dias; Prestamo (0%): ninguna fila de ganancia',
+    cifraRinde('LoanModal (Pago Unico)', 'Ganancia pactada') === 100000 && cifraRinde('LoanModal (credito abierto)', 'Interés de un mes (30 días)') === 30000 &&
+    nodos(arboles['LoanModal (Prestamo)'], n => n.tag === 'span' && /Ganancia|Interés de un mes|Total a recibir/.test(unir(n))).length === 0);
+  const cuotaU = Math.round(X.pmt(0.05, 6, 4000000)), filasU = X.filasPreview(4000000, 0.05, 6, false, cuotaU);
+  const intU = filasU.reduce((s, x) => s + x.interes, 0);
+  const usdGan = conClase(filaRinde('LoanModal (USD, C+I)', 'Ganancia en intereses (6 cuotas)') || [], 'dp-usd');
+  R.check('D9 en dolares, cada cifra lleva su linea en dolares (gris, a la TRM del prestamo)',
+    cifraRinde('LoanModal (USD, C+I)', 'Ganancia en intereses (6 cuotas)') === intU && usdGan.length === 1 &&
+    unir(usdGan[0]).replace('US$', 'USD $') === X.copToUsd(intU, 4000), usdGan.map(unir));
 
   // ── E — LA HOJA modales.css ───────────────────────────────────────────────
   R.seccion('E — modales.css: orden, sin selectores de atributo, cada clase con su regla, valores aprobados');
