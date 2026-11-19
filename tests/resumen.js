@@ -327,9 +327,36 @@ function metricsComoApp(X, loans, pays) {
     }
     // Tres cifras: el valor en pesos va con el "$" aparte (pequeño): se busca la cifra sin el signo.
     const pctRec = Math.round((1 - M.vivo / M.prestado) * 100);
-    R.check('D4 "En la calle" muestra ' + X.fmt(M.vivo) + ', lo prestado y cuanto ya volvio, con su anillo',
-      tiene('En la calle') && t.indexOf(sinPeso(X.fmt(M.vivo))) !== -1 && t.indexOf(X.fmt(M.prestado)) !== -1 &&
-      tiene(pctRec + '% ya volvió') && t.indexOf(pctRec + '%') !== -1);
+    R.check('D4 "En la calle" muestra ' + X.fmt(M.vivo) + ' y lo prestado',
+      tiene('En la calle') && t.indexOf(sinPeso(X.fmt(M.vivo))) !== -1 && t.indexOf(X.fmt(M.prestado)) !== -1);
+    // Punto del PO (2026-11-19): el anillo dice el % y la leyenda los PESOS de capital que ya volvieron;
+    // antes la leyenda repetia el mismo %. El capital que volvio se recalcula APARTE, prestamo por
+    // prestamo, con la imputacion de cada cuota (los intereses cobrados no entran).
+    {
+      const calle = conClase(arbol, 'v4-kpi')[0];
+      const visibles = (n, out) => {   // el texto a la vista: sin el globo (<title>) del anillo
+        out = out || [];
+        if (typeof n === 'string') { out.push(n); return out; }
+        if (Array.isArray(n)) { n.forEach(x => visibles(x, out)); return out; }
+        if (n && n.kids && n.tag !== 'title') n.kids.forEach(x => visibles(x, out));
+        return out;
+      };
+      const volvio = suma(activos, l => {
+        const orig = l.moneda === 'USD' ? Math.round(l.montoOrigen * l.trmAcordada) : Math.round(l.montoOrigen);
+        const cap = suma(pays.filter(p => p.prestamoId === l.id), p => X.imputarCobros(p).totales.capital);
+        return orig - Math.max(0, orig - Math.round(cap));
+      });
+      const anillo = nodosDe(calle, n => n.tag === 'svg')[0];
+      const leyenda = conClase(calle, 'v4-leyenda').map(n => textos(n).join(''));
+      R.check('D4 el anillo marca ' + pctRec + '% (lo que ya volvio de lo prestado en los activos)',
+        !!anillo && nodosDe(anillo, n => n.tag === 'text').map(n => textos(n).join('')).join('|') === pctRec + '%');
+      R.check('D4 la leyenda dice los pesos de capital que ya volvieron: ' + X.fmt(volvio),
+        volvio > 0 && volvio === M.prestado - M.vivo && leyenda[0] === X.fmt(volvio) + ' de capital ya volvió', leyenda);
+      R.eq('D4 el % sale UNA sola vez a la vista en la tarjeta (sin repetirse en la leyenda)',
+        visibles(calle).filter(s => s.indexOf(pctRec + '%') !== -1).length, 1);
+      R.eq('D4 el anillo explica su % al pasar el mouse',
+        anillo && nodosDe(anillo, n => n.tag === 'title').map(n => textos(n).join(''))[0], pctRec + '% del capital prestado ya volvió');
+    }
     R.check('D4 "Cobrado en julio" muestra "Cobros del Mes" de App', tiene('Cobrado en julio') && t.indexOf(sinPeso(X.fmt(met.recibido))) !== -1);
     R.check('D4 "Ganancia de julio" muestra la del mes y la de 12 meses',
       tiene('Ganancia de julio') && t.indexOf(sinPeso(X.fmt(M.gananciaMes))) !== -1 && tiene('Últimos 12 meses: ') && t.indexOf(X.fmt(M.ganancia12)) !== -1);

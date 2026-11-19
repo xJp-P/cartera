@@ -281,6 +281,7 @@ function V4Barras(p){
 function V4Anillo(p){
   var r = 30, c = 2 * Math.PI * r, pct = Math.max(0, Math.min(100, p.pct || 0)), len = pct / 100 * c;
   return h('svg', { className: 'v4-anillo', width: 76, height: 76, viewBox: '0 0 76 76' },
+    p.titulo && h('title', null, p.titulo),
     h('circle', { cx: 38, cy: 38, r: r, className: 'pista' }),
     h('circle', { cx: 38, cy: 38, r: r, className: 'val', transform: 'rotate(-90 38 38)', strokeDasharray: len + ' ' + c, style: { '--c': c } }),
     h('text', { x: 38, y: 42, textAnchor: 'middle' }, Math.round(pct) + '%'));
@@ -303,9 +304,11 @@ function V4Cifras(p){
         h('div', null,
           h('div', { className: 'v4-kpi-v' }, h(V4Dinero, { v: M.vivo, animar: true })),
           h('div', { className: 'v4-kpi-s' }, 'de ', h('b', null, fmt(M.prestado)), ' prestados')),
-        h(V4Anillo, { pct: pctRec })),
+        h(V4Anillo, { pct: pctRec, titulo: Math.round(pctRec) + '% del capital prestado ya volvió' })),
+      // El anillo dice el PORCENTAJE y la leyenda los PESOS de capital que ya volvieron (punto del PO,
+      // 2026-11-19): antes la leyenda repetia el mismo %. Solo capital: los intereses cobrados no entran.
       h('div', { className: 'v4-kpi-pie' },
-        h('span', { className: 'v4-leyenda' }, h('i', { className: 'azul' }), Math.round(pctRec) + '% ya volvió'),
+        h('span', { className: 'v4-leyenda' }, h('i', { className: 'azul' }), h('b', null, fmt(M.prestado - M.vivo)), ' de capital ya volvió'),
         M.devengo > 0 && h('span', { className: 'v4-leyenda' }, '+ ', h('b', null, fmt(M.devengo)), ' devengado en créditos abiertos'))),
     h('div', { className: 'v4-card v4-kpi', style: { '--i': 1 } },
       h('div', { className: 'v4-kpi-h' }, h('span', { className: 'v4-kpi-l' }, 'Cobrado en ' + mes), h(V4Delta, { ahora: met.recibido, antes: ant.caja, etiqueta: ant.etiqueta })),
