@@ -108,8 +108,10 @@ module.exports = function crearRutasUnificacion(ctx) {
       })[plan.destino];
       return {
         afectaCaja: false,
+        // Con los intereses sumados al capital, el capital del nuevo es `plan.monto` (lo que se debia
+        // de capital + esos intereses): decir "capital $<lo de antes> (incluye...)" lo contradecia.
         descripcion: 'Unificaste ' + loans.length + ' préstamos de ' + base.nombre + ' en uno nuevo del ' + fechaLegible(plan.fecha) + ': capital ' +
-          fmtP(plan.capital) + destinoTxt,
+          fmtP(plan.destino === 'capital' ? plan.monto : plan.capital) + destinoTxt,
         payload: { ok: true, nuevoId: nuevoId, capital: plan.capital, interes: plan.interes, destino: plan.destino, cuotas: schedule.length },
         // ── FASE 2: escrituras (dentro de la transaccion de mutacionAtomica) ────────
         aplicar: () => {

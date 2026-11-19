@@ -454,7 +454,9 @@ ipcMain.handle('print-pdf', async (_e, html, filename) => {
   const pdfBuf = await require('./pdf').htmlAPdf(html);
   const savePath = await dialog.showSaveDialog(mainWin, {
     title: 'Guardar PDF',
-    defaultPath: path.join(app.getPath('documents'), (filename || 'documento') + '.pdf'),
+    // El nombre se limpia otra vez aqui (punto 5): un "/" no puede volverse carpeta ni colarse un
+    // caracter que Windows o Mac no aceptan, venga de donde venga.
+    defaultPath: path.join(app.getPath('documents'), require('./nombre-archivo').limpiarNombreArchivo(filename) + '.pdf'),
     filters: [{ name: 'PDF', extensions: ['pdf'] }]
   });
   if (savePath.canceled || !savePath.filePath) return { ok: false };

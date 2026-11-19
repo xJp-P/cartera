@@ -19,6 +19,7 @@ import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
 import { estadoDiario } from '../core/dominio.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, rbIniciales, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf, prestamoArchivo } from './nombres.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
 function campoValido(v){
@@ -169,7 +170,7 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
-  var fname = 'Estado de cuenta ' + loan.nombre + ' - ' + hasta;
+  var fname = nombrePdf('estadoCuenta', loan.nombre, [prestamoArchivo(loan), hasta]);
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(html, fname);
   } else {

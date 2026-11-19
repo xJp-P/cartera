@@ -19,6 +19,7 @@ import { nowStr, facturaCode, fcCodigoDiario } from '../core/ui.js';
 import { saldoConCaja, pendienteDeCuota, estadoDiario } from '../core/dominio.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf } from './nombres.js';
 
 // ── Recibo de Cobro / Factura (v1.16.0) ──────────────────────────────────────
 // Documento PROSPECTIVO (antes de pagar) para gestion de cartera. Distinto de
@@ -201,7 +202,8 @@ export function generateFacturaCobro(pay, loan, allPays, datosPago, opts) {
   ].join('\n');
 
   if (window.electronAPI && window.electronAPI.printPDF) {
-    window.electronAPI.printPDF(html, 'FC ' + pay.nombreCliente + ' - C' + pay.cuotaN);
+    // Punto 5 (post-4.0.0): la cuota y su vencimiento (el codigo FC- sigue dentro del documento).
+    window.electronAPI.printPDF(html, nombrePdf('factura', (loan && loan.nombre) || pay.nombreCliente, ['cuota ' + pay.cuotaN, 'vence ' + pay.fechaPago]));
   } else {
     var w = window.open('', '_blank', 'width=560,height=760');
     w.document.write(html); w.document.close();
@@ -303,7 +305,7 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
-  var fnameD = 'FC ' + loan.nombre + ' - interés ' + hasta;
+  var fnameD = nombrePdf('factura', loan.nombre, ['interés al ' + hasta]);
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(htmlD, fnameD);
   } else {

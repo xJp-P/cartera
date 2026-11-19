@@ -20,6 +20,7 @@ import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, rbMixto, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf } from './nombres.js';
 
 // ── Reporte de Prestamos Activos (PDF) ────────────────────────────────────
 // Reusa el pipeline printToPDF (electronAPI.printPDF) con fallback a window.print,
@@ -268,7 +269,7 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
 
   if (window.electronAPI && window.electronAPI.printPDF) {
     var d2 = new Date();
-    var fname = 'Reporte Préstamos Activos ' + d2.getFullYear() + '-' + ('0' + (d2.getMonth() + 1)).slice(-2) + '-' + ('0' + d2.getDate()).slice(-2);
+    var fname = nombrePdf('reporte', '', [d2.getFullYear() + '-' + ('0' + (d2.getMonth() + 1)).slice(-2) + '-' + ('0' + d2.getDate()).slice(-2)]);
     window.electronAPI.printPDF(html, fname);
   } else {
     var w = window.open('', '_blank', 'width=820,height=720');

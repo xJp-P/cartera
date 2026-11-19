@@ -20,6 +20,7 @@ import { saldoConCaja, pendienteDeCuota, computeLiquidacion, esDiario, periodoEn
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf, montoArchivo, prestamoArchivo } from './nombres.js';
 
 // ── Recibo de Abono a Capital (v1.17.0) ──────────────────────────────────────
 // Se genera automaticamente tras registrar un abono. Los 3 puntos de entrada
@@ -380,12 +381,15 @@ export function generateReciboAbono(loan, allPays, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
-  // Nombre de archivo con el monto (mas util al buscar que un consecutivo). Se formatea aparte
-  // porque fmt() mete un espacio duro (U+00A0) tras el '$' que ensuciaria el nombre.
+  // Nombre de archivo con el monto (mas util al buscar que un consecutivo) y la fecha del abono.
+  // Punto 5 (post-4.0.0): lo arma `nombrePdf`; el Paz y salvo nombra el prestamo, porque tres
+  // generadores lo emiten y antes salian todos como "Paz y Salvo [Cliente]".
   var montoFname = esUSD
-    ? ((+opts.montoUSD > 0) ? fmtUSD(+opts.montoUSD) : copToUsd(monto, trm))
-    : ('$' + Math.round(monto).toLocaleString('es-CO'));
-  var fname = esPazYSalvo ? ('Paz y Salvo ' + loan.nombre) : ('AB ' + loan.nombre + ' - ' + montoFname);
+    ? montoArchivo((+opts.montoUSD > 0) ? +opts.montoUSD : (trm > 0 ? monto / trm : 0), true)
+    : montoArchivo(monto, false);
+  var fechaAb = opts.fecha || nowStr();
+  var fname = esPazYSalvo ? nombrePdf('pazYSalvo', loan.nombre, [prestamoArchivo(loan), fechaAb])
+                          : nombrePdf('reciboAbono', loan.nombre, [montoFname, fechaAb]);
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(html, fname);
   } else {

@@ -33,6 +33,7 @@ import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento, period
 import { esAbono, esCorte } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf, prestamoArchivo } from './nombres.js';
 
 // Descarta ""/null/undefined/"0" — sin esto salia "C.C. 0" en los documentos.
 function campoValido(v){
@@ -402,7 +403,7 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
 
   // Sin `fmt()` en el nombre de archivo: inserta un espacio duro U+00A0 tras el '$'
   // que ensucia el nombre en disco (leccion de v1.17.1).
-  var fname = 'Liquidación ' + loan.nombre + ' - ' + hasta;
+  var fname = nombrePdf('liquidacion', loan.nombre, [prestamoArchivo(loan), hasta]);
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(html, fname);
   } else {

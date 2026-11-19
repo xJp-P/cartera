@@ -1092,6 +1092,7 @@ console.log('[pdf-render] reloj congelado en ' + INSTANTE_FIJO.toISOString() + '
 
 const generadoresVistos = new Set();
 const bytesPorCaso = [];
+const nombresPorCaso = [];   // punto 5: el nombre de archivo de cada caso (seccion de nombres)
 let nCreados = 0, nEstrictos = 0, nRebaseline = 0, nCasosOK = 0, nSinBase = 0, nDriftRoto = 0, nDiseno = 0;
 
 for (const caso of CASOS) {
@@ -1120,6 +1121,7 @@ for (const caso of CASOS) {
 
   const html = salida1.html, fname = salida1.fname;
   bytesPorCaso.push({ caso: caso.nombre, bytes: html.length });
+  nombresPorCaso.push({ caso: caso, gen: caso.gen, fname: fname, html: html });
 
   // 1 — el documento existe y esta completo
   R.check('emitio exactamente 1 documento', true);
@@ -1667,6 +1669,105 @@ function loansDelCaso(caso) {
           nO >= 16 && nTabla >= 4 && nMueve >= 4 && nAbono >= 2, { casos: nO, tablas: nTabla, conInteres: nMueve, conAbono: nAbono });
   R.check('O2 "Debes hoy" = Liquidar deuda (con su casilla), cada fila y el total de cada columna = la suma de sus filas',
           malasO.length === 0, malasO.slice(0, 8).join('\n      '));
+}
+
+{
+  // Punto 5 (post-4.0.0): el NOMBRE DE ARCHIVO de cada documento. Regla: `Documento - Cliente -
+  // detalle - fecha`, armado SOLO por `nombrePdf` (pdf/nombres.js) y limpiado otra vez por la capa
+  // nativa (desktop/nombre-archivo.js) antes de armar la ruta.
+  R.seccion('nombres de archivo · Documento - Cliente - detalle - fecha (punto 5)');
+  const PROHIBIDO = /[\\/:*?"<>|\u0000-\u001f ]/;
+  const ROTULOS = Object.keys(S.PDF_DOCUMENTOS).map(k => S.PDF_DOCUMENTOS[k]);
+  const malosP = [];
+  nombresPorCaso.forEach(n => {
+    const f = n.fname, et = n.caso.nombre + ': "' + f + '"';
+    if (PROHIBIDO.test(f) || /  /.test(f) || /[. ]$/.test(f) || f.length > 150) malosP.push(et + ' (caracter o forma invalida)');
+    if (!ROTULOS.some(r => f.indexOf(r + ' - ') === 0)) malosP.push(et + ' (no empieza por el nombre de un documento)');
+    if (!/\d{4}-\d{2}-\d{2}$/.test(f)) malosP.push(et + ' (no termina en la fecha)');
+    const ls = loansDelCaso(n.caso);
+    if (n.gen !== 'generateReportePrestamosPDF' && n.gen.indexOf('Unificacion') === -1 && ls.length &&
+        !ls.some(l => f.indexOf(' - ' + l.nombre + ' - ') !== -1)) malosP.push(et + ' (no nombra al cliente del caso)');
+  });
+  R.check('P1 los ' + nombresPorCaso.length + ' casos: nombre válido en Windows y Mac, empieza por el documento, nombra al cliente y termina en la fecha',
+          nombresPorCaso.length === CASOS.length && malosP.length === 0, malosP.slice(0, 8).join('\n      '));
+  // P2 — los dos "Recibo de pago" no chocan: el del boton Pagó nombra la CUOTA y el del cobro el MONTO.
+  // (Un "Paz y salvo" del mismo prestamo y el mismo dia SI es el mismo documento, salga del generador que
+  // salga: un prestamo se salda una sola vez.)
+  const rp = nombresPorCaso.filter(n => n.fname.indexOf('Recibo de pago - ') === 0);
+  const rpMal = rp.filter(n => n.gen === 'generateRecibo'
+    ? !/^Recibo de pago - .+ - cuota \d+ - \d{4}-\d{2}-\d{2}$/.test(n.fname)
+    : !/^Recibo de pago - .+ - (USD )?\$[\d.,]+ - \d{4}-\d{2}-\d{2}$/.test(n.fname));
+  R.check('P2 los dos "Recibo de pago" se distinguen: cuota (Pagó) o monto (Cobrar)',
+          rp.some(n => n.gen === 'generateRecibo') && rp.some(n => n.gen === 'generateReciboCobro') && rpMal.length === 0,
+          rpMal.map(n => n.fname).join(' | '));
+  // P3 — uno por generador, LITERAL: lo que vería el usuario en la ventana de guardar.
+  const esperados = {
+    'crono-capint-cop-abono': 'Cronograma - Karina Lozano - préstamo $4.000.000 - 2026-07-31',
+    'crono-capint-usd-mora': 'Cronograma - Gabriela Rios - préstamo USD $1,600.00 - 2026-07-31',
+    'reporte-activos-claro': 'Reporte de préstamos activos - 2026-07-31',
+    'factura-mora-cop': 'Factura de cobro - Elena Vargas - cuota 4 - vence 2026-03-07',
+    'cobro-paz-y-salvo': 'Paz y salvo - Bruno Salgado - préstamo $400.000 - 2026-07-20',
+    'general-varios-usd-oscuro': 'Recibo de cobro general - Gabriela Rios - 2026-11-02',
+  };
+  const vistos = {};
+  nombresPorCaso.forEach(n => { vistos[n.caso.nombre] = n.fname; });
+  const faltan = Object.keys(esperados).filter(k => !(k in vistos));
+  R.check('P3 ANTI-VACIO: los casos de referencia existen', faltan.length === 0, faltan.join(', '));
+  R.eq('P3 los nombres de referencia, literales', Object.keys(esperados).map(k => vistos[k]), Object.keys(esperados).map(k => esperados[k]));
+  // Cada generador por su rotulo (los 14), sobre los casos.
+  const rotuloDe = { generateCronogramaPDF: ['Cronograma'], generateReportePrestamosPDF: ['Reporte de préstamos activos'],
+    generateRecibo: ['Recibo de pago'], generateFacturaCobro: ['Factura de cobro'], generateFacturaCobroDiario: ['Factura de cobro'],
+    generateReciboAbono: ['Recibo de abono', 'Paz y salvo'], generateReciboCobro: ['Recibo de pago', 'Paz y salvo'],
+    generateReciboCorte: ['Recibo de corte', 'Paz y salvo'], generateReciboGeneral: ['Recibo de cobro general'],
+    generateEstadoLiquidacion: ['Estado de liquidación'], generateEstadoCuentaDiario: ['Estado de cuenta'],
+    generatePropuestaAbono: ['Propuesta de abono'], generatePropuestaUnificacion: ['Propuesta de unificación'],
+    generateConstanciaUnificacion: ['Constancia de unificación'] };
+  const gens = new Set(nombresPorCaso.map(n => n.gen));
+  const malRot = nombresPorCaso.filter(n => !(rotuloDe[n.gen] || []).some(r => n.fname.indexOf(r + ' - ') === 0)).map(n => n.caso.nombre + ': ' + n.fname);
+  R.check('P4 cada generador nombra su documento (' + gens.size + ' generadores en los casos)', gens.size === 14 && malRot.length === 0,
+          'generadores: ' + gens.size + ' · ' + malRot.slice(0, 4).join(' | '));
+  // P5 — el recibo de corte lleva su propio codigo (CT-), ya no el RC- del recibo del cobro.
+  const cortes = nombresPorCaso.filter(n => n.gen === 'generateReciboCorte');
+  R.check('P5 el recibo de corte se codifica CT- (RC- es el del cobro en cascada)', cortes.length > 0 &&
+          cortes.every(n => /CT-[A-Za-zÁÉÍÓÚÑáéíóúñ]+-[\w-]{3}-\d{2}/.test(n.html) && n.html.indexOf('RC-') === -1));
+  // P6 — un cliente con un nombre tramposo, por los generadores que lo toman del prestamo.
+  const truco = 'Ana / Ruiz: ¿Sí? *"<x>|';
+  const lT = Object.assign({}, L('1776205975507jkph'), { nombre: truco });
+  const pT = pays.map(p => p.prestamoId === lT.id ? Object.assign({}, p, { nombreCliente: truco }) : p);
+  const lpT = pT.filter(p => p.prestamoId === lT.id);
+  const emitidos = [];
+  const atrapa = fn => { CAP.pdfs.length = 0; fn(); if (CAP.pdfs.length === 1) emitidos.push(CAP.pdfs[0].fname); };
+  ponerTema('light');
+  atrapa(() => S.generateCronogramaPDF(lT, lpT, false));
+  atrapa(() => S.generateFacturaCobro(lpT.find(p => p.estadoPago !== 'Pagado' && S.esCuotaRegular(p)), lT, pT, '', {}));
+  atrapa(() => S.generateReciboGeneral([lT], pT, '', { hasta: '2026-11-02' }));
+  atrapa(() => S.generateEstadoLiquidacion(lT, lpT, '', { hasta: '2026-07-31' }));
+  R.check('P6 un cliente "' + truco + '": los 4 documentos salen con un nombre válido y el cliente legible',
+          emitidos.length === 4 && emitidos.every(f => !PROHIBIDO.test(f) && f.indexOf(' - Ana - Ruiz- ¿Sí- -') !== -1),
+          emitidos.join(' | '));
+  // P7 — la limpieza del frontend y la de la capa nativa dan lo mismo.
+  const nativo = require(path.join(__dirname, '..', 'desktop', 'nombre-archivo.js'));
+  const tramposos = [truco, 'Ana Ruiz', '  dos   espacios  ', 'fin con punto.', 'fin con puntos y espacio. . ', 'CON', 'lpt1', 'a//b\\\\c', 'tab\tcontrol\u0007',
+    'José', 'José (NFD)', 'x'.repeat(220), '', null, undefined, 'Recibo de pago - Ana - $1.000 - 2026-01-01', '﻿BOM', 'emoji 🙂 ok'];
+  const difieren = tramposos.filter(t => S.limpiarNombreArchivo(t) !== nativo.limpiarNombreArchivo(t));
+  R.check('P7 la limpieza del frontend y la de desktop/nombre-archivo.js coinciden en ' + tramposos.length + ' nombres tramposos', difieren.length === 0, difieren);
+  R.check('P7 la limpieza: sin prohibidos, sin espacio duro, sin punto final, NFC, nombres reservados y tope',
+          S.limpiarNombreArchivo('Ana Ruiz') === 'Ana Ruiz' && S.limpiarNombreArchivo('fin con puntos y espacio. . ') === 'fin con puntos y espacio' &&
+          S.limpiarNombreArchivo('CON') === '_CON' && S.limpiarNombreArchivo('José') === 'José' && S.limpiarNombreArchivo('') === 'documento' &&
+          S.limpiarNombreArchivo('x'.repeat(220)).length === 150 && S.limpiarNombreArchivo('a//b') === 'a-b');
+  R.check('P7 un nombre largo recorta SOLO al cliente: el documento, el detalle y la fecha quedan',
+          (n => n.length <= 120 && /^Recibo de cobro general - x+ - 2026-11-02$/.test(n))(S.nombrePdf('cobroGeneral', 'x'.repeat(200), ['2026-11-02'])));
+  // P8 — ningun generador arma el nombre a mano, y la capa nativa limpia antes de armar la ruta.
+  const dirPdf = path.join(__dirname, '..', 'public', 'js', 'pdf');
+  const aMano = fs.readdirSync(dirPdf).filter(f => /\.js$/.test(f) && ['recibo-estilo.js', 'nombres.js'].indexOf(f) === -1).filter(f => {
+    const src = fs.readFileSync(path.join(dirPdf, f), 'utf8');
+    const emite = /printPDF\(|rbEmitir\(|fname:/.test(src);
+    return emite && (src.indexOf('nombrePdf(') === -1 || /'(Paz y Salvo|RC|AB|FC|CG|Propuesta|Liquidación|Cronograma) '\s*\+/.test(src));
+  });
+  R.check('P8 los generadores piden el nombre a nombrePdf (ninguno lo arma a mano)', aMano.length === 0, aMano.join(', '));
+  const mainJs = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
+  R.check('P8 print-pdf limpia el nombre con desktop/nombre-archivo.js antes de armar la ruta',
+          /defaultPath: path\.join\(app\.getPath\('documents'\), require\('\.\/nombre-archivo'\)\.limpiarNombreArchivo\(filename\) \+ '\.pdf'\)/.test(mainJs));
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────

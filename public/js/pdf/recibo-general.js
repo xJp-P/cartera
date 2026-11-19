@@ -37,6 +37,7 @@ import { nowStr } from '../core/ui.js';
 import { computeLiquidacion, diasEntre, esDiario, pendCuota, pendienteDeCuota, proximoVencimiento, saldoConCaja } from '../core/dominio.js';
 import { esAbono, esCuotaRegular } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
+import { nombrePdf } from './nombres.js';
 import { rbCss, rbPaleta, rbCabecera, rbLarga, rbMedia, rbCorta, rbEsc, rbPlural, rbPrimerNombre, rbIniciales, rbMoneda, rbMixto,
          rbTarjeta, rbRejilla, rbBarraCuotas, rbLeyenda, rbEmitir, RB_ICONO_OK, RB_ICONO_RELOJ, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
@@ -283,5 +284,5 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ]).join('\n');
 
-  rbEmitir(html, 'CG ' + nombre + ' - ' + hasta);
+  rbEmitir(html, nombrePdf('cobroGeneral', nombre, [hasta]));
 }

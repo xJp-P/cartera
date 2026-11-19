@@ -39,6 +39,7 @@ import { fmt, fmtUSD } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
 import { saldoConCaja, esDiario, pendCuota } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
+import { nombrePdf, montoArchivo, prestamoArchivo } from './nombres.js';
 import { rbCss, rbPaleta, rbCabecera, rbLarga, rbMedia, rbCorta, rbEsc, rbCampoValido, rbPlural, rbPrimerNombre, rbIniciales,
          rbMoneda, rbTarjeta, rbRejilla, rbBarraCuotas, rbLeyenda, rbEmitir, RB_ICONO_OK, RB_ICONO_TIP, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 
@@ -301,7 +302,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ]).join('\n');
 
-  // El monto se formatea aparte: fmt() mete un espacio duro (U+00A0) que ensuciaria el nombre.
-  var montoFname = esUSD ? fmtUSD(oblUSD) : ('$' + Math.round(cajaCOP).toLocaleString('es-CO'));
-  rbEmitir(html, esPazYSalvo ? ('Paz y Salvo ' + loan.nombre) : ('RC ' + loan.nombre + ' - ' + montoFname));
+  // Punto 5 (post-4.0.0): `nombrePdf` arma el nombre (monto y fecha del cobro; el Paz y salvo, el prestamo).
+  rbEmitir(html, esPazYSalvo ? nombrePdf('pazYSalvo', loan.nombre, [prestamoArchivo(loan), fechaCobro])
+                             : nombrePdf('reciboCobro', loan.nombre, [montoArchivo(esUSD ? oblUSD : cajaCOP, esUSD), fechaCobro]));
 }

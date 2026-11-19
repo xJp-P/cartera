@@ -20,6 +20,7 @@ import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf, prestamoArchivo } from './nombres.js';
 
 // `opts.incluyeProxMes` (3.1.0): si el valor de liquidacion del pie incluye el interes del
 // mes en curso. Es la MISMA decision que la casilla de Liquidar deuda y la toma quien
@@ -224,9 +225,9 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {
-    // 3.7.0 (decision del PO): un credito en dolares se imprime SOLO en dolares, tambien en el nombre
-    // del archivo (antes salia el monto en dolares con formato de pesos: 'Cronograma $ 1.600').
-    var fname = 'Cronograma ' + (esUSD ? fmtUSD(loan.montoOrigen) : fmt(loan.montoOrigen)) + ' - ' + loan.nombre;
+    // Punto 5 (post-4.0.0): el nombre lo arma `nombrePdf` (pdf/nombres.js). El prestamo va por su
+    // monto, en dolares si el credito es en dolares, y la fecha es la de emision.
+    var fname = nombrePdf('cronograma', loan.nombre, [prestamoArchivo(loan), nowStr()]);
     window.electronAPI.printPDF(html, fname);
   } else {
     var w = window.open('', '_blank', 'width=750,height=700');

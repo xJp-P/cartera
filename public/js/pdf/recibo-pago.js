@@ -20,6 +20,7 @@ import { saldoConCaja, pendienteDeCuota } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, rbEsc, RB_LETRA, RB_LOGO, RB_ICONO_OK, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf } from './nombres.js';
 
 export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   opts = opts || {};
@@ -193,10 +194,8 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {
-    var montoTxt = loan.moneda === 'USD'
-      ? 'USD $' + Math.round(loan.montoOrigen).toLocaleString('en-US')   // con el formato del dolar, no el del peso
-      : '$' + Math.round(loan.montoOrigen).toLocaleString('es-CO');
-    var fname = 'Recibo Préstamo ' + montoTxt + ' - ' + pay.nombreCliente + ' - Cuota ' + pay.cuotaN;
+    // Punto 5 (post-4.0.0): la cuota y la fecha del pago (antes llevaba el monto del PRESTAMO).
+    var fname = nombrePdf('reciboCuota', (loan && loan.nombre) || pay.nombreCliente, ['cuota ' + pay.cuotaN, fechaRealPago]);
     window.electronAPI.printPDF(html, fname);
   } else {
     var w = window.open('', '_blank', 'width=550,height=700');

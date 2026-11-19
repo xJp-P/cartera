@@ -291,6 +291,13 @@ const mismaFila = (f, r) => f.fecha === r.fechaPago && f.interes === r.interesPe
     R.check('D2 en dolares: el capital en pesos del nuevo es EXACTO (montoOrigen x TRM), incluye los intereses capitalizados',
       nuevoG.moneda === 'USD' && origG === planG.nuevo.monto && planG.nuevo.monto === planG.capital + planG.interes &&
       Math.round(nuevoG.interesCapitalizado) === planG.interes && nuevoG.fechaInicio === fechaG && Math.round(nuevoG.cargaTrasladada) === 0);
+    // D2b — el Historial nombra el capital del NUEVO (con los intereses sumados), no el de antes. Hasta
+    // el punto 5 decia "capital $<lo de antes> (incluye $<intereses>...)", que se contradecia.
+    const actG = (await pedir(S, 'GET', '/api/activity')).json || [];
+    const msgG = (actG.find(a => a.tipo === 'unificacion' && a.mensaje.indexOf(nuevoG.nombre) !== -1) || {}).mensaje || '';
+    const pesoG = v => '$' + Math.round(v).toLocaleString('es-CO');
+    R.check('D2b el Historial dice el capital del préstamo nuevo e incluye los intereses sumados',
+      msgG.indexOf('capital ' + pesoG(planG.nuevo.monto) + ' (incluye ' + pesoG(planG.interes) + ' de intereses sumados al capital)') !== -1, msgG);
     const filasG = paysDe(nuevoG.id).sort((a, b) => a.cuotaN - b.cuotaN);
     R.check('D3 el cronograma retroactivo es el del modal', filasG.length === planG.nuevo.filas.length && planG.nuevo.filas.every((f, i) => mismaFila(f, filasG[i])));
     R.eq('D4 el capital refinanciado no cuenta como prestado (dinero nuevo = 0)', origG - X.capitalRefinanciadoDe(nuevoG), 0);
@@ -401,7 +408,7 @@ const mismaFila = (f, r) => f.fecha === r.fechaPago && f.interes === r.interesPe
     const [prop, cons] = FE.captura.pdfs;
     R.check('H1 la propuesta: condicional, con su codigo y su aviso de que no cambia nada',
       !!prop && /Si unificamos tus 3 préstamos, pagarías/.test(prop.html) && /PU-Br-3107/.test(prop.html) && /Esto es una propuesta/.test(prop.html) &&
-      prop.fname === 'Propuesta unificación Bruno Salgado - ' + HOY && prop.html.indexOf('Cómo pagar') === -1);
+      prop.fname === 'Propuesta de unificación - Bruno Salgado - ' + HOY && prop.html.indexOf('Cómo pagar') === -1);
     R.check('H2 la constancia: en pasado, codigo del nuevo, "Cómo pagar" escapado y el tema oscuro del papel',
       !!cons && /Unificamos tus 3 préstamos: ahora pagas/.test(cons.html) && /UN-Br-abc-3107/.test(cons.html) &&
       cons.html.indexOf('Nequi &lt;300&gt;') !== -1 && cons.html.indexOf('--r-bg:#000000') !== -1);

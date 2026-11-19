@@ -24,6 +24,7 @@ import { fmt, fmtUSD, fmtD } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
 import { esDiario } from '../core/dominio.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf, montoArchivo } from './nombres.js';
 
 // `propuesta` = { fecha, plan, cajaCOP, proyeccion }
 //   - plan       : resultado de `planCascada` (pasos + totales). NO aplicado.
@@ -354,9 +355,7 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
   ].join('\n');
 
   // `fmt()` mete un espacio duro despues del $ que ensuciaria el nombre del archivo.
-  var montoFname = esUSD ? ('USD $' + oblUSD.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}))
-                         : ('$' + Math.round(totalU).toLocaleString('es-CO'));
-  var fname = 'Propuesta ' + loan.nombre + ' - ' + montoFname;
+  var fname = nombrePdf('propuestaAbono', loan.nombre, [montoArchivo(esUSD ? oblUSD : totalU, esUSD), nowStr()]);
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(html, fname);
   } else {

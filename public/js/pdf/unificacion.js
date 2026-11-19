@@ -13,6 +13,7 @@
 import { rbCss, rbPaleta, rbCabecera, rbLarga, rbMedia, rbCorta, rbEsc, rbPlural, rbIniciales, rbMoneda,
   rbTarjeta, rbEmitir, RB_ICONO_OK, RB_ICONO_RELOJ, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 import { opModalidad } from '../core/operacion.js';
+import { nombrePdf } from './nombres.js';
 
 function unPct(t){ return (+t).toLocaleString('es-CO', { maximumFractionDigits: 3 }) + '%'; }
 var UN_FREQ = { Mensual: 'mensuales', Quincenal: 'quincenales', Semanal: 'semanales' };
@@ -164,11 +165,11 @@ export function generateConstanciaUnificacion(plan, deudor, opts){
 export function htmlPropuestaUnificacion(plan, deudor, opts){
   opts = opts || {};
   return { html: unHtml('Propuesta de unificación', 'PU-' + rbIniciales(deudor) + '-' + unDDMM(plan.fecha || plan.hoy), plan, deudor, opts, true),
-    fname: 'Propuesta unificación ' + deudor + ' - ' + (plan.fecha || plan.hoy) };
+    fname: nombrePdf('propuestaUnificacion', deudor, [plan.fecha || plan.hoy]) };
 }
 export function htmlConstanciaUnificacion(plan, deudor, opts){
   opts = opts || {};
   var id = String(opts.nuevoId || 'NC');
   return { html: unHtml('Constancia de unificación', 'UN-' + rbIniciales(deudor) + '-' + id.slice(-3) + '-' + unDDMM(plan.fecha || plan.hoy), plan, deudor, opts, false),
-    fname: 'Unificación ' + deudor + ' - ' + (plan.fecha || plan.hoy) };
+    fname: nombrePdf('constanciaUnificacion', deudor, [plan.fecha || plan.hoy]) };
 }

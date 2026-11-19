@@ -343,7 +343,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       const docG = FE.captura.pdfs[0];
       R.check('B6 emite el recibo general de ese deudor con TODA su mora (' + nDeudor + ' cuotas)',
         FE.captura.pdfs.length === 1 && docG.html.indexOf('Recibo de cobro general') !== -1 &&
-        docG.html.indexOf(nDeudor + ' cuotas vencidas') !== -1 && docG.fname === 'CG ' + nomG + ' - ' + HOY,
+        docG.html.indexOf(nDeudor + ' cuotas vencidas') !== -1 && docG.fname === 'Recibo de cobro general - ' + nomG + ' - ' + HOY,
         docG && docG.fname);
     }
     // Desplegado (verDespues = true, el 7o useState), aparecen.
@@ -583,7 +583,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
         [l.nombre, loans.filter(x => x.nombre === l.nombre && x.estado === 'Activo').map(x => x.id).sort()]);
       if (llamadasRG.length === 1) rgEmitir(llamadasRG[0].ls);
       R.check('D8 emite el recibo general de ese deudor', FE.captura.pdfs.length === 1 &&
-        FE.captura.pdfs[0].html.indexOf('Recibo de cobro general') !== -1 && FE.captura.pdfs[0].fname === 'CG ' + l.nombre + ' - ' + HOY,
+        FE.captura.pdfs[0].html.indexOf('Recibo de cobro general') !== -1 && FE.captura.pdfs[0].fname === 'Recibo de cobro general - ' + l.nombre + ' - ' + HOY,
         FE.captura.pdfs.length && FE.captura.pdfs[0].fname);
     }
     // Gate por frecuencia: un semanal no ofrece "Cambiar dia" (el backend lo rechaza).
@@ -1271,7 +1271,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     abrio = false;
     X.abrirReciboGeneral(lsDe(nSin), pays, HOY, '', () => { abrio = true; });
     R.check('L1 sin nada que preguntar (' + activosRG(nSin).map(x => x.modalidad).join(', ') + ') imprime directo, con hoy como corte',
-      !abrio && FE.captura.pdfs.length === 1 && FE.captura.pdfs[0].fname === 'CG ' + nSin + ' - ' + HOY && !X.rgPregunta(lsDe(nSin), pays, HOY),
+      !abrio && FE.captura.pdfs.length === 1 && FE.captura.pdfs[0].fname === 'Recibo de cobro general - ' + nSin + ' - ' + HOY && !X.rgPregunta(lsDe(nSin), pays, HOY),
       FE.captura.pdfs.length && FE.captura.pdfs[0].fname);
     // L2 — las tres cifras del modal, recalculadas aparte.
     const vencDe = n => suma(activosRG(n), x => suma(lpDe(x.id).filter(p => X.esCuotaRegular(p) && (p.estadoPago === 'En Mora' || (p.estadoPago === 'Pendiente' && p.fechaPago < HOY))), X.pendCuota));

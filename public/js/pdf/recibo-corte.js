@@ -15,6 +15,7 @@
 import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { estadoDiario } from '../core/dominio.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, rbIniciales, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
+import { nombrePdf, montoArchivo, prestamoArchivo } from './nombres.js';
 
 function campoValido(v){
   if (v === null || v === undefined) return false;
@@ -50,7 +51,9 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
 
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   // Iniciales con la lista blanca comun (con dieresis): antes un apellido con "ü" perdia esa letra.
-  var rcCode = 'RC-' + rbIniciales(loan.nombre) + '-' + String(loan.id).slice(-3) + '-' + String(corte.cuotaN).padStart(2,'0');
+  // Punto 5 (post-4.0.0): CT- (corte), no RC-, que es el recibo del cobro en cascada. Nada busca
+  // este codigo, asi que cambiarlo no rompe ningun papel ya entregado.
+  var rcCode = 'CT-' + rbIniciales(loan.nombre) + '-' + String(loan.id).slice(-3) + '-' + String(corte.cuotaN).padStart(2,'0');
 
   // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app (claro, u oscuro v4).
   var C = rbPaleta(dark);
@@ -141,10 +144,10 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
 
-  // El monto se formatea aparte: fmt() mete un espacio duro (U+00A0) tras el '$'
-  // que ensuciaria el nombre del archivo (misma razon que en el Recibo de Abono).
-  var montoFname = esUSD ? copToUsd(total, trm) : ('$' + total.toLocaleString('es-CO'));
-  var fname = saldado ? ('Paz y Salvo ' + loan.nombre) : ('RC ' + loan.nombre + ' - ' + montoFname);
+  // Punto 5 (post-4.0.0): `nombrePdf` arma el nombre (monto y fecha del corte; el Paz y salvo, el prestamo).
+  var montoFname = montoArchivo(esUSD ? (trm > 0 ? total / trm : 0) : total, esUSD);
+  var fname = saldado ? nombrePdf('pazYSalvo', loan.nombre, [prestamoArchivo(loan), fechaCorte])
+                      : nombrePdf('reciboCorte', loan.nombre, [montoFname, fechaCorte]);
   if (window.electronAPI && window.electronAPI.printPDF) {
     window.electronAPI.printPDF(html, fname);
   } else {
