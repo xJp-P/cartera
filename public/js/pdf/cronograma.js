@@ -192,6 +192,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
       var detalle = 'Capital ' + fv(L.capitalPendiente) +
         (L.intMora > 0 ? ' + mora ' + fv(L.intMora) + ' (' + L.moraCount + ' cuota' + (L.moraCount>1?'s':'') + ' a ' + mesTxt + ')' : '') +
         (L.moraConsolidada > 0 ? ' + mora consolidada ' + fv(L.moraConsolidada) : '') +
+        (L.cargaPendiente > 0 ? ' + intereses de la unificación ' + fv(L.cargaPendiente) : '') +
         (L.partialPend > 0 ? ' &minus; parciales ' + fv(L.partialPend) : '') +
         (L.intExtra > 0 ? (L.periodoIrregular ? ' + interés de ' + L.diasCobrados + ' días del periodo en curso ' : ' + interés ' + periodoEnCursoDe(L.frecuencia) + ' ') + fv(L.intExtra) : '');
       var bg = C.amberBg, bd = C.amberBd, cl = C.amber;

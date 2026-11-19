@@ -2044,8 +2044,9 @@ function seccionD() {
   }
   R.check('D rutas y motor: `proximaCuotaExtra` solo aparece para ponerla en 0', lecturas.length === 0, lecturas);
   const eng = sinComentarios(fs.readFileSync(path.join(REPO, 'backend/core/engine.js'), 'utf8'));
-  R.check('D los DOS generadores del motor aplican la transitoria',
-    (eng.match(/return aplicarPeriodoIrregular\(loan, rows\);/g) || []).length === 2);
+  // Desde la unificacion (post-4.0.0) la transitoria va envuelta en la carga trasladada, que se aplica despues.
+  R.check('D los DOS generadores del motor aplican la transitoria (y despues la carga de una unificacion)',
+    (eng.match(/return aplicarCargaTrasladada\(loan, aplicarPeriodoIrregular\(loan, rows\), [^)]+\);/g) || []).length === 2);
 }
 
 // Una seccion que lanza (p.ej. el motor rechaza una fecha que deberia aceptar) no puede tumbar

@@ -1,0 +1,82 @@
+{
+  "version": 2,
+  "caso": "unif-propuesta-usd-capital",
+  "generador": "generatePropuestaUnificacion",
+  "tema": "light",
+  "entradaHash": "deacfa3ab049556c540068235aa55abc0234a381",
+  "estructura": {
+    "docTitle": "Propuesta de unificación",
+    "h1": [],
+    "cabeceras": [
+      "Préstamo",
+      "Capital",
+      "Intereses",
+      "Total",
+      "#",
+      "Vence",
+      "Interés",
+      "Abono a capital",
+      "Valor cuota",
+      "Saldo"
+    ],
+    "etiquetas": [
+      "Lo que se uniría (lo que debías hoy, # de M de #)",
+      "Tu préstamo nuevo sería · Capital + Intereses",
+      "Capital",
+      "Tasa mensual",
+      "Cuotas",
+      "Último pago",
+      "Así quedaría tu cronograma"
+    ]
+  },
+  "valores": {
+    "bytes": 11451,
+    "nFilas": 14,
+    "nCeldas": 76,
+    "celdasPorTr": [
+      4,
+      4,
+      4,
+      4,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "nMontos": 50,
+    "hashMontos": "89458f0ed8e9588744a78ff30c8d81e4eda8b715",
+    "hashFname": "08d48c121b7ff99f1ac53d66629cc2b65a0b0bf9",
+    "hashTexto": "f64cd343eb29c07c5abe21058884e614813c3254",
+    "clases": [
+      "n",
+      "r-cab",
+      "r-doc",
+      "r-hero ambar",
+      "r-hero-l",
+      "r-logo",
+      "r-marca",
+      "r-monto",
+      "r-pie",
+      "r-pie-d",
+      "r-quien",
+      "r-sec",
+      "r-sec-t",
+      "r-sello",
+      "r-t",
+      "r-t un-crono",
+      "r-tar",
+      "r-tar-l",
+      "r-tar-v",
+      "sub",
+      "un-antes",
+      "un-cuatro",
+      "un-nota-t"
+    ]
+  }
+}

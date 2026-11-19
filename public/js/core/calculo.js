@@ -102,6 +102,30 @@ export function aplicarTransitoriaPreview(loan, filas, startN, saldoInicial, loa
   return filas;
 }
 
+// ── LA CARGA DE UNA UNIFICACION en el preview (post-4.0.0) ───────────────────
+// ESPEJO de `cargaDeCuota` / `aplicarCargaTrasladada` (backend/core/engine.js). Un prestamo
+// que nacio de una unificacion puede cobrar los intereses de los viejos como una CARGA fija en
+// sus cuotas 1..cargaCuotas (floor(C/K) cada una, la K-esima con el residuo). Va dentro del
+// interes de la fila. Si la generacion termina el prestamo y deja menos cuotas que K, la ultima
+// absorbe lo que no quepa. `filas` son las de `filasPreview` (arrancan en la cuota `startN`).
+export function cargaDeCuotaPreview(loan, n){
+  var C=Math.max(0,Math.round(+(loan&&loan.cargaTrasladada)||0)), K=Math.max(0,Math.round(+(loan&&loan.cargaCuotas)||0));
+  if(!C||!K||n<1||n>K) return 0;
+  var parte=Math.floor(C/K);
+  return n===K?C-parte*(K-1):parte;
+}
+export function aplicarCargaPreview(loan, filas, startN, terminaPrestamo){
+  var C=Math.max(0,Math.round(+(loan&&loan.cargaTrasladada)||0)), K=Math.max(0,Math.round(+(loan&&loan.cargaCuotas)||0));
+  if(!C||!K||!filas||!filas.length) return filas;
+  filas.forEach(function(f,i){
+    var n=startN+i, c=cargaDeCuotaPreview(loan,n);
+    if(terminaPrestamo&&i===filas.length-1){ for(var j=n+1;j<=K;j++) c+=cargaDeCuotaPreview(loan,j); }
+    if(!c) return;
+    f.interes+=c; f.cuota+=c; f.carga=c;
+  });
+  return filas;
+}
+
 // ── PRIMER PAGO del formulario (3.2.0, Fase 2; las tres frecuencias desde 3.3.0) ─
 // ESPEJO de `getPayDate`, `primerPagoRegular`, `inicioPeriodoRegular` y `resolverPrimerPago`
 // (backend/core/engine.js). El backend es el que decide: esto solo alimenta lo que el formulario

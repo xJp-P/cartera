@@ -1,0 +1,82 @@
+{
+  "version": 2,
+  "caso": "unif-constancia-primera",
+  "generador": "generateConstanciaUnificacion",
+  "tema": "dark",
+  "entradaHash": "3daa5ce686b28411fa984342e33659e686e6e526",
+  "estructura": {
+    "docTitle": "Constancia de unificación",
+    "h1": [],
+    "cabeceras": [
+      "Préstamo",
+      "Capital",
+      "Intereses",
+      "Total",
+      "#",
+      "Vence",
+      "Interés",
+      "Abono a capital",
+      "Valor cuota",
+      "Saldo"
+    ],
+    "etiquetas": [
+      "Lo que se unió (lo que debías hoy, # de M de #)",
+      "Tu préstamo nuevo · Capital + Intereses",
+      "Capital",
+      "Tasa mensual",
+      "Cuotas",
+      "Último pago",
+      "Tu cronograma"
+    ]
+  },
+  "valores": {
+    "bytes": 11376,
+    "nFilas": 13,
+    "nCeldas": 68,
+    "celdasPorTr": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "nMontos": 48,
+    "hashMontos": "e9f9dfae6aca235ea4c27a0a7e1798f06209cad9",
+    "hashFname": "99b30a71ea74a3a58a0cddd96e6c73a74d8774f4",
+    "hashTexto": "9225fb1a7f548def4c20a2035c3a22deb2af1a2e",
+    "clases": [
+      "n",
+      "r-cab",
+      "r-doc",
+      "r-hero",
+      "r-hero-l",
+      "r-logo",
+      "r-marca",
+      "r-monto",
+      "r-pie",
+      "r-pie-d",
+      "r-quien",
+      "r-sec",
+      "r-sec-t",
+      "r-sello",
+      "r-t",
+      "r-t un-crono",
+      "r-tar",
+      "r-tar-l",
+      "r-tar-v",
+      "sub",
+      "un-antes",
+      "un-cuatro",
+      "un-nota-t",
+      "un-pagar"
+    ]
+  }
+}

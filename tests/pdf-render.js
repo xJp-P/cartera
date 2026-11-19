@@ -121,7 +121,9 @@ const GENERADORES = ['generateCronogramaPDF', 'generateReportePrestamosPDF',
                      'generateEstadoLiquidacion', 'generateReciboCobro',
                      'generatePropuestaAbono', 'generateReciboGeneral',
                      // Los tres del credito abierto (golden desde el rediseño v4, 2026-11-13).
-                     'generateEstadoCuentaDiario', 'generateReciboCorte', 'generateFacturaCobroDiario'];
+                     'generateEstadoCuentaDiario', 'generateReciboCorte', 'generateFacturaCobroDiario',
+                     // La unificacion de prestamos (post-4.0.0): la propuesta y la constancia.
+                     'generatePropuestaUnificacion', 'generateConstanciaUnificacion'];
 const faltantes = GENERADORES.filter(n => typeof S[n] !== 'function');
 if (faltantes.length) {
   abortar('El frontend no expone estos generadores como funciones top-level: ' + faltantes.join(', ') +
@@ -370,6 +372,7 @@ function cobroDe(loan, arrPays) {
 //
 // `celdas`: cuantas celdas debe tener CADA <tr> del documento (contando colspan).
 //           null = el documento no lleva tablas y no debe haber ningun <tr>.
+//           [a, b] = tablas de anchos distintos: cada fila tiene a o b celdas.
 // `contiene`: literales que DEBEN aparecer. Son la prueba de que el caso ejercito de verdad
 //           la rama que dice ejercitar (un caso "USD" que no imprime dolares no cubre nada).
 
@@ -402,6 +405,10 @@ const paysHero = JSON.parse(JSON.stringify(pays));
   ultima.recibos = JSON.stringify([{ fecha: '2026-07-28', cop: abono }]);
 })();
 
+// Los prestamos de la unificacion (los activos de dos deudores del fixture con varios creditos).
+const UNIF_BRUNO = ['1773656401497', '1773656997026zqmp', '1782872189716p6cz'];
+const UNIF_GABRIELA = ['1773657323435hkkb', '1782151590658w66y'];
+const unifLoans = ids => ids.map(id => L(id));
 const CASOS = [
   // ── generateCronogramaPDF — 4 modalidades, COP y USD, mora, abono, parcial ────────────
   { nombre: 'crono-capint-cop-abono', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
@@ -693,6 +700,26 @@ const CASOS = [
                'de eso, intereses', 'Tus opciones de pago', 'LO MÍNIMO', 'Al día + la próxima cuota', 'Liquidar el crédito',
                'válido hasta el', 'Así va tu crédito', 'abono a capital', 'Cómo pagar', 'no certifica ningún pago', 'CG-'],
     noContiene: ['Crédito 1', 'Recibimos tu pago', 'Estás al día'] },
+
+  // ── Unificacion de prestamos (post-4.0.0): los 3 de Bruno (pesos) y los 2 de Gabriela (dolares).
+  { nombre: 'unif-propuesta-repartir', gen: 'generatePropuestaUnificacion', tema: 'light', celdas: [4, 6],
+    entrada: () => ({ loanIds: UNIF_BRUNO, hasta: '2026-07-31', opc: 'corrido + repartir, 6 cuotas', tema: 'light' }),
+    ejecutar: () => S.generatePropuestaUnificacion(S.planUnificacion(unifLoans(UNIF_BRUNO), pays, '2026-07-31', { corrido: true, nuevo: { plazo: 6 } }), 'Bruno Salgado', {}),
+    contiene: ['Propuesta de unificación', 'Si unificamos tus 3 préstamos, pagarías', '6 cuotas de', 'Lo que se uniría', 'Tu préstamo nuevo sería',
+               'Así quedaría tu cronograma', 'Cada cuota incluye', 'Esto es una propuesta', 'PU-Br-3107'],
+    noContiene: ['Cómo pagar', 'Unificamos tus', 'NaN', 'undefined'] },
+  { nombre: 'unif-constancia-primera', gen: 'generateConstanciaUnificacion', tema: 'dark', celdas: [4, 6],
+    entrada: () => ({ loanIds: UNIF_BRUNO, hasta: '2026-07-31', opc: 'corrido + primera cuota, 6 cuotas', tema: 'dark' }),
+    ejecutar: () => S.generateConstanciaUnificacion(S.planUnificacion(unifLoans(UNIF_BRUNO), pays, '2026-07-31', { corrido: true, destino: 'primera', nuevo: { plazo: 6 } }),
+      'Bruno Salgado', { datosPago: config.datos_pago, nuevoId: 'fixture-unif-001' }),
+    contiene: ['Constancia de unificación', 'Unificamos tus 3 préstamos: ahora pagas', 'la primera, del', 'La primera cuota incluye los', 'Cómo pagar',
+               'quedaron cerrados y unificados', 'UN-Br-001-3107'],
+    noContiene: ['Esto es una propuesta', 'NaN', 'undefined'] },
+  { nombre: 'unif-propuesta-usd-capital', gen: 'generatePropuestaUnificacion', tema: 'light', celdas: [4, 6],
+    entrada: () => ({ loanIds: UNIF_GABRIELA, hasta: '2026-07-31', opc: 'intereses al capital, 8 cuotas', tema: 'light' }),
+    ejecutar: () => S.generatePropuestaUnificacion(S.planUnificacion(unifLoans(UNIF_GABRIELA), pays, '2026-07-31', { destino: 'capital', nuevo: { plazo: 8 } }), 'Gabriela Rios', {}),
+    contiene: ['Si unificamos tus 2 préstamos, pagarías', 'USD $', 'de intereses que pasan a capital', 'PU-Ga-3107'],
+    noContiene: ['NaN', 'undefined'] },
 
   { nombre: 'general-al-dia', gen: 'generateReciboGeneral', tema: 'light', celdas: null,
     entrada: () => ({ loanIds: ['1776205975507jkph'], hasta: '2026-07-31', tema: 'light' }),
@@ -1110,6 +1137,12 @@ for (const caso of CASOS) {
   const trs = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || [];
   if (caso.celdas === null) {
     R.check('documento sin tablas (0 <tr>)', trs.length === 0, 'trs=' + trs.length);
+  } else if (Array.isArray(caso.celdas)) {
+    // Un documento con tablas de anchos distintos (la unificacion: lo que se une y el cronograma).
+    const malL = trs.map((t, i) => [i, celdasDeFila(t)]).filter(x => caso.celdas.indexOf(x[1]) === -1);
+    R.check(`las ${trs.length} filas tienen ${caso.celdas.join(' o ')} celdas (colspan incluido)`,
+            trs.length > 0 && malL.length === 0,
+            malL.length ? ('filas fuera de rango: ' + JSON.stringify(malL)) : 'no hay ninguna fila');
   } else {
     const mal = trs.map((t, i) => [i, celdasDeFila(t)]).filter(x => x[1] !== caso.celdas);
     R.check(`las ${trs.length} filas tienen ${caso.celdas} celdas (colspan incluido)`,
@@ -1232,7 +1265,8 @@ for (const caso of CASOS) {
 const GENERADORES_V4 = ['generateReciboCobro', 'generateReciboGeneral',
                         'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono', 'generatePropuestaAbono',
                         'generateEstadoLiquidacion', 'generateEstadoCuentaDiario', 'generateReciboCorte',
-                        'generateFacturaCobroDiario', 'generateCronogramaPDF', 'generateReportePrestamosPDF'];
+                        'generateFacturaCobroDiario', 'generateCronogramaPDF', 'generateReportePrestamosPDF',
+                        'generatePropuestaUnificacion', 'generateConstanciaUnificacion'];
 R.seccion('V4 · los documentos rediseñados: Inter, el logo de la app y el papel del tema');
 {
   const casosV4 = CASOS.filter(c => GENERADORES_V4.indexOf(c.gen) !== -1);

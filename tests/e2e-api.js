@@ -86,7 +86,7 @@ const ENDPOINTS = [
   'GET /api/payments', 'PUT /api/payments/:id', 'POST /api/payments/:id/partial',
   'POST /api/loans/:id/abono', 'POST /api/loans/:id/reestructurar',
   'POST /api/loans/:id/force-close', 'POST /api/loans/:id/cambiar-dia-pago',
-  'POST /api/loans/:id/corte', 'POST /api/loans/:id/condonar-intereses',
+  'POST /api/loans/:id/corte', 'POST /api/loans/:id/condonar-intereses', 'POST /api/unificaciones',
   'POST /api/recalculate', 'GET /api/config', 'PUT /api/config', 'GET /api/activity',
   'GET /api/undo', 'POST /api/undo/:id',
   'GET /api/debts', 'GET /api/debts/:id', 'POST /api/debts',
@@ -795,6 +795,33 @@ async function faseEscritura() {
         '/api/loans/' + lCond.id + '/condonar-intereses', {}, '4xx');
       await rechazo('POST /api/loans/:id/condonar-intereses', 'condonar un prestamo inexistente', 'POST',
         '/api/loans/no-existe/condonar-intereses', {}, 404);
+    }
+
+    // ── POST /api/unificaciones (post-4.0.0) ────────────────────────────────
+    // Lo fino (paridad con el modal, caja, undo exacto, la carga en las rutas que regeneran) vive en
+    // la suite `unificacion`. Aqui: el contrato HTTP sobre dos prestamos creados para la prueba.
+    R.seccion('POST /api/unificaciones');
+    {
+      const baseU = { nombre: 'ZZ Unificacion E2E', cedula: '9', telefono: '9', moneda: 'COP', trmAcordada: 4100,
+        tasaMensual: 5, plazoMeses: 4, modalidad: 'Capital + Intereses', fechaInicio: hoyStr(), diaPago: 10, estado: 'Activo', notas: '', frecuencia: 'Mensual' };
+      const u1 = (await pedir(S, 'POST', '/api/loans', Object.assign({}, baseU, { montoOrigen: 400000, montoCOP: 400000 }))).json;
+      const u2 = (await pedir(S, 'POST', '/api/loans', Object.assign({}, baseU, { montoOrigen: 600000, montoCOP: 600000 }))).json;
+      await rechazo('POST /api/unificaciones', 'unificar un solo prestamo', 'POST', '/api/unificaciones', { loanIds: [u1.id] }, '4xx');
+      await rechazo('POST /api/unificaciones', 'unificar con una fecha futura', 'POST', '/api/unificaciones',
+        { loanIds: [u1.id, u2.id], fecha: '2099-01-01', nuevo: { plazo: 4 } }, '4xx');
+      await rechazo('POST /api/unificaciones', 'unificar con cifras que no coinciden (esperado)', 'POST', '/api/unificaciones',
+        { loanIds: [u1.id, u2.id], nuevo: { plazo: 4 }, esperado: { capital: 1, interes: 0 } }, 409);
+      const rU = await pedir(S, 'POST', '/api/unificaciones', { loanIds: [u1.id, u2.id], nuevo: { plazo: 4, tasaMensual: 5 },
+        esperado: { capital: 1000000, interes: 0 } });
+      marcar('POST /api/unificaciones');
+      R.check('POST /api/unificaciones responde 200', rU.status === 200, 'status=' + rU.status + ' ' + rU.text.slice(0, 200));
+      exigirUndoId(rU, 'POST /api/unificaciones');
+      const nU = conDb(DB, d => d.prepare('SELECT * FROM loans WHERE id=?').get(rU.json.nuevoId));
+      R.eq('unificar crea el prestamo nuevo con el capital de los dos', [nU && nU.montoCOP, nU && nU.capitalRefinanciado, nU && JSON.parse(nU.unificaDe).length],
+        [1000000, 1000000, 2]);
+      R.eq('unificar cierra los viejos como Finalizados y unificados en el nuevo',
+        conDb(DB, d => d.prepare('SELECT estado, unificadoEn FROM loans WHERE id IN (?, ?)').all(u1.id, u2.id)).map(l => l.estado + '|' + (l.unificadoEn === rU.json.nuevoId)),
+        ['Finalizado|true', 'Finalizado|true']);
     }
 
     // ── /api/debts (5 endpoints) ───────────────────────────────────────────

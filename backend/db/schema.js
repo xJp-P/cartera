@@ -206,6 +206,31 @@ function aplicarEsquema(db) {
   // etiqueta que Rendimiento ya comete al pintar esos creditos como perdida total.
   try { db.exec("ALTER TABLE loans ADD COLUMN interesesCondonados REAL DEFAULT 0"); } catch(_){}
 
+  // ── UNIFICACION de prestamos (post-4.0.0) ─────────────────────────────────────
+  // Unificar = liquidar cada prestamo de un deudor, pero en vez de entrar dinero entra un
+  // prestamo NUEVO. Los viejos guardan a donde fueron y cuanto trasladaron; el nuevo, de
+  // donde viene su capital (para no contarlo dos veces como "prestado") y la DECISION sobre
+  // los intereses trasladados:
+  //   viejos: unificadoEn (id del nuevo), capitalTrasladado, interesTrasladado (pesos).
+  //   nuevo:  unificaDe (JSON con los ids viejos), capitalRefinanciado (capital que ya estaba
+  //           prestado), interesCapitalizado (intereses sumados al capital: NO es dinero
+  //           prestado; se reconoce como ganancia a medida que se cobra el capital),
+  //           cargaTrasladada + cargaCuotas: intereses que se cobran como una CARGA fija, sin
+  //           interes encima, repartida en las cuotas 1..cargaCuotas (1 = todo a la primera).
+  //           El motor la deriva al generar cada fila (como la transitoria): sobrevive a las
+  //           cinco rutas que regeneran cuotas.
+  //   payments.cargaTrasladada: la parte de la carga que lleva cada fila (dentro de su
+  //           interesPeriodo). Es lo que deja a la liquidacion saber cuanto falta por cobrar.
+  try { db.exec("ALTER TABLE loans ADD COLUMN unificadoEn TEXT"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN capitalTrasladado REAL DEFAULT 0"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN interesTrasladado REAL DEFAULT 0"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN unificaDe TEXT DEFAULT ''"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN capitalRefinanciado REAL DEFAULT 0"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN interesCapitalizado REAL DEFAULT 0"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN cargaTrasladada REAL DEFAULT 0"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN cargaCuotas INTEGER DEFAULT 0"); } catch(_){}
+  try { db.exec("ALTER TABLE payments ADD COLUMN cargaTrasladada REAL DEFAULT 0"); } catch(_){}
+
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_log (

@@ -78,7 +78,7 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
       // El desglose de liquidar en la moneda visible: capital + intereses vencidos (y la mora que
       // un cambio de dia consolido) - lo ya abonado a cuotas sin saldar = `L.total`, exacto. El
       // capital absorbe el residuo del redondeo, como en las columnas del cronograma (Bug #31).
-      liq: L, liqU: mon.uni(L.total), liqIntU: mon.uni(L.intMora + (L.moraConsolidada || 0)), liqParcU: mon.uni(L.partialPend),
+      liq: L, liqU: mon.uni(L.total), liqIntU: mon.uni(L.intMora + (L.moraConsolidada || 0) + (L.cargaPendiente || 0)), liqParcU: mon.uni(L.partialPend),
       validoHasta: proximoVencimiento(l, lp, hasta),
       faltaU: mon.uni(regs.filter(function(p){ return p.estadoPago !== 'Pagado'; }).reduce(function(s, p){ return s + pendCuota(p); }, 0)),
       capU: mon.uni(saldoConCaja(l, lp)),

@@ -18,7 +18,7 @@
 // porque el arnes de pruebas aplana todos los modulos en un solo ambito y un nombre repetido lo romperia.
 
 import { Ico } from '../componentes/iconos.js';
-import { cobrosDe, imputarCobros, pendCuota, esDiario, estadoDiario, gananciaDe, diasEntre } from '../core/dominio.js';
+import { cobrosDe, imputarCobros, pendCuota, esDiario, estadoDiario, gananciaDe, ratioCapitalizado, capitalRefinanciadoDe, diasEntre } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD, fmtUSD } from '../core/format.js';
 import { h, useEffect, useMemo, useRef, useState } from '../core/react.js';
 import { nowStr, properCase } from '../core/ui.js';
@@ -105,7 +105,7 @@ export function modeloResumen(loans, pays, hoy){
       var m = mm(rzYm(e.fecha)); m.caja += e.cop; m.interes += e.interes;
       if (rzYm(e.fecha) === mesHoy) m.cajaDia[e.fecha] = (m.cajaDia[e.fecha] || 0) + e.cop;
     });
-    gananciaDe(p, l && l.moneda === 'USD').eventos.forEach(function(e){ mm(rzYm(e.fecha)).ganancia += e.ganancia; });
+    gananciaDe(p, l && l.moneda === 'USD', ratioCapitalizado(l)).eventos.forEach(function(e){ mm(rzYm(e.fecha)).ganancia += e.ganancia; });
     if (esCuotaRegular(p) && p.estadoPago !== 'Pagado' && rzYm(p.fechaPago) >= mesHoy) mm(rzYm(p.fechaPago)).proy += pendCuota(p);
     var evs = cobrosDe(p);
     evs.forEach(function(e, k){ recientes.push({ pay: p, loan: l, fecha: e.fecha, cop: e.cop, k: k, n: evs.length }); });
@@ -453,7 +453,8 @@ function V4Movimientos(p){
 // tarjeta de App, `gananciaDe` sobre todas las filas) sobre el capital prestado en TODOS los prestamos.
 function V4Rendimiento(p){
   var M = p.M, met = p.metrics, loans = p.loans;
-  var prestadoTodo = loans.reduce(function(s, l){ return s + rzOrigCOP(l); }, 0);
+  // Sin el capital refinanciado de una unificacion: ya esta contado en los prestamos viejos.
+  var prestadoTodo = loans.reduce(function(s, l){ return s + Math.max(0, rzOrigCOP(l) - capitalRefinanciadoDe(l)); }, 0);
   var rent = prestadoTodo > 0 ? met.totalInteresesRecibidos / prestadoTodo * 100 : 0;
   var hist = M.meses.slice(0, 12);
   var max = Math.max.apply(null, hist.map(function(m){ return m.caja; }).concat([1]));
@@ -492,7 +493,7 @@ function v4MismoTramo(pays, loanMap, hoy){
   pays.forEach(function(p){
     cobrosDe(p).forEach(function(e){ if (e.fecha.slice(0, 7) === ym && e.fecha <= tope) caja += e.cop; });
     var l = loanMap[p.prestamoId];
-    gananciaDe(p, l && l.moneda === 'USD').eventos.forEach(function(e){ if (e.fecha.slice(0, 7) === ym && e.fecha <= tope) gan += e.ganancia; });
+    gananciaDe(p, l && l.moneda === 'USD', ratioCapitalizado(l)).eventos.forEach(function(e){ if (e.fecha.slice(0, 7) === ym && e.fecha <= tope) gan += e.ganancia; });
   });
   return { caja: Math.round(caja), gan: Math.round(gan), etiqueta: RZ_MESES[prev.getMonth()] + ' (1 al ' + Math.min(d.getDate(), ultimo) + ')' };
 }

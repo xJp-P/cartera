@@ -45,6 +45,7 @@ export function CronogramaPdfModal(props){
   var detalle='Capital '+fmt(L.capitalPendiente)+
     (L.intMora>0?' + mora '+fmt(L.intMora):'')+
     (L.moraConsolidada>0?' + mora consolidada '+fmt(L.moraConsolidada):'')+
+    (L.cargaPendiente>0?' + intereses de la unificación '+fmt(L.cargaPendiente):'')+
     (L.partialPend>0?' \u2212 parciales '+fmt(L.partialPend):'')+
     (L.intExtra>0?(L.periodoIrregular?' + interés de '+L.diasCobrados+' días':' + interés '+periodoEnCursoDe(L.frecuencia))+' '+fmt(L.intExtra):'');
 

@@ -30,12 +30,13 @@ import { h, useState, useEffect, useMemo, useCallback, createRoot } from './core
 import { API, setErrorHandler } from './core/api.js';
 import { fmt } from './core/format.js';
 import { properCase, nowStr, addDays } from './core/ui.js';
-import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe, preguntaInteresMes, periodoEnCursoDe } from './core/dominio.js';
+import { cobrosDe, imputarCobros, saldoConCaja, pendCuota, computeLiquidacion, gananciaDe, ratioCapitalizado, preguntaInteresMes, periodoEnCursoDe } from './core/dominio.js';
 import { Ico } from './componentes/iconos.js';
 import { generateCronogramaPDF } from './pdf/cronograma.js';
 import { generateReciboCorte } from './pdf/recibo-corte.js';
 import { generateReciboAbono }   from './pdf/recibo-abono.js';
 import { generateReciboCobro }   from './pdf/recibo-cobro.js';
+import { generatePropuestaUnificacion, generateConstanciaUnificacion } from './pdf/unificacion.js';
 
 // Vistas — Etapa 3/B7. El estado sigue en `App` y baja por props.
 import { DashView } from './vistas/DashView.js';
@@ -54,6 +55,7 @@ import { planCascada } from './core/cascada.js';
 import { AbonoModal } from './modales/AbonoModal.js';
 import { CobroModal } from './modales/CobroModal.js';
 import { CondonarModal } from './modales/CondonarModal.js';
+import { UnificarModal } from './modales/UnificarModal.js';
 import { CambiarDiaModal } from './modales/CambiarDiaModal.js';
 import { CorteModal } from './modales/CorteModal.js';
 import { LiquidarModal } from './modales/LiquidarModal.js';
@@ -104,6 +106,8 @@ function App(){
   var sCobro=useState(null); var cobroModal=sCobro[0]; var setCobroModal=sCobro[1];
   // Condonacion de intereses. NO es un cobro: modifica la obligacion sin mover caja.
   var sCond=useState(null); var condonarModal=sCond[0]; var setCondonarModal=sCond[1];
+  // Unificar (post-4.0.0): {nombre, ids} del deudor; los prestamos se leen frescos en cada render.
+  var sUnif=useState(null); var unificarModal=sUnif[0]; var setUnificarModal=sUnif[1];
   // 3.5.0 — "Cambiar dia de pago", extraido del viejo perfil del deudor a su propio modal.
   var sCambioDia=useState(null); var cambioDiaModal=sCambioDia[0]; var setCambioDiaModal=sCambioDia[1];
   // 3.5.0 — a quien enfocar al abrir Cartera ({nombre, loanId, payId, t}) y que tramo abrir en
@@ -519,6 +523,12 @@ function App(){
     // porque `pre.liq.total` YA lleva la mora dentro y sumarla otra vez inflaria el titular.
     var moraCons=(liquidar&&pre.liq)?Math.max(0,Math.round(pre.liq.moraConsolidada||0)):0;
     if(moraCons>0) obs=obs+' + intereses en mora consolidados: $'+moraCons.toLocaleString('es-CO');
+    // Unificacion (post-4.0.0): los intereses trasladados que aun viajan en cuotas Pendientes (la
+    // carga) se borran con ellas al liquidar; el deudor los paga en el TOTAL, asi que entran por el
+    // mismo canal. Igual que la mora consolidada: solo en la peticion, nunca en el recibo.
+    var cargaPend=(liquidar&&pre.liq)?Math.max(0,Math.round(pre.liq.cargaPendiente||0)):0;
+    if(cargaPend>0) obs=obs+' + intereses trasladados de la unificación: $'+cargaPend.toLocaleString('es-CO');
+    moraCons+=cargaPend;
     // v1.19.0 — intExtra (interes del proximo mes al liquidar, si el checkbox esta activo) viaja al
     // backend para registrarse como ingreso real; el backend lo ignora (0) fuera de la liquidacion.
     // v2.0.0 — montoCOPRecibido = CAJA REAL del abono (solo prestamos USD). NO toca el capital
@@ -685,6 +695,26 @@ function App(){
       });
     });
   }
+  // ── UNIFICAR (post-4.0.0) ──────────────────────────────────────────────────
+  // El modal manda las DECISIONES y lo que el usuario vio; el server lo recalcula todo, cierra los
+  // viejos sin perder caja, crea el nuevo y deja UNA entrada para deshacer. La constancia se emite
+  // solo si la escritura ocurrio (mismo patron que los recibos: nunca un papel de algo no hecho).
+  function _doUnificar(body,plan,genDoc){
+    var nombre=unificarModal?unificarModal.nombre:'';
+    return API.post('/api/unificaciones',body).then(function(r){
+      if(!r){showToast('No se pudo contactar la aplicación.','error');return;}
+      if(r.error){showToast(r.error,'error');return;}
+      return reload().then(function(){
+        setUnificarModal(null);
+        showToast('Préstamos unificados en uno nuevo');
+        if(genDoc){
+          try{ generateConstanciaUnificacion(plan,properCase(nombre),{datosPago:cfg.datos_pago,nuevoId:r.nuevoId}); }
+          catch(e){ console.error('No se pudo generar la constancia de unificación',e); }
+        }
+        navTo('cartera',{nombre:nombre,loanId:r.nuevoId});
+      });
+    });
+  }
   function _doReestructurar(loanId,mode,valor){
     return API.post('/api/loans/'+loanId+'/reestructurar',{recalcMode:mode,recalcValor:valor})
       .then(function(r){
@@ -758,9 +788,9 @@ function App(){
     // — cuotas saldadas, parciales en vuelo y abonos—, porque el interes cobrado vive en las tres.
     // Es el MISMO helper del grafico mensual (DashView) y de Rendimiento, asi que el valor de la
     // tarjeta es la suma exacta de los puntos del grafico y de las ganancias por prestamo.
-    var loanCurrency={};loans.forEach(function(l){loanCurrency[l.id]=l.moneda;});
+    var loanCurrency={},loanRatio={};loans.forEach(function(l){loanCurrency[l.id]=l.moneda;loanRatio[l.id]=ratioCapitalizado(l);});
     var totalInteresesRecibidos=pays.reduce(function(s,p){
-      return s+gananciaDe(p, loanCurrency[p.prestamoId]==='USD').total;
+      return s+gananciaDe(p, loanCurrency[p.prestamoId]==='USD', loanRatio[p.prestamoId]).total;
     },0);
     // Saldo real pendiente por préstamo activo (capital - capital recuperado)
     // KPI "Saldo Pendiente" del Inicio. Fase 3: capital vivo = original - CAPITAL IMPUTADO.
@@ -866,6 +896,7 @@ function App(){
     onReestructurar:function(l){setRestructureModal({loan:l});},
     onCambiarDia:function(l){setCambioDiaModal({loan:l});},
     onCondonar:function(l){setCondonarModal({loan:l});},
+    onUnificar:function(d,activos){setUnificarModal({nombre:d.nombre,ids:activos.map(function(l){return l.id;})});},
     onEdit:function(l){setLoanModal(l);},
     onDelete:delLoan,
     onForceClose:forceCloseLoan,
@@ -1014,6 +1045,11 @@ function App(){
       // Mismo patron que el CTA de AbonoModal: si el dinero supera todo lo que el credito
       // debe hoy, la herramienta correcta es Liquidar, no capar el monto en silencio.
       onRequestLiquidar:function(l){setCobroModal(null);setLiquidarModal({loan:l});}}),
+    unificarModal&&h(UnificarModal,{deudor:properCase(unificarModal.nombre),hoy:nowStr(),pays:pays,
+      loans:loans.filter(function(l){return unificarModal.ids.indexOf(l.id)!==-1&&l.estado==='Activo';}),
+      onClose:function(){setUnificarModal(null);},
+      onPropuesta:function(plan){generatePropuestaUnificacion(plan,properCase(unificarModal.nombre),{datosPago:cfg.datos_pago});},
+      onConfirmar:_doUnificar}),
     condonarModal&&h(CondonarModal,{loan:condonarModal.loan||condonarModal,pays:pays,onConfirm:_doCondonar,
       onClose:function(){setCondonarModal(null);}}),
     corteModal&&h(CorteModal,{loan:corteModal.loan||corteModal,pays:pays,onSave:registrarCorte,

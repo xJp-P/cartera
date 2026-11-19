@@ -236,7 +236,8 @@ function buildSchedule(loan, startN, startSaldo, numCuotas) {
   // La cuota de periodo irregular (si el prestamo tiene una) se deriva AQUI, sobre el capital
   // vivo de esta generacion. Va despues del ajuste de la ultima cuota: si la transitoria fuera
   // tambien la ultima, ese ajuste no puede deshacer el prorrateo.
-  return aplicarPeriodoIrregular(loan, rows);
+  // Y despues, la carga de intereses trasladados de una unificacion (si la hay).
+  return aplicarCargaTrasladada(loan, aplicarPeriodoIrregular(loan, rows), !indefinido);
 }
 
 /**
@@ -313,8 +314,55 @@ function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
   }
   if (i >= MAX_ITER) throw new Error('Cuota demasiado baja: requiere más de ' + MAX_ITER + ' cuotas para saldar.');
   // Tambien aqui: un abono o una reestructura con "fijar cuota" regenera la transitoria por
-  // este generador, no por `buildSchedule`.
-  return aplicarPeriodoIrregular(loan, rows);
+  // este generador, no por `buildSchedule`. Y la carga de una unificacion: esta generacion
+  // termina el prestamo, asi que su ultima fila absorbe lo que no quepa.
+  return aplicarCargaTrasladada(loan, aplicarPeriodoIrregular(loan, rows), true);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CARGA TRASLADADA — los intereses que una UNIFICACION pasa a las cuotas del nuevo
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Al unificar, los intereses que ya debian los prestamos viejos se pueden cobrar en el nuevo
+// sin intereses encima: todos en la primera cuota, o repartidos en partes iguales. El prestamo
+// guarda la DECISION (`cargaTrasladada` en pesos y `cargaCuotas` = en cuantas cuotas), y el
+// motor la deriva cada vez que genera una fila, igual que la transitoria: asi sobrevive a las
+// cinco rutas que regeneran cuotas (abono, reestructurar, cambiar dia, editar, recalcular) sin
+// que ninguna tenga que acordarse.
+//
+// La parte de la cuota n: floor(C/K) para n < K; la K-esima se queda el residuo (la suma es C,
+// exacta); despues de K, nada. Va DENTRO del interes de la fila (es interes ya causado de los
+// prestamos viejos, no capital), y queda anotada en `cargaTrasladada` de la fila: la liquidacion
+// suma lo que falte por cobrar (lo de las cuotas que no estan Pagadas ni En Mora).
+//
+// Si una regeneracion que TERMINA el prestamo (C+I) deja menos cuotas que K —un abono que acorta
+// el plazo—, su ultima fila absorbe las partes que ya no tendrian cuota: nunca se pierden. En
+// Intereses (plazo indefinido) no se absorbe: las cuotas siguen naciendo y cada una trae su parte.
+function cargaDeCuota(loan, n) {
+  const C = Math.max(0, Math.round(+loan.cargaTrasladada || 0));
+  const K = Math.max(0, Math.round(+loan.cargaCuotas || 0));
+  if (!C || !K || n < 1 || n > K) return 0;
+  const parte = Math.floor(C / K);
+  return n === K ? C - parte * (K - 1) : parte;
+}
+function aplicarCargaTrasladada(loan, rows, terminaPrestamo) {
+  const C = Math.max(0, Math.round(+(loan && loan.cargaTrasladada) || 0));
+  const K = Math.max(0, Math.round(+(loan && loan.cargaCuotas) || 0));
+  if (!C || !K || !rows || !rows.length) return rows;
+  const ultima = rows[rows.length - 1];
+  rows.forEach(row => {
+    let c = cargaDeCuota(loan, row.cuotaN);
+    if (terminaPrestamo && row === ultima) {
+      for (let j = row.cuotaN + 1; j <= K; j++) c += cargaDeCuota(loan, j);
+    }
+    if (!c) return;
+    row.interesPeriodo += c;
+    row.cuotaTotal += c;
+    row.cargaTrasladada = c;
+    row.observaciones = (row.observaciones ? row.observaciones + ' · ' : '') +
+      'Incluye $' + c.toLocaleString('es-CO') + ' de intereses de los préstamos unificados';
+  });
+  return rows;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -694,6 +742,8 @@ module.exports = {
   buildScheduleFixedPMT,
   transitoriaDe,
   aplicarPeriodoIrregular,
+  cargaDeCuota,
+  aplicarCargaTrasladada,
   primerPagoRegular,
   inicioPeriodoRegular,
   resolverPrimerPago,

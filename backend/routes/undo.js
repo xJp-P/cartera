@@ -21,7 +21,7 @@
 const express = require('express');
 
 module.exports = function crearRutasUndo(ctx) {
-  const { db, logAction, hashSnapshot, snapshotScope, restoreScope, reHousekeepLoan } = ctx;
+  const { db, logAction, hashSnapshot, snapshotActual, restoreScope, reHousekeepLoan } = ctx;
   const router = express.Router();
 
   // ── API: Deshacer ────────────────────────────────────────────────────────────
@@ -40,15 +40,26 @@ module.exports = function crearRutasUndo(ctx) {
     let snap;
     try { snap = JSON.parse(entry.snapshot); } catch (_) { return res.status(500).json({ error: 'Snapshot corrupto: no se puede deshacer con seguridad' }); }
 
+    // Candado U (unificacion): un prestamo que se unifico en otro ya no es una deuda viva; deshacer
+    // un movimiento suyo lo resucitaria al lado del nuevo (la deuda contada dos veces). Primero
+    // hay que deshacer la unificacion, que es una entrada del prestamo NUEVO.
+    if (entry.scope_tipo === 'loan' && !(snap && snap.tipo === 'unif')) {
+      const l = db.prepare('SELECT unificadoEn FROM loans WHERE id = ?').get(entry.scope_id);
+      if (l && l.unificadoEn) {
+        return res.status(409).json({ error: 'Este préstamo se unificó en otro. Para deshacer sus movimientos, primero deshaz la unificación.' });
+      }
+    }
+
     // Candado B (DETECTOR, no gate): si el estado ACTUAL del agregado ya no coincide
     // con el post_hash del journal, algo lo cambio despues (housekeeping del arranque,
     // o una mutacion aun NO cubierta por el journal en esta fase). Se restaura igual
     // y se ADVIERTE — nunca se bloquea en silencio.
-    const drift = hashSnapshot(snapshotScope(entry.scope_tipo, entry.scope_id)) !== entry.post_hash;
+    const drift = hashSnapshot(snapshotActual(entry, snap)) !== entry.post_hash;
 
     const run = db.transaction(() => {
       restoreScope(snap, entry.scope_id);
       if (entry.scope_tipo === 'loan') reHousekeepLoan(entry.scope_id);
+      if (snap && snap.tipo === 'unif') (snap.viejosIds || []).forEach(id => reHousekeepLoan(id));
       db.prepare("UPDATE undo_journal SET estado='deshecho', undone_at=datetime('now','localtime') WHERE id=?").run(entry.id);
       logAction.run('deshacer', 'Deshiciste: ' + entry.descripcion);
     });

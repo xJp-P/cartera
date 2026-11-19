@@ -35,6 +35,8 @@ export function LoanModal(props){
     // Mora consolidada por un cambio de dia (3.2.0): es deuda causada que vive en el prestamo,
     // no en una cuota. Editar el calendario la borraria; el backend lo trata igual.
     if((+loan.periodoIrregularMora||0)>0) return true;
+    // Unificacion (post-4.0.0): sus cifras son las que se trasladaron de los prestamos viejos.
+    if(loan.unificaDe) return true;
     return allPays.some(function(p){
       if(String(p.prestamoId)!==String(loan.id)) return false;
       if(p.estadoPago==='Pagado') return true;          // cuotas pagadas o abonos a capital

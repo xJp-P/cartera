@@ -124,6 +124,12 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
       fmtD(L.moraConsolidadaFecha),
       money(L.moraConsolidada), C.amber));
   }
+  // Unificacion (post-4.0.0): los intereses trasladados que aun viajan en cuotas por vencer.
+  if (L.cargaPendiente > 0) {
+    desglose.push(dsg('Intereses de la unificación',
+      'Intereses de los préstamos unificados que aún no se han cobrado',
+      money(L.cargaPendiente), C.amber));
+  }
   if (L.partialPend > 0) {
     desglose.push(dsg('Abonos parciales ya recibidos', 'Se descuentan del total',
       '&minus; ' + money(L.partialPend), C.blue));

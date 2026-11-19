@@ -172,11 +172,29 @@ export function imputarCobros(pay){
 // Unico caso en que un evento reconoce un monto negativo: el pago final de una cuota en
 // cuotas trae una perdida que se come interes ya reconocido en un pago anterior. Aun asi la
 // fila jamas baja de cero: la perdida nunca sale del interes de esa misma cuota.
-export function gananciaDe(pay, esUSD){
+// UNIFICACION (post-4.0.0, regla del PO): si al unificar los intereses viejos se SUMARON AL CAPITAL
+// del prestamo nuevo, esa parte del capital no es dinero prestado sino interes ya ganado. Se
+// reconoce como ganancia A MEDIDA QUE SE COBRA el capital, en proporcion: cada peso de capital
+// cobrado trae `ratioCap` (= interesCapitalizado / capital del nuevo) de ganancia. `ratioCap`
+// viene de `ratioCapitalizado(loan)`; sin el (o 0), la formula de siempre.
+// Lo que de un prestamo se cuenta como "capital PRESTADO" en los totales historicos. Un prestamo
+// que nacio de una unificacion lleva capital que ya estaba prestado en los viejos (refinanciado) y,
+// si se capitalizaron, intereses: ninguno es dinero nuevo. Sin esto la rentabilidad de la cartera
+// (ganancia / todo lo prestado) contaria ese capital dos veces.
+export function capitalRefinanciadoDe(loan){
+  if(!loan) return 0;
+  return Math.max(0, Math.round(+loan.capitalRefinanciado||0)+Math.round(+loan.interesCapitalizado||0));
+}
+export function ratioCapitalizado(loan){
+  if(!loan||!((+loan.interesCapitalizado||0)>0)) return 0;
+  var orig=loan.moneda==='USD'?Math.round(loan.montoOrigen*loan.trmAcordada):Math.round(loan.montoOrigen);
+  return orig>0?Math.min(1,(+loan.interesCapitalizado)/orig):0;
+}
+export function gananciaDe(pay, esUSD, ratioCap){
   var imp=imputarCobros(pay);
   var cumInt=0, cumPerdida=0, reconocida=0;
   var eventos=imp.eventos.map(function(e){
-    cumInt+=e.interes;
+    cumInt+=e.interes+(ratioCap>0?Math.round(e.capital*ratioCap):0);
     if(esUSD&&e.ajuste<0) cumPerdida+=e.ajuste;
     var g=Math.max(0, cumInt+cumPerdida);
     var ev={fecha:e.fecha, ganancia:g-reconocida};
@@ -198,12 +216,15 @@ export function gananciaDe(pay, esUSD){
 //     a la TRM pactada. En un parcial la obligacion YA esta valuada a esa TRM (Bug #50), asi que
 //     interes/trm SON los dolares que cubrieron interes; en un abono es el interes del mes de una
 //     liquidacion (cero en un abono normal).
-function gananciaUSDDe(pay, trm){
+function gananciaUSDDe(pay, trm, ratioCap){
   if(!(trm>0)) return 0;
+  var r=ratioCap>0?ratioCap:0;
   if(pay.estadoPago==='Pagado'&&!esAbono(pay)&&(+pay.montoUSDRecibido||0)>0){
-    return (+pay.montoUSDRecibido)-((pay.cuotaTotal||0)-(pay.interesPeriodo||0))/trm;
+    var capUSD=((pay.cuotaTotal||0)-(pay.interesPeriodo||0))/trm;
+    return (+pay.montoUSDRecibido)-capUSD+capUSD*r;
   }
-  return imputarCobros(pay).totales.interes/trm;
+  var t=imputarCobros(pay).totales;
+  return (t.interes+t.capital*r)/trm;
 }
 
 // Ganancia real de un PRESTAMO completo, en sus dos realidades. La consumen las cinco
@@ -218,12 +239,13 @@ export function gananciaDePrestamo(loan, loanPays){
   if(!loan) return vacio;
   var esUSD=loan.moneda==='USD';
   var trm=+loan.trmAcordada||0;
+  var ratio=ratioCapitalizado(loan);
   var lp=(loanPays||[]).filter(function(p){ return String(p.prestamoId)===String(loan.id); });
   var cop=0, bruta=0, interes=0, usd=0;
   lp.forEach(function(p){
-    var g=gananciaDe(p, esUSD);
+    var g=gananciaDe(p, esUSD, ratio);
     cop+=g.total; bruta+=g.interes+g.perdida; interes+=g.interes;
-    if(esUSD) usd+=gananciaUSDDe(p, trm);
+    if(esUSD) usd+=gananciaUSDDe(p, trm, ratio);
   });
   return {cop:Math.round(cop), usd:(esUSD&&trm>0)?Math.round(usd*100)/100:0, interes:Math.round(interes),
           bruta:Math.round(bruta), pisoAplicado:Math.round(cop)!==Math.round(bruta)};
@@ -628,9 +650,20 @@ export function computeLiquidacion(loan, loanPays, opts){
     interesDia = interesDeTramo(dev.capitalVivo, +loan.tasaMensual || 0, 30) / 30;
   }
 
-  var total = Math.max(0, capitalPendiente + intMora + moraConsolidada + devengo - partialPend + intExtra);
+  // ── INTERESES TRASLADADOS DE UNA UNIFICACION (post-4.0.0) ───────────────────
+  // Un prestamo que nacio de una unificacion puede cobrar, como CARGA fija en sus cuotas, los
+  // intereses que debian los prestamos viejos. Esa carga vive dentro del interes de cada cuota:
+  // las Pagadas ya la cobraron y las En Mora ya la traen en `intMora`; la de las cuotas
+  // Pendientes (y la de las que aun no nacen) se borraria al liquidar. Es deuda ya causada: se
+  // suma SIEMPRE, como la mora consolidada, y quien liquida la cobra en el `intExtra`.
+  var cargaPendiente = Math.max(0, Math.round(+loan.cargaTrasladada || 0) - regs
+    .filter(function(p){ return p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora'; })
+    .reduce(function(s, p){ return s + Math.round(+p.cargaTrasladada || 0); }, 0));
+
+  var total = Math.max(0, capitalPendiente + intMora + moraConsolidada + cargaPendiente + devengo - partialPend + intExtra);
   return {
     esUSD: esUSD, trm: loan.trmAcordada, tasaMensual: +loan.tasaMensual || 0,
+    cargaPendiente: cargaPendiente,
     capitalPendiente: capitalPendiente,
     intMora: intMora, moraCount: moraCount, moraUniforme: moraUniforme, moraValorMes: moraValorMes,
     // Mora consolidada VIVA dentro de la cuota transitoria (3.2.0, Fase 4). No es opcional:

@@ -74,4 +74,32 @@ function abortarSiHuerfanos(schedule, map) {
   );
 }
 
-module.exports = { snapshotCobros, restaurarCobros, cobrosHuerfanos, abortarSiHuerfanos };
+// ── CERRAR UNA CUOTA POR LO YA ABONADO (post-4.0.0) ────────────────────────────
+// Cuando un prestamo se cierra sin cobrar el resto (cierre forzoso o unificacion), una cuota
+// sin saldar que ya traia dinero encima NO puede borrarse: con ella se iria el ledger `recibos`
+// y "Cobros del mes", el Flujo de caja y la Ganancia perderian plata que SI entro (era el
+// defecto del cierre forzoso). Se cierra como Pagada POR LO QUE SE PAGO: la cuota pasa a valer
+// lo abonado (`cuotaTotal = partialPaid`), repartido en `interes` (lo que el que cierra decide
+// que fue interes) y el resto a capital. La caja (`montoCOPRecibido`, `montoUSDRecibido`, el
+// ledger) queda intacta, asi que ningun total de caja se mueve. Devuelve los campos a escribir.
+//   interes: la parte de lo abonado que se reconoce como interes (se acota a [0, abonado]).
+function cuotaCerradaPorLoAbonado(fila, interes, nota) {
+  const pagado = Math.round(+fila.partialPaid || 0);
+  const i = Math.max(0, Math.min(pagado, Math.round(+interes || 0)));
+  let recibos = [];
+  try { recibos = JSON.parse(fila.recibos || '[]'); } catch (_) { recibos = []; }
+  const ultimo = Array.isArray(recibos) && recibos.length ? String(recibos[recibos.length - 1].fecha || '').slice(0, 10) : '';
+  return {
+    estadoPago: 'Pagado',
+    interesPeriodo: i,
+    abonoCapital: pagado - i,
+    cuotaTotal: pagado,
+    saldoFinal: Math.max(0, Math.round(+fila.saldoInicial || 0) - (pagado - i)),
+    // Con ledger, la fecha del ultimo pago; sin ledger (historico) se conserva la que tuviera, para
+    // no fabricar un evento de caja que antes no existia.
+    fechaRecaudo: ultimo || fila.fechaRecaudo || null,
+    observaciones: (fila.observaciones ? fila.observaciones + ' · ' : '') + nota,
+  };
+}
+
+module.exports = { snapshotCobros, restaurarCobros, cobrosHuerfanos, abortarSiHuerfanos, cuotaCerradaPorLoAbonado };

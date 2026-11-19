@@ -17,15 +17,19 @@ function crearStatements(db) {
 
   const insPayment = db.prepare(`
     INSERT OR REPLACE INTO payments(id,prestamoId,nombreCliente,cuotaN,fechaPago,saldoInicial,
-      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido,partialPaid,extraConsolidado,recibos)
+      interesPeriodo,abonoCapital,cuotaTotal,saldoFinal,estadoPago,fechaRecaudo,observaciones,montoCOPRecibido,montoUSDRecibido,partialPaid,extraConsolidado,recibos,cargaTrasladada)
     VALUES (@id,@prestamoId,@nombreCliente,@cuotaN,@fechaPago,@saldoInicial,
-      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones,@montoCOPRecibido,@montoUSDRecibido,@partialPaid,@extraConsolidado,@recibos)
+      @interesPeriodo,@abonoCapital,@cuotaTotal,@saldoFinal,@estadoPago,@fechaRecaudo,@observaciones,@montoCOPRecibido,@montoUSDRecibido,@partialPaid,@extraConsolidado,@recibos,@cargaTrasladada)
   `);
 
   // `recibos` es INSERT OR REPLACE: si no se lista, REPLACE borra la fila y la reinserta con el
   // DEFAULT '[]' -> el ledger de caja se pierde en silencio al regenerar. Se normaliza aqui, en
   // un solo punto, para que ningun constructor de filas tenga que acordarse de la columna.
-  const runPayment = r => insPayment.run(Object.assign({}, r, { recibos: r.recibos == null ? '[]' : r.recibos }));
+  // `cargaTrasladada` (unificacion): la pone el motor en las filas que la llevan; el resto, 0.
+  const runPayment = r => insPayment.run(Object.assign({}, r, {
+    recibos: r.recibos == null ? '[]' : r.recibos,
+    cargaTrasladada: Math.round(+r.cargaTrasladada || 0),
+  }));
 
   // OJO: esta transaccion se invoca DENTRO de la transaccion de `mutacionAtomica`.
   // better-sqlite3 lo resuelve con savepoints (transacciones anidadas). Preservar tal cual.

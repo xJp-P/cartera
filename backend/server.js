@@ -30,7 +30,7 @@ const { crearHousekeeping } = require('./db/housekeeping');
 // Mutacion atomica/journal y durabilidad de cobros — Etapa 2/A4 del refactor.
 const { crearAtomic } = require('./core/atomic');
 const {
-  snapshotCobros, restaurarCobros, abortarSiHuerfanos,
+  snapshotCobros, restaurarCobros, abortarSiHuerfanos, cuotaCerradaPorLoAbonado,
 } = require('./core/cobros');
 
 // Routers — Etapa 2/A5 del refactor. Cada uno exporta (ctx) => Router.
@@ -42,6 +42,7 @@ const crearRutasRecalc   = require('./routes/recalculate');
 const crearRutasDebts    = require('./routes/debts');
 const crearRutasPayments = require('./routes/payments');
 const crearRutasLoans    = require('./routes/loans');
+const crearRutasUnificacion = require('./routes/unificacion');
 
 module.exports = function createApp(dbPath) {
 
@@ -79,7 +80,7 @@ module.exports = function createApp(dbPath) {
   // Vive en core/atomic.js (Etapa 2/A4). Es una FACTORY porque `_colsCache` debe
   // ser por instancia de createApp (una cache de columnas por BD), no de modulo.
   const {
-    hashSnapshot, snapshotScope, restoreScope, podarJournal, mutacionAtomica,
+    hashSnapshot, snapshotScope, snapshotUnif, snapshotActual, restoreScope, podarJournal, mutacionAtomica,
   } = crearAtomic({ db, insUndo, logActionUndo, appVersion: APP_VERSION });
   podarJournal();
 
@@ -88,8 +89,8 @@ module.exports = function createApp(dbPath) {
   // preparadas, el motor y los helpers transversales. Se arma una sola vez.
   const ctx = {
     db, logAction, insPayment, runPayment, insertSchedule,
-    mutacionAtomica, hashSnapshot, snapshotScope, restoreScope, podarJournal,
-    snapshotCobros, restaurarCobros, abortarSiHuerfanos, reHousekeepLoan,
+    mutacionAtomica, hashSnapshot, snapshotScope, snapshotUnif, snapshotActual, restoreScope, podarJournal,
+    snapshotCobros, restaurarCobros, abortarSiHuerfanos, cuotaCerradaPorLoAbonado, reHousekeepLoan,
     buildSchedule, buildScheduleFixedPMT, getPayDate, tasaPeriodo, cuotasHastaHoy,
     transitoriaDe, aplicarPeriodoIrregular, resolverPrimerPago,
     MODALIDAD_DIARIA, devengoDiario,
@@ -103,6 +104,7 @@ module.exports = function createApp(dbPath) {
   app.use(crearRutasDebts(ctx));
   app.use(crearRutasPayments(ctx));
   app.use(crearRutasLoans(ctx));
+  app.use(crearRutasUnificacion(ctx));
 
   return app;
 };

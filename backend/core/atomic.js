@@ -77,9 +77,31 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
       payments: db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN, id').all(id)
     };
   }
+  // UNIFICACION: un solo movimiento toca VARIOS agregados (los prestamos viejos y el nuevo).
+  // Su snapshot los reune; la entrada del journal va con scope ('loan', id del nuevo), de modo que
+  // el LIFO del nuevo obliga a deshacer primero lo que se le haya hecho despues. Deshacerla
+  // restaura los viejos tal cual estaban y borra el nuevo (que antes no existia).
+  function snapshotUnif(nuevoId, viejosIds) {
+    return {
+      v: 1, tipo: 'unif', nuevoId: nuevoId, viejosIds: viejosIds.slice(),
+      nuevo: snapshotScope('loan', nuevoId),
+      viejos: viejosIds.map(id => snapshotScope('loan', id))
+    };
+  }
+  // El estado ACTUAL comparable con el `post_hash` de una entrada (Candado B).
+  function snapshotActual(entry, snap) {
+    if (snap && snap.tipo === 'unif') return snapshotUnif(snap.nuevoId, snap.viejosIds || []);
+    return snapshotScope(entry.scope_tipo, entry.scope_id);
+  }
+
   // Restaurar reemplaza el agregado ENTERO (no parchea filas sueltas). Los IDs de
   // cuota son deterministas (`${loanId}-${cuotaN}`), asi que reinsertar es exacto.
   function restoreScope(snap, id) {
+    if (snap.tipo === 'unif') {
+      restoreScope(snap.nuevo, snap.nuevoId);
+      (snap.viejos || []).forEach((v, i) => restoreScope(v, snap.viejosIds[i]));
+      return;
+    }
     if (snap.tipo === 'debt') {
       db.prepare('DELETE FROM pagos_deudas WHERE deuda_id = ?').run(id);
       db.prepare('DELETE FROM mis_deudas WHERE id = ?').run(id);
@@ -116,8 +138,11 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
   // que solo puede leerse despues de escribir y dentro de la misma transaccion.
   // descripcion tambien acepta funcion: se evalua tras aplicar(), para textos que dependen del
   // estado final (p.ej. el saldo recalculado desde el ledger).
+  // `meta.snapshot` (opcional): una funcion que arma el snapshot cuando el movimiento toca mas de
+  // un agregado (la unificacion). Se usa igual antes y despues de aplicar.
   function mutacionAtomica(req, res, meta, compute) {
-    const pre = snapshotScope(meta.scopeTipo, meta.scopeId);
+    const tomar = () => (meta.snapshot ? meta.snapshot() : snapshotScope(meta.scopeTipo, meta.scopeId));
+    const pre = tomar();
     const preHash = hashSnapshot(pre);
     let computed;
     try {
@@ -130,7 +155,7 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
     const run = db.transaction(() => {
       payload = computed.aplicar() || computed.payload || { ok: true };
       const desc = typeof computed.descripcion === 'function' ? computed.descripcion() : computed.descripcion;
-      const postHash = hashSnapshot(snapshotScope(meta.scopeTipo, meta.scopeId));
+      const postHash = hashSnapshot(tomar());
       const ujId = 'uj-' + genId();
       // afectaCaja lo declara compute() (puede depender de los datos: PUT /payments solo mueve
       // dinero cuando se marca Pagado, no al revertir a Pendiente / marcar En Mora).
@@ -150,7 +175,7 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
 
   return {
     stableStringify, hashSnapshot, tableCols, restoreRow,
-    snapshotScope, restoreScope, podarJournal, mutacionAtomica,
+    snapshotScope, snapshotUnif, snapshotActual, restoreScope, podarJournal, mutacionAtomica,
   };
 }
 

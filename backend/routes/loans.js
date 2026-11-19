@@ -45,7 +45,7 @@ const { diasEntre } = require('../core/engine');
 module.exports = function crearRutasLoans(ctx) {
   const {
     db, logAction, insPayment, runPayment, insertSchedule, mutacionAtomica,
-    snapshotCobros, restaurarCobros, abortarSiHuerfanos,
+    snapshotCobros, restaurarCobros, abortarSiHuerfanos, cuotaCerradaPorLoAbonado,
     buildSchedule, buildScheduleFixedPMT, getPayDate, tasaPeriodo, cuotasHastaHoy,
     transitoriaDe, aplicarPeriodoIrregular, resolverPrimerPago,
     MODALIDAD_DIARIA, devengoDiario,
@@ -198,8 +198,18 @@ module.exports = function crearRutasLoans(ctx) {
     //     para `diaPago`; la base y la transitoria se leen de la BD, y si la transitoria es la
     //     del primer periodo, su "desde" sigue a la fecha de inicio.
     const prevLoan = db.prepare('SELECT * FROM loans WHERE id = ?').get(loan.id) || {};
+    // Unificacion (post-4.0.0): la carga de intereses trasladados es una DECISION del prestamo,
+    // nunca del body (el formulario no la conoce y la borraria al regenerar). Y un prestamo que
+    // nacio de una unificacion tiene sus cifras atadas a lo que se traslado: el formulario las
+    // bloquea, y esto es la defensa del otro lado.
+    loan.cargaTrasladada = prevLoan.cargaTrasladada || 0;
+    loan.cargaCuotas = prevLoan.cargaCuotas || 0;
+    if (prevLoan.unificaDe) {
+      ['moneda', 'montoOrigen', 'trmAcordada', 'montoCOP', 'tasaMensual', 'plazoMeses', 'modalidad', 'frecuencia', 'fechaInicio']
+        .forEach(k => { if (prevLoan[k] !== undefined) loan[k] = prevLoan[k]; });
+    }
     const conActividad = prev.some(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') ||
-      (+prevLoan.periodoIrregularMora || 0) > 0;
+      (+prevLoan.periodoIrregularMora || 0) > 0 || !!prevLoan.unificaDe;
     loan.fechaBaseCronograma = prevLoan.fechaBaseCronograma || null;
     loan.periodoIrregularN = prevLoan.periodoIrregularN || null;
     loan.periodoIrregularDesde = prevLoan.periodoIrregularDesde || null;
@@ -810,24 +820,42 @@ module.exports = function crearRutasLoans(ctx) {
 
       const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
       const originalCOP = loan.moneda === 'USD' ? Math.round(loan.montoOrigen * loan.trmAcordada) : Math.round(loan.montoOrigen);
-      const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+      // post-4.0.0: una cuota sin saldar que ya traia dinero encima NO se borra (se perdia su
+      // ledger de caja: Cobros del mes, Flujo de caja y Ganancia bajaban por plata que SI entro).
+      // Se cierra como Pagada POR LO ABONADO, con el mismo reparto que la app ya mostraba
+      // (`imputarCobros`: primero el interes de esa cuota, luego su capital). Asi la perdida que
+      // se registra es la NETA de ese dinero.
+      const conAbono = allPays.filter(p => (p.estadoPago === 'Pendiente' || p.estadoPago === 'En Mora') && !esAbono(p) && (+p.partialPaid || 0) > 0);
+      const cierres = conAbono.map(p => ({ id: p.id, mora: p.estadoPago === 'En Mora', interesCuota: p.interesPeriodo,
+        campos: cuotaCerradaPorLoAbonado(p, p.interesPeriodo, 'Cierre forzoso: se cerró por lo abonado') }));
+      const todoCapPagado = allPays.filter(p => p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0) +
+        cierres.reduce((s, c) => s + c.campos.abonoCapital, 0);
       const capitalPerdido = Math.max(0, Math.round(originalCOP - todoCapPagado));
       // Intereses que se dan por perdidos. En las 4 modalidades con cronograma son los
-      // de las cuotas En Mora. Un credito abierto NO TIENE cuotas En Mora —su interes
-      // vive devengado, no materializado—, asi que por esa via el cierre forzoso
-      // reportaria $0 de interes perdido y la "Perdida total" de Rendimiento saldria
-      // corta justo en lo que el producto genera. Se toma del motor.
+      // de las cuotas En Mora (menos lo que sus abonos ya cubrieron). Un credito abierto NO
+      // TIENE cuotas En Mora —su interes vive devengado, no materializado—, asi que por esa
+      // via el cierre forzoso reportaria $0 de interes perdido y la "Perdida total" de
+      // Rendimiento saldria corta justo en lo que el producto genera. Se toma del motor.
+      // Si el prestamo nacio de una unificacion, los intereses trasladados que aun no se
+      // cobraban (su carga en cuotas Pendientes) tambien se pierden.
+      const cargaPend = Math.max(0, Math.round(+loan.cargaTrasladada || 0) - allPays
+        .filter(p => !esAbono(p) && (p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora'))
+        .reduce((s, p) => s + Math.round(+p.cargaTrasladada || 0), 0));
       const interesesPerdidos = loan.modalidad === MODALIDAD_DIARIA
         ? devengoDiario(loan, cortesDe(req.params.id), hoyStr()).interesPendiente
-        : Math.round(allPays
+        : Math.max(0, Math.round(allPays
             .filter(p => p.estadoPago === 'En Mora' && !esAbono(p))
-            .reduce((s, p) => s + p.interesPeriodo, 0));
+            .reduce((s, p) => s + p.interesPeriodo, 0) -
+            cierres.filter(c => c.mora).reduce((s, c) => s + c.campos.interesPeriodo, 0)) + cargaPend);
       const totalPerdido = capitalPerdido + interesesPerdidos;
 
       return {
         descripcion: 'Cerraste a la fuerza el préstamo de ' + loan.nombre + ' — pérdida: $' + totalPerdido.toLocaleString() + ' (capital $' + capitalPerdido.toLocaleString() + ' + intereses mora $' + interesesPerdidos.toLocaleString() + ')',
         payload: { ok: true, capitalPerdido: capitalPerdido, interesesPerdidos: interesesPerdidos, totalPerdido: totalPerdido },
         aplicar: () => {
+          const cerrar = db.prepare("UPDATE payments SET estadoPago=@estadoPago, interesPeriodo=@interesPeriodo, abonoCapital=@abonoCapital, " +
+            "cuotaTotal=@cuotaTotal, saldoFinal=@saldoFinal, fechaRecaudo=@fechaRecaudo, observaciones=@observaciones, paidAt=datetime('now','localtime') WHERE id=@id");
+          cierres.forEach(c => cerrar.run(Object.assign({ id: c.id }, c.campos)));
           db.prepare("DELETE FROM payments WHERE prestamoId = ? AND estadoPago IN ('Pendiente', 'En Mora')").run(req.params.id);
           db.prepare("UPDATE loans SET estado = 'Cancelado', capitalPerdido = ?, interesesPerdidos = ?, montoCOP = 0, cuotaFijaPactada = 0 WHERE id = ?")
             .run(capitalPerdido, interesesPerdidos, req.params.id);

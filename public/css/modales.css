@@ -153,3 +153,85 @@
 .v4m-crono-tr { border-top: 1px solid var(--line); }
 /* El pie de la tabla del cobro ("La cuota pasa de ... a ..."): superficie 2 con su radio */
 .v4m-pie { background: var(--surface-2); border-top: 1px solid var(--line); border-radius: 14px; }
+
+/* ── UNIFICAR PRESTAMOS (post-4.0.0, prefijo un-) ──────────────────────────────
+   El modal que une los prestamos activos de un deudor en uno nuevo. Aprobado por el PO sobre un
+   prototipo: la fecha arriba, cuatro bloques numerados, el interes ya corrido credito por credito
+   (con su barra de dias) y la comparativa "si siguen como van" contra "unificado". */
+.un-sub { font-size: 13px; color: var(--ink-3); margin-top: -2px; }
+.un-seg { max-width: 280px; }
+.un-seg > button { padding: 7px 10px; font-size: 12.5px; }
+.un-bloque { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); }
+.un-bloque-t { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 650; letter-spacing: -.01em; color: var(--ink); margin-bottom: 2px; }
+.un-bloque-t > span { width: 21px; height: 21px; border-radius: 99px; background: var(--inverse-bg); color: var(--inverse-ink); font-size: 11.5px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
+.un-bloque-t > em { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.un-prest { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: start; padding: 8px 0; border-top: 1px solid var(--line); }
+.un-prest:first-of-type { border-top: 0; }
+.un-prest.off { opacity: .5; }
+.un-prest-l { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-width: 0; }
+.un-prest-l input { margin-top: 2px; flex-shrink: 0; }
+.un-prest-l b, .un-op b, .un-casilla b { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.un-prest-l small, .un-op small, .un-casilla small, .un-prest-v small, .un-total small, .un-comp small, .un-crono small { display: block; font-size: 12px; color: var(--ink-3); line-height: 1.45; margin-top: 1px; font-weight: 400; }
+.un-prest-v { text-align: right; font-size: 14px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.un-sub-check { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--ink-2); padding-left: 26px; cursor: pointer; }
+.un-total { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 2px; padding: 11px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-strong); }
+.un-total b { font-size: 13.5px; font-weight: 650; color: var(--ink); }
+.un-total-v { font-size: 22px; font-weight: 650; letter-spacing: -.025em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.un-casilla { display: flex; gap: 10px; align-items: flex-start; border-radius: 10px; padding: 11px 12px; cursor: pointer; }
+.un-casilla input { margin-top: 2px; flex-shrink: 0; }
+/* La fecha de la unificacion. */
+.un-fecha { display: grid; grid-template-columns: 200px 1fr; gap: 14px; align-items: end; }
+.un-fecha-t { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; padding-bottom: 4px; }
+.un-fecha-t b { color: var(--ink); font-weight: 600; }
+.un-fecha-t small { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.un-error { color: var(--crit-text); }
+/* El interes ya corrido, credito por credito. */
+.un-corridos { border-radius: 12px; padding: 4px 12px 6px; display: flex; flex-direction: column; }
+.un-corr-cab, .un-corr { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 9px 0; cursor: pointer; }
+.un-corr { border-top: 1px solid var(--line); padding-left: 0; }
+.un-corr-cab input, .un-corr input { margin-top: 2px; }
+.un-corr-cab b { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.un-corr-cab small, .un-corr small { display: block; font-size: 12px; color: var(--ink-3); line-height: 1.45; margin-top: 1px; }
+.un-corr-tot, .un-corr-v { text-align: right; font-size: 14px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.un-corr-tot small, .un-corr-v small { font-weight: 400; }
+.un-corr-t b { display: block; font-size: 13px; font-weight: 600; color: var(--ink); }
+.un-corr.off { cursor: default; }
+.un-corr.off .un-corr-t b, .un-corr.off .un-corr-v { color: var(--ink-3); }
+.un-corr:not(.on):not(.off) .un-corr-v { color: var(--ink-2); font-weight: 500; }
+.un-barra { display: block; width: 180px; max-width: 100%; height: 5px; border-radius: 99px; background: var(--surface-3, var(--line)); margin-top: 6px; overflow: hidden; }
+.un-barra > i { display: block; height: 100%; border-radius: 99px; background: var(--ink-3); }
+.un-corr.on .un-barra > i { background: var(--accent); }
+.un-grupo { border-radius: 12px; padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+.un-op { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border-radius: 9px; border: 1px solid transparent; cursor: pointer; }
+.un-op input { margin-top: 2px; flex-shrink: 0; }
+.un-k { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); padding: 0 11px 8px 37px; }
+.un-k .inp { width: 64px; min-height: 34px; text-align: center; }
+.un-campos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 12px; }
+.un-hint { font-size: 11.5px; color: var(--ink-3); margin-top: 5px; line-height: 1.45; }
+.un-hint button { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+.un-pp { margin-top: 2px; }
+.un-comp { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.un-comp th { text-align: right; font-size: 12px; font-weight: 500; color: var(--ink-3); padding: 0 8px 6px; border-bottom: 1px solid var(--line); }
+.un-comp th:first-child, .un-comp td:first-child { text-align: left; padding-left: 0; color: var(--ink-2); }
+.un-comp td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: top; }
+.un-comp td:last-child, .un-comp th:last-child { padding-right: 0; }
+.un-comp b { font-weight: 650; }
+.un-comp tr.gan td { border-bottom: 0; font-weight: 600; }
+.un-dif { font-size: 13px; color: var(--ink-2); padding: 9px 12px; border-radius: 10px; background: var(--surface-2); }
+.un-dif.mas b { color: var(--good-text); }
+.un-dif.menos b { color: var(--warn-text); }
+.un-ver { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font-size: 12.5px; font-weight: 600; background: none; border: 0; padding: 2px 0; color: var(--accent); cursor: pointer; }
+.un-crono { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.un-crono th { padding: 6px 8px; text-align: right; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.un-crono td { padding: 5px 8px; text-align: right; color: var(--ink-2); }
+.un-crono th:first-child, .un-crono td:first-child { text-align: center; }
+.un-crono th:nth-child(2), .un-crono td:nth-child(2) { text-align: left; }
+.un-crono b { color: var(--ink); font-weight: 600; }
+.un-nota { display: flex; gap: 10px; align-items: flex-start; border-radius: 12px; padding: 11px 13px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.un-nota svg { flex-shrink: 0; margin-top: 2px; color: var(--info-text); }
+.un-nota b { color: var(--ink); }
+.un-acc { display: flex; gap: 10px; margin-top: 4px; }
+.un-acc .v4m-btn { flex: 0 0 auto; }
+.un-acc .btn-primary { flex: 1; margin: 0; }
+.un-acc .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+.un-k-nota { padding: 4px 11px 8px; margin: 0; }

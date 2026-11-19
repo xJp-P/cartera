@@ -165,6 +165,7 @@ export function generateReciboAbono(loan, allPays, opts) {
     var liqDet = 'Capital ' + money(_L.capitalPendiente) +
       (intMora > 0 ? ' + mora ' + money(intMora) + ' (' + _L.moraCount + ' cuota' + (_L.moraCount>1?'s':'') + ' a ' + moraMesTxt + ')' : '') +
       (_L.moraConsolidada > 0 ? ' + mora consolidada ' + money(_L.moraConsolidada) : '') +
+      (_L.cargaPendiente > 0 ? ' + intereses de la unificación ' + money(_L.cargaPendiente) : '') +
       (partialPend > 0 ? ' &minus; parciales ' + money(partialPend) : '') + ', sin los intereses futuros del cronograma.';
     liqHTML = '<div class="ab-liq"><div><div class="ab-liq-q">&iquest;Quieres liquidar la deuda hoy?</div>' +
       '<div class="ab-liq-s">' + liqDet + '</div></div>' +
@@ -214,9 +215,11 @@ export function generateReciboAbono(loan, allPays, opts) {
     // 3.2.0 (Fase 4) — la mora consolidada viene DENTRO de `liq.total` (es deuda ya causada,
     // no depende del checkbox), asi que hay que restarla aqui o el capital se la comeria.
     var uMoraC = uni(liq.moraConsolidada || 0);
+    // Unificacion (post-4.0.0): igual que la mora consolidada, viene dentro de `liq.total`.
+    var uCarga = uni(liq.cargaPendiente || 0);
     var uExtra = uni(intExtraPag);
     var uPart  = uni(liq.partialPend);
-    var uCap   = uni(totalRecibido) - uMora - uMoraC - uExtra + uPart;
+    var uCap   = uni(totalRecibido) - uMora - uMoraC - uCarga - uExtra + uPart;
     var uOrig  = uni(originalCOP);
     var filasD = dsgRow('Aplicado a capital',
       fmtUni(uOrig) + ' prestados &minus; ' + fmtUni(Math.max(0, uOrig - uCap)) + ' ya amortizados',
@@ -233,6 +236,11 @@ export function generateReciboAbono(loan, allPays, opts) {
         'Vencidos antes del cambio de día de cobro &nbsp;&middot;&nbsp; estaban dentro de la cuota del ' +
         fmtD(liq.moraConsolidadaFecha),
         fmtUni(uMoraC), C.amber);
+    }
+    if (uCarga > 0) {
+      filasD += dsgRow('Intereses de la unificación',
+        'Intereses de los préstamos unificados que aún no se habían cobrado',
+        fmtUni(uCarga), C.amber);
     }
     if (uPart > 0) {
       filasD += dsgRow('Abonos parciales ya recibidos', 'Se descontaron del total',

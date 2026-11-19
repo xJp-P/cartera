@@ -66,6 +66,11 @@ export function LiquidarModal(props){
       L.moraConsolidada>0&&rowLine('Intereses atrasados consolidados',
         'Vencidos antes del cambio de día de cobro · quedaron dentro de la cuota del '+fmtD(L.moraConsolidadaFecha),
         L.moraConsolidada,'var(--yellow)'),
+      // Unificacion (post-4.0.0): los intereses de los prestamos viejos que este cobra en cuotas
+      // aun no vencidas. Son deuda ya causada: se cobran siempre.
+      L.cargaPendiente>0&&rowLine('Intereses de la unificación',
+        'Intereses de los préstamos unificados que aún no se han cobrado',
+        L.cargaPendiente,'var(--yellow)'),
       // Credito abierto: su interes NO vive en ninguna fila (se deriva del tiempo), asi
       // que sin esta linea el TOTAL incluia un devengo que el desglose no explicaba.
       L.esDiario&&L.interesDevengado>0&&rowLine('Interés acumulado',L.diasDevengados+' día(s) a '+fmt(L.interesDia)+'/día',L.interesDevengado,'var(--yellow)'),

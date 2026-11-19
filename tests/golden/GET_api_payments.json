@@ -7,6 +7,7 @@
   "filas": [
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -28,6 +29,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 10,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -49,6 +51,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 11,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -70,6 +73,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 12,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -91,6 +95,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 13,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -112,6 +117,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 14,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -133,6 +139,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 15,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -154,6 +161,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 16,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -175,6 +183,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 17,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -196,6 +205,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 18,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -217,6 +227,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 19,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -238,6 +249,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -259,6 +271,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 20,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -280,6 +293,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 21,
       "cuotaTotal": 161000,
       "estadoPago": "Pagado",
@@ -301,6 +315,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 22,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -322,6 +337,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -343,6 +359,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -364,6 +381,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -385,6 +403,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -406,6 +425,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 7,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -427,6 +447,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 8,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -448,6 +469,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 9,
       "cuotaTotal": 105000,
       "estadoPago": "Pagado",
@@ -469,6 +491,7 @@
     },
     {
       "abonoCapital": 45572,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 106000,
       "estadoPago": "Pagado",
@@ -490,6 +513,7 @@
     },
     {
       "abonoCapital": 52456,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 106000,
       "estadoPago": "Pagado",
@@ -511,6 +535,7 @@
     },
     {
       "abonoCapital": 60381,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 106000,
       "estadoPago": "Pagado",
@@ -532,6 +557,7 @@
     },
     {
       "abonoCapital": 69502,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 106000,
       "estadoPago": "Pagado",
@@ -553,6 +579,7 @@
     },
     {
       "abonoCapital": 80002,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 105999,
       "estadoPago": "Pagado",
@@ -574,6 +601,7 @@
     },
     {
       "abonoCapital": 92087,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 105999,
       "estadoPago": "Pagado",
@@ -595,6 +623,7 @@
     },
     {
       "abonoCapital": 200000,
+      "cargaTrasladada": 0,
       "cuotaN": 10,
       "cuotaTotal": 200000,
       "estadoPago": "Pagado",
@@ -616,6 +645,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 46000,
       "estadoPago": "Pagado",
@@ -637,6 +667,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 46000,
       "estadoPago": "Pagado",
@@ -658,6 +689,7 @@
     },
     {
       "abonoCapital": 466000,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 466000,
       "estadoPago": "Pagado",
@@ -679,6 +711,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 300000,
       "estadoPago": "Pagado",
@@ -700,6 +733,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 300000,
       "estadoPago": "Pagado",
@@ -721,6 +755,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 300000,
       "estadoPago": "Pagado",
@@ -742,6 +777,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 40000,
       "estadoPago": "Pagado",
@@ -763,6 +799,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 40000,
       "estadoPago": "Pagado",
@@ -784,6 +821,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 40000,
       "estadoPago": "Pagado",
@@ -805,6 +843,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 40000,
       "estadoPago": "Pagado",
@@ -826,6 +865,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 40000,
       "estadoPago": "Pagado",
@@ -847,6 +887,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 40000,
       "estadoPago": "Pagado",
@@ -868,6 +909,7 @@
     },
     {
       "abonoCapital": 63067,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -889,6 +931,7 @@
     },
     {
       "abonoCapital": 147416,
+      "cargaTrasladada": 0,
       "cuotaN": 10,
       "cuotaTotal": 162000,
       "estadoPago": "<PEND_AUTO>",
@@ -910,6 +953,7 @@
     },
     {
       "abonoCapital": 69307,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -931,6 +975,7 @@
     },
     {
       "abonoCapital": 76163,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -952,6 +997,7 @@
     },
     {
       "abonoCapital": 83698,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -973,6 +1019,7 @@
     },
     {
       "abonoCapital": 91979,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -994,6 +1041,7 @@
     },
     {
       "abonoCapital": 101079,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -1015,6 +1063,7 @@
     },
     {
       "abonoCapital": 111079,
+      "cargaTrasladada": 0,
       "cuotaN": 7,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -1036,6 +1085,7 @@
     },
     {
       "abonoCapital": 122068,
+      "cargaTrasladada": 0,
       "cuotaN": 8,
       "cuotaTotal": 162000,
       "estadoPago": "Pagado",
@@ -1057,6 +1107,7 @@
     },
     {
       "abonoCapital": 134144,
+      "cargaTrasladada": 0,
       "cuotaN": 9,
       "cuotaTotal": 176856,
       "estadoPago": "<PEND_AUTO>",
@@ -1078,6 +1129,7 @@
     },
     {
       "abonoCapital": 99966,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 265000,
       "estadoPago": "Pagado",
@@ -1099,6 +1151,7 @@
     },
     {
       "abonoCapital": 207681,
+      "cargaTrasladada": 0,
       "cuotaN": 10,
       "cuotaTotal": 265000,
       "estadoPago": "<PEND_AUTO>",
@@ -1120,6 +1173,7 @@
     },
     {
       "abonoCapital": 225258,
+      "cargaTrasladada": 0,
       "cuotaN": 11,
       "cuotaTotal": 265000,
       "estadoPago": "<PEND_AUTO>",
@@ -1141,6 +1195,7 @@
     },
     {
       "abonoCapital": 244326,
+      "cargaTrasladada": 0,
       "cuotaN": 12,
       "cuotaTotal": 265000,
       "estadoPago": "<PEND_AUTO>",
@@ -1162,6 +1217,7 @@
     },
     {
       "abonoCapital": 108427,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 265000,
       "estadoPago": "Pagado",
@@ -1183,6 +1239,7 @@
     },
     {
       "abonoCapital": 117603,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 265000,
       "estadoPago": "Pagado",
@@ -1204,6 +1261,7 @@
     },
     {
       "abonoCapital": 127556,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 265000,
       "estadoPago": "Pagado",
@@ -1225,6 +1283,7 @@
     },
     {
       "abonoCapital": 138352,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 265000,
       "estadoPago": "Pagado",
@@ -1246,6 +1305,7 @@
     },
     {
       "abonoCapital": 150060,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 265000,
       "estadoPago": "<PEND_AUTO>",
@@ -1267,6 +1327,7 @@
     },
     {
       "abonoCapital": 162760,
+      "cargaTrasladada": 0,
       "cuotaN": 7,
       "cuotaTotal": 265000,
       "estadoPago": "<PEND_AUTO>",
@@ -1288,6 +1349,7 @@
     },
     {
       "abonoCapital": 176535,
+      "cargaTrasladada": 0,
       "cuotaN": 8,
       "cuotaTotal": 265000,
       "estadoPago": "<PEND_AUTO>",
@@ -1309,6 +1371,7 @@
     },
     {
       "abonoCapital": 191476,
+      "cargaTrasladada": 0,
       "cuotaN": 9,
       "cuotaTotal": 265000,
       "estadoPago": "<PEND_AUTO>",
@@ -1330,6 +1393,7 @@
     },
     {
       "abonoCapital": 260287,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 1690485,
       "estadoPago": "Pagado",
@@ -1351,6 +1415,7 @@
     },
     {
       "abonoCapital": 525003,
+      "cargaTrasladada": 0,
       "cuotaN": 10,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1372,6 +1437,7 @@
     },
     {
       "abonoCapital": 567568,
+      "cargaTrasladada": 0,
       "cuotaN": 11,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1393,6 +1459,7 @@
     },
     {
       "abonoCapital": 613585,
+      "cargaTrasladada": 0,
       "cuotaN": 12,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1414,6 +1481,7 @@
     },
     {
       "abonoCapital": 663333,
+      "cargaTrasladada": 0,
       "cuotaN": 13,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1435,6 +1503,7 @@
     },
     {
       "abonoCapital": 717114,
+      "cargaTrasladada": 0,
       "cuotaN": 14,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1456,6 +1525,7 @@
     },
     {
       "abonoCapital": 775255,
+      "cargaTrasladada": 0,
       "cuotaN": 15,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1477,6 +1547,7 @@
     },
     {
       "abonoCapital": 838111,
+      "cargaTrasladada": 0,
       "cuotaN": 16,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1498,6 +1569,7 @@
     },
     {
       "abonoCapital": 906062,
+      "cargaTrasladada": 0,
       "cuotaN": 17,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1519,6 +1591,7 @@
     },
     {
       "abonoCapital": 979523,
+      "cargaTrasladada": 0,
       "cuotaN": 18,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1540,6 +1613,7 @@
     },
     {
       "abonoCapital": 1058940,
+      "cargaTrasladada": 0,
       "cuotaN": 19,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1561,6 +1635,7 @@
     },
     {
       "abonoCapital": 281390,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 1690485,
       "estadoPago": "Pagado",
@@ -1582,6 +1657,7 @@
     },
     {
       "abonoCapital": 1144795,
+      "cargaTrasladada": 0,
       "cuotaN": 20,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1603,6 +1679,7 @@
     },
     {
       "abonoCapital": 1237612,
+      "cargaTrasladada": 0,
       "cuotaN": 21,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1624,6 +1701,7 @@
     },
     {
       "abonoCapital": 1337954,
+      "cargaTrasladada": 0,
       "cuotaN": 22,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1645,6 +1723,7 @@
     },
     {
       "abonoCapital": 1446431,
+      "cargaTrasladada": 0,
       "cuotaN": 23,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1666,6 +1745,7 @@
     },
     {
       "abonoCapital": 1563718,
+      "cargaTrasladada": 0,
       "cuotaN": 24,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1687,6 +1767,7 @@
     },
     {
       "abonoCapital": 304204,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 1690485,
       "estadoPago": "Pagado",
@@ -1708,6 +1789,7 @@
     },
     {
       "abonoCapital": 328868,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 1690485,
       "estadoPago": "Pagado",
@@ -1729,6 +1811,7 @@
     },
     {
       "abonoCapital": 355532,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1750,6 +1833,7 @@
     },
     {
       "abonoCapital": 384357,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1771,6 +1855,7 @@
     },
     {
       "abonoCapital": 415520,
+      "cargaTrasladada": 0,
       "cuotaN": 7,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1792,6 +1877,7 @@
     },
     {
       "abonoCapital": 449209,
+      "cargaTrasladada": 0,
       "cuotaN": 8,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1813,6 +1899,7 @@
     },
     {
       "abonoCapital": 485629,
+      "cargaTrasladada": 0,
       "cuotaN": 9,
       "cuotaTotal": 1690485,
       "estadoPago": "<PEND_AUTO>",
@@ -1834,6 +1921,7 @@
     },
     {
       "abonoCapital": 808500,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 808500,
       "estadoPago": "Pagado",
@@ -1855,6 +1943,7 @@
     },
     {
       "abonoCapital": 232181,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 311613,
       "estadoPago": "Pagado",
@@ -1876,6 +1965,7 @@
     },
     {
       "abonoCapital": 239115,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 311613,
       "estadoPago": "Pagado",
@@ -1897,6 +1987,7 @@
     },
     {
       "abonoCapital": 2188704,
+      "cargaTrasladada": 0,
       "cuotaN": 11,
       "cuotaTotal": 2188704,
       "estadoPago": "Pagado",
@@ -1918,6 +2009,7 @@
     },
     {
       "abonoCapital": 406250,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 406250,
       "estadoPago": "Pagado",
@@ -1939,6 +2031,7 @@
     },
     {
       "abonoCapital": 375000,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 375000,
       "estadoPago": "Pagado",
@@ -1960,6 +2053,7 @@
     },
     {
       "abonoCapital": 343750,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 343750,
       "estadoPago": "Pagado",
@@ -1981,6 +2075,7 @@
     },
     {
       "abonoCapital": 171712,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 470000,
       "estadoPago": "Pagado",
@@ -2002,6 +2097,7 @@
     },
     {
       "abonoCapital": 274719,
+      "cargaTrasladada": 0,
       "cuotaN": 10,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2023,6 +2119,7 @@
     },
     {
       "abonoCapital": 295205,
+      "cargaTrasladada": 0,
       "cuotaN": 11,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2044,6 +2141,7 @@
     },
     {
       "abonoCapital": 317219,
+      "cargaTrasladada": 0,
       "cuotaN": 12,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2065,6 +2163,7 @@
     },
     {
       "abonoCapital": 340875,
+      "cargaTrasladada": 0,
       "cuotaN": 13,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2086,6 +2185,7 @@
     },
     {
       "abonoCapital": 366299,
+      "cargaTrasladada": 0,
       "cuotaN": 14,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2107,6 +2207,7 @@
     },
     {
       "abonoCapital": 184517,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 470000,
       "estadoPago": "Pagado",
@@ -2128,6 +2229,7 @@
     },
     {
       "abonoCapital": 198277,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 470000,
       "estadoPago": "Pagado",
@@ -2149,6 +2251,7 @@
     },
     {
       "abonoCapital": 178433,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2170,6 +2273,7 @@
     },
     {
       "abonoCapital": 191739,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2191,6 +2295,7 @@
     },
     {
       "abonoCapital": 206037,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2212,6 +2317,7 @@
     },
     {
       "abonoCapital": 221402,
+      "cargaTrasladada": 0,
       "cuotaN": 7,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2233,6 +2339,7 @@
     },
     {
       "abonoCapital": 237912,
+      "cargaTrasladada": 0,
       "cuotaN": 8,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2254,6 +2361,7 @@
     },
     {
       "abonoCapital": 255654,
+      "cargaTrasladada": 0,
       "cuotaN": 9,
       "cuotaTotal": 393610,
       "estadoPago": "<PEND_AUTO>",
@@ -2275,6 +2383,7 @@
     },
     {
       "abonoCapital": 560000,
+      "cargaTrasladada": 0,
       "cuotaN": 15,
       "cuotaTotal": 560000,
       "estadoPago": "Pagado",
@@ -2296,6 +2405,7 @@
     },
     {
       "abonoCapital": 1500000,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 1575000,
       "estadoPago": "Pagado",
@@ -2317,6 +2427,7 @@
     },
     {
       "abonoCapital": 1000000,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 1100000,
       "estadoPago": "Pagado",
@@ -2338,6 +2449,7 @@
     },
     {
       "abonoCapital": 205675,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 450000,
       "estadoPago": "Pagado",
@@ -2359,6 +2471,7 @@
     },
     {
       "abonoCapital": 416107,
+      "cargaTrasladada": 0,
       "cuotaN": 10,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2380,6 +2493,7 @@
     },
     {
       "abonoCapital": 222426,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 450000,
       "estadoPago": "Pagado",
@@ -2401,6 +2515,7 @@
     },
     {
       "abonoCapital": 240541,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2422,6 +2537,7 @@
     },
     {
       "abonoCapital": 260131,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2443,6 +2559,7 @@
     },
     {
       "abonoCapital": 281316,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2464,6 +2581,7 @@
     },
     {
       "abonoCapital": 304227,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2485,6 +2603,7 @@
     },
     {
       "abonoCapital": 329004,
+      "cargaTrasladada": 0,
       "cuotaN": 7,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2506,6 +2625,7 @@
     },
     {
       "abonoCapital": 355798,
+      "cargaTrasladada": 0,
       "cuotaN": 8,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2527,6 +2647,7 @@
     },
     {
       "abonoCapital": 384775,
+      "cargaTrasladada": 0,
       "cuotaN": 9,
       "cuotaTotal": 450000,
       "estadoPago": "<PEND_AUTO>",
@@ -2548,6 +2669,7 @@
     },
     {
       "abonoCapital": 1079400,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 1259300,
       "estadoPago": "Pagado",
@@ -2569,6 +2691,7 @@
     },
     {
       "abonoCapital": 300000,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 300000,
       "estadoPago": "Pagado",
@@ -2590,6 +2713,7 @@
     },
     {
       "abonoCapital": 1005303,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 1472407,
       "estadoPago": "Pagado",
@@ -2611,6 +2735,7 @@
     },
     {
       "abonoCapital": 1085033,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 1472407,
       "estadoPago": "<PEND_AUTO>",
@@ -2632,6 +2757,7 @@
     },
     {
       "abonoCapital": 1171087,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 1472407,
       "estadoPago": "<PEND_AUTO>",
@@ -2653,6 +2779,7 @@
     },
     {
       "abonoCapital": 1263966,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 1472407,
       "estadoPago": "<PEND_AUTO>",
@@ -2674,6 +2801,7 @@
     },
     {
       "abonoCapital": 1364211,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 1472407,
       "estadoPago": "<PEND_AUTO>",
@@ -2695,6 +2823,7 @@
     },
     {
       "abonoCapital": 500000,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 520000,
       "estadoPago": "Pagado",
@@ -2716,6 +2845,7 @@
     },
     {
       "abonoCapital": 2300000,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 2300000,
       "estadoPago": "Pagado",
@@ -2737,6 +2867,7 @@
     },
     {
       "abonoCapital": 50340,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 118819,
       "estadoPago": "<PEND_AUTO>",
@@ -2758,6 +2889,7 @@
     },
     {
       "abonoCapital": 55960,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 95000,
       "estadoPago": "<PEND_AUTO>",
@@ -2779,6 +2911,7 @@
     },
     {
       "abonoCapital": 62208,
+      "cargaTrasladada": 0,
       "cuotaN": 3,
       "cuotaTotal": 95000,
       "estadoPago": "<PEND_AUTO>",
@@ -2800,6 +2933,7 @@
     },
     {
       "abonoCapital": 69154,
+      "cargaTrasladada": 0,
       "cuotaN": 4,
       "cuotaTotal": 95000,
       "estadoPago": "<PEND_AUTO>",
@@ -2821,6 +2955,7 @@
     },
     {
       "abonoCapital": 76875,
+      "cargaTrasladada": 0,
       "cuotaN": 5,
       "cuotaTotal": 95000,
       "estadoPago": "<PEND_AUTO>",
@@ -2842,6 +2977,7 @@
     },
     {
       "abonoCapital": 85463,
+      "cargaTrasladada": 0,
       "cuotaN": 6,
       "cuotaTotal": 95000,
       "estadoPago": "<PEND_AUTO>",
@@ -2863,6 +2999,7 @@
     },
     {
       "abonoCapital": 500000,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 535000,
       "estadoPago": "<PEND_AUTO>",
@@ -2884,6 +3021,7 @@
     },
     {
       "abonoCapital": 706769,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 814250,
       "estadoPago": "<PEND_AUTO>",
@@ -2905,6 +3043,7 @@
     },
     {
       "abonoCapital": 0,
+      "cargaTrasladada": 0,
       "cuotaN": 1,
       "cuotaTotal": 15000,
       "estadoPago": "Pagado",
@@ -2926,6 +3065,7 @@
     },
     {
       "abonoCapital": 400000,
+      "cargaTrasladada": 0,
       "cuotaN": 2,
       "cuotaTotal": 415000,
       "estadoPago": "Pagado",

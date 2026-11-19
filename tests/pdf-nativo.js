@@ -155,6 +155,11 @@ const CASOS = [
   { doc: 'reporte-claro',     tema: 'light', paginasMin: 2, v4: true,  letrasExtra: ['SegoeUISymbol'], gen: () => S.generateReportePrestamosPDF(loans, pays, false) },
   // Con la app en tema oscuro: el documento v4 sale en el oscuro de la app.
   { doc: 'general-app-oscura', tema: 'dark', paginasMin: 2, v4: true,  gen: () => S.generateReciboGeneral(loans.filter(l => l.nombre === 'Bruno Salgado'), pays, '', { hasta: '2026-11-02' }) },
+  // La constancia de una unificacion (post-4.0.0): el caso mas largo, 12 cuotas con el interes
+  // corrido y "Como pagar", tiene que caber en UNA hoja.
+  { doc: 'unificacion-12-cuotas', tema: 'light', paginasMin: 1, paginasMax: 1, v4: true,
+    gen: () => S.generateConstanciaUnificacion(S.planUnificacion(loans.filter(l => l.nombre === 'Bruno Salgado' && l.estado === 'Activo'), pays, '2026-07-31',
+      { corrido: true, nuevo: { plazo: 12 } }), 'Bruno Salgado', { datosPago: 'Nequi 300 000 0000 · Bancolombia ahorros 000-000000-00', nuevoId: 'x-unif' }) },
 ];
 const LETRAS_V4 = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold'];
 const dir = path.join(WORK, `pdf-nativo-${process.pid}-${Date.now()}`);
@@ -182,6 +187,7 @@ for (const d of res.docs) {
   const c = CASOS.find(x => x.doc === d.doc) || {};
   R.eq(`${d.doc}: es un PDF`, d.cabecera, '%PDF-');
   R.check(`${d.doc}: tiene al menos ${c.paginasMin} pagina(s)`, d.paginas >= c.paginasMin, d.paginas);
+  if (c.paginasMax) R.check(`${d.doc}: cabe en ${c.paginasMax} hoja(s)`, d.paginas <= c.paginasMax, d.paginas);
   // Carta, como emitia 3.0.0: el cambio de ventana no puede cambiar el tamano del papel.
   R.eq(`${d.doc}: todas las paginas en tamano carta`, d.cajas, ['/MediaBox [0 0 612 792]']);
   R.check(`${d.doc}: no es un documento vacio (> 20 KB)`, d.bytes > 20000, d.bytes);

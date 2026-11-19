@@ -38,6 +38,12 @@ function dpChip(estado, extra){
   return h('span', { className: 'op-chip', style: { color: 'var(--' + e[1] + ')', background: e[1] === 'text3' ? 'var(--bg3)' : 'var(--' + e[1] + '-bg)' } }, e[0] + (extra || ''));
 }
 function dpUsd(m, cop){ return m.esUSD ? usdLinea(copToUsd(cop, m.trm)) : null; }
+// Unificar (post-4.0.0): hacen falta al menos dos prestamos activos EN LA MISMA MONEDA.
+export function dpPuedeUnificar(activos){
+  var c = {};
+  (activos || []).forEach(function(l){ if (l && l.estado === 'Activo') { var m = l.moneda || 'COP'; c[m] = (c[m] || 0) + 1; } });
+  return Object.keys(c).some(function(m){ return c[m] >= 2; });
+}
 function dpMonto(m){ return m.esUSD ? 'USD ' + fmtN(m.loan.montoOrigen) : fmt(m.loan.montoOrigen); }
 
 // ── Cronograma: las 7 columnas universales, abonos intercalados ────────────────────
@@ -171,10 +177,10 @@ export function DeudorPanel(props){
     var on = x.loan.id === sel;
     return h('button', { key: x.loan.id, className: 'dp-tab' + (on ? ' on' : '') + ' e-' + x.estado, onClick: function(){ setSel(x.loan.id); setMenu(false); if (props.onLoan) props.onLoan(x.loan.id); } },
       h('div', { className: 'dp-tab-1' }, h('i', { className: 'dp-dot' }), h('span', { className: 'mono' }, dpMonto(x)), x.esUSD && h('span', { className: 'dp-usdtag' }, 'USD')),
-      h('div', { className: 'dp-tab-2' }, opModalidad(x.loan.modalidad, true) + ' · ' + opCorta(x.loan.fechaInicio)),
+      h('div', { className: 'dp-tab-2' }, (x.loan.unificaDe ? 'Unificación · ' : '') + opModalidad(x.loan.modalidad, true) + ' · ' + opCorta(x.loan.fechaInicio)),
       x.activo
         ? h('div', { className: 'dp-tab-3 mono' }, 'debe ' + fmt(x.saldo))
-        : h('div', { className: 'dp-tab-3' }, (x.estado === 'cancelado' ? 'cancelado ' : 'pagado ') + (x.fechaFin ? opCorta(x.fechaFin) : '')));
+        : h('div', { className: 'dp-tab-3' }, x.loan.unificadoEn ? 'unificado' : (x.estado === 'cancelado' ? 'cancelado ' : 'pagado ') + (x.fechaFin ? opCorta(x.fechaFin) : '')));
   }
 
   var acciones = null, figuras = null;
@@ -217,7 +223,7 @@ export function DeudorPanel(props){
              h('div', { key: 's', className: 'dp-fig-s' }, m.enMora.length + ' cuota' + (m.enMora.length > 1 ? 's' : '') + ' · la más vieja hace ' + m.moraDias + ' días')]
           : [h('div', { key: 'v', className: 'dp-fig-v', style: { color: 'var(--green)' } }, 'Al día'), h('div', { key: 's', className: 'dp-fig-s' }, 'ninguna cuota vencida')]),
       h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Liquidar hoy'), h('div', { className: 'dp-fig-v mono', style: { color: 'var(--yellow)' } }, fmt(L.total)), dpUsd(m, L.total),
-        h('div', { className: 'dp-fig-s' }, 'capital' + (L.intMora > 0 ? ' + intereses en mora' : '') + (L.moraConsolidada > 0 ? ' + mora consolidada' : '') + (m.dv ? ' + interés devengado' : '') + (L.partialPend > 0 ? ' − abonos parciales' : ''))));
+        h('div', { className: 'dp-fig-s' }, 'capital' + (L.intMora > 0 ? ' + intereses en mora' : '') + (L.moraConsolidada > 0 ? ' + mora consolidada' : '') + (L.cargaPendiente > 0 ? ' + intereses de la unificación' : '') + (m.dv ? ' + interés devengado' : '') + (L.partialPend > 0 ? ' − abonos parciales' : ''))));
   } else if (m){
     var meses = m.fechaFin ? Math.max(0, Math.round((new Date(m.fechaFin + 'T12:00:00') - new Date(l.fechaInicio + 'T12:00:00')) / (30.44 * 864e5))) : null;
     acciones = h('div', { className: 'dp-acc' },
@@ -225,6 +231,7 @@ export function DeudorPanel(props){
       h('button', { className: 'op-btn', onClick: function(){ accion(props.onEdit, l); } }, h(Ico, { name: 'edit', size: 15, color: 'var(--text2)', sw: 2.2 }), 'Editar'),
       h('button', { className: 'op-btn peligro', onClick: function(){ accion(props.onDelete, l.id); } }, h(Ico, { name: 'trash', size: 15, color: 'var(--red)', sw: 2.2 }), 'Eliminar'));
     var cancel = l.estado === 'Cancelado', perd = Math.round((l.capitalPerdido || 0) + (l.interesesPerdidos || 0));
+    var unifEn = l.unificadoEn ? loans.filter(function(x){ return x.id === l.unificadoEn; })[0] || null : null;
     figuras = h('div', { className: 'dp-figs' },
       h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Capital prestado'), h('div', { className: 'dp-fig-v mono' }, dpMonto(m)), m.esUSD && h('div', { className: 'dp-fig-s' }, fmt(m.orig) + ' · TRM ' + fmtN(m.trm))),
       h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Total recibido'), h('div', { className: 'dp-fig-v mono' }, fmt(m.recTotal)), m.esUSD && usdLinea(fmtUSD(m.recTotalUSD))),
@@ -236,8 +243,14 @@ export function DeudorPanel(props){
         : h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, m.esPrest && m.esUSD ? 'Efecto TRM' : 'Ganancia'),
             h('div', { className: 'dp-fig-v mono', style: { color: m.recGan < 0 ? 'var(--red)' : 'var(--green)' } }, (m.recGan > 0 ? '+' : '') + fmt(m.recGan)),
             m.esUSD && !m.esPrest && usdLinea('+' + fmtUSD(m.gp.usd))),
-      h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, cancel ? 'Cerrado el' : 'Pagado el'), h('div', { className: 'dp-fig-v' }, m.fechaFin ? opCortaAnio(m.fechaFin) : '—'),
-        meses != null && h('div', { className: 'dp-fig-s' }, 'duró ' + (meses < 1 ? 'menos de un mes' : meses + (meses === 1 ? ' mes' : ' meses')))));
+      // Unificacion (post-4.0.0): no se pago ni se perdio; su deuda paso al prestamo nuevo.
+      l.unificadoEn
+        ? h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Pasó al préstamo nuevo'),
+            h('div', { className: 'dp-fig-v mono' }, fmt(Math.round((l.capitalTrasladado || 0) + (l.interesTrasladado || 0)))),
+            h('div', { className: 'dp-fig-s' }, 'capital ' + fmt(Math.round(l.capitalTrasladado || 0)) + ((l.interesTrasladado || 0) > 0 ? ' + intereses ' + fmt(Math.round(l.interesTrasladado)) : '') +
+              (unifEn ? ' · unificado el ' + opCortaAnio(unifEn.fechaInicio) : '')))
+        : h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, cancel ? 'Cerrado el' : 'Pagado el'), h('div', { className: 'dp-fig-v' }, m.fechaFin ? opCortaAnio(m.fechaFin) : '—'),
+            meses != null && h('div', { className: 'dp-fig-s' }, 'duró ' + (meses < 1 ? 'menos de un mes' : meses + (meses === 1 ? ' mes' : ' meses')))));
   }
 
   var deudaUSD = M.saldoUSD > 0 ? usdLinea('incluye ' + fmtUSD(M.saldoUSD)) : null;
@@ -258,6 +271,12 @@ export function DeudorPanel(props){
         puedeReciboGeneral(M.activos.map(function(x){ return x.loan; })) && h('button', { className: 'op-btn sm', title: 'Recibo de cobro general (PDF): toda su deuda vencida, sus opciones de pago y el estado de cada crédito',
           onClick: function(){ generateReciboGeneral(M.activos.map(function(x){ return x.loan; }), pays, props.datosPago, { hasta: hoy }); } },
           h(Ico, { name: 'clipboard', size: 14, color: 'var(--text2)', sw: 2.3 }), 'Recibo general'),
+        // Unificar (post-4.0.0): del deudor, como el recibo general. Hace falta mas de un prestamo activo
+        // en la misma moneda (una unificacion es en una sola moneda).
+        props.onUnificar && dpPuedeUnificar(M.activos.map(function(x){ return x.loan; })) && h('button', { className: 'op-btn sm',
+          title: 'Unificar sus préstamos activos en uno nuevo (con propuesta y constancia para el cliente)',
+          onClick: function(){ props.onUnificar(d, M.activos.map(function(x){ return x.loan; })); } },
+          h(Ico, { name: 'refresh', size: 14, color: 'var(--text2)', sw: 2.3 }), 'Unificar'),
         h('button', { className: 'op-btn sm', onClick: function(){ props.onNewLoan(d); }, title: 'Nuevo préstamo a ' + properCase(d.nombre) }, h(Ico, { name: 'plus', size: 14, color: 'var(--text2)', sw: 2.4 }), 'Préstamo'),
         !props.superpuesto && props.onClose && h('button', { className: 'dp-x', onClick: props.onClose, title: 'Cerrar panel' }, h(Ico, { name: 'x', size: 15, color: 'var(--text2)', sw: 2.4 })))),
     h('div', { className: 'dp-kpis' },

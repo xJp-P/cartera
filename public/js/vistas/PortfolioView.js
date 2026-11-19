@@ -25,7 +25,7 @@ import { usdLinea } from '../componentes/CifraUSD.js';
 import { Ico } from '../componentes/iconos.js';
 import { copToUsd, fmt, fmtD, fmtUSD } from '../core/format.js';
 import { h, useMemo, useState } from '../core/react.js';
-import { diasEntre } from '../core/dominio.js';
+import { diasEntre, capitalRefinanciadoDe } from '../core/dominio.js';
 import { modeloDeudor, opModalidad, opIniciales, opPesoEstado } from '../core/operacion.js';
 import { nowStr, properCase } from '../core/ui.js';
 import { modeloResumen, rzModalidad, rzCompacto, V4Dinero, V4Chip, v4PuedeAnimar } from './DashView.js';
@@ -84,6 +84,7 @@ export function rdFilas(loans, pays, hoy){
   return out;
 }
 
+function rdvUnifica(l){ try { var a = JSON.parse(l.unificaDe || '[]'); return Array.isArray(a) ? a.length : 0; } catch (_) { return 0; } }
 var RDV_FILTROS = [['activos', 'Activos'], ['finalizados', 'Finalizados'], ['usd', 'En dólares'], ['perdida', 'Con pérdida'], ['todos', 'Todos']];
 var RDV_PASA = {
   activos: function(r){ return r.m.activo; },
@@ -209,7 +210,8 @@ export function PortfolioView(props){
 
   var activas = filas.filter(function(r){ return r.m.activo; });
   var ganTotal = filas.reduce(function(s, r){ return s + r.m.gp.cop; }, 0);
-  var prestadoTodo = filas.reduce(function(s, r){ return s + r.m.orig; }, 0);
+  // Sin el capital refinanciado de una unificacion: ya esta contado en los prestamos viejos.
+  var prestadoTodo = filas.reduce(function(s, r){ return s + Math.max(0, r.m.orig - capitalRefinanciadoDe(r.m.loan)); }, 0);
   var colocado = activas.reduce(function(s, r){ return s + r.m.orig; }, 0);
   var recuperado = activas.reduce(function(s, r){ return s + r.m.recCap; }, 0);
   var saldo = activas.reduce(function(s, r){ return s + r.m.saldo; }, 0);
@@ -242,6 +244,9 @@ export function PortfolioView(props){
     if (r.intPerdido > 0) notas.push(h('div', { key: 'i', className: 'rdv-nota-f crit' }, 'perdió ' + fmt(r.intPerdido) + ' de intereses'));
     if (r.perdido > 0) notas.push(h('div', { key: 'k', className: 'rdv-nota-f crit' }, 'perdió ' + fmt(r.perdido) + ' de capital'));
     if (r.efTRM < 0) notas.push(h('div', { key: 't', className: 'rdv-nota-f crit' }, 'efecto TRM −' + fmt(-r.efTRM)));
+    // Unificacion (post-4.0.0): el viejo no se pago ni se perdio, paso al nuevo; el nuevo dice de donde viene.
+    if (l.unificadoEn) notas.push(h('div', { key: 'u', className: 'rdv-nota-f' }, 'pasó ' + fmt(Math.round((+l.capitalTrasladado || 0) + (+l.interesTrasladado || 0))) + ' a una unificación'));
+    if (l.unificaDe) notas.push(h('div', { key: 'n', className: 'rdv-nota-f' }, 'unificación de ' + rdvUnifica(l) + ' préstamos'));
     return h('tr', { key: l.id, className: 'rdv-fila' + (m.activo ? '' : ' cerrado'), style: { '--i': i }, title: 'Abrir ' + properCase(l.nombre) + ' en Cartera',
         onClick: function(){ onNameClick(l.nombre, l.id); } },
       h('td', { className: 'rdv-col-nombre' },
@@ -249,7 +254,7 @@ export function PortfolioView(props){
           h('span', { className: 'cbv-av' + (tono ? ' ' + tono : '') }, opIniciales(l.nombre)),
           h('div', { className: 'rdv-quien-c' },
             h('div', { className: 'rdv-nom' }, properCase(l.nombre), r.esUSD && h('span', { className: 'dp-usdtag' }, 'USD')),
-            h('div', { className: 'rdv-sub' }, opModalidad(l.modalidad, true) + ' · ' + (m.activo ? 'desde ' + fmtD(l.fechaInicio) : 'cerrado el ' + fmtD(m.fechaFin || l.fechaInicio)))))),
+            h('div', { className: 'rdv-sub' }, opModalidad(l.modalidad, true) + ' · ' + (m.activo ? 'desde ' + fmtD(l.fechaInicio) : (l.unificadoEn ? 'unificado' : 'cerrado el ' + fmtD(m.fechaFin || l.fechaInicio))))))),
       h('td', { className: 'rdv-n rdv-col-capital' }, fmt(m.orig), r.esUSD && usdLinea(fmtUSD(r.capUSD))),
       h('td', { className: 'rdv-col-recuperado' },
         h('div', { className: 'rdv-rec' },
