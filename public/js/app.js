@@ -52,7 +52,6 @@ import { DevView } from './vistas/DevView.js';
 import { PayModal } from './modales/PayModal.js';
 import { PreflightMoraModal } from './modales/PreflightMoraModal.js';
 import { planCascada } from './core/cascada.js';
-import { AbonoModal } from './modales/AbonoModal.js';
 import { CobroModal } from './modales/CobroModal.js';
 import { CondonarModal } from './modales/CondonarModal.js';
 import { UnificarModal } from './modales/UnificarModal.js';
@@ -96,15 +95,15 @@ function App(){
   var s5=useState('dashboard'); var view=s5[0]; var setView=s5[1];
   var s6=useState(null); var loanModal=s6[0]; var setLoanModal=s6[1];
   var s7=useState(null); var payModal=s7[0]; var setPayModal=s7[1];
-  var s11=useState(null); var abonoModal=s11[0]; var setAbonoModal=s11[1];
-  // v2.0.0 — modal de liquidacion ELEVADO a nivel App: un modal hermano de AbonoModal,
-  // invocable desde el panel del deudor Y desde el CTA de AbonoModal.
+  // v2.0.0 — modal de liquidacion ELEVADO a nivel App, invocable desde el panel del deudor y
+  // desde el CTA del cobro. (El formulario de abono a capital, `AbonoModal`, se borro en 4.1.4:
+  // no tenia entrada desde 2.9.6, cuando el cobro en cascada lo absorbio.)
   var s13=useState(null); var liquidarModal=s13[0]; var setLiquidarModal=s13[1];
   // Corte de un credito de interes diario. Nombre propio en vez de `sNN`: ya hay dos
   // `var s13` en este bloque (funciona por el orden de asignacion, pero no hace falta
   // sumar una tercera colision).
   var sCorte=useState(null); var corteModal=sCorte[0]; var setCorteModal=sCorte[1];
-  // Cobro con imputacion en cascada (mora -> abono). Modal hermano de AbonoModal.
+  // Cobro con imputacion en cascada (mora -> abono).
   var sCobro=useState(null); var cobroModal=sCobro[0]; var setCobroModal=sCobro[1];
   // Condonacion de intereses. NO es un cobro: modifica la obligacion sin mover caja.
   var sCond=useState(null); var condonarModal=sCond[0]; var setCondonarModal=sCond[1];
@@ -568,7 +567,6 @@ function App(){
         if(r.error){showToast(r.error,'error');return;}
         // v1.9.0 — await reload antes de cerrar, para que el panel del deudor no muestre datos viejos
         return reload().then(function(fresh){
-          setAbonoModal(null);
           showToast(liquidar?'Deuda liquidada':'Abono registrado');
           // v1.17.0 — Recibo de Abono con el estado YA persistido (cronograma real regenerado
           // por el backend; no se replica aqui el motor financiero). Nunca rompe el flujo.
@@ -761,20 +759,13 @@ function App(){
     });
     return Promise.all(promises);
   }
+  // El abono a capital que usa Liquidar deuda. Desde 4.1.4 es su UNICO llamador (el formulario de
+  // abono se borro), y Liquidar no recalcula el cronograma, asi que el pre-flight de mora que vivia
+  // aqui ya no tenia por donde dispararse. Se devuelve la promesa: LiquidarModal libera su guarda
+  // anti doble-submit con ella.
   var registrarAbono=useCallback(function(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido){
-    var needsPreflight=(recalcMode==='modificarPlazo'||recalcMode==='fijarCuota');
-    var enRiesgo=needsPreflight?_cuotasEnRiesgo(pays,loanId):[];
-    // v1.17.1: se devuelve la promesa para que AbonoModal libere su guarda anti doble-submit
-    if(enRiesgo.length===0){return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido);}
-    var loanObj=loans.find(function(l){return l.id===loanId;});
-    setPreflightDlg({
-      cuotas:enRiesgo,loan:loanObj,
-      // v1.18.1: se devuelve la promesa para que PreflightMoraModal libere su guarda.
-      onMarkMora:function(){return _marcarMoraBatch(enRiesgo).then(function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido);});},
-      onContinue:function(){setPreflightDlg(null);return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido);},
-      onCancel:function(){setPreflightDlg(null);}
-    });
-  },[reload,abonoModal,pays,loans]);
+    return _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido);
+  },[reload,pays,loans]);
   var reestructurarPrestamo=useCallback(function(loanId,mode,valor){
     var enRiesgo=_cuotasEnRiesgo(pays,loanId);
     // v1.18.1: se devuelve la promesa para que RestructureModal libere su guarda (mismo
@@ -1065,14 +1056,9 @@ function App(){
     // se ignora. Medido: abrir "+ Cargo" y luego "Abonar" dejaba el selector en Cargo.
     debtPayModal&&h(DebtPayModal,{key:debtPayModal.debt.id+'|'+debtPayModal.tipo,debt:debtPayModal.debt,tipoInicial:debtPayModal.tipo,onSave:payDebt,onClose:function(){setDebtPayModal(null);}}),
     debtDelete&&h(DeleteDebtModal,{debt:debtDelete,onConfirm:function(){var id=debtDelete.id;setDebtDelete(null);deleteDebt(id);},onClose:function(){setDebtDelete(null);}}),
-    abonoModal&&h(AbonoModal,{loan:abonoModal.loan||abonoModal,pays:pays,onSave:registrarAbono,onClose:function(){setAbonoModal(null);},
-      // v2.0.0 — CTA "Liquidar deuda" del AbonoModal (cuando el abono excede el capital
-      // amortizable por haber capital atrapado en cuotas En Mora): cierra el abono y abre la
-      // liquidacion.
-      onRequestLiquidar:function(l){setAbonoModal(null);setLiquidarModal({loan:l});}}),
     cobroModal&&h(CobroModal,{loan:cobroModal.loan||cobroModal,pays:pays,onConfirm:_doCobroCascada,
       onClose:function(){setCobroModal(null);},
-      // Mismo patron que el CTA de AbonoModal: si el dinero supera todo lo que el credito
+      // CTA a Liquidar: si el dinero supera todo lo que el credito
       // debe hoy, la herramienta correcta es Liquidar, no capar el monto en silencio.
       onRequestLiquidar:function(l){setCobroModal(null);setLiquidarModal({loan:l});}}),
     unificarModal&&h(UnificarModal,{deudor:properCase(unificarModal.nombre),hoy:nowStr(),pays:pays,

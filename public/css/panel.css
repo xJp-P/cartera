@@ -8,6 +8,13 @@
 
 /* ── Al lado de la lista: pegado bajo el encabezado (64 px) subiendo el relleno del contenido (28 px) ── */
 .v4p .op-lado:not(.superpuesto) { top: -28px; max-height: calc(100vh - 64px); border-radius: var(--r-lg); }
+/* El relleno de abajo del contenido (40 px) pasa a la LISTA (4.1.4, hallazgo #2 de la integracion v4). El
+   panel mide lo que mide la ventana y no puede salirse de la fila de la rejilla; con el relleno afuera de la
+   fila, al bajar hasta el final la pagina se desplazaba esos 40 px y el borde de arriba del panel quedaba
+   bajo el encabezado (muy visible con una lista corta, que no se desplaza por si misma). Con el relleno
+   dentro de la lista, la fila llega hasta el final del desplazamiento y el panel queda siempre entero. */
+.v4p.op.con-panel { margin-bottom: -40px; }
+.v4p.op.con-panel > .op-main { padding-bottom: 40px; }
 
 /* ── El panel ─────────────────────────────────────────────────────────────────── */
 .v4p .dp { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--panel-shadow), var(--highlight); }

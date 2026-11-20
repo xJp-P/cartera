@@ -18,7 +18,7 @@ import {
 } from './dominio.js';
 
 export function pmt(r,n,pv){ return r===0?pv/n:pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1); }
-// ── AbonoModal ────────────────────────────────────────────────────────────────
+// ── Amortizacion (la usan el cobro y la reestructuracion) ─────────────────────
 // Helper: PMT (cuota fija de amortizacion francesa)
 export function _pmt(r,n,pv){if(r===0)return pv/n;return pv*r*Math.pow(1+r,n)/(Math.pow(1+r,n)-1);}
 // 3.3.0: una sola implementacion de la tasa del periodo, en dominio.js (ver `tasaDelPeriodo`).

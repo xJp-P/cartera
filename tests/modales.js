@@ -1,4 +1,4 @@
-// tests/modales.js — LOS MODALES (rediseño v4): la base comun, la confirmacion y los 18 modales.
+// tests/modales.js — LOS MODALES (rediseño v4): la base comun, la confirmacion y los 17 modales.
 //
 // La fase visual de los modales llevo a produccion la base que aprobo el PO sobre el prototipo: fondo
 // oscuro con desenfoque, la tarjeta que entra con fundido y escala, campos de 44 px con anillo azul al
@@ -13,7 +13,7 @@
 //      fondo que cancela, la tarjeta que no, la casilla que viaja en onConfirm; y que App y Desarrollador
 //      la llaman con `tono` (ya no con un color).
 //   C. LOS COLORES DE ESTADO DE LA CUOTA (`ST` de componentes/iconos.js): tokens del tema, no hexadecimales.
-//   D. LOS 18 MODALES RENDERIZADOS con el fixture, en varios estados sembrados: todos dentro de la
+//   D. LOS 17 MODALES RENDERIZADOS con el fixture, en varios estados sembrados: todos dentro de la
 //      tarjeta comun; el titulo con su clase; NINGUN estilo en linea de los que el prototipo armonizaba
 //      (tintes y bordes de la paleta vieja, monoespaciada, mayusculas, colores de casillas, botones de
 //      relleno de color); cada ABtn con su tono; los montos a cobrar como cifras neutras; los selectores
@@ -143,17 +143,18 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   const est = (id, e) => P(id).filter(p => reg(p) && p.estadoPago === e).sort((a, b) => a.cuotaN - b.cuotaN);
   const CI = '1773656997026zqmp', INT_MORA = '1773655076017', USD_MORA = '1782151590658w66y', DIARIO = 'fixture-diario-01', CI_AB = '1776205975507jkph';
 
-  R.seccion('0 — el arnes ve la base, la confirmacion y los 18 modales; el fixture trae los casos');
-  const MODALES = ['AbonoModal', 'CambiarDiaModal', 'CobroModal', 'CondonarModal', 'ConfirmModal', 'ConfirmUndoModal', 'CorteModal', 'CronogramaPdfModal',
+  // 4.1.4: `AbonoModal` se borro (no tenia entrada desde 2.9.6; el cobro en cascada lo absorbio).
+  R.seccion('0 — el arnes ve la base, la confirmacion y los 17 modales; el fixture trae los casos');
+  const MODALES = ['CambiarDiaModal', 'CobroModal', 'CondonarModal', 'ConfirmModal', 'ConfirmUndoModal', 'CorteModal', 'CronogramaPdfModal',
     'DebtModal', 'DebtPayModal', 'DeleteDebtModal', 'LiquidarModal', 'LoanModal', 'PayModal', 'PreflightMoraModal', 'ReciboGeneralModal', 'RestructureModal', 'UnificarModal'];
   const archivos = fs.readdirSync(path.join(REPO, 'public/js/modales')).filter(f => /\.js$/.test(f)).map(f => f.replace(/\.js$/, '')).sort();
-  R.eq('0 public/js/modales trae exactamente los 18 modales', archivos, MODALES.slice().sort());
-  R.check('0 el arnes ve Modal, Fld, ABtn, ST y los 18', ['Modal', 'Fld', 'ABtn', 'ST'].concat(MODALES).every(k => X[k] !== undefined));
+  R.eq('0 public/js/modales trae exactamente los 17 modales', archivos, MODALES.slice().sort());
+  R.check('0 el arnes ve Modal, Fld, ABtn, ST y los 17', ['Modal', 'Fld', 'ABtn', 'ST'].concat(MODALES).every(k => X[k] !== undefined));
   R.check('0 anti-vacio: el fixture trae un C+I con cuotas pendientes, un Intereses con mora, un USD con mora y el credito abierto',
     est(CI, 'Pendiente').length > 0 && est(INT_MORA, 'En Mora').length > 0 && est(USD_MORA, 'En Mora').length > 0 && !!L(DIARIO));
   const conBase = archivos.filter(f => /import \{[^}]*\bModal\b[^}]*\} from '\.\.\/componentes\/base\.js'/.test(leer('public/js/modales/' + f + '.js')));
-  R.check('0 17 de los 18 modales salen de la base comun (el 18, la confirmacion, arma su propia tarjeta)',
-    conBase.length === 17 && conBase.indexOf('ConfirmModal') === -1, conBase);
+  R.check('0 16 de los 17 modales salen de la base comun (el 17, la confirmacion, arma su propia tarjeta)',
+    conBase.length === 16 && conBase.indexOf('ConfirmModal') === -1, conBase);
 
   // ── A — LA BASE ───────────────────────────────────────────────────────────
   R.seccion('A — la base comun: Modal, Fld y ABtn');
@@ -239,8 +240,8 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   R.check('C2 el modal de pago pinta la pildora del estado con esos tokens', !!pildora && pildora.props.style.background === 'var(--crit-soft)' &&
     pildora.props.style.color === 'var(--crit-text)' && unir(pildora) === '! En Mora');
 
-  // ── D — LOS 18 MODALES RENDERIZADOS ───────────────────────────────────────
-  R.seccion('D — los 18 modales renderizados con el fixture, en varios estados');
+  // ── D — LOS 17 MODALES RENDERIZADOS ───────────────────────────────────────
+  R.seccion('D — los 17 modales renderizados con el fixture, en varios estados');
   const deuda = { id: 'd1', titulo: 'Compra del carro', acreedor: 'banco popular', concepto: '5% mensual - Cuota inicial', monto_original: 1000000,
     saldo_pendiente: 500000, estado: 'Activa', fecha_creacion: '2026-07-01', total_cargos: 0, total_abonos: 500000 };
   const pend = est(CI, 'Pendiente')[0];
@@ -269,10 +270,6 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     ['PayModal (USD, parcial)', X.PayModal, { pay: est(USD_MORA, 'En Mora')[0], loan: L(USD_MORA), allPays: pays, onMark: prom, onPartial: prom, onClose: nada },
       [undefined, undefined, undefined, undefined, undefined, 'parcial', '500000', '120']],
     ['PayModal (detalle de abono)', X.PayModal, { pay: P(CI_AB).filter(p => !reg(p))[0], loan: L(CI_AB), allPays: pays, onMark: prom, onPartial: prom, onClose: nada }],
-    ['AbonoModal (COP, mantener)', X.AbonoModal, prest(CI), ['1000000']],
-    ['AbonoModal (COP, fijar cuota invalida)', X.AbonoModal, prest(CI), ['1000000', undefined, undefined, undefined, undefined, undefined, undefined, 'fijarCuota', '', '1000']],
-    ['AbonoModal (USD, fijar cuota)', X.AbonoModal, prest(USD_MORA), [undefined, undefined, undefined, '100', '400000', undefined, undefined, 'fijarCuota', '', '', '300']],
-    ['AbonoModal (USD, supera el abono)', X.AbonoModal, prest(USD_MORA), [undefined, undefined, undefined, '99999', '1']],
     ['CobroModal (abono y recalculo)', X.CobroModal, { loan: L(CI), pays, onConfirm: prom, onClose: nada, onRequestLiquidar: nada },
       ['500000', undefined, undefined, undefined, undefined, undefined, true, null, true, true, false, 'mantener', '']],
     ['CobroModal (USD, fallo a mitad)', X.CobroModal, { loan: L(USD_MORA), pays, onConfirm: prom, onClose: nada, onRequestLiquidar: nada },
@@ -333,7 +330,7 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     });
     conClase(v, 'v4m-btn').forEach(b => { if (clsDe(b).length !== 2) abtnSinTono.push(nom + ' · ' + unir(b)); });
   }
-  R.check('D1 las ' + ESCENAS.length + ' escenas se renderizan sin excepciones y cubren los 18 modales', errores.length === 0 && vistos.size === 18, errores.concat([[...vistos].length]));
+  R.check('D1 las ' + ESCENAS.length + ' escenas se renderizan sin excepciones y cubren los 17 modales', errores.length === 0 && vistos.size === 17, errores.concat([[...vistos].length]));
   R.check('D1 los 15 modales de la base van dentro de la tarjeta comun (y la confirmacion en la suya)',
     Object.entries(arboles).every(([n, a]) => conClase(a, 'v4m-sheet').length === 1 && conClase(a, n.indexOf('ConfirmModal') === 0 ? 'v4m-confirm' : 'v4m-body').length === 1));
   R.check('D2 ningun estilo en linea de los que el prototipo armonizaba (cada uno vive en una clase de modales.css)', armonizados.length === 0, armonizados.slice(0, 15));
@@ -344,7 +341,7 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   R.check('D2 ningun boton con relleno de color en linea (el principal es negro/blanco por clase; lo irreversible, rojo por clase)', botonesColor.length === 0, botonesColor);
   R.check('D2 todo ABtn trae su tono como clase', abtnSinTono.length === 0, abtnSinTono);
   const titulos = ['ConfirmUndoModal (vieja, con caja)', 'PreflightMoraModal', 'DebtModal (nueva, con sugerencias)', 'DebtPayModal (cargo)', 'PayModal (pendiente)',
-    'PayModal (detalle de abono)', 'AbonoModal (COP, mantener)', 'CambiarDiaModal', 'CronogramaPdfModal', 'LiquidarModal', 'RestructureModal', 'LoanModal (C+I con cronograma)', 'CorteModal'];
+    'PayModal (detalle de abono)', 'CambiarDiaModal', 'CronogramaPdfModal', 'LiquidarModal', 'RestructureModal', 'LoanModal (C+I con cronograma)', 'CorteModal'];
   const primero = a => conClase(a, 'v4m-body')[0].kids[0];
   R.check('D3 el titulo de cada modal (su primer bloque) lleva la clase `v4m-tit` y ya no su tamaño ni su color en linea',
     titulos.every(t => clsDe(primero(arboles[t])).indexOf('v4m-tit') !== -1 &&
@@ -396,27 +393,23 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     seg(arboles[t]).kids.every(b => !b.props.style.background && !b.props.style.color && !b.props.style.border)) && !seg(arboles['PayModal (pendiente)']).props.style.background);
   // Recuadros y bordes por clase.
   const cls = (t, c) => conClase(arboles[t], c).length;
-  R.check('D7 los recuadros de color llegan por clase: aviso (pago parcial, campos bloqueados), bien (abono, ya abonado), info (como se aplica)',
+  R.check('D7 los recuadros de color llegan por clase: aviso (pago parcial, campos bloqueados), bien (ya abonado), info (como se aplica)',
     cls('PayModal (parcial, con abono previo)', 'v4m-caja-aviso') === 1 && cls('PayModal (parcial, con abono previo)', 'v4m-caja-bien') === 1 &&
-    cls('LoanModal (editar con actividad)', 'v4m-caja-aviso') === 1 && cls('AbonoModal (COP, mantener)', 'v4m-caja-bien') === 1 &&
-    cls('AbonoModal (COP, mantener)', 'v4m-caja-info') === 1 && cls('RestructureModal', 'v4m-caja-info') === 1 &&
+    cls('LoanModal (editar con actividad)', 'v4m-caja-aviso') === 1 && cls('RestructureModal', 'v4m-caja-info') === 1 &&
     cls('ConfirmUndoModal (vieja, con caja)', 'v4m-caja-aviso') === 1 && cls('ConfirmUndoModal (vieja, con caja)', 'v4m-caja-peligro') === 1);
   R.check('D7 los grupos de opciones son neutros (`v4m-grupo`) y la elegida se tiñe por clase',
-    cls('AbonoModal (COP, mantener)', 'v4m-grupo') === 1 && cls('RestructureModal', 'v4m-grupo') === 1 &&
+    cls('RestructureModal', 'v4m-grupo') === 1 &&
     cls('LoanModal (primer periodo con gracia)', 'v4m-grupo') === 1 && cls('LoanModal (primer periodo con gracia)', 'v4m-elegida-info') === 1 &&
     cls('LoanModal (Pago Unico)', 'v4m-grupo') === 1 && cls('LoanModal (Pago Unico)', 'v4m-elegida-bien') === 1);
   const campos = (t, c) => nodos(arboles[t], n => n.tag === 'input' && clsDe(n).indexOf('inp') !== -1 && clsDe(n).indexOf(c) !== -1).length;
   R.check('D7 los campos con borde de color lo traen por clase (inp + v4m-b-*)',
     campos('PayModal (USD, parcial)', 'v4m-b-aviso') === 1 && campos('PayModal (USD, parcial)', 'v4m-b-info') === 1 &&
-    campos('PayModal (USD, completo)', 'v4m-b-aviso') === 1 && campos('AbonoModal (COP, mantener)', 'v4m-b-bien') === 1 &&
-    campos('AbonoModal (COP, fijar cuota invalida)', 'v4m-b-info') === 1 && campos('DebtPayModal (abono que excede)', 'v4m-b-peligro') === 1 &&
+    campos('PayModal (USD, completo)', 'v4m-b-aviso') === 1 && campos('DebtPayModal (abono que excede)', 'v4m-b-peligro') === 1 &&
     campos('DebtPayModal (cargo)', 'v4m-b-peligro') === 0);
-  R.check('D7 los botones de bloque con borde de color tambien (abono, reestructurar, corte, marcar en mora, liquidar desde el abono)',
-    clsDe(boton(arboles['AbonoModal (COP, mantener)'], 'Registrar abono')).join(' ') === 'btn-primary v4m-b-info' &&
+  R.check('D7 los botones de bloque con borde de color tambien (reestructurar, corte, marcar en mora)',
     clsDe(boton(arboles['RestructureModal'], 'Aplicar')).join(' ') === 'btn-primary v4m-b-info' &&
     clsDe(boton(arboles['CorteModal'], 'Registrar corte')).join(' ') === 'btn-primary v4m-b-bien' &&
-    clsDe(boton(arboles['PreflightMoraModal'], 'Marcar en Mora')).join(' ') === 'btn-primary v4m-b-aviso' &&
-    clsDe(boton(arboles['AbonoModal (USD, supera el abono)'], 'Liquidar deuda')).join(' ') === 'v4m-b-aviso v4m-pulsa');
+    clsDe(boton(arboles['PreflightMoraModal'], 'Marcar en Mora')).join(' ') === 'btn-primary v4m-b-aviso');
   R.check('D7 lo irreversible en rojo por clase (eliminar deuda) y los botones de forma propia con su respuesta al toque',
     clsDe(boton(arboles['DeleteDebtModal'], 'Eliminar')).join(' ') === 'v4m-rojo v4m-pulsa' &&
     ['DeleteDebtModal', 'CobroModal (abono y recalculo)', 'CondonarModal', 'ConfirmUndoModal (vieja, con caja)', 'PreflightMoraModal']
@@ -500,7 +493,6 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     mc.indexOf('.v4m-total { background: var(--surface-2); border: 1px solid var(--line-strong); }') !== -1);
   R.check('E4 "reducir movimiento" del sistema apaga la entrada', /@media \(prefers-reduced-motion: reduce\) \{ \.v4m-overlay, \.v4m-sheet, \.modal-overlay, \.modal-panel \{ animation: none; \} \}/.test(mc));
   R.check('E5 styles.css ya no trae la ventana vieja (`.modal-sheet`, `slideUp`, `.modal-overlay`, `.modal-panel`, `.modal-handle`)',
-
     !/\.modal-(sheet|overlay|panel|handle)\b|slideUp/.test(scss));
   R.check('E5 los dialogos de App (aviso al iniciar y novedades) siguen teniendo su ventana: vive en modales.css',
     /\.modal-overlay \{/.test(mc.replace(/\.v4m-overlay, \.modal-overlay/g, '.modal-overlay')) && mc.indexOf('.modal-panel { padding: 24px 26px; }') !== -1 &&
@@ -552,5 +544,6 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     boton(montar(X.PayModal, base, [undefined, undefined, undefined, undefined, undefined, 'parcial', '1000', String(Math.round((falta + 0.02) * 100) / 100)]).arbol, 'Registrar parcial').props.onClick();
     R.eq('F5 en modo parcial, mas dolares de los que faltan se rechaza', llamadas.length, 0);
   }
+
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

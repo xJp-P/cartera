@@ -1001,7 +1001,6 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     ['LoanModal (nuevo)', X.LoanModal, { loan: null, trm: 4000, pays: [], clientes: [], onSave: nada, onClose: nada }],
     ['LoanModal (editar)', X.LoanModal, { loan: lC, trm: 4000, pays: lpC, clientes: [], onSave: nada, onClose: nada }],
     ['PayModal', X.PayModal, { pay: cuotaC, loan: lC, allPays: pays, onMark: nada, onPartial: nada, onClose: nada }],
-    ['AbonoModal', X.AbonoModal, { loan: lC, pays: lpC, onSave: nada, onClose: nada, onRequestLiquidar: nada }],
     ['CobroModal', X.CobroModal, { loan: lC, pays: lpC, onConfirm: nada, onClose: nada, onRequestLiquidar: nada }],
     ['CronogramaPdfModal', X.CronogramaPdfModal, { loan: lC, pays: lpC, onClose: nada }],
     ['ReciboGeneralModal', X.ReciboGeneralModal, { deudor: X.properCase(lC.nombre), hoy: HOY, loans: loans.filter(x => x.nombre === lC.nombre), pays, onClose: nada, onGenerar: nada }],
@@ -1038,8 +1037,9 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('I1 las ' + PANTALLAS.length + ' pantallas se renderizan sin excepciones', vistas === PANTALLAS.length, malas.filter(m => /: (?!")/.test(m)));
   R.check('I2 ninguna muestra una palabra sin su tilde', malas.length === 0, malas.slice(0, 12));
   R.check('I2 ANTI-VACIO: el guardian leyo texto de verdad (rotulos con tilde de las pantallas viejas)',
-    ['Cédula', 'Teléfono', 'Tú eliges', 'Edición', 'Reestructuración', 'Valor de liquidación'].every(w => textosI.indexOf(w) !== -1),
-    ['Cédula', 'Teléfono', 'Tú eliges', 'Edición', 'Reestructuración', 'Valor de liquidación'].filter(w => textosI.indexOf(w) === -1));
+    // ("Valor de liquidación" salia del formulario de abono, que se borro en 4.1.4.)
+    ['Cédula', 'Teléfono', 'Tú eliges', 'Edición', 'Reestructuración'].every(w => textosI.indexOf(w) !== -1),
+    ['Cédula', 'Teléfono', 'Tú eliges', 'Edición', 'Reestructuración'].filter(w => textosI.indexOf(w) === -1));
   R.check('I2 ANTI-TRIVIAL: el guardian detecta "Interes Diario" y "credito", y deja pasar "Interés diario"',
     SIN_TILDE.test('Interes Diario') && SIN_TILDE.test('el credito') && !SIN_TILDE.test('Interés diario · días · crédito · Más'));
 
@@ -1064,7 +1064,6 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       ['CobrosView', X.CobrosView, propsCobros],
       ['PortfolioView', X.PortfolioView, { loans, pays }],
       ['PayModal', X.PayModal, { pay: moraU, loan: lU, allPays: pays, onMark: nadaJ, onPartial: nadaJ, onClose: nadaJ }],
-      ['AbonoModal', X.AbonoModal, { loan: lU, pays: lpU, onSave: nadaJ, onClose: nadaJ, onRequestLiquidar: nadaJ }],
       ['RestructureModal', X.RestructureModal, { loan: lU, pays: lpU, onSave: nadaJ, onClose: nadaJ }],
       ['LiquidarModal', X.LiquidarModal, { loan: lU, pays: lpU, datosPago: '', onConfirm: nadaJ, onClose: nadaJ }],
       ['CronogramaPdfModal', X.CronogramaPdfModal, { loan: lU, pays: lpU, onClose: nadaJ }],
@@ -1093,8 +1092,8 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.check('J3 ANTI-VACIO: el panel muestra 20+ cifras en dolares y Cartera, Cobros y Rendimiento las suyas',
       porPantalla.DeudorPanel >= 20 && porPantalla.CarteraView >= 1 && porPantalla.CobrosView >= 1 && porPantalla.PortfolioView >= 1, porPantalla);
     // (Cambiar dia de pago solo muestra dolares cuando ya hay un dia elegido: entra en J1/J2, no aqui.)
-    R.check('J3 ANTI-VACIO: los modales del prestamo tambien (abono, reestructurar, liquidar, cronograma, pre-flight, pago)',
-      ['AbonoModal', 'RestructureModal', 'LiquidarModal', 'CronogramaPdfModal', 'PreflightMoraModal', 'PayModal'].every(k => porPantalla[k] >= 1), porPantalla);
+    R.check('J3 ANTI-VACIO: los modales del prestamo tambien (reestructurar, liquidar, cronograma, pre-flight, pago)',
+      ['RestructureModal', 'LiquidarModal', 'CronogramaPdfModal', 'PreflightMoraModal', 'PayModal'].every(k => porPantalla[k] >= 1), porPantalla);
   }
   const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'css', 'styles.css'), 'utf8');
   const regla = sel => { const m = new RegExp('(^|\\n)' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}').exec(css); return m ? m[2] : null; };
@@ -1424,5 +1423,19 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       /if\(previo&&savedLoan\.nombre&&savedLoan\.nombre!==previo\.nombre\) anotarRenombre\(previo\.nombre,savedLoan\.nombre\);/.test(appM) &&
       /h\(CobrosView,\{[^}]*renombres:renombres\.current/.test(appM) && /h\(CarteraView,\{[^}]*renombres:renombres\.current/.test(appM));
   }
+  // ── N — el panel pegado no se sale por arriba al bajar hasta el final (4.1.4, hallazgo #2) ──
+  // El arnes no corre CSS: se fija la REGLA y su relacion con el relleno del contenido. Medido en la app
+  // (1.600 x 900, Cartera con "En dolares" y con "Todos", y Cobros): al final del desplazamiento el
+  // borde de arriba del panel queda justo bajo el encabezado (antes, 40 px por debajo de el).
+  R.seccion('N — el panel pegado queda entero al bajar hasta el final');
+  {
+    const panelCss = leer('public/css/panel.css'), baseCss = leer('public/css/base.css');
+    const relleno = (/\.main-content \{ padding: \d+px \d+px (\d+)px;/.exec(baseCss) || [])[1];
+    R.check('N1 el contenido tiene un relleno de abajo (y es el que la lista absorbe)', relleno === '40', relleno);
+    R.check('N1 con el panel abierto, la rejilla se come ese relleno y la lista lo lleva por dentro',
+      panelCss.indexOf('.v4p.op.con-panel { margin-bottom: -' + relleno + 'px; }') !== -1 &&
+      panelCss.indexOf('.v4p.op.con-panel > .op-main { padding-bottom: ' + relleno + 'px; }') !== -1);
+  }
+
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

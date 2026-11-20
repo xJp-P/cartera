@@ -85,7 +85,6 @@
    foco siguen mandando: van despues, con la misma especificidad. */
 .v4m-sheet .inp.v4m-b-aviso { border-color: color-mix(in srgb, var(--warn) 32%, transparent); }
 .v4m-sheet .inp.v4m-b-info { border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
-.v4m-sheet .inp.v4m-b-bien { border-color: color-mix(in srgb, var(--good) 32%, transparent); }
 .v4m-sheet .inp.v4m-b-peligro { border-color: color-mix(in srgb, var(--crit) 34%, transparent); }
 .v4m-sheet .inp:hover { border-color: var(--line-strong); }
 .v4m-sheet .inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }

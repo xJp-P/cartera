@@ -73,17 +73,8 @@
   .mono{font-family:'Cascadia Code','Consolas',monospace}
   .tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  .pay-row:hover{background:var(--bg3)!important}
-  .loan-card:hover{border-color:var(--green)!important}
-  .debtor-card:hover{border-color:var(--blue)!important}
   .spinner{width:32px;height:32px;border:3px solid var(--bg3);border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .hmenu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:90;backdrop-filter:blur(3px)}
-  @keyframes slideRight{from{transform:translateX(-100%)}to{transform:translateX(0)}}
-  .hmenu-panel{position:fixed;left:0;top:0;bottom:0;width:260px;background:var(--bg2);border-right:1px solid var(--border);z-index:91;animation:slideRight .2s ease;display:flex;flex-direction:column;padding:18px 0}
-  .hmenu-item{display:flex;align-items:center;gap:12px;padding:12px 20px;font-size:14px;font-weight:500;color:var(--text2);background:none;border:none;cursor:pointer;font-family:inherit;transition:background .1s,color .1s;width:100%;text-align:left}
-  .hmenu-item:hover{background:var(--bg3);color:var(--text)}
-  .hmenu-item.active{color:var(--green);background:var(--green-bg);font-weight:700}
   @keyframes toastIn{from{transform:translateY(-20px);opacity:0}to{transform:translateY(0);opacity:1}}
   @keyframes toastOut{from{opacity:1}to{opacity:0}}
   .toast{position:fixed;top:14px;left:0;right:0;margin:0 auto;width:fit-content;z-index:200;padding:10px 20px;border-radius:12px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,.5);animation:toastIn .25s ease;pointer-events:none;max-width:340px;text-align:center}
@@ -95,7 +86,6 @@
   .gsearch-item{display:flex;align-items:center;gap:10px;padding:11px 16px;cursor:pointer;border-bottom:1px solid var(--bg3);transition:background .1s}
   .gsearch-item:hover{background:var(--bg3)}
   .gsearch-cat{font-size:9px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap}
-  .quick-pay{padding:5px 10px;border-radius:8px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;flex-shrink:0}
 
   /* ── OPERACION (3.5.0): COBROS, CARTERA Y EL PANEL DEL DEUDOR ────────────────
      `vistas/CobrosView.js` (antes Pagos), `vistas/CarteraView.js` (antes Cartera + Deudores) y
@@ -180,7 +170,6 @@
 .dp-menu button:hover{background:var(--bg3)}
 .dp-menu button.peligro{color:var(--red)}
 .dp-menu-t{font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text3);padding:9px 14px 3px}
-.dp-menu-n{margin-left:auto;font-size:10px;color:var(--text3);background:var(--bg3);padding:1px 6px;border-radius:99px}
 .dp-figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .dp-fig{background:var(--bg3);border:1px solid transparent;border-radius:12px;padding:11px 13px;min-width:0}
 .dp-fig.mal{background:var(--red-bg);border-color:var(--red-bd)}

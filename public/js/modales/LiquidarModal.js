@@ -16,12 +16,9 @@ import { CheckInteresMes, etiquetaInteresMes } from '../componentes/CheckInteres
 import { usdLinea } from '../componentes/CifraUSD.js';
 
 // ── LiquidarModal (v2.0.0) ────────────────────────────────────────────────────
-// ELEVADO desde DebtorModal a nivel App. Antes su estado (confirmLiq) vivia dentro
-// de DebtorModal, asi que era inalcanzable desde AbonoModal (componente hermano; y
-// cuando AbonoModal esta abierto, DebtorModal esta desmontado). Al subirlo:
-//   - AbonoModal puede ofrecer el CTA "Liquidar deuda" cuando el abono excede el
-//     capital amortizable por tener capital atrapado en cuotas En Mora (v2.0.0).
-//   - Queda disponible para invocarse desde cualquier vista (p.ej. Cartera) a futuro.
+// ELEVADO desde DebtorModal a nivel App, para poder abrirlo desde el panel del deudor y
+// desde el CTA del cobro en cascada (cuando el dinero supera lo que se puede cobrar hoy).
+// Lo abria tambien el formulario de abono a capital, que se borro en 4.1.4.
 // La UI y el calculo son IDENTICOS a v1.19.0: todo el desglose sale del helper
 // centralizado computeLiquidacion (unica fuente de verdad del valor de liquidacion).
 export function LiquidarModal(props){

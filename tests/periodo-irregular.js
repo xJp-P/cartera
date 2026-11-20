@@ -1766,14 +1766,11 @@ async function seccionJ() {
       valorDe(paz, 'Aplicado a capital') === X.fmt(3000000) &&
       valorDe(paz, 'Intereses atrasados consolidados') === X.fmt(150000),
       { cap: valorDe(paz, 'Aplicado a capital'), mora: valorDe(paz, 'Intereses atrasados consolidados') });
-    R.seccion('J6 — las otras tres superficies que muestran el total');
+    // (Eran tres: el formulario de abono a capital tambien lo mostraba, y se borro en 4.1.4.)
+    R.seccion('J6 — las otras dos superficies que muestran el total');
     // Las tres imprimen la cifra con un subtitulo que la explica. Si la mora entra en el
     // total y el subtitulo no la nombra, queda un total que su propio desglose no explica:
     // el Bug #49, otra vez.
-    const abm = montar(X.AbonoModal, { loan: l, pays: p, onSave: () => {}, onClose: () => {}, onRequestLiquidar: () => {} }, []);
-    R.check('J6 AbonoModal sigue ofreciendo el valor de liquidacion sin filas En Mora, y dice de donde sale',
-      abm.todo.indexOf('Valor de liquidación: ' + X.fmt(3150000)) !== -1 &&
-      abm.todo.indexOf('(incluye la mora consolidada en la cuota en curso)') !== -1, abm.todo.slice(0, 600));
     CAP.pdfs.length = 0;
     X.generateReciboAbono(l, p, { monto: 500000, fecha: HOY, liquidar: false,
       pre: { saldo: 3000000, saldoCaja: 3000000, cuota: fila.cuotaTotal, cuotas: 1, intereses: 0, plazo: 0,
