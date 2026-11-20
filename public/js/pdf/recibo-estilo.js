@@ -47,7 +47,12 @@ export function rbMoneda(loan){
   var esUSD = loan.moneda === 'USD', trm = +loan.trmAcordada || 1;
   function uni(cop){ return esUSD ? Math.round((cop || 0) / trm * 100) : Math.round(cop || 0); }
   function fmtUni(u){ return esUSD ? fmtUSD((u || 0) / 100) : fmt(u || 0); }
-  return { esUSD: esUSD, trm: trm, uni: uni, fmtUni: fmtUni, money: function(cop){ return fmtUni(uni(cop)); } };
+  // `sumaU`: el total de varias cifras que el papel imprime fila por fila es la SUMA de esas filas ya
+  // convertidas, nunca la conversion de la suma (4.1.4). En dolares, convertir la suma daba un
+  // centavo de mas o de menos: el pie decia USD 1,600.01 bajo cuatro filas que suman 1,600.00. Es
+  // la regla que el Reporte de Activos ya aplica desde 3.7.0. En pesos no cambia nada.
+  function sumaU(listaCOP){ return (listaCOP || []).reduce(function(s, cop){ return s + uni(cop); }, 0); }
+  return { esUSD: esUSD, trm: trm, uni: uni, fmtUni: fmtUni, sumaU: sumaU, money: function(cop){ return fmtUni(uni(cop)); } };
 }
 // Un deudor con creditos en pesos Y en dolares: los totales no se pueden sumar entre si, asi
 // que se imprimen juntos ("$ 1.200.000 + USD $400.00"). `t` = { cop: pesos, usd: centavos }.

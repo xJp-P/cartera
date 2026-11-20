@@ -173,7 +173,8 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
   var sigueHTML = '', creditoHTML = '', cuotasHTML = '';
   if (!esPazYSalvo) {
     var prox = pend[0] || null;
-    var moraU = uni(moraViva), proxU = prox ? uni(pendCuota(prox)) : 0;
+    // Lo vencido es la suma de sus filas de "Tus cuotas", cada una ya convertida (mon.sumaU).
+    var moraU = mon.sumaU(vencidas.map(pendCuota)), proxU = prox ? uni(pendCuota(prox)) : 0;
     var tarjetas = [];
     if (moraViva > 0) {
       tarjetas.push(rbTarjeta('ambar', 'Para ponerte al día', fmtUni(moraU),
@@ -192,8 +193,13 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
 
     // Lo que queda: vencidas y por vencer, desde las filas persistidas.
     var porPagar = regs.filter(function(p){ return p.estadoPago !== 'Pagado' && pendCuota(p) > 0; });
-    var totalFalta = porPagar.reduce(function(s, p){ return s + pendCuota(p); }, 0);
-    var totalTxt = money(totalFalta), saldoTxt = money(saldoDespues);
+    // El total es la SUMA de las filas impresas, no la conversion de la suma (4.1.4): en dolares el
+    // pie decia USD 1,600.01 bajo filas que suman 1,600.00. La Propuesta suma igual (cascada J).
+    var totalFaltaU = mon.sumaU(porPagar.map(pendCuota));
+    var totalTxt = fmtUni(totalFaltaU), saldoTxt = money(saldoDespues);
+    // Lo que se debia ANTES, con la misma regla: `pre.pendPorPagar` es la lista de lo que faltaba de
+    // cada cuota (app.js, `_snapshotAbono`). Sin ella (un llamador viejo) se convierte el total.
+    var antesU = Array.isArray(pre.pendPorPagar) ? mon.sumaU(pre.pendPorPagar) : uni(pre.totalPorPagar || 0);
 
     // La barra no aplica en `Intereses`: el plazo es indefinido y el capital vence fuera del
     // cronograma, asi que "por venir" contaria solo las 3 cuotas que el sistema tiene generadas.
@@ -212,7 +218,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
       saldos = '<div>Saldo de capital<b class="r-cap">' + saldoTxt + '</b><span class="viejo">' +
         (saldoAntes > saldoDespues ? 'antes de este pago: ' + money(saldoAntes) : 'se paga al final; cada mes pagas los intereses') + '</span></div>';
     } else {
-      var antesTot = (pre.totalPorPagar > totalFalta) ? 'antes de este pago: ' + money(pre.totalPorPagar) : 'todas las cuotas que quedan';
+      var antesTot = (antesU > totalFaltaU) ? 'antes de este pago: ' + fmtUni(antesU) : 'todas las cuotas que quedan';
       saldos = totalTxt === saldoTxt
         ? '<div>Te falta por pagar<b class="r-cap">' + totalTxt + '</b><span class="viejo">' + antesTot + '</span></div>'
         : '<div>Te falta por pagar<b class="r-tot">' + totalTxt + '</b><span class="viejo">' + antesTot + '</span></div>' +
@@ -233,7 +239,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
       var iguales = grupo.every(function(p){ return Math.round(pendCuota(p)) === Math.round(pendCuota(a)); });
       return '<tr><td>' + a.cuotaN + ' a ' + z.cuotaN + '</td><td>' + rbCorta(a.fechaPago, anio) + ' a ' + rbCorta(z.fechaPago, anio) + '</td><td>' + estadoHTML + '</td>' +
         '<td class="n">' + (iguales ? '<span class="sub">' + grupo.length + ' × ' + money(pendCuota(a)) + '</span>' : '') +
-        '<b>' + money(grupo.reduce(function(s, p){ return s + pendCuota(p); }, 0)) + '</b></td></tr>';
+        '<b>' + fmtUni(mon.sumaU(grupo.map(pendCuota))) + '</b></td></tr>';
     }
     var filas = '';
     var viejas = vencidas.length > 4 ? vencidas.slice(0, vencidas.length - 3) : [];

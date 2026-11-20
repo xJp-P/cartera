@@ -429,8 +429,12 @@ export function proyeccionCobro(loan, allPays, plan, filas, pendOrden){
   var lp=(allPays||[]).filter(function(p){ return String(p.prestamoId)===String(loan.id); });
   var reg=lp.filter(function(p){ return !esAbono(p)&&
     (p.estadoPago==='Pendiente'||p.estadoPago==='En Mora'); });
-  var totalAntes=reg.reduce(function(s,p){
-    return s+Math.max(0, r0(p.cuotaTotal)-r0(p.partialPaid||0)); },0);
+  // 4.1.4: ademas del total en pesos se devuelve la lista, cuota por cuota (`pendAntes`,
+  // `pendDespues`): la Propuesta suma esas cifras ya convertidas a la moneda visible, igual que el
+  // recibo suma sus filas. En dolares, convertir el total daba un centavo distinto (1,600.01 bajo
+  // cuatro cuotas de 400.00).
+  var pendAntes=reg.map(function(p){ return Math.max(0, r0(p.cuotaTotal)-r0(p.partialPaid||0)); });
+  var totalAntes=pendAntes.reduce(function(s,x){ return s+x; },0);
 
   // Lo que cada cuota Pendiente llevara encima DESPUES del cobro: lo que ya tenia mas
   // lo que este cobro le suma (el paso del interes del mes apunta a una de ellas).
@@ -440,23 +444,26 @@ export function proyeccionCobro(loan, allPays, plan, filas, pendOrden){
     return base+(paso?r0(paso.obligacionCOP):0);
   }
   // Mora que SOBREVIVE al cobro: tambien es dinero por cobrar.
-  var moraTras=(plan&&plan.ctx?plan.ctx.moraCuotas:[]).reduce(function(s,p){
+  var moraTrasLista=(plan&&plan.ctx?plan.ctx.moraCuotas:[]).map(function(p){
     var paso=(plan.pasos||[]).filter(function(x){ return x.payId===p.id; })[0];
     var pend=Math.max(0, r0(p.cuotaTotal)-r0(p.partialPaid||0));
-    return s+(paso?Math.max(0,paso.restanteCuota):pend);
-  },0);
+    return paso?Math.max(0,paso.restanteCuota):pend;
+  }).filter(function(x){ return x>0; });
+  var moraTras=moraTrasLista.reduce(function(s,x){ return s+x; },0);
 
   var pend=pendOrden||[];
-  var totalDespues=null;
+  var totalDespues=null, pendDespues=null;
   if(filas&&filas.length){
-    totalDespues=moraTras;
+    pendDespues=moraTrasLista.slice();
     for(var i=0;i<filas.length;i++){
       var p=pend[i];
-      totalDespues+=Math.max(0, r0(filas[i].cuota)-(p?partialProy(p):0));
+      pendDespues.push(Math.max(0, r0(filas[i].cuota)-(p?partialProy(p):0)));
     }
+    totalDespues=pendDespues.reduce(function(s,x){ return s+x; },0);
   }
   return {
     totalAntes:totalAntes, totalDespues:totalDespues,
+    pendAntes:pendAntes, pendDespues:pendDespues,
     abonadoProxima:pend.length?partialProy(pend[0]):0,
     // La mora que el cobro NO salda. Se expone porque los documentos la necesitan para
     // ROTULAR bien la tarjeta de la cuota: con plata vencida encima, llamar "tu proximo

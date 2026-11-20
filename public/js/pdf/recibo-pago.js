@@ -16,7 +16,7 @@
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
-import { saldoConCaja, pendienteDeCuota } from '../core/dominio.js';
+import { saldoConCaja, pendienteDeCuota, cierraEnDolares } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, rbEsc, RB_LETRA, RB_LOGO, RB_ICONO_OK, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
@@ -56,7 +56,10 @@ export function generateRecibo(pay, loan, copRec, usdRec, allPays, opts) {
   // v1.12.x FIX (recibo bimonetario): en prestamos USD, si el USD recibido cubre la cuota en USD
   // (cuotaTotal/trmAcordada), el pago NO es parcial aunque los COP sean menores por la baja de la
   // TRM. Espeja la logica del backend para que el recibo no marque "Abono parcial" por error.
-  var cubreEnUSD = esUSD && (loan.trmAcordada > 0) && (+usdRec || 0) >= Math.round((pay.cuotaTotal / loan.trmAcordada) * 100) / 100 - 0.005;
+  // 4.1.4: con `cierraEnDolares`, la MISMA regla del backend. Antes solo miraba si este pago cubria
+  // la cuota ENTERA, asi que el segundo pago de una cuota pagada en dos partes salia como "Abono
+  // parcial" aunque la saldara. `pay` es la cuota antes del pago (sus USD previos cuentan).
+  var cubreEnUSD = esUSD && cierraEnDolares(pay, +usdRec || 0, +loan.trmAcordada || 0);
   var esParcial = totalAcum < pay.cuotaTotal && !cubreEnUSD;
   var completaCuota = !esParcial && yaAbonadoPrev > 0;
   var tipoTitulo = esParcial ? 'Recibo de Abono Parcial' : completaCuota ? 'Recibo Final de Cuota' : 'Recibo de Pago';

@@ -102,4 +102,26 @@ function cuotaCerradaPorLoAbonado(fila, interes, nota) {
   };
 }
 
-module.exports = { snapshotCobros, restaurarCobros, cobrosHuerfanos, abortarSiHuerfanos, cuotaCerradaPorLoAbonado };
+// ── CUANDO UN PAGO EN DOLARES SALDA LA CUOTA (4.1.4, bloque 4 de la estabilizacion) ──────────────
+// Una cuota en dolares se salda si los dolares de este pago cubren LO QUE FALTA, medido en dolares:
+// lo que falta en pesos (cuotaTotal - partialPaid, la obligacion a la TRM pactada) convertido al
+// centavo. Es la cifra que muestran el cobro, el recibo de pago, el formulario de pago y la factura.
+// Tambien vale la regla de siempre (Bug #23): los dolares entregados en total cubren la cuota en
+// dolares. Las dos llevan medio centavo de tolerancia.
+// Por que hace falta la primera: la cuota en pesos sale del motor y casi nunca cae en un centavo
+// exacto de dolar, asi que `primer pago + lo que falta` puede quedar UN centavo por debajo de la
+// cuota en dolares. Con solo la regla de siempre, pagar exactamente lo que decia el papel dejaba la
+// cuota abierta con hasta $23 de deuda fantasma (simulado: 0,37% de los pagos en dos partes).
+// Espejo en el frontend: `cierraEnDolares` (public/js/core/dominio.js). Mismas cuentas, mismo orden.
+//   fila: la cuota ANTES de este pago ({cuotaTotal, partialPaid, montoUSDRecibido}).
+function cierraEnDolares(fila, usd, trm) {
+  if (!(trm > 0) || !(usd > 0)) return false;
+  const u = Math.round(usd * 100) / 100;
+  const cuotaUSD = Math.round(((+fila.cuotaTotal || 0) / trm) * 100) / 100;
+  const acum = Math.round(((+fila.montoUSDRecibido || 0) + u) * 100) / 100;
+  const falta = Math.max(0, (+fila.cuotaTotal || 0) - (+fila.partialPaid || 0));
+  const faltaUSD = Math.round((falta / trm) * 100) / 100;
+  return (cuotaUSD > 0 && acum >= cuotaUSD - 0.005) || u >= faltaUSD - 0.005;
+}
+
+module.exports = { snapshotCobros, restaurarCobros, cobrosHuerfanos, abortarSiHuerfanos, cuotaCerradaPorLoAbonado, cierraEnDolares };

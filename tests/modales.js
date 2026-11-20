@@ -500,6 +500,7 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     mc.indexOf('.v4m-total { background: var(--surface-2); border: 1px solid var(--line-strong); }') !== -1);
   R.check('E4 "reducir movimiento" del sistema apaga la entrada', /@media \(prefers-reduced-motion: reduce\) \{ \.v4m-overlay, \.v4m-sheet, \.modal-overlay, \.modal-panel \{ animation: none; \} \}/.test(mc));
   R.check('E5 styles.css ya no trae la ventana vieja (`.modal-sheet`, `slideUp`, `.modal-overlay`, `.modal-panel`, `.modal-handle`)',
+
     !/\.modal-(sheet|overlay|panel|handle)\b|slideUp/.test(scss));
   R.check('E5 los dialogos de App (aviso al iniciar y novedades) siguen teniendo su ventana: vive en modales.css',
     /\.modal-overlay \{/.test(mc.replace(/\.v4m-overlay, \.modal-overlay/g, '.modal-overlay')) && mc.indexOf('.modal-panel { padding: 24px 26px; }') !== -1 &&
@@ -507,5 +508,49 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   R.check('E5 la animacion fadeIn sigue en styles.css (la usan otras vistas)', /@keyframes fadeIn/.test(scss));
   R.check('E6 nada del prototipo en produccion', ['PROTOTIPO', 'proto-chip', 'v4-forzar', 'v4mVariante', 'v4cVariante'].every(s => crudo.indexOf(s) === -1 && fuentesV4m.indexOf(s) === -1));
 
+  // ── F — EL PAGO EN DOS PARTES DE UNA CUOTA EN DOLARES (4.1.4, bloque 4) ──────
+  // El formulario de pago era la otra mitad de la deuda fantasma: en modo parcial rechazaba pagar
+  // justo lo que falta cuando el centavo redondeaba hacia arriba; en "Completar" el campo de dolares
+  // nacia con los dolares YA recibidos y la caja que se mandaba era la obligacion, no los pesos
+  // escritos. Se monta el componente REAL sobre una cuota en dolares del fixture con un abono previo.
+  R.seccion('F — pagar en dos partes una cuota en dolares desde el formulario de pago');
+  {
+    const loanUSD = L(USD_MORA), trm = +loanUSD.trmAcordada;
+    const js = x => Math.floor(x + 0.5);
+    // La cuota del fixture cae casi en un centavo exacto (400.0014): se arma en memoria una cuota
+    // cuyo valor en dolares cae pasado el medio centavo, que es donde el formulario viejo fallaba.
+    const cuotaUSD = Object.assign({}, est(USD_MORA, 'En Mora')[0], { cuotaTotal: js(400.0062 * trm) });
+    // Un abono previo con el que pagar "lo que falta" se pasaba un peso del restante al convertirlo
+    // (el formulario viejo lo rechazaba con su margen de UN peso): asi la prueba no pasa en vacio.
+    let u1 = 0;
+    for (let c = 100; c < Math.round(cuotaUSD.cuotaTotal / trm * 100) - 100; c++) {
+      const f = { cuotaTotal: cuotaUSD.cuotaTotal, partialPaid: js(c / 100 * trm), montoUSDRecibido: c / 100 };
+      if (js(X.faltaUSD(f, trm) * trm) > f.cuotaTotal - f.partialPaid + 1) { u1 = c / 100; break; }
+    }
+    R.check('F0 ANTI-VACIO: hay un abono previo con el que el formulario viejo rechazaba pagar lo que falta', u1 > 0);
+    const conAbono = Object.assign({}, cuotaUSD, { partialPaid: js(u1 * trm), montoUSDRecibido: u1 });
+    const falta = X.faltaUSD(conAbono, trm);
+    const llamadas = [];
+    const onPartial = function(){ llamadas.push([].slice.call(arguments)); return Promise.resolve({ ok: true }); };
+    const base = { pay: conAbono, loan: loanUSD, allPays: pays, onMark: prom, onPartial: onPartial, onClose: nada };
+    // Estado por posicion: fecha, obs, COP recibidos, USD recibidos, recibo, tipo, monto parcial, USD parcial.
+    const completo = montar(X.PayModal, base);
+    R.eq('F1 "Completar": el campo de dolares nace con lo que falta (no con los dolares ya recibidos)', completo.valores[3], String(falta));
+    llamadas.length = 0;
+    boton(montar(X.PayModal, base, [undefined, undefined, '400000']).arbol, 'Completar').props.onClick();
+    R.eq('F2 "Completar" manda como CAJA los pesos escritos y como dolares lo que falta',
+      llamadas.map(a => [a[1], a[4]]), [[400000, falta]]);
+    llamadas.length = 0;
+    boton(montar(X.PayModal, base, [undefined, undefined, '400000', '10']).arbol, 'Completar').props.onClick();
+    R.eq('F3 "Completar" con dolares que no cubren lo que falta no registra nada (avisa que use Pago parcial)', llamadas.length, 0);
+    llamadas.length = 0;
+    const parcial = montar(X.PayModal, base, [undefined, undefined, undefined, undefined, undefined, 'parcial', String(js(falta * trm)), String(falta)]);
+    boton(parcial.arbol, 'Registrar parcial').props.onClick();
+    R.eq('F4 en modo parcial, pagar EXACTAMENTE lo que falta en dolares se acepta', llamadas.map(a => a[4]), [falta]);
+    R.check('F4 y el formulario avisa que la cuota quedaria completa', unir(parcial.arbol).indexOf('Con este pago la cuota quedaría COMPLETA') !== -1);
+    llamadas.length = 0;
+    boton(montar(X.PayModal, base, [undefined, undefined, undefined, undefined, undefined, 'parcial', '1000', String(Math.round((falta + 0.02) * 100) / 100)]).arbol, 'Registrar parcial').props.onClick();
+    R.eq('F5 en modo parcial, mas dolares de los que faltan se rechaza', llamadas.length, 0);
+  }
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

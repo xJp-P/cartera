@@ -526,6 +526,9 @@ export function CobroModal(props){
               saldado:!!(cronoPreview&&cronoPreview.saldado),
               totalAntes:proy.totalAntes,
               totalDespues:proy.totalDespues,
+              // Cuota por cuota: la propuesta suma estas cifras ya convertidas (4.1.4).
+              pendAntes:proy.pendAntes,
+              pendDespues:proy.pendDespues,
               abonadoProxima:proy.abonadoProxima,
               cuotaAntes:cuotaActual,
             },

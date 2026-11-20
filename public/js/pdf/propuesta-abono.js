@@ -169,7 +169,14 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
   var abonadoProx = Math.max(0, Math.round(proy.abonadoProxima || 0));
   var aPagarProx  = Math.max(0, cuotaDespues - abonadoProx);
   var fechaProx   = filas.length ? filas[0].fecha : null;
-  var totalTxt    = (totalDespues !== null) ? money(totalDespues) : '';
+  // El total es la SUMA de lo que falta de cada cuota, ya convertida a la moneda visible (4.1.4),
+  // igual que el pie del recibo: la seccion J de cascada-cobro exige que las dos cifras coincidan.
+  // `pendAntes` / `pendDespues` vienen de `proyeccionCobro`; sin ellas se convierte el total.
+  function sumaU(lista){ return lista.reduce(function(s, cop){ return s + uni(cop); }, 0); }
+  var totalAntesU   = Array.isArray(proy.pendAntes) ? sumaU(proy.pendAntes) : uni(totalAntes);
+  var totalDespuesU = (totalDespues === null) ? null
+                      : (Array.isArray(proy.pendDespues) ? sumaU(proy.pendDespues) : uni(totalDespues));
+  var totalTxt    = (totalDespuesU !== null) ? fmtUni(totalDespuesU) : '';
   var aPagarTxt   = money(aPagarProx);
 
   // Colapso a tarjeta unica: con una sola cuota proyectada y sin mora que sobreviva,
@@ -204,7 +211,7 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     // que proyectara 2+ filas ahi imprimiria un total que MIENTE por debajo de la deuda.
     // El gate del hero, que si es alcanzable, si esta fijado por pdf-render.
     cards = (totalDespues !== null && !esIndef && !(aPagarProx > 0 && totalTxt === aPagarTxt))
-      ? card('Total por pagar', (totalAntes > totalDespues) ? money(totalAntes) : '', totalTxt)
+      ? card('Total por pagar', (totalAntesU > totalDespuesU) ? fmtUni(totalAntesU) : '', totalTxt)
       : '';
     if (aPagarProx > 0) {
       // Mismo criterio que el recibo: si quedaria mora sin saldar, el rotulo no puede

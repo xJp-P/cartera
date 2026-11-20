@@ -9,8 +9,9 @@ import { ABtn, Fld, Modal } from '../componentes/base.js';
 import { ST } from '../componentes/iconos.js';
 import { showError } from '../core/api.js';
 import {
-  copToUsd, fmt, fmtD, fmtN, fmtNumInput, parseDecimalInput, parseNum,
+  copToUsd, fmt, fmtD, fmtN, fmtNumInput, fmtUSD, parseDecimalInput, parseNum,
 } from '../core/format.js';
+import { cierraEnDolares, faltaUSD } from '../core/dominio.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
 import { generateRecibo } from '../pdf/recibo-pago.js';
@@ -24,8 +25,12 @@ export function PayModal(props){
   var restante=Math.max(0,pay.cuotaTotal-yaPagado);
   var s1=useState(nowStr()); var fecha=s1[0]; var setFecha=s1[1];
   var s2=useState(pay.observaciones||''); var obs=s2[0]; var setObs=s2[1];
+  var trmP=loan&&loan.moneda==='USD'?(+loan.trmAcordada||0):0;
   var s3=useState(restante||''); var copRec=s3[0]; var setCopRec=s3[1];
-  var s4=useState(pay.montoUSDRecibido||''); var usdRec=s4[0]; var setUsdRec=s4[1];
+  // 4.1.4: con un abono previo, el campo de dolares nace con LO QUE FALTA en dolares (`faltaUSD`,
+  // la cifra de los papeles). Antes nacia con los dolares YA recibidos: dejarlo asi registraba un
+  // pago parcial en vez de completar la cuota.
+  var s4=useState(trmP>0&&yaPagado>0&&pay.estadoPago!=='Pagado'?String(faltaUSD(pay,trmP)):(pay.montoUSDRecibido||'')); var usdRec=s4[0]; var setUsdRec=s4[1];
   var s5=useState(false); var genRecibo=s5[0]; var setGenRecibo=s5[1];
   var s6=useState('completo'); var tipoPago=s6[0]; var setTipoPago=s6[1];
   var s7=useState(''); var montoParcial=s7[0]; var setMontoParcial=s7[1];
@@ -63,9 +68,12 @@ export function PayModal(props){
     // de menos cuando la TRM del dia esta por debajo de la pactada — el cliente entrega los
     // dolares pactados y le queda deuda fantasma. Misma doctrina que AbonoModal (v2.0.0).
     if(esUSD&&(+parcialUSD||0)<=0){showError('Ingresa los USD recibidos: en préstamos en dólares son los que definen cuánta deuda se abona');return;}
-    // La obligacion se mide en la MISMA moneda que el restante (ambos a TRM pactada).
+    // En dolares se compara DOLARES contra lo que falta en dolares (`faltaUSD`, la cifra de los
+    // papeles), con medio centavo de tolerancia. Hasta 4.1.3 se comparaba la conversion a pesos
+    // contra el restante con UN peso de margen, y pagar justo lo que falta se rechazaba cuando el
+    // centavo redondeaba hacia arriba (simulado: casi la mitad de los casos).
     if(esUSD){
-      if(Math.round((+parcialUSD||0)*loan.trmAcordada)>restante+1){showError('Los USD ingresados superan el saldo pendiente ('+copToUsd(restante,loan.trmAcordada)+')');return;}
+      if((+parcialUSD||0)>faltaUSD(pay,trmP)+0.005){showError('Los USD ingresados superan lo que falta de la cuota ('+fmtUSD(faltaUSD(pay,trmP))+')');return;}
     } else if(m>restante){showError('El monto supera el saldo pendiente ('+fmt(restante)+')');return;}
     // v2.3.0: el recibo se emite DESPUES de confirmar la escritura. Antes se imprimia primero, asi
     // que un fallo de red dejaba en manos del deudor el comprobante de un pago NUNCA registrado.
@@ -83,9 +91,15 @@ export function PayModal(props){
     // cobro es irregistrable y la cuota se valua con los COP del dia.
     if(esUSD&&(+usdRec||0)<=0){showError('Ingresa los USD recibidos: son los que confirman que la cuota quedó cubierta en dólares');return;}
     if(yaPagado>0){
-      // Habia pagos parciales: el recibo es "Pago final" que completa la cuota
-      _run(function(){return onPartial(pay.id,restante,fecha,obs,+usdRec||0).then(function(r){
-        if(r&&genRecibo) generateRecibo(pay,loan,restante,+usdRec||0,allPays,{yaAbonadoPrev:yaPagado,fechaRecaudo:fecha});
+      // Habia pagos parciales: el recibo es "Pago final" que completa la cuota.
+      // 4.1.4: en dolares tiene que COMPLETARLA de verdad. Si los dolares no cubren lo que falta,
+      // el backend registraria un parcial y el boton dice "Completar": se avisa antes.
+      if(esUSD&&!cierraEnDolares(pay,+usdRec||0,trmP)){showError('Esos USD no cubren lo que falta de la cuota ('+fmtUSD(faltaUSD(pay,trmP))+'): usa Pago parcial');return;}
+      // La CAJA son los pesos que entraron de verdad: en dolares, los que el usuario escribio. Hasta
+      // 4.1.3 se mandaba el restante (la obligacion a la TRM pactada) y el campo se ignoraba.
+      var caja=esUSD?(+copRec||0):restante;
+      _run(function(){return onPartial(pay.id,caja,fecha,obs,+usdRec||0).then(function(r){
+        if(r&&genRecibo) generateRecibo(pay,loan,caja,+usdRec||0,allPays,{yaAbonadoPrev:yaPagado,fechaRecaudo:fecha});
         return r;
       });});
     } else {
@@ -120,10 +134,19 @@ export function PayModal(props){
     tipoPago==='parcial'&&pay.estadoPago!=='Pagado'&&h('div',{className:'v4m-caja-aviso',style:{borderRadius:12,padding:'10px 12px',marginBottom:4}},
       h(Fld,{label:'Monto del pago parcial (COP) *'},
         h('input',{type:'text',inputMode:'numeric',value:fmtNumInput(montoParcial),onChange:function(e){setMontoParcial(parseNum(e.target.value));},placeholder:'0',className:'inp v4m-b-aviso'}),
-        montoParcial>0&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:+montoParcial>=restante?'var(--green)':'var(--text2)'}},
+        // En dolares el aviso sale de los USD (abajo): los pesos de caja no deciden si la cuota cierra.
+        !esUSD&&montoParcial>0&&h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:+montoParcial>=restante?'var(--green)':'var(--text2)'}},
           +montoParcial>=restante?'Con este pago la cuota quedaría COMPLETA':'Quedarían pendientes: '+fmt(restante-(+montoParcial||0)))),
       esUSD&&h(Fld,{label:'USD recibidos *'},
-        h('input',{type:'text',inputMode:'decimal',value:parcialUSD,onChange:function(e){setParcialUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 120.00',className:'inp v4m-b-info'})),
+        h('input',{type:'text',inputMode:'decimal',value:parcialUSD,onChange:function(e){setParcialUSD(parseDecimalInput(e.target.value));},placeholder:'Ej: 120.00',className:'inp v4m-b-info'}),
+        (+parcialUSD||0)>0&&(function(){
+          var cierra=cierraEnDolares(pay,+parcialUSD,trmP);
+          return h('div',{className:'v4m-num',style:{fontSize:11,marginTop:4,color:cierra?'var(--green)':'var(--text2)'}},
+            // Lo que quedaria es `faltaUSD` de la cuota DESPUES del pago (la obligacion que este pago
+            // extingue es round(usd x TRM pactada)): la misma cifra que la app mostrara luego.
+            cierra?'Con este pago la cuota quedaría COMPLETA'
+              :'Quedarían pendientes: '+fmtUSD(faltaUSD({cuotaTotal:pay.cuotaTotal,partialPaid:yaPagado+Math.round((+parcialUSD)*trmP)},trmP)));
+        })()),
       // Doble entrada visible: el dolar define la deuda que se extingue, los COP son la caja
       // real. La diferencia entre ambos ES el efecto cambiario, y aqui se ve antes de guardar.
       esUSD&&(+parcialUSD||0)>0&&(+montoParcial||0)>0&&(function(){

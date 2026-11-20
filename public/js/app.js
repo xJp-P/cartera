@@ -526,8 +526,11 @@ function App(){
     // el Recibo de Cobro y la Propuesta de Abono lideran su bloque de tarjetas: la suma
     // de lo que falta de cada cuota viva, vencidas incluidas. NO es el saldo de capital
     // (lleva ademas los intereses de esas cuotas). Es el `totalAntes` de `proyeccionCobro`.
-    var porPagarPre=lp.filter(function(p){return !esAbono(p)&&(p.estadoPago==='Pendiente'||p.estadoPago==='En Mora');})
-                      .reduce(function(s,p){return s+pendCuota(p);},0);
+    // `pendPorPagar` es la misma cifra cuota por cuota: el recibo suma sus filas ya convertidas a la
+    // moneda visible (4.1.4), y en dolares convertir el total daba un centavo distinto.
+    var pendPorPagar=lp.filter(function(p){return !esAbono(p)&&(p.estadoPago==='Pendiente'||p.estadoPago==='En Mora');})
+                      .map(function(p){return pendCuota(p);});
+    var porPagarPre=pendPorPagar.reduce(function(s,x){return s+x;},0);
     // `liq` es el MISMO objeto que `LiquidarModal` acaba de mostrar en pantalla: se pide al
     // helper centralizado sobre el estado PREVIO, que es el que el modal tenia a la vista.
     // Sin esto el Paz y Salvo solo recibia `monto` (= capital pendiente) y titulaba con el,
@@ -535,7 +538,7 @@ function App(){
     // Se computa siempre, no solo al liquidar: es barato y el generador decide si lo usa.
     return {saldo:Math.max(0,orig-capPag),saldoCaja:saldoConCaja(l,lp),cuota:pend.length?pend[0].cuotaTotal:0,cuotas:pend.length,
             intereses:pend.reduce(function(s,p){return s+p.interesPeriodo;},0),plazo:l.plazoMeses,
-            totalPorPagar:porPagarPre,liq:computeLiquidacion(l,lp,{})};
+            totalPorPagar:porPagarPre,pendPorPagar:pendPorPagar,liq:computeLiquidacion(l,lp,{})};
   }
   function _doAbono(loanId,monto,fecha,obs,montoUSD,liquidar,recalcMode,recalcValor,genRecibo,intExtra,copRecibido){
     var pre=_snapshotAbono(loanId);

@@ -297,6 +297,7 @@ function propuestaDe(loan, arrPays) {
     cajaCOP: esUSD ? Math.round(objetivo * 0.97) : objetivo,
     proyeccion: { filas, n: pv.nCuotas, saldado: false,
                   totalAntes: proy.totalAntes, totalDespues: proy.totalDespues,
+                  pendAntes: proy.pendAntes, pendDespues: proy.pendDespues,
                   abonadoProxima: proy.abonadoProxima,
                   cuotaAntes: pend.length ? Math.round(pend[0].cuotaTotal) : 0 },
   };
@@ -342,6 +343,7 @@ function propuestaConInteresMes(loan, arrPays, modo, valor) {
     cajaCOP: esUSD ? Math.round(objetivo * 0.97) : objetivo,
     proyeccion: { filas, n: pv.nCuotas, saldado: false,
                   totalAntes: proy.totalAntes, totalDespues: proy.totalDespues,
+                  pendAntes: proy.pendAntes, pendDespues: proy.pendDespues,
                   abonadoProxima: proy.abonadoProxima, moraTras: proy.moraTras,
                   cuotaAntes: pend.length ? Math.round(pend[0].cuotaTotal) : 0 },
   };
@@ -1669,6 +1671,75 @@ function loansDelCaso(caso) {
           nO >= 16 && nTabla >= 4 && nMueve >= 4 && nAbono >= 2, { casos: nO, tablas: nTabla, conInteres: nMueve, conAbono: nAbono });
   R.check('O2 "Debes hoy" = Liquidar deuda (con su casilla), cada fila y el total de cada columna = la suma de sus filas',
           malasO.length === 0, malasO.slice(0, 8).join('\n      '));
+}
+
+{
+  // 4.1.4 (bloque 4): en dolares, el TOTAL POR PAGAR del recibo de pago y de la propuesta es la suma de
+  // sus filas ya convertidas. Hasta 4.1.3 se convertia la suma en pesos y el pie decia USD 1,600.01
+  // bajo cuatro cuotas de USD 400.00. Se lee el papel tal como se imprime.
+  R.seccion('dolares · el total por pagar es la suma de las filas impresas (4.1.4)');
+  const centavos = t => Math.round(+String(t).replace(/[^\d.]/g, '') * 100);
+  const montosB = h => (h.match(/<b>USD \$[\d,]+\.\d\d<\/b>/g) || []).map(x => centavos(x.replace(/<[^>]+>|USD \$|,/g, '')));
+  let nRec = 0, nProp = 0, descuadreViejo = 0; const malasQ = [];
+  for (const caso of CASOS.filter(c => (c.gen === 'generateReciboCobro' || c.gen === 'generatePropuestaAbono') &&
+                                       loansDelCaso(c).every(l => l.moneda === 'USD') && loansDelCaso(c).length)) {
+    const html = sinMarco(generar(caso).html);
+    if (caso.gen === 'generateReciboCobro') {
+      const t = (/<table class="r-t">[\s\S]*?<\/table>/.exec(html) || [''])[0];
+      if (!t) continue;
+      nRec++;
+      const filas = ((/<tbody>([\s\S]*?)<\/tbody>/.exec(t) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || []);
+      const suma = filas.reduce((s, f) => { const m = montosB(f); return s + (m.length ? m[m.length - 1] : 0); }, 0);
+      const pie = centavos(sinTags((/<tfoot>([\s\S]*?)<\/tfoot>/.exec(t) || [, ''])[1]).replace(/^[^\d]*/, ''));
+      const falta = centavos((/Te falta por pagar<b[^>]*>USD \$([\d,.]+)/.exec(html) || [, '0'])[1].replace(/,/g, ''));
+      if (pie !== suma) malasQ.push(caso.nombre + ': el pie ' + pie / 100 + ' no es la suma de las filas ' + suma / 100);
+      if (falta && falta !== pie) malasQ.push(caso.nombre + ': "Te falta por pagar" ' + falta / 100 + ' != pie ' + pie / 100);
+      // Lo que la regla VIEJA imprimia: la conversion de la suma en pesos (anti-vacio).
+      const L0 = loansDelCaso(caso)[0];
+      if (L0 && pie === suma) {
+        const cop = pays.filter(p => p.prestamoId === L0.id && S.esCuotaRegular(p) && p.estadoPago !== 'Pagado')
+          .reduce((s2, p) => s2 + S.pendCuota(p), 0);
+        if (Math.round(cop / L0.trmAcordada * 100) !== suma) descuadreViejo++;
+      }
+    } else {
+      nProp++;
+      const tot = (/Total por pagar[\s\S]*?pa-new[^>]*>USD \$([\d,.]+)/.exec(html) || [, ''])[1];
+      const filas = (/<table class="pa-tb">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || [];
+      const sub = /a pagar <b>USD \$([\d,.]+)<\/b>/.exec(html);
+      if (!tot || !filas.length) continue;
+      const valor = f => montosB(f)[0];
+      const suma = filas.reduce((s, f, i) => s + (i === 0 && sub ? centavos(sub[1].replace(/,/g, '')) : valor(f)), 0);
+      if (centavos(tot.replace(/,/g, '')) !== suma) malasQ.push(caso.nombre + ': "Total por pagar" ' + tot + ' no es la suma de lo que falta de cada cuota ' + suma / 100);
+    }
+  }
+  R.check('Q1 ANTI-VACIO: recibos y propuestas en dolares, y al menos uno donde convertir la suma en pesos daba otra cifra',
+          nRec >= 2 && nProp >= 2 && descuadreViejo >= 1, { recibos: nRec, propuestas: nProp, descuadreViejo: descuadreViejo });
+  R.check('Q2 el pie, "Te falta por pagar" y el "Total por pagar" de la propuesta = la suma de sus filas', malasQ.length === 0, malasQ.join('\n      '));
+  // El recibo del boton Pago, en el SEGUNDO pago de una cuota en dolares: si los dolares cubren lo que
+  // falta, la cuota se salda (misma regla del backend, `cierraEnDolares`) y el papel lo dice. Antes solo
+  // miraba si ESE pago cubria la cuota entera y lo titulaba "Recibo de Abono Parcial". Se arma en memoria
+  // una cuota cuyo valor en dolares cae pasado el medio centavo, donde la regla vieja fallaba.
+  {
+    const lU = L('1782151590658w66y'), trm = +lU.trmAcordada, js = x => Math.floor(x + 0.5);
+    // Se busca una cuota (en pesos, cerca de USD 400) y un primer pago con los que la regla vieja dejaba
+    // la cuota abierta: la cuota en dolares redondea hacia arriba y lo que falta, hacia abajo.
+    let u1 = 0, C = 0;
+    for (let k = js(400 * trm); k < js(401 * trm) && !u1; k++) {
+      for (let c = 10000; c < 10200 && !u1; c++) {
+        const P0 = js(c / 100 * trm), falta = S.faltaUSD({ cuotaTotal: k, partialPaid: P0 }, trm);
+        if (P0 + js(falta * trm) < k && c / 100 + falta < Math.round(k / trm * 100) / 100 - 0.005) { u1 = c / 100; C = k; }
+      }
+    }
+    const base = Object.assign({}, cuota('1782151590658w66y', 2), { cuotaTotal: C, estadoPago: 'Pendiente' });
+    const conAbono = Object.assign({}, base, { partialPaid: js(u1 * trm), montoUSDRecibido: u1, montoCOPRecibido: js(u1 * trm) });
+    const falta = S.faltaUSD(conAbono, trm);
+    CAP.pdfs.length = 0;
+    S.generateRecibo(conAbono, lU, js(falta * trm), falta, pays, { yaAbonadoPrev: conAbono.partialPaid, fechaRecaudo: '2026-07-31' });
+    const h = CAP.pdfs.length ? CAP.pdfs[0].html : '';
+    R.check('Q3 ANTI-VACIO: hay un primer pago con el que la regla vieja dejaba la cuota abierta', u1 > 0, u1);
+    R.check('Q3 el recibo del segundo pago, por lo que falta en dolares, es "Recibo Final de Cuota"',
+      h.indexOf('Recibo Final de Cuota') !== -1 && h.indexOf('Recibo de Abono Parcial') === -1, (/<h1>([^<]*)<\/h1>/.exec(h) || [])[1]);
+  }
 }
 
 {

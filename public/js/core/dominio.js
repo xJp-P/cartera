@@ -749,3 +749,20 @@ export function preguntaInteresMes(loan, loanPays) {
 // NO se consolidan: la duplicacion es preexistente y unificarla seria cambiar logica.
 // Saldo restante de una cuota considerando pagos parciales
 export function pendCuota(p){ return Math.max(0,(p.cuotaTotal||0)-(p.partialPaid||0)); }
+
+// ── LO QUE FALTA DE UNA CUOTA EN DOLARES, Y CUANDO UN PAGO LA SALDA (4.1.4, bloque 4) ─────────────
+// `faltaUSD` es la UNICA cifra de "lo que falta" en dolares: lo que falta en pesos (la obligacion a
+// la TRM pactada) convertido al centavo. La usan el cobro, el recibo de pago, el formulario de pago y
+// la factura; hasta 4.1.3 la factura calculaba la suya (dolares contra dolares) y en el 0,7% de las
+// cuotas con un abono las dos diferian en un centavo.
+// `cierraEnDolares` es el ESPEJO de la regla del backend (backend/core/cobros.js): el pago salda la
+// cuota si cubre `faltaUSD`, o si los dolares entregados en total cubren la cuota en dolares (Bug
+// #23), con medio centavo de tolerancia. `pay` es la cuota ANTES del pago.
+export function faltaUSD(pay, trm){ return trm>0 ? Math.round(pendCuota(pay)/trm*100)/100 : 0; }
+export function cierraEnDolares(pay, usd, trm){
+  if(!(trm>0)||!(usd>0)) return false;
+  var u=Math.round(usd*100)/100;
+  var cuotaUSD=Math.round((+pay.cuotaTotal||0)/trm*100)/100;
+  var acum=Math.round(((+pay.montoUSDRecibido||0)+u)*100)/100;
+  return (cuotaUSD>0&&acum>=cuotaUSD-0.005)||u>=faltaUSD(pay,trm)-0.005;
+}

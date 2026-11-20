@@ -27,6 +27,8 @@ const express = require('express');
 // Predicados de clasificacion de filas de `payments` (core/ids.js): unica fuente
 // de verdad de que es un abono. Antes cada sitio repetia el literal indexOf('-ab-').
 const { esAbono, esCorte, esCuotaRegular } = require('../core/ids');
+// Cuando un pago en dolares salda la cuota (4.1.4): una sola regla, con su espejo en el frontend.
+const { cierraEnDolares } = require('../core/cobros');
 
 module.exports = function crearRutasPayments(ctx) {
   const { db, mutacionAtomica, ClientError, hoyStr, buildSchedule, runPayment } = ctx;
@@ -203,9 +205,10 @@ module.exports = function crearRutasPayments(ctx) {
     // v1.12.x FIX (pago bimonetario): en prestamos USD, si el USD recibido cubre la cuota en USD
     // (cuotaTotal / trmAcordada), la cuota se completa aunque los COP sean menores por una baja de
     // la TRM. Se acepta el deficit/superavit cambiario sin penalizar el estado de la cuota.
-    const cuotaEnUSD = esUSDLoan ? Math.round((pay.cuotaTotal / loanPay.trmAcordada) * 100) / 100 : 0;
-    const usdRecibidoAcum = Math.round(((pay.montoUSDRecibido || 0) + usdNum) * 100) / 100;
-    const completaUSD = cuotaEnUSD > 0 && usdRecibidoAcum >= cuotaEnUSD - 0.005; // tolerancia de centavo
+    // 4.1.4: tambien se completa si los dolares de ESTE pago cubren lo que falta en dolares (la cifra
+    // que muestran los papeles); sin eso, pagar en dos partes podia dejar hasta $23 de deuda fantasma.
+    // La regla vive en `cierraEnDolares` (core/cobros.js), con su espejo en el frontend.
+    const completaUSD = esUSDLoan && cierraEnDolares(pay, usdNum, loanPay.trmAcordada);
 
     // Se valida OBLIGACION contra OBLIGACION. Comparar la caja contra el restante rechazaba
     // pagos legitimos en USD cuando la TRM subia, y aceptaba de mas cuando bajaba.

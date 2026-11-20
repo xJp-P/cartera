@@ -99,7 +99,8 @@ function cargarCascada() {
   vm.runInContext(orden.join('\n'), ctx);
   const api = vm.runInContext(
     '({planCascada,cobrableTotal,contextoCascada,proyeccionCobro,filasPreview,previewRecalculo,aplicarTransitoriaPreview,' +
-    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros,cobrosDe,rbMedia})', ctx);
+    '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros,cobrosDe,rbMedia,' +
+    'cierraEnDolares,faltaUSD})', ctx);
   api.pdfs = pdfs;
   return api;
 }
@@ -1443,6 +1444,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           fecha: hoy, plan: plan2, cajaCOP: Math.round(usd2 * trmJ * 0.95),
           proyeccion: { filas, n: pv.nCuotas, saldado: false,
                         totalAntes: proyJ.totalAntes, totalDespues: proyJ.totalDespues,
+                        pendAntes: proyJ.pendAntes, pendDespues: proyJ.pendDespues,
                         abonadoProxima: proyJ.abonadoProxima,
                         cuotaAntes: pendP.length ? Math.round(pendP[0].cuotaTotal) : 0 },
         });
@@ -1466,13 +1468,17 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         const totalAntesPre = lpP.filter(p => !esAbono(p) &&
             (p.estadoPago === 'Pendiente' || p.estadoPago === 'En Mora'))
           .reduce((s, p) => s + Math.max(0, Math.round(p.cuotaTotal || 0) - Math.round(p.partialPaid || 0)), 0);
+        // Y cuota por cuota (4.1.4): cada papel suma sus cifras ya convertidas a la moneda visible.
+        const pendPorPagarPre = lpP.filter(p => !esAbono(p) &&
+            (p.estadoPago === 'Pendiente' || p.estadoPago === 'En Mora'))
+          .map(p => Math.max(0, Math.round(p.cuotaTotal || 0) - Math.round(p.partialPaid || 0)));
         R.eq('J el "antes" del recibo sale de la misma base que el de la propuesta',
           totalAntesPre, proyJ.totalAntes);
 
         pdfsCascada.length = 0;
         generateReciboCobro(loanQ, post.pays, { fecha: hoy, pasos: est2.hechos,
           pre: { saldoCaja: saldoConCaja(loanP, lpP), cuota: pendP.length ? pendP[0].cuotaTotal : 0,
-                 totalPorPagar: totalAntesPre } });
+                 totalPorPagar: totalAntesPre, pendPorPagar: pendPorPagarPre } });
         R.eq('J el recibo emitio un documento', pdfsCascada.length, 1);
         const htmlRec = pdfsCascada.length ? pdfsCascada[0].html : '';
 
@@ -1590,6 +1596,85 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
     R.check('K el recibo recibe snapshot, flag de liquidacion e interes del mes',
       /pre\s*:\s*pre/.test(llamada) && /liquidar\s*:/.test(llamada) && /intExtra\s*:/.test(llamada),
       llamada || 'no se encontro la llamada a generateReciboAbono en _doAbono');
+  }
+
+  // -- L. UNA CUOTA EN DOLARES PAGADA EN DOS PARTES CIERRA PAGANDO LO QUE DICEN LOS PAPELES ----
+  // (4.1.4, bloque 4 de la estabilizacion.) La cuota en pesos sale del motor y casi nunca cae en un
+  // centavo exacto de dolar, asi que `primer pago + lo que falta` podia quedar un centavo por debajo
+  // de la cuota en dolares: con la regla vieja de /partial la cuota quedaba abierta con unos pesos de
+  // deuda fantasma (simulado: 0,37% de los pagos en dos partes, hasta $23). La regla nueva vive en
+  // `cierraEnDolares` (backend/core/cobros.js) y su espejo del frontend (core/dominio.js).
+  {
+    R.seccion('L — una cuota en dolares pagada en dos partes cierra pagando lo que falta');
+    const back = require(path.join(REPO, 'backend', 'core', 'cobros.js'));
+    const { cierraEnDolares, faltaUSD } = cargarCascada();
+    const js = x => Math.floor(x + 0.5);
+    const r2 = x => js(x * 100) / 100;
+    // La regla VIEJA de /partial, copiada tal cual estaba hasta 4.1.3: solo los dolares acumulados.
+    const cierraViejo = (f, usd, trm) => {
+      const u = r2(usd), cuotaUSD = r2(f.cuotaTotal / trm), acum = r2((f.montoUSDRecibido || 0) + u);
+      return (cuotaUSD > 0 && acum >= cuotaUSD - 0.005) || (f.partialPaid || 0) + js(u * trm) >= f.cuotaTotal;
+    };
+
+    // L1 — el espejo del frontend decide EXACTAMENTE lo mismo que el backend, sobre 20.000 casos.
+    let semilla = 4141;
+    const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; return semilla / 2147483648; };
+    let difiere = 0, cierranNuevos = 0;
+    for (let k = 0; k < 20000; k++) {
+      const trm = k % 2 ? 3000 + Math.floor(azar() * 1600) : Math.round((3000 + azar() * 1600) * 100) / 100;
+      const cuotaUSD = Math.round((40 + azar() * 2400) * 100) / 100;
+      const C = js(cuotaUSD * trm) + Math.floor(azar() * 41) - 20;
+      const u1 = Math.max(0.01, Math.round(azar() * (cuotaUSD - 0.01) * 100) / 100);
+      const fila = { cuotaTotal: C, partialPaid: js(u1 * trm), montoUSDRecibido: u1 };
+      const usd = k % 3 ? faltaUSD(fila, trm) : Math.round(azar() * cuotaUSD * 100) / 100;
+      if (cierraEnDolares(fila, usd, trm) !== back.cierraEnDolares(fila, usd, trm)) difiere++;
+      if (back.cierraEnDolares(fila, usd, trm) && !cierraViejo(fila, usd, trm)) cierranNuevos++;
+    }
+    R.eq('L1 el frontend y el backend deciden lo mismo en 20.000 casos', difiere, 0);
+    R.check('L1 ANTI-VACIO: hay casos que la regla vieja dejaba abiertos', cierranNuevos > 20, 'casos: ' + cierranNuevos);
+
+    // L2 — contra el servidor REAL: prestamos en dolares de una cuota pagada en dos partes, el
+    // segundo pago EXACTAMENTE por `faltaUSD`. Se eligen TRM y primer pago que con la regla vieja
+    // dejaban deuda fantasma, para que la prueba no pueda pasar en vacio.
+    const DB_L = copiaDeProduccion('cascada-dos-partes');
+    const appL = require(path.join(REPO, 'backend', 'server.js'))(DB_L);
+    const srvL = http.createServer(appL);
+    const PORT_L = 3977;
+    await new Promise(ok => srvL.listen(PORT_L, '127.0.0.1', ok));
+    const conDbL = fn => { const d = new Database(DB_L, { readonly: true }); try { return fn(d); } finally { d.close(); } };
+    // La cuota en dolares tiene que caer cerca del medio centavo (es donde la regla vieja fallaba):
+    // se eligen montos cuyo PMT en dolares a 3% y 6 cuotas tiene el tercer decimal cerca de 5.
+    const fPMT = 0.03 * Math.pow(1.03, 6) / (Math.pow(1.03, 6) - 1);
+    const montos = [];
+    for (let M = 1000; montos.length < 12; M++) { const fr = (M * fPMT * 100) % 1; if (fr > 0.46 && fr < 0.54) montos.push(M); }
+    let probados = 0, cerrados = 0, fantasmas = [];
+    for (let t = 0; t < 120 && probados < 8; t++) {
+      const trm = 3100 + (t % 10) * 23.37, monto = montos[Math.floor(t / 10)];
+      const rL = await pedir('POST', '/api/loans', { nombre: 'ZZ Dos Partes ' + t, moneda: 'USD', montoOrigen: monto,
+        trmAcordada: trm, tasaMensual: 3, plazoMeses: 6, modalidad: 'Capital + Intereses', fechaInicio: hoy,
+        frecuencia: 'Mensual', estado: 'Activo' }, PORT_L);
+      if (rL.status !== 201) { R.check('L2 se crea el prestamo de prueba', false, JSON.stringify(rL.json)); break; }
+      const c1 = conDbL(d => d.prepare('SELECT * FROM payments WHERE prestamoId = ? AND cuotaN = 1').get(rL.json.id));
+      const cuotaUSD = r2(c1.cuotaTotal / trm);
+      // Un primer pago con el que la regla vieja deja fantasma al pagar lo que falta.
+      let u1 = 0;
+      for (let c = 1; c < Math.round(cuotaUSD * 100); c++) {
+        const f = { cuotaTotal: c1.cuotaTotal, partialPaid: js(c / 100 * trm), montoUSDRecibido: c / 100 };
+        if (!cierraViejo(f, faltaUSD(f, trm), trm)) { u1 = c / 100; break; }
+      }
+      if (!u1) continue;
+      probados++;
+      await pedir('POST', '/api/payments/' + c1.id + '/partial', { monto: js(u1 * trm), fecha: hoy, observaciones: '', montoUSD: u1 }, PORT_L);
+      const tras1 = conDbL(d => d.prepare('SELECT * FROM payments WHERE id = ?').get(c1.id));
+      const u2 = faltaUSD(tras1, trm);
+      const r2do = await pedir('POST', '/api/payments/' + c1.id + '/partial', { monto: js(u2 * trm), fecha: hoy, observaciones: '', montoUSD: u2 }, PORT_L);
+      const fin = conDbL(d => d.prepare('SELECT * FROM payments WHERE id = ?').get(c1.id));
+      if (r2do.status < 400 && fin.estadoPago === 'Pagado' && fin.partialPaid === fin.cuotaTotal) cerrados++;
+      else fantasmas.push('cuota ' + c1.cuotaTotal + ' trm ' + trm + ' u1 ' + u1 + ' u2 ' + u2 + ' -> ' + fin.estadoPago + ' falta ' + (fin.cuotaTotal - fin.partialPaid));
+    }
+    srvL.close();
+    R.check('L2 ANTI-VACIO: se probaron al menos 5 cuotas que la regla vieja dejaba abiertas', probados >= 5, 'probadas: ' + probados);
+    R.eq('L2 pagar lo que falta en dolares SALDA la cuota (sin deuda fantasma)', cerrados, probados, fantasmas.join(' | '));
   }
 
   srv.close();

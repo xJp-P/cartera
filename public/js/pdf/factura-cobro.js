@@ -16,7 +16,7 @@
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, facturaCode, fcCodigoDiario } from '../core/ui.js';
-import { saldoConCaja, pendienteDeCuota, estadoDiario } from '../core/dominio.js';
+import { saldoConCaja, pendienteDeCuota, estadoDiario, faltaUSD } from '../core/dominio.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 import { nombrePdf } from './nombres.js';
@@ -47,13 +47,15 @@ export function generateFacturaCobro(pay, loan, allPays, datosPago, opts) {
   var aPagar = yaPag > 0 ? Math.max(0, pay.cuotaTotal - yaPag) : pay.cuotaTotal;
   // Rubros que aun se deben, tras imputar lo ya abonado en cascada interes -> capital.
   var pend = pendienteDeCuota(pay);
-  // USD: el cliente paga DOLARES, asi que lo pendiente se mide en dolares contra los dolares ya
-  // entregados (montoUSDRecibido). Reconvertir los COP abonados a TRM pactada exigia de mas cuando
-  // la TRM del dia fue menor: con USD 200 entregados de una cuota de USD 400 el documento pedia
-  // USD 227.19. Es la doctrina del Bug #23, que el backend ya aplica al dar la cuota por saldada
-  // comparando USD contra USD (server.js, rama `completaUSD` de /partial).
+  // USD: lo pendiente es `faltaUSD`, la MISMA cifra que muestran el cobro, el recibo de pago y el
+  // formulario de pago, y la que el backend acepta como suficiente para saldar la cuota (4.1.4).
+  // Hasta 4.1.3 esta factura media dolares contra dolares (cuota en USD - USD entregados): venia de
+  // cuando `partialPaid` guardaba los pesos de CAJA y reconvertirlos exigia de mas (con USD 200 de
+  // una cuota de USD 400 pedia USD 227.19). Desde v2.6.1 `partialPaid` es la obligacion a la TRM
+  // pactada, asi que ese motivo ya no existe, y las dos formulas diferian en un centavo en el 0,7%
+  // de las cuotas con un abono: la factura y el recibo del mismo cliente decian cifras distintas.
   var usdRec = +pay.montoUSDRecibido || 0;
-  var pendUSD = (esUSD && usdRec > 0) ? Math.max(0, Math.round((pay.cuotaTotal / trm - usdRec) * 100) / 100) : null;
+  var pendUSD = (esUSD && usdRec > 0) ? faltaUSD(pay, trm) : null;
   function moneyPend(){ return pendUSD !== null ? fmtUSD(pendUSD) : money(aPagar); }
   function moneyYaPag(){ return (esUSD && usdRec > 0) ? fmtUSD(usdRec) : money(yaPag); }
   // Cuota transitoria (v1.14.0): interes prorrateado por cambio de dia de pago
