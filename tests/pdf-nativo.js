@@ -105,13 +105,19 @@ R.seccion('guarda del Bug #69: sin ventanas offscreen en desktop/');
 const archivosDesktop = fs.readdirSync(DESKTOP).filter(f => f.endsWith('.js'));
 R.check('desktop/ tiene main.js y pdf.js', archivosDesktop.includes('main.js') && archivosDesktop.includes('pdf.js'),
         archivosDesktop);
+// Solo codigo: pdf.js explica en comentarios por que NO usa el modo offscreen. Se parte por /\r?\n/: con
+// saltos de linea de Windows (una copia del repo sacada con core.autocrlf) cada linea terminaba en "\r",
+// el `.` del regex de comentarios no lo cubre y el comentario contaba como codigo (hallazgo v4 #11).
+const codigo = l => l.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '');
+const lineasOffscreen = src => src.split(/\r?\n/).map((l, i) => ({ l, i: i + 1 })).filter(x => /offscreen\s*:/i.test(codigo(x.l)));
 for (const f of archivosDesktop) {
   const src = fs.readFileSync(path.join(DESKTOP, f), 'utf8');
-  // Solo codigo: pdf.js explica en comentarios por que NO usa el modo offscreen.
-  const codigo = l => l.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '');
-  const hits = src.split('\n').map((l, i) => ({ l, i: i + 1 })).filter(x => /offscreen\s*:/i.test(codigo(x.l)));
+  const hits = lineasOffscreen(src);
   R.check(`${f}: ninguna ventana con \`offscreen:\``, hits.length === 0,
           hits.map(h => `linea ${h.i}: ${h.l.trim()}`).join('\n'));
+  const hitsCrlf = lineasOffscreen(src.replace(/\r?\n/g, '\r\n'));
+  R.check(`${f}: la guarda da lo mismo con saltos de línea de Windows (CRLF)`, hitsCrlf.length === hits.length,
+          hitsCrlf.map(h => `linea ${h.i}: ${h.l.trim()}`).join('\n'));
 }
 const main = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
 const iHandler = main.indexOf("ipcMain.handle('print-pdf'");

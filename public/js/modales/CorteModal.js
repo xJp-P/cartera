@@ -84,7 +84,10 @@ export function CorteModal(props){
         esUSD&&usdLinea(copToUsd(v,loan.trmAcordada),{fontSize:10})));
   };
 
-  return h(Modal,{onClose:onClose,title:'Registrar corte'},
+  // El titulo va en su propio bloque `v4m-tit`, como en los demas modales: `Modal` nunca dibujo una prop
+  // `title`, asi que el formulario abria sin decir que era (hallazgo v4 #10).
+  return h(Modal,{onClose:onClose},
+    h('div',{className:'v4m-tit'},'Registrar corte'),
     h('div',{style:{fontSize:12,color:'var(--text2)',marginBottom:4}},loan.nombre),
 
     // ── Estado del credito a la fecha elegida ────────────────────────────────

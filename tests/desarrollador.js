@@ -239,6 +239,27 @@ const E = { ruta: 0, moviendo: 1, version: 2, act: 3, datos: 4, guardando: 5, om
     R.eq('D2 "Reintentar" vuelve a buscar', act({ status: 'error', message: 'x' }, 'Reintentar'), ['checkForUpdates']);
     const desc = montar(props(), [undefined, undefined, undefined, { status: 'downloading', percent: 42 }]).arbol;
     R.eq('D3 la barra de descarga marca el porcentaje', conClase(desc, 'dvv-barra')[0].kids[0].props.style.width, '42%');
+    // Hallazgo v4 #6: en modo desarrollo el handler RESPONDE 'dev-mode' y no emite `update-status`; la vista
+    // tiene que leer la respuesta del invoke o se queda en "Buscando…" para siempre.
+    const main = fs.readFileSync(path.join(REPO, 'desktop/main.js'), 'utf8');
+    R.check('D4 el contrato de main.js: en desarrollo, check-for-updates responde { status: \'dev-mode\' } (sin evento)',
+      /ipcMain\.handle\('check-for-updates', \(\) => \{\s*if \(!app\.isPackaged\) return \{ status: 'dev-mode' \};/.test(main));
+    const buscarCon = async respuesta => {
+      limpiar();
+      const apiPrev = X.window.electronAPI;
+      X.window.electronAPI = Object.assign(apiFalsa(), { checkForUpdates: () => { llamadas.push(['checkForUpdates']); return respuesta; } });
+      try {
+        boton(montar(props()).arbol, 'Buscar actualizaciones').props.onClick();
+        await esperar(); await esperar();
+        return setsDe(E.act);
+      } finally { X.window.electronAPI = apiPrev; }
+    };
+    R.eq('D4 en modo desarrollo pasa de "Buscando…" a "Modo desarrollo" con la respuesta del invoke',
+      await buscarCon(Promise.resolve({ status: 'dev-mode' })), [{ status: 'checking' }, { status: 'dev-mode' }]);
+    R.eq('D4 en la app instalada (responde "checking") se queda buscando: mandan los eventos de Electron',
+      await buscarCon(Promise.resolve({ status: 'checking' })), [{ status: 'checking' }]);
+    R.eq('D4 si el invoke falla, pasa a "Error" con el mensaje',
+      await buscarCon(Promise.reject(new Error('sin canal'))), [{ status: 'checking' }, { status: 'error', message: 'sin canal' }]);
 
     // ── E — EL REPORTE ────────────────────────────────────────────────────
     R.seccion('E — el reporte de prestamos activos: lo que entra y el boton');
@@ -289,6 +310,7 @@ const E = { ruta: 0, moviendo: 1, version: 2, act: 3, datos: 4, guardando: 5, om
     a1 = montar(props({ datosPago: 'Nequi 300', onSaveConfig: () => Promise.resolve(null) }), [undefined, undefined, undefined, undefined, TEXTO]).arbol;
     guardar(a1).props.onClick(); await esperar(); await esperar();
     R.check('F4 si el guardado falla (saveConfig resuelve null), el chip NO pasa a "Guardado"', setsDe(E.guardado).length === 0 && JSON.stringify(setsDe(E.guardando)) === '[true,false]');
+    R.eq('F4 y tampoco avisa "Datos de pago guardados" (hallazgo v4 #7: el error ya lo mostro el helper de API)', avisos.map(x => x[0]), []);
 
     // ── G — SINCRONIZAR, CONTRA EL BACKEND REAL ───────────────────────────
     R.seccion('G — sincronizar: POST /api/recalculate y el panel persistente de omitidos');
@@ -315,6 +337,16 @@ const E = { ruta: 0, moviendo: 1, version: 2, act: 3, datos: 4, guardando: 5, om
       conClase(res, 'dvv-res-f').map(f => textos(f).join('|')).join(';') === 'Cliente Uno|El abono supera el capital;Cliente Dos|Plazo inválido');
     g = montar(props(), [undefined, undefined, undefined, undefined, undefined, undefined, null, true]).arbol;
     R.check('G4 mientras sincroniza, el boton se apaga y lo dice', boton(g, 'Sincronizando…').props.disabled === true);
+    // Hallazgo v4 #8: si la sincronizacion FALLA, `recalculate` (App) avisa y resuelve `null`; la vista no
+    // puede convertir ese `null` en "sin omisiones" en verde.
+    R.check('G5 el contrato de App: recalculate avisa "No se pudo sincronizar" y resuelve null si falla',
+      /API\.post\('\/api\/recalculate',\{\}\)\.then\(function\(r\)\{\s*if\(!r\)\{showToast\('No se pudo sincronizar','error'\);return null;\}/.test(app));
+    limpiar();
+    g = montar(props({ onSync: () => Promise.resolve(null) })).arbol;
+    boton(g, 'Sincronizar ahora').props.onClick(); await esperar(); await esperar();
+    R.eq('G5 si falla, deja de sincronizar y NO muestra ningun panel (ni el verde de "sin omisiones")',
+      [setsDe(E.sincronizando), setsDe(E.omitidos)], [[true, false], [null]]);
+    R.eq('G5 y sin estado de resultado no se dibuja panel', conClase(montar(props(), [undefined, undefined, undefined, undefined, undefined, undefined, null]).arbol, 'dvv-res').length, 0);
 
     // ── H — LA PRESENTACION v4 ────────────────────────────────────────────
     R.seccion('H — cinco tarjetas, sin colores en linea, con ortografia');

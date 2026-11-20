@@ -337,12 +337,16 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   R.check('D2 ningun boton con relleno de color en linea (el principal es negro/blanco por clase; lo irreversible, rojo por clase)', botonesColor.length === 0, botonesColor);
   R.check('D2 todo ABtn trae su tono como clase', abtnSinTono.length === 0, abtnSinTono);
   const titulos = ['ConfirmUndoModal (vieja, con caja)', 'PreflightMoraModal', 'DebtModal (nueva, con sugerencias)', 'DebtPayModal (cargo)', 'PayModal (pendiente)',
-    'PayModal (detalle de abono)', 'AbonoModal (COP, mantener)', 'CambiarDiaModal', 'CronogramaPdfModal', 'LiquidarModal', 'RestructureModal', 'LoanModal (C+I con cronograma)'];
+    'PayModal (detalle de abono)', 'AbonoModal (COP, mantener)', 'CambiarDiaModal', 'CronogramaPdfModal', 'LiquidarModal', 'RestructureModal', 'LoanModal (C+I con cronograma)', 'CorteModal'];
   const primero = a => conClase(a, 'v4m-body')[0].kids[0];
   R.check('D3 el titulo de cada modal (su primer bloque) lleva la clase `v4m-tit` y ya no su tamaño ni su color en linea',
     titulos.every(t => clsDe(primero(arboles[t])).indexOf('v4m-tit') !== -1 &&
       !['fontSize', 'fontWeight', 'color', 'marginBottom'].some(k => primero(arboles[t]).props.style && primero(arboles[t]).props.style[k] !== undefined)),
     titulos.filter(t => clsDe(primero(arboles[t])).indexOf('v4m-tit') === -1));
+  // Hallazgo v4 #10: `Modal` nunca dibujo una prop `title`, asi que el formulario de corte abria sin titulo.
+  const corteBody = conClase(arboles['CorteModal'], 'v4m-body')[0].kids;
+  R.eq('D3 el formulario de corte abre con su titulo "Registrar corte" y debajo el nombre del deudor',
+    [unir(corteBody[0]), unir(corteBody[1])], ['Registrar corte', L(DIARIO).nombre]);
   const tonoDe = (arbol, txt) => clsDe(boton(arbol, txt)).filter(c => c !== 'v4m-btn').join(' ');
   R.eq('D4 cada accion con su tono: pagar (principal), en mora (rojo), pendiente (neutro), parcial (aviso), cobrar, condonar, crear deuda, abono y cargo',
     [tonoDe(arboles['PayModal (pendiente)'], 'Pagado'), tonoDe(arboles['PayModal (pendiente)'], 'En Mora'), tonoDe(arboles['PayModal (USD, completo)'], 'Pendiente'),

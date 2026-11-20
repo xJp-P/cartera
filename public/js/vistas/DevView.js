@@ -65,9 +65,11 @@ export function DevView(props){
     setSavingPago(true);
     Promise.resolve(props.onSaveConfig({ datos_pago: datosPago })).then(function(r){
       setSavingPago(false);
-      // `saveConfig` resuelve `null` si el PUT fallo (los helpers de API no rechazan). El chip nuevo solo
-      // dice "Guardado" con una respuesta real; el aviso de exito es el de siempre (ver el backlog).
-      if (r) setGuardado(datosPago);
+      // `saveConfig` resuelve `null` si el PUT fallo (los helpers de API no rechazan; el error ya lo
+      // mostro el helper). El chip y el aviso de exito solo salen con una respuesta real: antes el aviso
+      // salia siempre (hallazgo v4 #7, la familia del Bug #33).
+      if (!r) return;
+      setGuardado(datosPago);
       showToast('Datos de pago guardados');
     }).catch(function(){ setSavingPago(false); });
   }
@@ -104,7 +106,16 @@ export function DevView(props){
     if (!dbPath) return;
     try { navigator.clipboard.writeText(dbPath); showToast('Ruta copiada'); } catch (_){}
   }
-  function buscarActualizaciones(){ if (hasAPI) window.electronAPI.checkForUpdates(); setUpdateInfo({ status: 'checking' }); }
+  // En modo desarrollo el handler `check-for-updates` (desktop/main.js) RESPONDE `{status:'dev-mode'}` y no
+  // emite el evento `update-status`, asi que la vista se quedaba en "Buscando…" para siempre; ahora lee la
+  // respuesta del invoke (hallazgo v4 #6). En la app instalada responde 'checking' y mandan los eventos.
+  function buscarActualizaciones(){
+    if (!hasAPI) return;
+    setUpdateInfo({ status: 'checking' });
+    Promise.resolve(window.electronAPI.checkForUpdates()).then(function(r){
+      if (r && r.status === 'dev-mode') setUpdateInfo({ status: 'dev-mode' });
+    }).catch(function(e){ setUpdateInfo({ status: 'error', message: e && e.message ? e.message : '' }); });
+  }
 
   // ── Actualizaciones: los seis estados que emite `update-status`, cada uno con su chip ──
   var st = updateInfo ? updateInfo.status : 'not-available';
@@ -200,7 +211,9 @@ export function DevView(props){
           h('button', { className: 'v4-btn ghost sm', disabled: sincronizando, onClick: function(){
               if (sincronizando) return;
               setSincronizando(true);
-              Promise.resolve(onSync()).then(function(r){ setSincronizando(false); setOmitidos(r && r.omitidos ? r.omitidos : []); });
+              // `null` = la sincronizacion FALLO (App ya avisa "No se pudo sincronizar"): no hay panel. Antes el
+              // `null` se volvia una lista vacia y salia en verde "sin omisiones" (hallazgo v4 #8).
+              Promise.resolve(onSync()).then(function(r){ setSincronizando(false); setOmitidos(r ? (r.omitidos || []) : null); });
             } }, h(Ico, { name: 'refresh', size: 14, sw: 2.3 }), sincronizando ? 'Sincronizando…' : 'Sincronizar ahora')),
         omitidos && omitidos.length > 0 && h('div', { className: 'dvv-res crit' },
           h('div', { className: 'dvv-res-t' }, h(Ico, { name: 'alert', size: 14, sw: 2.3 }),
