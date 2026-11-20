@@ -776,5 +776,11 @@ export const CHANGELOGS = {
     'Sincronizar no anuncia un éxito falso: si la sincronización falla, la app lo dice y ya no muestra el aviso verde de que todo se recalculó.',
     'Datos de pago: el aviso de «guardados» solo aparece cuando de verdad se guardaron; si algo falla, ves el error.',
     'Registrar corte: el formulario de los créditos abiertos muestra su título, como los demás.'
+  ],
+  '4.1.3': [
+    'El nombre del cliente, en todas partes: al cambiarlo en un préstamo cambia en todos sus préstamos y en todas sus cuotas, también las vencidas y las pagadas. El formulario te avisa antes de guardar cuántos préstamos más cambian, y los clientes que ya habías renombrado se corrigen solos al abrir la app.',
+    'Facturas ya entregadas, encontradas igual: si el cambio de nombre cambió las iniciales del código, el buscador sigue encontrando las facturas con el código anterior.',
+    'Deshacer un cambio de nombre: se deshace de una vez en todos sus préstamos, y si alguno tuvo movimientos después, la app te dice cuál deshacer primero.',
+    'Sin clientes duplicados por las tildes: un nombre pegado con las tildes escritas de otra forma ya no crea otra persona en Cartera ni otro acreedor en Mis Deudas.'
   ]
 };
