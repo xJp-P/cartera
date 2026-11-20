@@ -950,7 +950,17 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('H5 la cuota de Ángela conserva su tilde en el codigo: FC-Án-…', !!pA && X.facturaCode(pA).indexOf('FC-Án-' + idA) === 0, pA && X.facturaCode(pA));
   R.check('H5 y se encuentra escribiendola como sea: "fc-an-", "FC-ÁN-" o "fc-án"',
     !!pA && ['fc-an-' + idA, 'FC-ÁN-' + idA, 'fc-án'].every(q => X.payMatchesQuery(pA, q)));
-  R.check('H5 ANTI-TRIVIAL: otro codigo no la encuentra', !!pA && !X.payMatchesQuery(pA, 'fc-ng-' + idA) && !X.payMatchesQuery(pA, 'fc-an-zzz'));
+  // 4.1.3 ("un nombre en todo", decision del PO): renombrar a un cliente cambia las iniciales de sus
+  // codigos, asi que el codigo tambien se busca SIN ellas cuando el texto trae el prestamo completo.
+  // Lo que NO puede pasar: que respondan otro prestamo, otra cuota o un prestamo a medio escribir.
+  R.check('H5 ANTI-TRIVIAL: otro prestamo, otra cuota o el prestamo a medio escribir no la encuentran', !!pA &&
+    !X.payMatchesQuery(pA, 'fc-an-zzz') && !X.payMatchesQuery(pA, 'fc-án-' + idA + '-99') && !X.payMatchesQuery(pA, 'fc-ng-' + idA.slice(0, 2)));
+  const nnA = pA ? String(pA.cuotaN).padStart(2, '0') : '';
+  R.check('H7 el codigo con las iniciales de ANTES de un renombre encuentra la cuota por prestamo y numero (4.1.3)',
+    !!pA && ['fc-ye-' + idA + '-' + nnA, 'FC-Zz-' + idA, 'fc-ye-' + idA + '-' + nnA.slice(0, 1)].every(q => X.payMatchesQuery(pA, q)));
+  R.check('H7 ...y ninguna cuota de otro prestamo, ni otra cuota del mismo, responde a ese codigo',
+    !!pA && regulares.filter(p => p.id !== pA.id && (String(p.prestamoId).slice(-3) !== idA || p.cuotaN !== pA.cuotaN))
+      .every(p => !X.payMatchesQuery(p, 'fc-ye-' + idA + '-' + nnA)));
   const pagada = paysT.filter(p => X.esCuotaRegular(p) && p.estadoPago === 'Pagado')[0];
   const rPag = X.opBuscarGlobal(fc36(pagada), [], loansT, paysT);
   R.check('H5 la busqueda global encuentra por codigo una cuota YA PAGADA (rastrear un papel viejo)',
@@ -966,6 +976,9 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     [diario36(ldA, H), X.fcCodigoDiario(ldA, H), 'fc-an-' + idD, 'FC-ÁN-' + idD + '-06', 'fc-ng-' + idD].every(q => X.fcCoincideDiario(ldA, q)));
   R.check('H6 ANTI-TRIVIAL: no coincide con otro credito ni con una fecha mal formada',
     !X.fcCoincideDiario(ldA, 'fc-an-zzz') && !X.fcCoincideDiario(ldA, 'fc-an-' + idD + '-061199') && !X.fcCoincideDiario(ldA, 'jose'));
+  R.check('H7 credito abierto: el papel con las iniciales de antes de un renombre se encuentra por el credito (4.1.3)',
+    ['fc-ye-' + idD, 'FC-Ye-' + idD + '-0611'].every(q => X.fcCoincideDiario(ldA, q)) &&
+    !X.fcCoincideDiario(ldA, 'fc-ye-' + idD + '-061199') && !X.fcCoincideDiario(ldA, 'fc-ye-zzz'));
   R.eq('H6 sin tildes en el nombre, el codigo del credito abierto no cambia', X.fcCodigoDiario(ld, H), diario36(ld, H));
   FE.captura.pdfs.length = 0;
   X.generateFacturaCobroDiario(ldA, paysT, '', { hasta: H });
@@ -1206,6 +1219,32 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   R.check('K8 cada tipo con su etiqueta suave (y "Revertida" en morado)', nodos(fl[0], n => n.props && n.props.className === 'v4-tag good').length === 1 &&
     nodos(fl[2], n => n.props && n.props.className === 'v4-tag purple' && textos(n).join('') === 'Revertida').length === 1);
 
+  // K11 (4.1.3) — el CANDADO G en la UI: renombrar a un cliente toca todos sus prestamos (`grupo`, con
+  // `involucra`). La misma regla de routes/undo.js: el renombre no se deshace por encima de un
+  // movimiento posterior de cualquiera de ellos, y un movimiento anterior de uno de ellos no se
+  // deshace antes que el renombre. Un prestamo de OTRO cliente no se entera.
+  const actG = [
+    { id: 5, fecha: '2026-07-31 12:00:00', tipo: 'pago', mensaje: 'Pago posterior en B', undo_id: 'g5' },
+    { id: 4, fecha: '2026-07-31 11:00:00', tipo: 'edicion', mensaje: 'Editaste préstamo de Nueva (antes «Vieja»)', undo_id: 'g4' },
+    { id: 3, fecha: '2026-07-31 10:00:00', tipo: 'pago', mensaje: 'Pago anterior en B', undo_id: 'g3' },
+    { id: 2, fecha: '2026-07-31 09:00:00', tipo: 'pago', mensaje: 'Pago de otro cliente', undo_id: 'g2' }];
+  const undoG = [
+    { id: 'g5', estado: 'disponible', scope_tipo: 'loan', scope_id: 'LB', descripcion: 'Pago posterior en B' },
+    { id: 'g4', estado: 'disponible', scope_tipo: 'loan', scope_id: 'LA', descripcion: 'Renombre', grupo: true, involucra: ['LA', 'LB'] },
+    { id: 'g3', estado: 'disponible', scope_tipo: 'loan', scope_id: 'LB', descripcion: 'Pago anterior en B' },
+    { id: 'g2', estado: 'disponible', scope_tipo: 'loan', scope_id: 'LZ', descripcion: 'Pago de otro cliente' }];
+  const flG = filasK(montar(X.HistorialView, { actLog: actG, undoLog: undoG, onUndo: () => {}, onRefresh: () => {} }, []).arbol);
+  const activoG = f => !!btnD(f) && !btnD(f).props.disabled;
+  R.eq('K11 con un pago posterior en B: se deshace ese pago y el del otro cliente; el renombre y el pago anterior, no',
+    flG.map(activoG), [true, false, false, true]);
+  R.check('K11 el renombre explica que uno de sus prestamos tiene una operacion posterior',
+    textos(flG[1]).join(' ').indexOf('Este cambio de nombre tocó todos los préstamos del cliente, y uno de ellos tiene una operación posterior. Primero debes deshacer: "Pago posterior en B"') !== -1);
+  const undoG2 = undoG.map(u => u.id === 'g5' ? Object.assign({}, u, { estado: 'deshecho' }) : u);
+  const flG2 = filasK(montar(X.HistorialView, { actLog: actG, undoLog: undoG2, onUndo: () => {}, onRefresh: () => {} }, []).arbol);
+  R.eq('K11 deshecho ese pago: el renombre ya se puede deshacer y el pago anterior de B sigue esperando', flG2.slice(1).map(activoG), [true, false, true]);
+  R.check('K11 el pago anterior explica que despues se renombro al cliente',
+    textos(flG2[2]).join(' ').indexOf('Después de esta operación se cambió el nombre del cliente en todos sus préstamos. Primero debes deshacer: "Renombre"') !== -1);
+
   // ── El encabezado v4: cuantas acciones, la actividad de 30 dias y el dia elegido con un clic ──
   if (hk) {
     const enc = nodos(hk.arbol, conClaseK('hsv-cifra-v'))[0];
@@ -1352,5 +1391,38 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     dpL.indexOf('props.onReciboGeneral(d.nombre') !== -1 && cbL.indexOf('props.acciones.onReciboGeneral(l.nombre') !== -1);
   const cssL = leer('public/css/modales.css');
   R.check('L8 el estilo del modal vive en modales.css, sin restos del prototipo', /\.rg-deuda \{/.test(cssL) && !/proto-/.test(cssL));
+
+  // ── M (4.1.3) — renombrar al cliente: el panel abierto lo sigue ───────────────
+  // Cobros y Cartera recuerdan al deudor abierto POR NOMBRE. Corregir el nombre lo cambia en todos sus
+  // prestamos, asi que sin el mapa de App (`renombres`, {viejo: nuevo}) el panel se cerraba solo.
+  R.seccion('M — renombrar al cliente: el panel abierto de Cobros y de Cartera lo sigue (4.1.3)');
+  const viejoM = deudores.filter(d => loans.filter(l => l.nombre === d.nombre).length >= 2)[0];
+  R.check('M0 anti-vacio: hay un deudor con varios prestamos', !!viejoM);
+  if (viejoM) {
+    const NUEVO_M = 'Nombre Corregido M';
+    const loansM = loans.map(l => l.nombre === viejoM.nombre ? Object.assign({}, l, { nombre: NUEVO_M }) : l);
+    const paysM = pays.map(p => p.nombreCliente === viejoM.nombre ? Object.assign({}, p, { nombreCliente: NUEVO_M }) : p);
+    const deudoresM = deudores.map(d => d.nombre === viejoM.nombre ? Object.assign({}, d, { nombre: NUEVO_M }) : d);
+    const lM = loansM.filter(l => l.nombre === NUEVO_M)[0];
+    const propsM = extra => Object.assign({}, propsCobros, { loans: loansM, pays: paysM, deudores: deudoresM }, extra || {});
+    const selCb = [undefined, undefined, undefined, { nombre: viejoM.nombre, loanId: lM.id, payId: null }];
+    const panelCb = r => conClase(montar(X.CobrosView, r, selCb).arbol, 'dp');
+    R.eq('M1 Cobros: sin el mapa, el panel del deudor renombrado se cerraba (el caso que se arregla)', panelCb(propsM()).length, 0);
+    const conMapa = panelCb(propsM({ renombres: { [viejoM.nombre]: NUEVO_M } }));
+    R.check('M1 Cobros: con el mapa de App, el panel sigue abierto y ya muestra el nombre nuevo',
+      conMapa.length === 1 && textos(conMapa[0]).join(' ').indexOf(NUEVO_M) !== -1);
+    const propsCtM = extra => Object.assign({}, propsCartera, { loans: loansM, pays: paysM, deudores: deudoresM }, extra || {});
+    const selCt = [undefined, undefined, undefined, undefined, viejoM.nombre];
+    const ctSin = montar(X.CarteraView, propsCtM(), selCt), ctCon = montar(X.CarteraView, propsCtM({ renombres: { [viejoM.nombre]: NUEVO_M } }), selCt);
+    R.eq('M2 Cartera: sin el mapa, el panel del deudor renombrado se cerraba', conClase(ctSin.arbol, 'dp').length, 0);
+    R.check('M2 Cartera: con el mapa, el panel sigue abierto con el nombre nuevo y su fila marcada',
+      conClase(ctCon.arbol, 'dp').length === 1 && textos(conClase(ctCon.arbol, 'dp')[0]).join(' ').indexOf(NUEVO_M) !== -1 &&
+      conClase(ctCon.arbol, 'ctv-fila on').length === 1 && textos(conClase(ctCon.arbol, 'ctv-fila on')[0]).join(' ').indexOf(NUEVO_M) !== -1);
+    // El mapa lo lleva App: de un solo paso, y la memoria de Cartera (la que sobrevive al cierre) tambien.
+    const appM = leer('public/js/app.js');
+    R.check('M3 App anota el renombre tras guardar y se lo pasa a las dos vistas',
+      /if\(previo&&savedLoan\.nombre&&savedLoan\.nombre!==previo\.nombre\) anotarRenombre\(previo\.nombre,savedLoan\.nombre\);/.test(appM) &&
+      /h\(CobrosView,\{[^}]*renombres:renombres\.current/.test(appM) && /h\(CarteraView,\{[^}]*renombres:renombres\.current/.test(appM));
+  }
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

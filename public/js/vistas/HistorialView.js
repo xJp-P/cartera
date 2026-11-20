@@ -109,6 +109,21 @@ export function HistorialView(props){
     var k = u.scope_tipo + '|' + u.scope_id;
     if (u.estado === 'disponible' && !headByScope[k]) headByScope[k] = u.id;
   });
+  // ── CANDADO G (4.1.3) ── renombrar a un cliente toca TODOS sus prestamos (`grupo`, con la lista en
+  // `involucra`). Mientras siga en pie, ni el renombre se deshace por encima de un movimiento posterior
+  // de cualquiera de ellos, ni un movimiento anterior de uno de ellos se deshace antes que el renombre.
+  // Misma regla que routes/undo.js. `undoLog` viene del mas nuevo al mas viejo.
+  var invDe = function(u){ return u.involucra || [u.scope_id]; };
+  function bloqueoGrupo(u){
+    if (u.scope_tipo !== 'loan') return null;
+    var mios = invDe(u);
+    for (var i = 0; i < undoLog.length && undoLog[i].id !== u.id; i++){
+      var n = undoLog[i];
+      if (n.estado !== 'disponible' || n.scope_tipo !== 'loan' || !(u.grupo || n.grupo)) continue;
+      if (invDe(n).some(function(id){ return mios.indexOf(id) !== -1; })) return n;
+    }
+    return null;
+  }
 
   // ── Filtros: periodo -> busqueda -> tipo (el conteo de cada tipo respeta periodo y busqueda) ──
   var rango = hsRango(periodo, hoy, desde, hasta);
@@ -144,13 +159,17 @@ export function HistorialView(props){
   function fila(it, i){
     var t = HS_TIPOS[it.tipo] || ['activity', 'neutral', it.tipo];
     var uj = it.undo_id ? ujById[it.undo_id] : null;
-    var esHead = uj && uj.estado === 'disponible' && headByScope[uj.scope_tipo + '|' + uj.scope_id] === uj.id;
+    var esHeadScope = uj && uj.estado === 'disponible' && headByScope[uj.scope_tipo + '|' + uj.scope_id] === uj.id;
+    var porGrupo = esHeadScope ? bloqueoGrupo(uj) : null;
+    var esHead = esHeadScope && !porGrupo;
     var bloqueada = uj && uj.estado === 'disponible' && !esHead;
     var yaDeshecha = uj && uj.estado === 'deshecho';
     var headEntry = uj ? ujById[headByScope[uj.scope_tipo + '|' + uj.scope_id]] : null;
-    var motivo = bloqueada && headEntry
-      ? 'Primero debes deshacer la operación más reciente de este ' + (uj.scope_tipo === 'debt' ? 'registro' : 'préstamo') + ': "' + headEntry.descripcion + '"'
-      : '';
+    var motivo = !bloqueada ? ''
+      : porGrupo
+        ? (uj.grupo ? 'Este cambio de nombre tocó todos los préstamos del cliente, y uno de ellos tiene una operación posterior. Primero debes deshacer: "'
+                    : 'Después de esta operación se cambió el nombre del cliente en todos sus préstamos. Primero debes deshacer: "') + porGrupo.descripcion + '"'
+        : headEntry ? 'Primero debes deshacer la operación más reciente de este ' + (uj.scope_tipo === 'debt' ? 'registro' : 'préstamo') + ': "' + headEntry.descripcion + '"' : '';
     var deudor = deudorDe(it);
     return h('div', { key: it.id, className: 'hsv-fila' + (yaDeshecha ? ' revertida' : ''), style: { '--i': i } },
       h('div', { className: 'hsv-hora' }, String(it.fecha || '').slice(11, 16)),

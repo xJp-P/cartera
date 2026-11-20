@@ -249,6 +249,9 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   const loanBase = { loan: null, trm: 4000, pays, clientes: [{ nombre: 'Marta Diaz', cedula: '1', telefono: '2' }], onSave: nada, onClose: nada };
   const fIni = montar(X.LoanModal, loanBase).valores[0];
   const conF = cambios => [Object.assign({}, fIni, cambios)];
+  // Los clientes como los arma App (`deudores`: nombre + sus prestamos), para el aviso del renombre.
+  const clientesApp = Object.values(loans.reduce((a, l) => { (a[l.nombre] = a[l.nombre] || { nombre: l.nombre, loans: [] }).loans.push(l); return a; }, {}));
+  const propsRenombre = { loan: loans.filter(l => l.nombre === 'Bruno Salgado')[0], trm: 4000, pays, clientes: clientesApp, onSave: nada, onClose: nada };
   const ESCENAS = [
     ['ConfirmModal', X.ConfirmModal, cProps({ tono: 'peligro', detail: '$ 1.000', checkLabel: 'Generar recibo' })],
     ['ConfirmUndoModal (vieja, con caja)', X.ConfirmUndoModal, { entry: { id: 'u1', descripcion: 'Abono', created_at: '2026-07-01 10:00:00', afecta_caja: 1, scope_tipo: 'loan' }, onConfirm: prom, onClose: nada }],
@@ -302,6 +305,10 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     ['LoanModal (USD, C+I)', X.LoanModal, loanBase, conF({ moneda: 'USD', montoOrigen: '1000', modalidad: 'Capital + Intereses', tasaMensual: '5', plazoMeses: '6' })],
     ['LoanModal (Prestamo)', X.LoanModal, loanBase, conF({ montoOrigen: '1000000', modalidad: 'Prestamo', tasaMensual: '0', plazoMeses: '1', fechaDevolucion: '2026-10-01' })],
     ['LoanModal (editar con actividad)', X.LoanModal, { loan: L(CI), trm: 4000, pays, clientes: [], onSave: nada, onClose: nada }],
+    // 4.1.3: corregir el nombre lo corrige en todos los prestamos del cliente; el formulario lo avisa.
+    ['LoanModal (renombrar a un cliente de varios prestamos)', X.LoanModal, propsRenombre, conF({ nombre: 'Bruno Salgado Corregido' })],
+    ['LoanModal (renombrar al nombre de otro cliente)', X.LoanModal, propsRenombre, conF({ nombre: 'Ana Restrepo' })],
+    ['LoanModal (editar sin cambiar el nombre)', X.LoanModal, propsRenombre, conF({ nombre: 'Bruno Salgado' })],
     ['UnificarModal', X.UnificarModal, { deudor: 'Bruno Salgado', hoy: '2026-07-31', pays, onClose: nada, onPropuesta: nada, onConfirmar: prom,
       loans: loans.filter(l => l.nombre === 'Bruno Salgado' && l.estado === 'Activo') }],
     // El recibo general (post-4.0.0, punto 4): sin marcar, con un credito marcado y en dolares.
@@ -344,6 +351,16 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
       !['fontSize', 'fontWeight', 'color', 'marginBottom'].some(k => primero(arboles[t]).props.style && primero(arboles[t]).props.style[k] !== undefined)),
     titulos.filter(t => clsDe(primero(arboles[t])).indexOf('v4m-tit') === -1));
   // Hallazgo v4 #10: `Modal` nunca dibujo una prop `title`, asi que el formulario de corte abria sin titulo.
+  // 4.1.3 — el aviso del renombre (`lm-renombre`): cuantos prestamos mas cambian y si se une a otro cliente.
+  const avisoRen = t => { const c = conClase(arboles[t], 'lm-renombre')[0]; return c ? unir(c) : null; };
+  const nBruno = loans.filter(l => l.nombre === 'Bruno Salgado').length;
+  R.eq('D3 renombrar a un cliente de varios prestamos: el formulario avisa cuantos mas cambian',
+    avisoRen('LoanModal (renombrar a un cliente de varios prestamos)'),
+    'El nombre también cambiará en sus otros ' + (nBruno - 1) + ' préstamos y en todas sus cuotas, para que siga siendo una sola persona en Cartera.');
+  R.check('D3 renombrar al nombre de otro cliente: avisa tambien que sus prestamos quedan juntos',
+    (avisoRen('LoanModal (renombrar al nombre de otro cliente)') || '').indexOf('Ya hay un cliente llamado Ana Restrepo: sus préstamos quedarán juntos.') !== -1,
+    avisoRen('LoanModal (renombrar al nombre de otro cliente)'));
+  R.eq('D3 sin cambiar el nombre no hay aviso', avisoRen('LoanModal (editar sin cambiar el nombre)'), null);
   const corteBody = conClase(arboles['CorteModal'], 'v4m-body')[0].kids;
   R.eq('D3 el formulario de corte abre con su titulo "Registrar corte" y debajo el nombre del deudor',
     [unir(corteBody[0]), unir(corteBody[1])], ['Registrar corte', L(DIARIO).nombre]);

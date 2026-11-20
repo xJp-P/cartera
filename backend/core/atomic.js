@@ -88,9 +88,17 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
       viejos: viejosIds.map(id => snapshotScope('loan', id))
     };
   }
+  // GRUPO (4.1.3, bloque 2): renombrar a un cliente cambia el nombre en TODOS sus prestamos (el
+  // cliente es una persona, y la app lo reconoce por el nombre exacto). Un solo movimiento toca
+  // varios agregados VIVOS; la entrada va con scope ('loan', el prestamo editado) y el Candado G
+  // de routes/undo.js impide que deshacerla pise movimientos posteriores de los otros.
+  function snapshotGrupo(ids) {
+    return { v: 1, tipo: 'grupo', ids: ids.slice(), aggs: ids.map(id => snapshotScope('loan', id)) };
+  }
   // El estado ACTUAL comparable con el `post_hash` de una entrada (Candado B).
   function snapshotActual(entry, snap) {
     if (snap && snap.tipo === 'unif') return snapshotUnif(snap.nuevoId, snap.viejosIds || []);
+    if (snap && snap.tipo === 'grupo') return snapshotGrupo(snap.ids || []);
     return snapshotScope(entry.scope_tipo, entry.scope_id);
   }
 
@@ -100,6 +108,10 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
     if (snap.tipo === 'unif') {
       restoreScope(snap.nuevo, snap.nuevoId);
       (snap.viejos || []).forEach((v, i) => restoreScope(v, snap.viejosIds[i]));
+      return;
+    }
+    if (snap.tipo === 'grupo') {
+      (snap.aggs || []).forEach((a, i) => restoreScope(a, snap.ids[i]));
       return;
     }
     if (snap.tipo === 'debt') {
@@ -175,7 +187,7 @@ function crearAtomic({ db, insUndo, logActionUndo, appVersion }) {
 
   return {
     stableStringify, hashSnapshot, tableCols, restoreRow,
-    snapshotScope, snapshotUnif, snapshotActual, restoreScope, podarJournal, mutacionAtomica,
+    snapshotScope, snapshotUnif, snapshotGrupo, snapshotActual, restoreScope, podarJournal, mutacionAtomica,
   };
 }
 

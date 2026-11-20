@@ -82,10 +82,24 @@ export function fcCoincideDiario(loan, q){
   var ql=plegar(q).trim();
   if(ql.indexOf('fc-')!==0) return false;
   var id3=String(loan.id||'').slice(-3);
-  return [fcIniciales(loan.nombre), fcInicialesDiario36(loan.nombre)].some(function(ini){
+  var coincide=[fcIniciales(loan.nombre), fcInicialesDiario36(loan.nombre)].some(function(ini){
     var base=plegar('FC-'+(ini||'XX')+'-'+id3);
     return base.indexOf(ql)===0 || (ql.indexOf(base)===0 && /^-\d{0,4}$/.test(ql.slice(base.length)));
   });
+  if(coincide) return true;
+  var resto=fcResto(ql), base2=plegar('-'+id3);
+  return !!resto && (resto===base2 || (resto.indexOf(base2)===0 && /^-\d{0,4}$/.test(resto.slice(base2.length))));
+}
+
+// 4.1.3 (decision del PO, "un nombre en todo"): al renombrar a un cliente sus cuotas toman el nombre
+// nuevo, y el codigo FC se recalcula con las iniciales nuevas. Las facturas que ya entregaste llevan
+// las VIEJAS, asi que el codigo tambien se busca SIN las iniciales: "fc-ye-kph-03" encuentra la cuota
+// 03 del prestamo que termina en "kph" aunque hoy sus iniciales sean otras. Solo cuando el texto ya
+// trae el prestamo completo (sus 3 caracteres), para no inundar la lista mientras se escribe.
+// Devuelve lo que sigue a las iniciales ("-kph-03"), o null.
+function fcResto(ql){
+  var m=/^fc-[^-]*(-.+)$/.exec(ql);
+  return m && m[1].length>=4 ? m[1] : null;
 }
 
 // Match del buscador de Cobros: si el texto empieza por "fc-" filtra por codigo de factura; si no, por
@@ -93,6 +107,11 @@ export function fcCoincideDiario(loan, q){
 export function payMatchesQuery(p,q){
   if(!q) return true;
   var ql=plegar(q).trim();
-  if(ql.indexOf('fc-')===0) return plegar(facturaCode(p)).indexOf(ql)!==-1;
+  if(ql.indexOf('fc-')===0){
+    var codigo=plegar(facturaCode(p));
+    if(codigo.indexOf(ql)!==-1) return true;
+    var resto=fcResto(ql);
+    return !!resto && codigo.replace(/^fc-[^-]*/,'').indexOf(resto)===0;
+  }
   return plegar(p.nombreCliente).indexOf(ql)!==-1;
 }

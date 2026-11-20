@@ -47,8 +47,9 @@ export function DebtModal(props){
   }
 
   // QA6: sugerencias de acreedores existentes. Oculto si el input esta vacio o si coincide exacto.
-  var acrQ=acreedor.trim(), acrQL=acrQ.toLowerCase();
-  var acrExact=existingAcreedores.some(function(n){return n.toLowerCase()===acrQL;});
+  // 4.1.3: la coincidencia EXACTA compara en NFC, como guarda el backend.
+  var acrQ=acreedor.trim(), acrQL=acrQ.normalize('NFC').toLowerCase();
+  var acrExact=existingAcreedores.some(function(n){return n.normalize('NFC').toLowerCase()===acrQL;});
   var acrSugeridos=(acrQ&&!acrExact)?existingAcreedores.filter(function(n){return contiene(n,acrQ);}).slice(0,6):[];
   var acrOpen=showSug&&acrSugeridos.length>0;
 

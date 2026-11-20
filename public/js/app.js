@@ -123,6 +123,10 @@ function App(){
   // vista lo vuelve a guardar en cada cambio (`onMemoria: ctGuardarMemoria`).
   var memCartera=React.useRef(null);
   if(memCartera.current===null) memCartera.current=ctLeerMemoria();
+  // 4.1.3 — renombrar a un cliente cambia su nombre en todos sus prestamos. Cobros y Cartera recuerdan
+  // al deudor abierto POR NOMBRE, asi que tras guardar el panel se habria cerrado solo. Este mapa
+  // {viejo: nuevo} les dice a quien seguir; se mantiene de UN paso (ver `anotarRenombre`).
+  var renombres=React.useRef({});
   var sTramo=useState(null); var tramoCobros=sTramo[0]; var setTramoCobros=sTramo[1];
   // 3.1.0 — cronograma de un prestamo RECIEN creado: antes de imprimirlo se decide si su valor
   // de liquidacion incluye el interes del mes en curso (decision del PO: tambien aqui).
@@ -338,11 +342,25 @@ function App(){
     setPayModal({pay:p,loan:loan});
   },[loans]);
 
+  // 4.1.3 — anota que `viejo` ahora se llama `nuevo`, en un solo paso: lo que apuntaba a `viejo` pasa a
+  // `nuevo`, y `nuevo` deja de ser un nombre viejo (si se renombra de ida y vuelta no queda un ciclo).
+  // La memoria de Cartera (la que sobrevive al cierre) tambien sigue al cliente.
+  function anotarRenombre(viejo,nuevo){
+    var m=renombres.current;
+    delete m[nuevo];
+    Object.keys(m).forEach(function(k){if(m[k]===viejo) m[k]=nuevo;});
+    m[viejo]=nuevo;
+    if(memCartera.current&&memCartera.current.sel===viejo){
+      memCartera.current=Object.assign({},memCartera.current,{sel:nuevo});
+      ctGuardarMemoria(memCartera.current);
+    }
+  }
   var saveLoan=useCallback(function(data){
-    // Vinculacion automatica: si es nuevo, buscar deudor existente por nombre (case-insensitive)
+    // Vinculacion automatica: si es nuevo, buscar deudor existente por nombre (case-insensitive).
+    // 4.1.3: en NFC, como lo guarda el backend (un nombre pegado en NFD tambien encuentra al cliente).
     if(!data.id){
-      var nombreNorm=data.nombre.trim().toLowerCase();
-      var existente=loans.find(function(l){return l.nombre.trim().toLowerCase()===nombreNorm;});
+      var nombreNorm=data.nombre.normalize('NFC').trim().toLowerCase();
+      var existente=loans.find(function(l){return l.nombre.normalize('NFC').trim().toLowerCase()===nombreNorm;});
       if(existente){
         // Auto-vincular: usar cedula/telefono del deudor existente si no se llenaron
         if(!data.cedula||data.cedula==='0') data.cedula=existente.cedula;
@@ -350,7 +368,7 @@ function App(){
         // Usar nombre exacto del existente para consistencia
         data.nombre=existente.nombre;
         // Validacion de duplicados: mismo nombre + mismo monto activo
-        var dupActivo=loans.find(function(l){return l.nombre.trim().toLowerCase()===nombreNorm&&l.estado==='Activo'&&Math.round(l.montoCOP)===Math.round(data.montoCOP);});
+        var dupActivo=loans.find(function(l){return l.nombre.normalize('NFC').trim().toLowerCase()===nombreNorm&&l.estado==='Activo'&&Math.round(l.montoCOP)===Math.round(data.montoCOP);});
         if(dupActivo){
           setConfirmDlg({title:'Préstamo duplicado',message:'Ya existe un préstamo activo para "'+existente.nombre+'" por '+fmt(data.montoCOP)+'.',okLabel:'Crear igual',tono:'aviso',onConfirm:function(){setConfirmDlg(null);doSaveLoan(data);}});
           return Promise.resolve();
@@ -361,12 +379,15 @@ function App(){
   },[reload,loans]);
   function doSaveLoan(data){
     var isNew=!data.id;
+    var previo=isNew?null:(loans.filter(function(l){return l.id===data.id;})[0]||null);
     var p=data.id?API.put('/api/loans/'+data.id,data):API.post('/api/loans',data);
     return p.then(function(r){
       if(!r)return;
       var savedLoan=r;
+      if(previo&&savedLoan.nombre&&savedLoan.nombre!==previo.nombre) anotarRenombre(previo.nombre,savedLoan.nombre);
       return reload().then(function(res){
-        setLoanModal(null);showToast(isNew?'Préstamo creado':'Préstamo actualizado');
+        var nRen=(!isNew&&savedLoan.renombrados)||0;
+        setLoanModal(null);showToast(isNew?'Préstamo creado':(nRen?'Préstamo actualizado · el nombre cambió también en '+(nRen===1?'su otro préstamo':'sus otros '+nRen+' préstamos'):'Préstamo actualizado'));
         if(isNew&&savedLoan&&savedLoan.id){
           // 3.1.0 — si el credito puede cobrar el interes del mes, el modal del cronograma
           // REEMPLAZA a la confirmacion de abajo: hace la misma pregunta ("¿generar el PDF?")
@@ -1024,8 +1045,8 @@ function App(){
       view==='dashboard'  && h(DashView,  {metrics:metrics,isEmpty:loans.length===0,onNav:navTo,loans:loans,pays:pays,onNameClick:openDebtorByName,onNewLoan:function(){navTo('cartera');setLoanModal('new');}}),
       // 3.5.0 — Cobros (antes Pagos) y Cartera (antes Cartera + Deudores), con el panel del
       // deudor al lado. La `key` remonta la vista cuando llega un tramo o un foco nuevo.
-      view==='cobros'     && h(CobrosView,{key:'cb'+(tramoCobros?tramoCobros.t:0),tramo:tramoCobros?tramoCobros.tramo:null,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,datosPago:cfg.datos_pago,showToast:showToast}),
-      view==='cartera'    && h(CarteraView,{key:'ct'+(foco?foco.t:0),foco:foco,memoria:memCartera.current,onMemoria:ctGuardarMemoria,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,onNuevo:function(){setLoanModal('new');},datosPago:cfg.datos_pago,showToast:showToast}),
+      view==='cobros'     && h(CobrosView,{key:'cb'+(tramoCobros?tramoCobros.t:0),tramo:tramoCobros?tramoCobros.tramo:null,renombres:renombres.current,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,datosPago:cfg.datos_pago,showToast:showToast}),
+      view==='cartera'    && h(CarteraView,{key:'ct'+(foco?foco.t:0),foco:foco,memoria:memCartera.current,onMemoria:ctGuardarMemoria,renombres:renombres.current,loans:loans,pays:pays,deudores:deudores,hoy:nowStr(),acciones:accionesOp,onPay:openPayModal,onNuevo:function(){setLoanModal('new');},datosPago:cfg.datos_pago,showToast:showToast}),
       view==='rendimiento'&& h(PortfolioView,{loans:loans,pays:pays,onNav:navTo,onNameClick:openDebtorByName}),
       view==='calculadora'&& h(CalcView,   {onConfirm:confirmarCalc}),
       view==='historial'   && h(HistorialView,{actLog:actLog,undoLog:undoLog,loans:loans,onNameClick:openDebtorByName,onUndo:function(entry){setUndoDlg(entry);},

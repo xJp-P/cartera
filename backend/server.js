@@ -80,7 +80,7 @@ module.exports = function createApp(dbPath) {
   // Vive en core/atomic.js (Etapa 2/A4). Es una FACTORY porque `_colsCache` debe
   // ser por instancia de createApp (una cache de columnas por BD), no de modulo.
   const {
-    hashSnapshot, snapshotScope, snapshotUnif, snapshotActual, restoreScope, podarJournal, mutacionAtomica,
+    hashSnapshot, snapshotScope, snapshotUnif, snapshotGrupo, snapshotActual, restoreScope, podarJournal, mutacionAtomica,
   } = crearAtomic({ db, insUndo, logActionUndo, appVersion: APP_VERSION });
   podarJournal();
 
@@ -89,7 +89,7 @@ module.exports = function createApp(dbPath) {
   // preparadas, el motor y los helpers transversales. Se arma una sola vez.
   const ctx = {
     db, logAction, insPayment, runPayment, insertSchedule,
-    mutacionAtomica, hashSnapshot, snapshotScope, snapshotUnif, snapshotActual, restoreScope, podarJournal,
+    mutacionAtomica, hashSnapshot, snapshotScope, snapshotUnif, snapshotGrupo, snapshotActual, restoreScope, podarJournal,
     snapshotCobros, restaurarCobros, abortarSiHuerfanos, cuotaCerradaPorLoAbonado, reHousekeepLoan,
     buildSchedule, buildScheduleFixedPMT, getPayDate, tasaPeriodo, cuotasHastaHoy,
     transitoriaDe, aplicarPeriodoIrregular, resolverPrimerPago,

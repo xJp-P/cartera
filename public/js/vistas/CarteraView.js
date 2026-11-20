@@ -140,7 +140,10 @@ export function CarteraView(props){
   // Las entradas animadas solo con la ventana visible (y sin "reducir movimiento"); va al final para
   // no mover el orden de los demas estados.
   var _an = useState(v4PuedeAnimar); var anima = _an[0];
-  var deudorSel = sel ? props.deudores.filter(function(d){ return d.nombre === sel; })[0] : null;
+  // 4.1.3: si al deudor abierto se le corrigio el nombre (en todos sus prestamos), App dice como se
+  // llama ahora (`renombres`, {viejo: nuevo}) y el panel lo sigue en vez de cerrarse.
+  var selVivo = sel && props.renombres && props.renombres[sel] ? props.renombres[sel] : sel;
+  var deudorSel = selVivo ? props.deudores.filter(function(d){ return d.nombre === selVivo; })[0] : null;
   function abrir(nombre, loanId){ setSel(nombre); setFocoL(loanId ? { loan: loanId } : null); mem.sel = nombre; mem.loan = loanId || null; guardar(); }
   function filtrar(f){ setFiltro(f); mem.filtro = f; guardar(); }
 
@@ -153,7 +156,7 @@ export function CarteraView(props){
   activos.forEach(function(x){ var g = porEstado[CTV_GRUPO[x.estado]]; if (g){ g.v += x.saldo; g.n++; } });
 
   function fila(x, i){
-    var on = sel === x.nombre;
+    var on = selVivo === x.nombre;
     var tono = x.estado === 'mora' ? 'crit' : (x.estado === 'hoy' || x.estado === 'semana') ? 'warn' : x.estado === 'abierto' ? 'info' : '';
     var linea = x.estado === 'mora' ? h('span', { className: 'crit' }, fmt(x.mora) + ' vencidos · ' + ctvPl(x.moraDias, 'día'))
       : x.prox ? h('span', { className: x.prox.p.fechaPago === hoy ? 'warn' : '' }, 'próxima ' + opCorta(x.prox.p.fechaPago) + ' · ' + opRel(hoy, x.prox.p.fechaPago))

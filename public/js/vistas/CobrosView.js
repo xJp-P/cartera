@@ -276,7 +276,9 @@ export function CobrosView(props){
           h('div', { className: 'cbv-tramo quieto' }, h('div', { className: 'l' }, h('span', { className: 'cbv-dot track' }), 'Movimientos'), h('div', { className: 'v' }, eventos.length))));
 
   // ── Panel lateral ─────────────────────────────────────────────────────────────
-  var deudorSel = sel ? props.deudores.filter(function(d){ return d.nombre === sel.nombre; })[0] : null;
+  // 4.1.3: si al deudor abierto se le corrigio el nombre, App dice como se llama ahora y el panel lo sigue.
+  var selNombre = sel ? ((props.renombres && props.renombres[sel.nombre]) || sel.nombre) : null;
+  var deudorSel = sel ? props.deudores.filter(function(d){ return d.nombre === selNombre; })[0] : null;
   var acciones = props.acciones;
   var panel = deudorSel
     ? h(DeudorPanel, Object.assign({ key: sel.nombre + '|' + sel.loanId, deudor: deudorSel, loans: loans, pays: pays, hoy: hoy, focoLoan: sel.loanId, focoPay: sel.payId,

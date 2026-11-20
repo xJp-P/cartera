@@ -19,6 +19,7 @@
 // con su ledger y recien entonces se libera la siguiente.
 
 const express = require('express');
+const { nfc } = require('../core/util');
 
 module.exports = function crearRutasDebts(ctx) {
   const { db, mutacionAtomica, ClientError, genId, hoyStr } = ctx;
@@ -47,9 +48,9 @@ module.exports = function crearRutasDebts(ctx) {
 
   // Crea una deuda. saldo_pendiente arranca igual al monto_original; estado 'Activa'.
   router.post('/api/debts', (req, res) => {
-    const titulo = (req.body.titulo || '').trim();
-    const acreedor = (req.body.acreedor || '').trim();
-    const concepto = (req.body.concepto || '').trim();
+    const titulo = nfc((req.body.titulo || '').trim());
+    const acreedor = nfc((req.body.acreedor || '').trim());
+    const concepto = nfc((req.body.concepto || '').trim());
     const monto = Math.round(+req.body.monto_original || 0);
     if (!titulo) return res.status(400).json({ error: 'El título es obligatorio' });
     if (!acreedor) return res.status(400).json({ error: 'El acreedor es obligatorio' });
@@ -124,9 +125,9 @@ module.exports = function crearRutasDebts(ctx) {
   router.put('/api/debts/:id', (req, res) => {
     const deuda = db.prepare('SELECT * FROM mis_deudas WHERE id = ?').get(req.params.id);
     if (!deuda) return res.status(404).json({ error: 'Deuda no encontrada' });
-    const titulo = (req.body.titulo || '').trim();
-    const acreedor = (req.body.acreedor || '').trim();
-    const concepto = (req.body.concepto || '').trim();
+    const titulo = nfc((req.body.titulo || '').trim());
+    const acreedor = nfc((req.body.acreedor || '').trim());
+    const concepto = nfc((req.body.concepto || '').trim());
     const monto = Math.round(+req.body.monto_original || 0);
     return mutacionAtomica(req, res, { accion: 'deuda_editar', logTipo: 'deuda', endpoint: 'PUT /api/debts/:id', scopeTipo: 'debt', scopeId: req.params.id }, () => {
       if (!titulo) throw new ClientError('El título es obligatorio');

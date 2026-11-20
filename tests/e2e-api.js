@@ -526,7 +526,32 @@ async function faseEscritura() {
       cuotasNuevo.map(p => p.cuotaN + ': ' + p.interesPeriodo + '+' + p.abonoCapital + '<>' + p.cuotaTotal).join('\n'));
     R.check('motor: todas las cuotas persisten pesos enteros',
       cuotasNuevo.every(p => Number.isInteger(p.interesPeriodo) && Number.isInteger(p.abonoCapital) && Number.isInteger(p.cuotaTotal)));
-    await rechazo('POST /api/loans', 'POST /api/loans con cuerpo vacio', 'POST', '/api/loans', {}, 'error', true);
+    // 4.1.3 (contrato de errores, defecto #1 del backlog): un cuerpo invalido es 400 con la BD intacta,
+    // nunca un 500 del driver de SQLite. Cada caso con el motivo concreto.
+    await rechazo('POST /api/loans', 'POST /api/loans con cuerpo vacio', 'POST', '/api/loans', {}, 400);
+    const sin = (k, extra) => { const b = Object.assign({}, nuevo, extra || {}); if (k) delete b[k]; return b; };
+    for (const [desc, cuerpo] of [
+      ['sin nombre', sin('nombre')], ['con nombre en blanco', sin(null, { nombre: '   ' })],
+      ['con moneda invalida', sin(null, { moneda: 'EUR' })], ['con monto 0', sin(null, { montoOrigen: 0 })],
+      ['con fecha de inicio invalida', sin(null, { fechaInicio: '2026-02-30' })],
+      ['en dolares sin TRM', sin('trmAcordada', { moneda: 'USD' })], ['C+I sin plazo', sin('plazoMeses')],
+      ['con tasa negativa', sin(null, { tasaMensual: -1 })],
+    ]) await rechazo('POST /api/loans', 'POST /api/loans ' + desc, 'POST', '/api/loans', cuerpo, 400);
+    // Lo opcional ya no revienta: sin cedula, telefono, notas, estado, frecuencia ni dia de pago.
+    const minimo = { nombre: 'ZZ Minimo E2E', moneda: 'COP', montoOrigen: 500000, montoCOP: 500000, tasaMensual: 5,
+      plazoMeses: 2, modalidad: 'Capital + Intereses', fechaInicio: hoyStr() };
+    const rMin = await pedir(S, 'POST', '/api/loans', minimo);
+    R.check('POST /api/loans con solo lo obligatorio -> 201 (antes 500 en el driver)', rMin.status === 201, 'status=' + rMin.status + ' ' + rMin.text.slice(0, 200));
+    const filaMin = rMin.json && conDb(DB, d => d.prepare('SELECT cedula, telefono, notas, estado, frecuencia, diaPago FROM loans WHERE id=?').get(rMin.json.id));
+    R.eq('...y lo opcional toma su valor por defecto', filaMin, { cedula: '', telefono: '', notas: '', estado: 'Activo', frecuencia: 'Mensual', diaPago: +hoyStr().slice(8, 10) });
+    if (rMin.json && rMin.json.id) await pedir(S, 'DELETE', '/api/loans/' + rMin.json.id);
+    // NFC al guardar (4.1.3): "José" pegado como "Jose" + tilde suelta se guarda en su forma compuesta.
+    const nfd = 'ZZ Jose\u0301 Pen\u0303a E2E';
+    const rNfd = await pedir(S, 'POST', '/api/loans', Object.assign({}, minimo, { nombre: nfd }));
+    const filaNfd = rNfd.json && conDb(DB, d => ({ loan: d.prepare('SELECT nombre FROM loans WHERE id=?').get(rNfd.json.id).nombre,
+      cuotas: d.prepare('SELECT DISTINCT nombreCliente n FROM payments WHERE prestamoId=?').all(rNfd.json.id).map(r => r.n) }));
+    R.eq('POST /api/loans guarda el nombre en NFC (prestamo y cuotas)', filaNfd, { loan: nfd.normalize('NFC'), cuotas: [nfd.normalize('NFC')] });
+    if (rNfd.json && rNfd.json.id) await pedir(S, 'DELETE', '/api/loans/' + rNfd.json.id);
 
     // ── PUT /api/loans/:id (sobre el recien creado) ────────────────────────
     const editado = Object.assign({}, nuevo, { id: idNuevo, notas: 'editado por e2e' });
@@ -536,7 +561,10 @@ async function faseEscritura() {
     const undoEd = exigirUndoId(rEd, 'PUT /api/loans/:id');
     R.eq('PUT /api/loans/:id persiste el cambio',
       conDb(DB, d => d.prepare('SELECT notas FROM loans WHERE id=?').get(idNuevo).notas), 'editado por e2e');
-    await rechazo('PUT /api/loans/:id', 'PUT /api/loans/:id con cuerpo vacio', 'PUT', '/api/loans/' + idNuevo, {}, 'error', true);
+    await rechazo('PUT /api/loans/:id', 'PUT /api/loans/:id con cuerpo vacio', 'PUT', '/api/loans/' + idNuevo, {}, 400);
+    await rechazo('PUT /api/loans/:id', 'PUT /api/loans/:id con monto 0', 'PUT', '/api/loans/' + idNuevo, Object.assign({}, editado, { montoOrigen: 0 }), 400);
+    // Defecto #2 del backlog: con un id que no existe respondia 200 sin haber escrito nada.
+    await rechazo('PUT /api/loans/:id', 'PUT /api/loans/:id inexistente', 'PUT', '/api/loans/no-existe', editado, 404);
 
     // PUT sobre un Intereses real: preserva Pagadas, solo regenera Pendientes.
     const pagadasAntes = conDb(DB, d => d.prepare("SELECT id,estadoPago,montoCOPRecibido,paidAt FROM payments WHERE prestamoId=? AND estadoPago='Pagado' ORDER BY id").all(lEdit.id));
@@ -563,7 +591,8 @@ async function faseEscritura() {
     const rUndoInv = await pedir(S, 'POST', '/api/undo/' + undoEd);
     marcar('POST /api/undo/:id');
     R.check('POST /api/undo/:id sobre entrada invalidada -> 400', rUndoInv.status === 400, 'status=' + rUndoInv.status);
-    await rechazo('DELETE /api/loans/:id', 'DELETE /api/loans/:id inexistente (no-op)', 'DELETE', '/api/loans/no-existe', undefined, 200);
+    // Defecto #3 del backlog: respondia 200 {ok:true}; ahora 404, como DELETE /api/debts/:id.
+    await rechazo('DELETE /api/loans/:id', 'DELETE /api/loans/:id inexistente', 'DELETE', '/api/loans/no-existe', undefined, 404);
 
     // ── PUT /api/payments/:id ──────────────────────────────────────────────
     R.seccion('PUT /api/payments/:id');
@@ -838,6 +867,12 @@ async function faseEscritura() {
     await rechazo('POST /api/debts', 'POST /api/debts sin titulo', 'POST', '/api/debts', { acreedor: 'X', monto_original: 1 }, 400);
     await rechazo('POST /api/debts', 'POST /api/debts sin acreedor', 'POST', '/api/debts', { titulo: 'X', monto_original: 1 }, 400);
     await rechazo('POST /api/debts', 'POST /api/debts con monto 0', 'POST', '/api/debts', { titulo: 'X', acreedor: 'Y', monto_original: 0 }, 400);
+    // 4.1.3: el acreedor y el titulo se guardan en NFC (el agrupado de acreedores compara por igualdad).
+    const acrNfd = 'Banco Espan\u0303ol E2E', titNfd = 'Cre\u0301dito E2E';
+    const rNfdD = await pedir(S, 'POST', '/api/debts', { titulo: titNfd, acreedor: acrNfd, monto_original: 1000 });
+    R.eq('POST /api/debts guarda el acreedor y el titulo en NFC', rNfdD.json && [rNfdD.json.acreedor, rNfdD.json.titulo],
+      [acrNfd.normalize('NFC'), titNfd.normalize('NFC')]);
+    if (rNfdD.json && rNfdD.json.id) await pedir(S, 'DELETE', '/api/debts/' + rNfdD.json.id);
 
     const rAb1 = await pedir(S, 'POST', '/api/debts/' + idDeuda + '/pay', { monto_pagado: 30000, tipo: 'abono', fecha_pago: hoyStr() });
     marcar('POST /api/debts/:id/pay');
@@ -890,9 +925,6 @@ async function faseEscritura() {
       act.filter(a => a.undo_id).length > 0, 'con undo_id=' + act.filter(a => a.undo_id).length);
 
     // Observaciones (no tumban la suite): endpoints sin validacion 4xx propia.
-    HALLAZGOS.push('POST /api/loans no valida el cuerpo: con {} revienta en el driver SQLite y sale 500 (no 4xx). La BD queda intacta por la transaccion, pero el contrato de error no es el del resto de la app.');
-    HALLAZGOS.push('PUT /api/loans/:id igual que POST: cuerpo incompleto -> 500 en vez de 4xx. Ademas, con un id inexistente responde 200 aunque el UPDATE afecte 0 filas.');
-    HALLAZGOS.push('DELETE /api/loans/:id sobre un id inexistente responde 200 {ok:true} en lugar de 404 (el resto de DELETE, p.ej. /api/debts/:id, si devuelve 404).');
     HALLAZGOS.push('PUT /api/config acepta cualquier clave/valor sin validacion y siempre responde 200; no existe ninguna ruta 4xx.');
     HALLAZGOS.push('POST /api/recalculate no tiene ninguna ruta de rechazo: siempre 200. Se cubrio con una propiedad de idempotencia en su lugar.');
   } finally { await cerrar(S); }
@@ -1000,6 +1032,127 @@ async function faseUndo() {
       journal.filter(e => e.estado === 'deshecho').length >= 5,
       'deshechas=' + journal.filter(e => e.estado === 'deshecho').length);
   } finally { await cerrar(S); }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// FASE G — RENOMBRAR AL CLIENTE (4.1.3, bloque 2; decisiones del PO)
+//
+// "Un nombre en todo": corregir el nombre en un prestamo lo corrige en TODOS los del cliente y en
+// todas sus cuotas (tambien las vencidas, las pagadas y los abonos). Es UN movimiento que toca varios
+// agregados vivos, asi que su Deshacer lleva el Candado G: ni se deshace por encima de un movimiento
+// posterior de cualquiera de ellos, ni un movimiento anterior de uno de ellos se deshace mientras el
+// renombre siga en pie. Y la migracion de arranque sana los prestamos renombrados con una version vieja.
+// ═════════════════════════════════════════════════════════════════════════════
+async function faseRenombre() {
+  R.seccion('FASE G — renombrar al cliente: todos sus prestamos y cuotas, y el Candado G de deshacer');
+  const S = await arrancar(copiaDeProduccion('e2e-renombre'));
+  const DB = S.dbPath;
+  try {
+    const loans = (await pedir(S, 'GET', '/api/loans')).json;
+    const pays = (await pedir(S, 'GET', '/api/payments')).json;
+    const paysDe = id => pays.filter(p => p.prestamoId === id);
+    const cobrable = l => l.estado === 'Activo' && paysDe(l.id).some(p => p.estadoPago === 'Pendiente' && p.cuotaTotal - (p.partialPaid || 0) > 5000);
+    const porNombre = {};
+    loans.forEach(l => { (porNombre[l.nombre] = porNombre[l.nombre] || []).push(l); });
+    // Un cliente con 2+ prestamos, uno que admite un parcial (B) y, entre todos, cuotas Pagadas y En Mora.
+    const viejo = Object.keys(porNombre).find(n => porNombre[n].length >= 2 && porNombre[n].some(cobrable) &&
+      porNombre[n].some(l => paysDe(l.id).some(p => p.estadoPago === 'Pagado')) &&
+      porNombre[n].some(l => paysDe(l.id).some(p => p.estadoPago === 'En Mora')));
+    R.check('G0 anti-vacio: hay un cliente con varios prestamos, cuotas pagadas, en mora y una por cobrar', !!viejo,
+      Object.keys(porNombre).filter(n => porNombre[n].length >= 2).join(', '));
+    if (!viejo) return;
+    const suyos = porNombre[viejo];
+    const ids = suyos.map(l => l.id);
+    const lB = suyos.find(cobrable);
+    const lA = suyos.find(l => l.id !== lB.id);
+    const cuotaB = paysDe(lB.id).filter(p => p.estadoPago === 'Pendiente' && p.cuotaTotal - (p.partialPaid || 0) > 5000)
+      .sort((a, b) => a.cuotaN - b.cuotaN)[0];
+    const enIds = ' IN (' + ids.map(() => '?').join(',') + ')';
+    const deOtros = () => conDb(DB, d => sha(JSON.stringify([
+      d.prepare('SELECT * FROM loans WHERE id NOT' + enIds + ' ORDER BY id').all(...ids),
+      d.prepare('SELECT * FROM payments WHERE prestamoId NOT' + enIds + ' ORDER BY id').all(...ids)])));
+    const agregados = () => ids.map(id => agregadoLoan(DB, id));
+    const antes = agregados(), otrosAntes = deOtros();
+    const NUEVO = 'Nombre Corregido E2E';
+
+    // 1) Un movimiento ANTERIOR al renombre, en B.
+    const p1 = await pedir(S, 'POST', '/api/payments/' + cuotaB.id + '/partial', { monto: 1000, fecha: hoyStr() });
+    R.check('G1 un parcial sobre B antes del renombre', p1.status === 200 && !!p1.json.undoId, p1.text.slice(0, 200));
+
+    // 2) El renombre, editando A.
+    const rR = await pedir(S, 'PUT', '/api/loans/' + lA.id, Object.assign({}, lA, { nombre: NUEVO }));
+    R.check('G2 PUT /api/loans/:id con el nombre corregido -> 200 con su undoId', rR.status === 200 && !!rR.json.undoId, rR.text.slice(0, 200));
+    R.eq('G2 la respuesta dice cuantos prestamos mas cambiaron', rR.json.renombrados, ids.length - 1);
+    const filas = conDb(DB, d => ({
+      loans: d.prepare('SELECT DISTINCT nombre n FROM loans WHERE id' + enIds).all(...ids).map(r => r.n),
+      cuotas: d.prepare('SELECT DISTINCT nombreCliente n FROM payments WHERE prestamoId' + enIds).all(...ids).map(r => r.n),
+      viejos: d.prepare('SELECT count(*) c FROM loans WHERE nombre = ?').get(viejo).c + d.prepare('SELECT count(*) c FROM payments WHERE nombreCliente = ?').get(viejo).c,
+      estados: d.prepare('SELECT DISTINCT estadoPago e FROM payments WHERE prestamoId' + enIds).all(...ids).map(r => r.e),
+    }));
+    R.eq('G2 todos sus prestamos y TODAS sus cuotas llevan el nombre nuevo; el viejo no queda en ninguna fila',
+      [filas.loans, filas.cuotas, filas.viejos], [[NUEVO], [NUEVO], 0]);
+    R.check('G2 anti-vacio: entre esas cuotas hay pagadas y en mora (no solo las que se regeneran)',
+      filas.estados.indexOf('Pagado') !== -1 && filas.estados.indexOf('En Mora') !== -1, filas.estados);
+    R.eq('G2 ningun otro cliente se toco', deOtros(), otrosAntes);
+    const log = conDb(DB, d => d.prepare('SELECT mensaje FROM activity_log WHERE undo_id = ?').get(rR.json.undoId));
+    R.check('G2 el Historial lo cuenta: el nombre de antes y cuantos prestamos mas',
+      !!log && log.mensaje.indexOf('antes «' + viejo + '»') !== -1 && log.mensaje.indexOf('otros ' + (ids.length - 1)) !== -1, log && log.mensaje);
+    const snap = conDb(DB, d => JSON.parse(d.prepare('SELECT snapshot FROM undo_journal WHERE id = ?').get(rR.json.undoId).snapshot));
+    R.eq('G2 su copia para Deshacer reune todos los prestamos del cliente', [snap.tipo, snap.ids.slice().sort()], ['grupo', ids.slice().sort()]);
+    const jr = (await pedir(S, 'GET', '/api/undo')).json.find(e => e.id === rR.json.undoId);
+    R.check('G2 GET /api/undo marca el renombre (grupo) y que prestamos toca, sin mandar la copia',
+      !!jr && jr.grupo === true && jr.involucra.slice().sort().join() === ids.slice().sort().join() && jr.snapshot === undefined, jr);
+
+    // 3) Candado G (2): el parcial ANTERIOR de B no se deshace mientras el renombre siga en pie.
+    let h0 = hashBD(DB);
+    const u1 = await pedir(S, 'POST', '/api/undo/' + p1.json.undoId);
+    R.check('G3 deshacer un movimiento de B anterior al renombre -> 409 (le devolveria el nombre viejo a B)',
+      u1.status === 409 && /se cambió el nombre del cliente/.test(u1.text), u1.status + ' ' + u1.text.slice(0, 200));
+    R.check('G3 ...con la BD intacta', hashBD(DB) === h0);
+
+    // 4) Candado G (1): un movimiento POSTERIOR en B impide deshacer el renombre.
+    const p2 = await pedir(S, 'POST', '/api/payments/' + cuotaB.id + '/partial', { monto: 2000, fecha: hoyStr() });
+    R.check('G4 un parcial sobre B despues del renombre', p2.status === 200 && !!p2.json.undoId, p2.text.slice(0, 200));
+    h0 = hashBD(DB);
+    const u2 = await pedir(S, 'POST', '/api/undo/' + rR.json.undoId);
+    R.check('G4 deshacer el renombre con un movimiento posterior en B -> 409 (lo borraria)',
+      u2.status === 409 && /tocó todos los préstamos del cliente/.test(u2.text), u2.status + ' ' + u2.text.slice(0, 200));
+    R.check('G4 ...con la BD intacta', hashBD(DB) === h0);
+
+    // 5) En orden, todo se deshace y vuelve byte a byte.
+    const u3 = await pedir(S, 'POST', '/api/undo/' + p2.json.undoId);
+    const u4 = await pedir(S, 'POST', '/api/undo/' + rR.json.undoId);
+    const u5 = await pedir(S, 'POST', '/api/undo/' + p1.json.undoId);
+    R.eq('G5 en orden (el parcial posterior, el renombre, el parcial anterior) cada deshacer -> 200', [u3.status, u4.status, u5.status], [200, 200, 200]);
+    R.eq('G5 los prestamos y cuotas del cliente vuelven BYTE-IDENTICOS, con su nombre de antes', agregados(), antes);
+
+    // 6) Editar sin cambiar el nombre no arma un grupo: la copia de siempre, de UN prestamo.
+    const rN = await pedir(S, 'PUT', '/api/loans/' + lA.id, Object.assign({}, lA, { notas: 'nota e2e renombre' }));
+    const tipoN = rN.json && rN.json.undoId && conDb(DB, d => JSON.parse(d.prepare('SELECT snapshot FROM undo_journal WHERE id = ?').get(rN.json.undoId).snapshot).tipo);
+    R.eq('G6 editar sin cambiar el nombre: copia de un prestamo (tipo loan) y sin "renombrados"', [rN.status, tipoN, rN.json && rN.json.renombrados], [200, 'loan', undefined]);
+    const uN = await pedir(S, 'POST', '/api/undo/' + rN.json.undoId);
+
+    // 7) Renombrar al nombre de OTRO cliente que ya existe: quedan juntos, y deshacerlo los separa.
+    const otro = Object.keys(porNombre).find(n => n !== viejo);
+    const rU = await pedir(S, 'PUT', '/api/loans/' + lA.id, Object.assign({}, lA, { nombre: otro }));
+    R.eq('G7 renombrar al nombre de otro cliente: todos sus prestamos quedan juntos bajo ese nombre',
+      [uN.status, rU.status, conDb(DB, d => d.prepare('SELECT count(*) c FROM loans WHERE nombre = ?').get(otro).c)],
+      [200, 200, porNombre[otro].length + ids.length]);
+    const uU = await pedir(S, 'POST', '/api/undo/' + rU.json.undoId);
+    R.eq('G7 ...y deshacerlo los separa otra vez, byte a byte', [uU.status, agregados()], [200, antes]);
+  } finally { await cerrar(S); }
+
+  // 8) La migracion de arranque sana un prestamo renombrado con una version vieja (hasta 4.1.2 sus
+  //    cuotas vencidas, pagadas y abonos se quedaban con el nombre de antes).
+  const ruta = copiaDeProduccion('e2e-renombre-migra');
+  const l0 = conDb(ruta, d => d.prepare("SELECT l.id, l.nombre FROM loans l WHERE EXISTS (SELECT 1 FROM payments p WHERE p.prestamoId = l.id AND p.estadoPago = 'Pagado') ORDER BY l.id LIMIT 1").get());
+  conDbW(ruta, d => d.prepare("UPDATE payments SET nombreCliente = 'Nombre Viejo E2E' WHERE prestamoId = ? AND estadoPago != 'Pendiente'").run(l0.id));
+  const distintas = () => conDb(ruta, d => d.prepare('SELECT count(*) c FROM payments WHERE prestamoId = ? AND nombreCliente IS NOT ?').get(l0.id, l0.nombre).c);
+  R.check('G8 precondicion: el prestamo tiene cuotas con un nombre distinto al suyo', distintas() > 0, distintas());
+  const S2 = await arrancar(ruta);   // createApp corre las migraciones de arranque
+  try {
+    R.eq('G8 al arrancar, todas sus cuotas vuelven a llevar el nombre del prestamo', distintas(), 0);
+  } finally { await cerrar(S2); }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1664,6 +1817,7 @@ async function main() {
   await faseLectura();
   await faseEscritura();
   await faseUndo();
+  await faseRenombre();
   await faseRegresiones();
   await faseBlindaje();
   await faseDiario();
@@ -1680,6 +1834,9 @@ async function main() {
   // absorber variacion de datos, pero muy por encima de "casi nada".
   const total = R.ok + R.fallos;
   R.check('la suite afirmo un volumen significativo (>=250 checks)', total >= 250, 'checks=' + total);
+  R.check('FASE G corrio: los checks del renombre de un cliente estan presentes',
+    R.pasos.filter(p => /^G\d /.test(p.desc)).length >= 20,
+    'checks de FASE G=' + R.pasos.filter(p => /^G\d /.test(p.desc)).length);
   R.check('FASE D corrio: los casos fabricados de sensibilidad estan presentes',
     R.pasos.filter(p => /^D\d /.test(p.desc)).length >= 25,
     'checks de FASE D=' + R.pasos.filter(p => /^D\d /.test(p.desc)).length);

@@ -156,6 +156,18 @@ function aplicarEsquema(db) {
             "WHERE (fechaInicioIntereses IS NULL OR fechaInicioIntereses = '') AND fechaInicio IS NOT NULL");
   } catch (e) { console.error('[schema] relleno de fechaInicioIntereses fallo:', e && e.message); }
 
+  // ── 4.1.3 (bloque 2): un nombre en todo ──────────────────────────────────────
+  // Cada cuota guarda una copia del nombre del cliente (`payments.nombreCliente`). Hasta 4.1.2, al
+  // renombrar un prestamo solo la renovaban las cuotas Pendientes que se regeneraban: las vencidas,
+  // las pagadas y los abonos seguian con el nombre viejo, y Cobros y el Resumen mostraban al mismo
+  // cliente con dos nombres (hallazgo v4 #4). Decision del PO: el nombre del prestamo manda en
+  // todas sus cuotas. Esto sana los prestamos renombrados con una version anterior. Idempotente y se
+  // limita solo: el WHERE solo encuentra filas cuyo nombre difiere del de su prestamo.
+  try {
+    db.exec("UPDATE payments SET nombreCliente = (SELECT nombre FROM loans WHERE loans.id = payments.prestamoId) " +
+            "WHERE EXISTS (SELECT 1 FROM loans WHERE loans.id = payments.prestamoId AND loans.nombre IS NOT payments.nombreCliente)");
+  } catch (e) { console.error('[schema] nombre de las cuotas fallo:', e && e.message); }
+
   // ── Migración v1.18.2 (Bug #30): normalizar abonoCapital en modalidad 'Prestamo' ──
   // Historicamente buildSchedule escribia abonoCapital=0 en la cuota unica de un Prestamo (0% interes),
   // asi que la formula canonica de saldo (origCOP - Σ abonoCapital de Pagadas) no contaba el capital

@@ -122,8 +122,9 @@ export function LoanModal(props){
   }
   // Autocompletado hibrido sobre el campo Nombre: filtra clientes por substring; oculto si el input
   // esta vacio o coincide exacto con un cliente (mismo patron que DebtModal).
-  var cliQ=(f.nombre||'').trim(), cliQL=cliQ.toLowerCase();
-  var cliExact=clientes.some(function(c){return (c.nombre||'').toLowerCase()===cliQL;});
+  // 4.1.3: la coincidencia EXACTA compara en NFC, como guarda el backend.
+  var cliQ=(f.nombre||'').trim(), cliQL=cliQ.normalize('NFC').toLowerCase();
+  var cliExact=clientes.some(function(c){return (c.nombre||'').normalize('NFC').toLowerCase()===cliQL;});
   var clientesMatch=(cliQ&&!cliExact)?clientes.filter(function(c){return contiene(c.nombre,cliQ);}).slice(0,8):[];
   var cliOpen=clientOpen&&clientesMatch.length>0;
   // Compras fraccionadas de USD
@@ -366,6 +367,14 @@ export function LoanModal(props){
     // Safety net: si por alguna razon el modal sigue abierto despues de 5s, re-habilitar el boton
     setTimeout(function(){setIsSubmitting(false);},5000);
   }
+  // 4.1.3 (decisiones del PO): corregir el nombre lo corrige en TODOS los prestamos del cliente y en
+  // todas sus cuotas (PUT /api/loans/:id). Se avisa ANTES de guardar: cuantos prestamos mas cambian, y
+  // si el nombre nuevo ya es el de otro cliente (sus prestamos quedarian juntos en Cartera). El
+  // backend guarda el nombre en NFC, asi que la comparacion tambien.
+  var nombreNFC=String(f.nombre||'').normalize('NFC');
+  var renombra=!isNew&&!!loan&&!!nombreNFC.trim()&&nombreNFC!==loan.nombre;
+  var otrosDelCliente=renombra?((clientes.filter(function(c){return c.nombre===loan.nombre;})[0]||{loans:[]}).loans.filter(function(l){return l.id!==loan.id;})):[];
+  var seUneCon=renombra?(clientes.filter(function(c){return c.nombre===nombreNFC;})[0]||null):null;
   return h(Modal,{onClose:onClose,tall:true,wide:true},
     h('div',{className:'v4m-tit'},!isNew?'Editar Préstamo':'Nuevo Préstamo'),
     // v1.9.0 — Banner de campos bloqueados (solo en edicion con actividad)
@@ -389,6 +398,13 @@ export function LoanModal(props){
                 h('div',{style:{fontSize:13,fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},c.nombre),
                 sub?h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},sub):null));
           })):null)),
+    (otrosDelCliente.length>0||seUneCon)&&h('div',{className:'v4m-caja-info lm-renombre',style:{borderRadius:12,padding:'10px 12px',marginBottom:12,display:'flex',gap:8,alignItems:'flex-start'}},
+      h(Ico,{name:'users',size:14,color:'var(--blue)',sw:2.2}),
+      h('div',{style:{fontSize:12,color:'var(--text2)',lineHeight:1.45}},
+        otrosDelCliente.length>0&&h('div',null,'El nombre también cambiará en sus otros ',
+          h('b',null,otrosDelCliente.length+(otrosDelCliente.length===1?' préstamo':' préstamos')),
+          ' y en todas sus cuotas, para que siga siendo una sola persona en Cartera.'),
+        seUneCon&&h('div',null,'Ya hay un cliente llamado ',h('b',null,seUneCon.nombre),': sus préstamos quedarán juntos.'))),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
       h(Fld,{label:'Cédula / ID'},h('input',{value:f.cedula,  onChange:function(e){set('cedula',  e.target.value);},placeholder:'0000000',className:'inp'})),
       h(Fld,{label:'Teléfono'},   h('input',{value:f.telefono,onChange:function(e){set('telefono',e.target.value);},placeholder:'+57...',  className:'inp'}))),

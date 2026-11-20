@@ -32,4 +32,13 @@ function genId() {
   return Date.now().toString() + Math.random().toString(36).slice(2, 6);
 }
 
-module.exports = { hoyStr, ahoraLocal, genId };
+// Un nombre se GUARDA en Unicode NFC (4.1.3, bloque 2). La busqueda ya pliega tildes, pero las
+// comparaciones de IGUALDAD no: el agrupado de un deudor (`l.nombre === d.nombre`), el auto-link al
+// crear un prestamo y el agrupado de acreedores. Un nombre pegado en NFD ("José" como "Jose" + tilde
+// suelta) se veria igual y crearia una persona "duplicada" sin avisar. Normalizar al guardar, una sola
+// vez, cierra eso para siempre. Lo que no es texto pasa tal cual.
+function nfc(s) {
+  return typeof s === 'string' ? s.normalize('NFC') : s;
+}
+
+module.exports = { hoyStr, ahoraLocal, genId, nfc };

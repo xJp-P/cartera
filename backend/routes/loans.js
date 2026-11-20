@@ -41,10 +41,11 @@ const express = require('express');
 // de verdad de que es un abono. Antes cada sitio repetia el literal indexOf('-ab-').
 const { esAbono } = require('../core/ids');
 const { diasEntre } = require('../core/engine');
+const { nfc } = require('../core/util');
 
 module.exports = function crearRutasLoans(ctx) {
   const {
-    db, logAction, insPayment, runPayment, insertSchedule, mutacionAtomica,
+    db, logAction, insPayment, runPayment, insertSchedule, mutacionAtomica, snapshotGrupo,
     snapshotCobros, restaurarCobros, abortarSiHuerfanos, cuotaCerradaPorLoAbonado,
     buildSchedule, buildScheduleFixedPMT, getPayDate, tasaPeriodo, cuotasHastaHoy,
     transitoriaDe, aplicarPeriodoIrregular, resolverPrimerPago,
@@ -60,13 +61,65 @@ module.exports = function crearRutasLoans(ctx) {
     .all(loanId);
   const router = express.Router();
 
+  // ── El CUERPO de un prestamo (4.1.3, bloque 2: contrato de errores) ─────────
+  // Hasta 4.1.2 un cuerpo incompleto reventaba en el driver de SQLite ("Missing named parameter") y
+  // salia un 500. Ahora se valida ANTES de computar nada: lo que el motor necesita, con un 400 que
+  // dice que falta; lo opcional (texto libre, estado, frecuencia), con su valor por defecto, que en
+  // una edicion es el que ya tenia el prestamo. El formulario manda siempre todo: para la app no
+  // cambia nada. El nombre se guarda en NFC (ver `nfc` en core/util.js).
+  function fechaValida(s) {
+    s = String(s || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const [y, m, d] = s.split('-').map(Number);
+    const f = new Date(y, m - 1, d);
+    return f.getFullYear() === y && f.getMonth() === m - 1 && f.getDate() === d;
+  }
+  function cuerpoPrestamo(body, previo) {
+    const p = previo || {};
+    const def = (k, v) => (p[k] !== undefined && p[k] !== null ? p[k] : v);
+    const loan = Object.assign({
+      cedula: def('cedula', ''), telefono: def('telefono', ''), notas: def('notas', ''),
+      estado: def('estado', 'Activo'), frecuencia: def('frecuencia', 'Mensual'),
+      fechaDevolucion: def('fechaDevolucion', ''), comprasUSD: def('comprasUSD', ''), gananciaFija: 0,
+    }, body || {});
+    const num = v => (v === '' || v === null || v === undefined || typeof v === 'boolean') ? NaN : +v;
+    loan.nombre = nfc(typeof loan.nombre === 'string' ? loan.nombre : '');
+    if (!loan.nombre.trim()) throw new ClientError('Falta el nombre del cliente');
+    if (loan.moneda !== 'COP' && loan.moneda !== 'USD') throw new ClientError('La moneda del préstamo debe ser COP o USD');
+    if (!(num(loan.montoOrigen) > 0)) throw new ClientError('El monto del préstamo debe ser mayor a 0');
+    if (!fechaValida(loan.fechaInicio)) throw new ClientError('La fecha de inicio no es válida (AAAA-MM-DD)');
+    if (loan.moneda === 'USD' && !(num(loan.trmAcordada) > 0)) throw new ClientError('Un préstamo en dólares necesita la TRM pactada');
+    if (!isFinite(num(loan.trmAcordada))) loan.trmAcordada = 0;   // en pesos no se usa
+    if (!(num(loan.montoCOP) >= 0)) {
+      loan.montoCOP = loan.moneda === 'USD' ? Math.round(+loan.montoOrigen * +loan.trmAcordada) : Math.round(+loan.montoOrigen);
+    }
+    const unaCuota = loan.modalidad === 'Prestamo' || loan.modalidad === 'Pago Unico';
+    if (!isFinite(num(loan.tasaMensual))) {
+      if (!unaCuota) throw new ClientError('Falta la tasa mensual');
+      loan.tasaMensual = 0;
+    }
+    if (+loan.tasaMensual < 0) throw new ClientError('La tasa mensual no puede ser negativa');
+    if (loan.modalidad === 'Capital + Intereses' && !(num(loan.plazoMeses) > 0)) throw new ClientError('Falta el plazo (número de cuotas)');
+    if (!isFinite(num(loan.plazoMeses))) loan.plazoMeses = unaCuota ? 1 : 0;
+    const dia = num(loan.diaPago);
+    if (!(Number.isInteger(dia) && dia >= 1 && dia <= 31)) loan.diaPago = +String(loan.fechaInicio).slice(8, 10);
+    return loan;
+  }
+
   // ── API: Loans ────────────────────────────────────────────────────────────
   router.get('/api/loans', (_req, res) => {
     res.json(db.prepare('SELECT * FROM loans ORDER BY createdAt').all());
   });
 
   router.post('/api/loans', (req, res) => {
-    const loan = { fechaDevolucion: '', comprasUSD: '', gananciaFija: 0, ...req.body, id: Date.now().toString() + Math.random().toString(36).slice(2,6) };
+    let loan;
+    try {
+      loan = cuerpoPrestamo(req.body);
+    } catch (e) {
+      if (e instanceof ClientError) return res.status(e.code).json({ error: e.message });
+      throw e;
+    }
+    loan.id = Date.now().toString() + Math.random().toString(36).slice(2,6);
     // Si comprasUSD viene como array/objeto, serializar a JSON
     if (loan.comprasUSD && typeof loan.comprasUSD !== 'string') loan.comprasUSD = JSON.stringify(loan.comprasUSD);
     // v1.10.0: gananciaFija solo aplica para modalidad Pago Unico — forzar 0 en el resto
@@ -123,9 +176,7 @@ module.exports = function crearRutasLoans(ctx) {
     // ese rechazo llegaba DESPUES del INSERT: la transaccion lo revertia, si, pero el cliente
     // recibia un 500 en vez de un 4xx que le dijera que la modalidad no existe. `buildSchedule`
     // es puro, asi que adelantarlo no tiene ningun efecto colateral.
-    // (Esto NO cierra el defecto #1 del backlog: un cuerpo incompleto —sin `cedula`, p.ej.—
-    // sigue reventando en el driver de SQLite mas abajo. Eso es validacion de payload, otro
-    // trabajo; aqui solo se arregla la ruta de la modalidad.)
+    // (El cuerpo incompleto, el defecto #1 del backlog, lo cierra `cuerpoPrestamo` en 4.1.3.)
     let schedule;
     try {
       schedule = buildSchedule(loan);
@@ -165,17 +216,40 @@ module.exports = function crearRutasLoans(ctx) {
   });
 
   router.put('/api/loans/:id', (req, res) => {
-    const loan = { fechaDevolucion: '', comprasUSD: '', gananciaFija: 0, ...req.body, id: req.params.id };
+    // 4.1.3 (contrato de errores): un id que no existe es 404 (antes respondia 200 sin haber escrito
+    // nada) y un cuerpo incompleto es 400 (antes, 500 en el driver).
+    const previo = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
+    if (!previo) return res.status(404).json({ error: 'Préstamo no encontrado' });
+    let loan;
+    try {
+      loan = cuerpoPrestamo(req.body, previo);
+    } catch (e) {
+      if (e instanceof ClientError) return res.status(e.code).json({ error: e.message });
+      throw e;
+    }
+    loan.id = req.params.id;
     if (loan.comprasUSD && typeof loan.comprasUSD !== 'string') loan.comprasUSD = JSON.stringify(loan.comprasUSD);
     // v1.10.0: gananciaFija solo aplica para modalidad Pago Unico — forzar 0 en el resto
     if (loan.modalidad !== 'Pago Unico') loan.gananciaFija = 0;
     else loan.gananciaFija = Math.round(+loan.gananciaFija || 0);
+    // ── RENOMBRAR AL CLIENTE (4.1.3, decisiones del PO) ─────────────────────────
+    // El cliente es UNA persona y la app la reconoce por el nombre exacto (Cartera agrupa con
+    // `l.nombre === d.nombre`). Corregir el nombre en un prestamo lo corrige en TODOS los suyos
+    // (tambien los cerrados, para que su historial no aparezca como otra persona) y en todas sus
+    // cuotas: "un nombre en todo". El movimiento toca varios agregados vivos, asi que su copia para
+    // Deshacer los reune (`snapshotGrupo`) y el Candado G (routes/undo.js) cuida el orden.
+    const renombra = loan.nombre !== previo.nombre;
+    const otros = renombra
+      ? db.prepare('SELECT id FROM loans WHERE nombre = ? AND id != ? ORDER BY createdAt').all(previo.nombre, loan.id).map(r => r.id)
+      : [];
+    const meta = { accion: 'edicion', endpoint: 'PUT /api/loans/:id', scopeTipo: 'loan', scopeId: req.params.id };
+    if (otros.length) meta.snapshot = () => snapshotGrupo([loan.id].concat(otros));
     // ATOMICO desde "La Bestia": antes el UPDATE de loans, el DELETE de Pendientes y el
     // insertSchedule iban sueltos (3 escrituras sin transaccion) -> un fallo intermedio dejaba
     // el prestamo editado con el cronograma a medio borrar. Ahora todo va en una sola tx.
     // El UPDATE se movio al final (a `aplicar`): ningun computo posterior lee `payments` de la
     // BD despues del DELETE, y el cronograma se calcula desde el `loan` del body, no de la BD.
-    return mutacionAtomica(req, res, { accion: 'edicion', endpoint: 'PUT /api/loans/:id', scopeTipo: 'loan', scopeId: req.params.id }, () => {
+    return mutacionAtomica(req, res, meta, () => {
 
     // v1.9.0 FIX: solo borrar Pendientes regulares. Cuotas Pagadas y En Mora se preservan
     // intactas (deuda historica/causada). Esto garantiza que un edit nunca afecta cuotas
@@ -297,8 +371,10 @@ module.exports = function crearRutasLoans(ctx) {
     restaurarCobros(schedule, partialMapEdit);
 
     return {
-      descripcion: 'Editaste préstamo de ' + loan.nombre,
-      payload: loan,
+      descripcion: 'Editaste préstamo de ' + loan.nombre + (renombra
+        ? ' (antes «' + previo.nombre + '»' + (otros.length ? '; el nombre cambió también en sus otros ' + otros.length + (otros.length === 1 ? ' préstamo' : ' préstamos') : '') + ')'
+        : ''),
+      payload: otros.length ? Object.assign({}, loan, { renombrados: otros.length }) : loan,
       aplicar: () => {
         db.prepare(`
           UPDATE loans SET nombre=@nombre, cedula=@cedula, telefono=@telefono, moneda=@moneda,
@@ -315,6 +391,15 @@ module.exports = function crearRutasLoans(ctx) {
           db.prepare('DELETE FROM payments WHERE id = ?').run(p.id);
         });
         if (schedule.length > 0) insertSchedule(schedule);
+        // Un nombre en todo (4.1.3): cada cuota guarda una copia del nombre (`nombreCliente`), y
+        // hasta 4.1.2 solo la renovaban las Pendientes regeneradas: las vencidas, las pagadas y los
+        // abonos seguian con el viejo (Cobros mostraba al cliente con dos nombres). Ahora todas. Se
+        // hace en CADA edicion, asi que tambien sana un prestamo renombrado con una version vieja.
+        db.prepare('UPDATE payments SET nombreCliente = ? WHERE prestamoId = ? AND nombreCliente IS NOT ?').run(loan.nombre, loan.id, loan.nombre);
+        otros.forEach(oid => {
+          db.prepare('UPDATE loans SET nombre = ? WHERE id = ?').run(loan.nombre, oid);
+          db.prepare('UPDATE payments SET nombreCliente = ? WHERE prestamoId = ?').run(loan.nombre, oid);
+        });
       }
     };
     });
@@ -322,6 +407,9 @@ module.exports = function crearRutasLoans(ctx) {
 
   router.delete('/api/loans/:id', (req, res) => {
     const loan = db.prepare('SELECT nombre, montoCOP FROM loans WHERE id = ?').get(req.params.id);
+    // 4.1.3 (contrato de errores): un id que no existe es 404, como en DELETE /api/debts/:id. Antes
+    // respondia 200 {ok:true} sin haber borrado nada.
+    if (!loan) return res.status(404).json({ error: 'Préstamo no encontrado' });
     // ATOMICO: los dos DELETE van juntos (antes sueltos -> podian dejar cuotas huerfanas sin su
     // prestamo). NO se journaliza: eliminar un prestamo es deliberado y ya tiene su confirmacion.
     db.transaction(() => {
@@ -336,7 +424,7 @@ module.exports = function crearRutasLoans(ctx) {
       // ofrece boton para ese estado y POST /api/undo/:id lo rechaza).
       db.prepare("UPDATE undo_journal SET estado = 'invalidado' WHERE scope_tipo = 'loan' AND scope_id = ? AND estado = 'disponible'").run(req.params.id);
     })();
-    if (loan) logAction.run('eliminacion', 'Eliminaste préstamo de ' + loan.nombre);
+    logAction.run('eliminacion', 'Eliminaste préstamo de ' + loan.nombre);
     res.json({ ok: true });
   });
 
