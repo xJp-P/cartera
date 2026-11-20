@@ -770,5 +770,11 @@ export const CHANGELOGS = {
     'Sin choques entre documentos: el paz y salvo, la liquidación y el cronograma nombran el préstamo, y el recibo de corte deja de compartir nombre y código con el recibo de pago.',
     'Nombres siempre válidos: los caracteres que Windows o Mac no aceptan (como / : ? *) se reemplazan solos, aunque estén en el nombre del cliente.',
     'Historial: al unificar préstamos sumando los intereses al capital, el registro muestra el capital del préstamo nuevo.'
+  ],
+  '4.1.2': [
+    'La tarjeta «En la calle», más clara: el anillo dice qué porcentaje de lo prestado ya volvió y debajo ves cuánto capital es, en pesos, sin repetir la misma cifra dos veces.',
+    'Sincronizar no anuncia un éxito falso: si la sincronización falla, la app lo dice y ya no muestra el aviso verde de que todo se recalculó.',
+    'Datos de pago: el aviso de «guardados» solo aparece cuando de verdad se guardaron; si algo falla, ves el error.',
+    'Registrar corte: el formulario de los créditos abiertos muestra su título, como los demás.'
   ]
 };
