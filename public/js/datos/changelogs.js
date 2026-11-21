@@ -782,5 +782,22 @@ export const CHANGELOGS = {
     'Facturas ya entregadas, encontradas igual: si el cambio de nombre cambió las iniciales del código, el buscador sigue encontrando las facturas con el código anterior.',
     'Deshacer un cambio de nombre: se deshace de una vez en todos sus préstamos, y si alguno tuvo movimientos después, la app te dice cuál deshacer primero.',
     'Sin clientes duplicados por las tildes: un nombre pegado con las tildes escritas de otra forma ya no crea otra persona en Cartera ni otro acreedor en Mis Deudas.'
+  ],
+  // 4.1.4 sale en el MISMO Build que 4.1.2 y 4.1.3 (ninguna se publico): el modal de novedades solo
+  // muestra la entrada de la version instalada, asi que esta lleva tambien sus items.
+  '4.1.4': [
+    'Cuotas en dólares pagadas en dos partes: si el cliente paga lo que la app dice que le falta, la cuota queda saldada. Antes podía quedar abierta por unos pesos.',
+    'El formulario de pago, más claro en dólares: al completar una cuota que ya tenía un abono, el campo de dólares trae lo que falta, la caja registra los pesos que escribiste y no deja completar con dólares que no alcanzan. En un pago parcial ya puedes pagar justo lo que falta.',
+    'Totales en dólares que cuadran con sus filas: el recibo de pago, la propuesta de abono y el recibo de cobro general suman las cuotas tal como las imprimen, y ya no dicen USD 1,600.01 bajo cuatro cuotas de USD 400.00.',
+    'La factura dice lo mismo que el cobro: lo que falta en dólares de una cuota con abono es la misma cifra en la factura, en el recibo y en el formulario de pago.',
+    'El panel del cliente, siempre entero: al bajar hasta el final en Cobros o en Cartera, el panel de la derecha ya no se esconde bajo el encabezado.',
+    'El nombre del cliente, en todas partes: al cambiarlo en un préstamo cambia en todos sus préstamos y en todas sus cuotas, también las vencidas y las pagadas. El formulario te avisa antes de guardar cuántos préstamos más cambian, y los clientes que ya habías renombrado se corrigen solos al abrir la app.',
+    'Facturas ya entregadas, encontradas igual: si el cambio de nombre cambió las iniciales del código, el buscador sigue encontrando las facturas con el código anterior.',
+    'Deshacer un cambio de nombre: se deshace de una vez en todos sus préstamos, y si alguno tuvo movimientos después, la app te dice cuál deshacer primero.',
+    'Sin clientes duplicados por las tildes: un nombre pegado con las tildes escritas de otra forma ya no crea otra persona en Cartera ni otro acreedor en Mis Deudas.',
+    'La tarjeta «En la calle», más clara: el anillo dice qué porcentaje de lo prestado ya volvió y debajo ves cuánto capital es, en pesos, sin repetir la misma cifra dos veces.',
+    'Sincronizar no anuncia un éxito falso: si la sincronización falla, la app lo dice y ya no muestra el aviso verde de que todo se recalculó.',
+    'Datos de pago: el aviso de «guardados» solo aparece cuando de verdad se guardaron; si algo falla, ves el error.',
+    'Registrar corte: el formulario de los créditos abiertos muestra su título, como los demás.'
   ]
 };
