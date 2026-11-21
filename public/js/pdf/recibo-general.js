@@ -69,23 +69,31 @@ export function modeloReciboGeneral(loansDeudor, allPays, opts) {
     var L = computeLiquidacion(l, lp, { hasta: hasta, incluyeProxMes: incluye(l) });
     var L0 = L.incluyeProxMes ? computeLiquidacion(l, lp, { hasta: hasta }) : L;
     var esIndef = l.modalidad === 'Intereses';
+    // Lo vencido es una SUMA de cuotas: se suma ya convertido a la moneda visible, como sus filas en
+    // "Lo que esta vencido" (4.1.4). En dolares convertir la suma daba un centavo de mas.
+    var vencU = mon.sumaU(venc.map(pendCuota));
+    var vencCOP = venc.reduce(function(s, p){ return s + pendCuota(p); }, 0);
     var m = {
       l: l, i: i, mon: mon, lp: lp, regs: regs, venc: venc, pend: pend, prox: pend[0] || null, sig: pend[1] || null, esIndef: esIndef,
       deN: esIndef ? '' : ' de ' + regs.length,
-      vencU: mon.uni(venc.reduce(function(s, p){ return s + pendCuota(p); }, 0)),
+      vencU: vencU,
       intVencU: mon.uni(venc.reduce(function(s, p){ return s + pendienteDeCuota(p).interes; }, 0)),
       proxU: pend[0] ? mon.uni(pendCuota(pend[0])) : 0,
       // Liquidar, en la moneda visible: capital + intereses vencidos (+ mora consolidada + carga de
       // una unificacion) + el interes del periodo en curso si se eligio - lo ya abonado = `L.total`,
       // exacto. El capital absorbe el residuo del redondeo (Bug #31).
-      liq: L, liqU: mon.uni(L.total), liqIntU: mon.uni(L.intMora + (L.moraConsolidada || 0) + (L.cargaPendiente || 0)),
+      // "Debes hoy" = lo vencido TAL COMO SE IMPRIME + el resto de la liquidacion, convertido una vez
+      // (4.1.4). Sin esto, un credito con todo vencido decia "Vencido USD 1,600.00" y "Debes hoy USD
+      // 1,600.01" en la misma fila, y la nota del ahorro llegaba a imprimir "USD $-0.01". En pesos es
+      // exactamente `L.total`; en dolares puede diferir un centavo de la pantalla de Liquidar deuda.
+      liq: L, liqU: vencU + mon.uni(L.total - vencCOP), liqIntU: mon.uni(L.intMora + (L.moraConsolidada || 0) + (L.cargaPendiente || 0)),
       liqParcU: mon.uni(L.partialPend), liqMesU: mon.uni(L.intExtra || 0), inclMes: !!L.incluyeProxMes,
       // Lo que se podria cobrar del periodo en curso (para el modal), con o sin la casilla.
       mesPosible: L0.aplicaInteres && !L0.enGracia && L0.capitalPendiente > 0 ? L.intProxMes : 0, L0: L0,
       validoHasta: L.incluyeProxMes && L.periodoIrregular ? L.validoHasta : proximoVencimiento(l, lp, hasta),
       // "Si sigues con tus cuotas": todas las que quedan, sin saldar. En `Intereses` no aplica: sus
       // cuotas son de puro interes y el capital va aparte (la suma anunciaria MENOS deuda).
-      faltaU: esIndef ? null : mon.uni(regs.filter(function(p){ return p.estadoPago !== 'Pagado'; }).reduce(function(s, p){ return s + pendCuota(p); }, 0)),
+      faltaU: esIndef ? null : mon.sumaU(regs.filter(function(p){ return p.estadoPago !== 'Pagado'; }).map(pendCuota)),
       capU: mon.uni(saldoConCaja(l, lp)),
       abonos: lp.filter(function(p){ return esAbono(p) && p.estadoPago === 'Pagado'; })
     };
@@ -187,7 +195,9 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
   // "Debes hoy" y hasta cuando vale, cuanto se ahorra liquidando, y lo que cuesta quedar al dia
   // cubriendo tambien la proxima cuota. Reemplaza a "Tus opciones de pago" (punto 4 del PO): lo
   // minimo ya es la cifra grande y liquidar ya es "Debes hoy".
-  var ahorro = plazoMods.length && !Mo.hayIndef ? sumaT(faltaT, { cop: -liqT.cop, usd: -liqT.usd }) : null;
+  // Cada moneda por su lado y nunca negativa: un ahorro de "USD $-0.01" no es un ahorro.
+  var ahorro = plazoMods.length && !Mo.hayIndef
+    ? { cop: Math.max(0, faltaT.cop - liqT.cop), usd: Math.max(0, faltaT.usd - liqT.usd) } : null;
   var proxN = mods.filter(function(m){ return m.prox; }).length;
   var notas = ['<div><b>Debes hoy</b> = ' + detLiq + ' · ' + vigTxt + (hay(liqMesT) ? ' (incluye el interés del periodo en curso)' : '') + '.</div>'];
   if (Mo.hayIndef && plazoMods.length) notas.push('<div>"Si sigues con tus cuotas" no incluye el capital de tu crédito de solo intereses (' + monto(Mo.capIndefT) + '), que pagas cuando quieras.</div>');
@@ -214,7 +224,7 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
         var a = viejas[0], z = viejas[viejas.length - 1];
         filas += '<tr>' + col + '<td>' + a.cuotaN + ' a ' + z.cuotaN + m.deN + '</td><td>' + rbCorta(a.fechaPago, anio) + ' a ' + rbCorta(z.fechaPago, anio) + '</td>' +
           '<td>' + chip('venc', 'hasta ' + rbPlural(diasEntre(a.fechaPago, hasta), 'día', 'días')) + '</td>' +
-          '<td class="n"><span class="sub">' + viejas.length + ' cuotas</span><b>' + m.mon.money(viejas.reduce(function(s, p){ return s + pendCuota(p); }, 0)) + '</b></td></tr>';
+          '<td class="n"><span class="sub">' + viejas.length + ' cuotas</span><b>' + m.mon.fmtUni(m.mon.sumaU(viejas.map(pendCuota))) + '</b></td></tr>';
       }
       m.venc.slice(viejas.length).forEach(function(p){
         var d = diasEntre(p.fechaPago, hasta), ab = Math.round(p.partialPaid || 0);

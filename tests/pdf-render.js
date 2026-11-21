@@ -1637,9 +1637,19 @@ function loansDelCaso(caso) {
       const lpDe = l => P.filter(p => p.prestamoId === l.id)
         .map(p => (S.esCuotaRegular(p) && p.estadoPago === 'Pendiente' && p.fechaPago < hasta) ? Object.assign({}, p, { estadoPago: 'En Mora' }) : p);
       const Ls = ls.map(l => S.computeLiquidacion(l, lpDe(l), { hasta, incluyeProxMes: incl }));
-      const liqU = ls.map((l, i) => enU(l, Ls[i].total));
+      // 4.1.4 (decision del PO): lo vencido es la SUMA de sus cuotas ya convertidas, como sus filas, y
+      // "Debes hoy" = ese vencido + el resto de la liquidacion convertido una vez. En pesos es exactamente
+      // el total de Liquidar deuda (L1 abajo); en dolares puede diferir de el en un centavo por cuota vencida.
+      const vencDe = l => lpDe(l).filter(p => S.esCuotaRegular(p) && p.estadoPago === 'En Mora' && S.pendCuota(p) > 0);
+      const vencU = l => vencDe(l).reduce((a, p) => a + enU(l, S.pendCuota(p)), 0);
+      const vencCOP = l => vencDe(l).reduce((a, p) => a + S.pendCuota(p), 0);
+      const liqU = ls.map((l, i) => vencU(l) + enU(l, Ls[i].total - vencCOP(l)));
       const liqT = liqU.reduce((s, x) => s + x, 0);
-      const vencT = ls.reduce((s, l) => s + enU(l, lpDe(l).filter(p => S.esCuotaRegular(p) && p.estadoPago === 'En Mora').reduce((a, p) => a + S.pendCuota(p), 0)), 0);
+      const vencT = ls.reduce((s, l) => s + vencU(l), 0);
+      ls.forEach((l, i) => {
+        if (!usd && liqU[i] !== Math.round(Ls[i].total)) malasO.push(ls[0].nombre.slice(0, 2) + '… ' + hasta + ': en pesos "Debes hoy" no es el total de Liquidar deuda');
+        if (usd && Math.abs(liqU[i] - enU(l, Ls[i].total)) > vencDe(l).length) malasO.push(ls[0].nombre.slice(0, 2) + '… ' + hasta + ': en dolares "Debes hoy" se aleja de Liquidar deuda mas de un centavo por cuota vencida');
+      });
       const conMes = Ls.some(L => L.incluyeProxMes && L.intExtra > 0);
       if (incl && conMes) nMueve++;
       if (ls.length > 1 && Ls.some(L => L.partialPend > 0)) nAbono++;
@@ -1650,6 +1660,8 @@ function loansDelCaso(caso) {
       const etq = ls[0].nombre.slice(0, 2) + '… ' + hasta + (incl ? ' con interés' : '') + (P === paysAb ? ' con abono' : '');
       nO++;
       if (vis.indexOf('Debes hoy') === -1 || vis.indexOf(fmtT(liqT)) === -1) malasO.push(etq + ': "Debes hoy" no imprime ' + fmtT(liqT));
+      // Ninguna cifra negativa (4.1.4): la nota del ahorro llego a imprimir "USD $-0.01".
+      if (/\$\s?-\d/.test(vis)) malasO.push(etq + ': imprime una cifra negativa');
       if (conMes !== (vis.indexOf('interés del periodo en curso') !== -1)) malasO.push(etq + ': el interés en curso ' + (conMes ? 'no se nombra' : 'aparece sin marcarlo'));
       if (ls.length > 1) {
         const tabla = (/<table class="r-t r-deuda">[\s\S]*?<\/table>/.exec(html) || [''])[0];
@@ -1669,7 +1681,7 @@ function loansDelCaso(caso) {
   }
   R.check('O1 ANTI-VACIO: deudores con varios creditos (tabla), casos donde el interés en curso cambia el total y una tabla con un abono en vuelo',
           nO >= 16 && nTabla >= 4 && nMueve >= 4 && nAbono >= 2, { casos: nO, tablas: nTabla, conInteres: nMueve, conAbono: nAbono });
-  R.check('O2 "Debes hoy" = Liquidar deuda (con su casilla), cada fila y el total de cada columna = la suma de sus filas',
+  R.check('O2 "Debes hoy" = Liquidar deuda (en pesos exacto; en dolares, lo vencido tal como se imprime + el resto), cada fila y el total de cada columna = la suma de sus filas',
           malasO.length === 0, malasO.slice(0, 8).join('\n      '));
 }
 
