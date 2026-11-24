@@ -191,7 +191,15 @@
 @container (max-width:620px){
   .dp-prog{display:none}
 }
-.dp-cuerpo-main,.dp-cuerpo-lado{min-width:0}
+.dp-cuerpo-main,.dp-cuerpo-lado,.dp-cuerpo-ancho{min-width:0}
+/* Post-4.1.4: el flujo de caja es el tercer hijo de la rejilla. En una columna va justo bajo el
+   cronograma (antes de las tarjetas, como siempre); en dos, baja a una franja de borde a borde. */
+.dp-cuerpo-main{order:0}.dp-cuerpo-ancho{order:1}.dp-cuerpo-lado{order:2}
+@container (min-width:880px){
+  .dp-cuerpo-main{grid-column:1;grid-row:1}
+  .dp-cuerpo-lado{grid-column:2;grid-row:1}
+  .dp-cuerpo-ancho{grid-column:1 / -1;grid-row:2}
+}
 .dp-cuerpo-lado{display:flex;flex-direction:column;gap:12px}
 .dp-sec-t{font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text2);margin-bottom:8px;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px}
 .dp-sec-n{font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--text3)}

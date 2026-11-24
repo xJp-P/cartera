@@ -1437,5 +1437,63 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       panelCss.indexOf('.v4p.op.con-panel > .op-main { padding-bottom: ' + relleno + 'px; }') !== -1);
   }
 
+  R.seccion('O — el flujo de caja a todo el ancho y los dolares de cada pago (post-4.1.4)');
+  {
+    // El prestamo de USD 4.800 del fixture: cuotas 1 y 2 sin dolares registrados, 3 y 4 con USD 460.
+    const lG = loans.filter(l => l.moneda === 'USD' && Math.round(l.montoOrigen) === 4800)[0];
+    const lpG = lG ? lpDe(lG.id) : [];
+    R.check('O0 ANTI-VACIO: el prestamo de USD 4.800 tiene pagos con y sin dolares registrados',
+      !!lG && lpG.some(p => p.estadoPago === 'Pagado' && p.montoUSDRecibido > 0) && lpG.some(p => p.estadoPago === 'Pagado' && !(p.montoUSDRecibido > 0)));
+    if (lG) {
+      // O1 El flujo es el TERCER hijo de la rejilla (`dp-cuerpo-ancho`), no va dentro de la columna principal:
+      // con el panel en dos columnas baja a una franja de borde a borde.
+      const dpG = montar(X.DeudorPanel, propsPanel(lG), []);
+      const cuerpo = conClase(dpG.arbol, 'dp-cuerpo')[0];
+      const hijos = cuerpo ? cuerpo.kids.filter(k => k && k.props) : [];
+      R.check('O1 la rejilla del panel tiene tres hijos: la columna principal, la de las tarjetas y el flujo de caja',
+        hijos.length === 3 && /\bdp-cuerpo-main\b/.test(hijos[0].props.className) && /\bdp-cuerpo-lado\b/.test(hijos[1].props.className) &&
+        /\bfcv\b/.test(hijos[2].props.className) && /\bdp-cuerpo-ancho\b/.test(hijos[2].props.className), hijos.map(k => k.props.className));
+      R.eq('O1 y la columna principal ya no lo lleva adentro', conClase(conClase(dpG.arbol, 'dp-cuerpo-main')[0], 'fcv').length, 0);
+      const estilos = leer('public/css/styles.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
+      R.check('O1 el CSS: en una columna el flujo va justo bajo el cronograma; en dos, de borde a borde',
+        estilos.indexOf('.dp-cuerpo-main{order:0}.dp-cuerpo-ancho{order:1}.dp-cuerpo-lado{order:2}') !== -1 &&
+        estilos.indexOf('@container(min-width:880px){.dp-cuerpo-main{grid-column:1;grid-row:1}.dp-cuerpo-lado{grid-column:2;grid-row:1}.dp-cuerpo-ancho{grid-column:1/-1;grid-row:2}}') !== -1);
+      const panelCssO = leer('public/css/panel.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, '');
+      R.check('O1 y con el panel angosto la TRM pasa a segunda linea bajo los dolares (la columna se esconde)',
+        panelCssO.indexOf('.v4p.fcv.fcv-col-trm,.v4p.fcv.fcv-g-ancho{display:none;}') !== -1 &&
+        panelCssO.indexOf('@container(min-width:880px){.v4p.fcv.fcv-col-trm,.v4p.fcv.fcv-g-ancho{display:table-cell;}') !== -1);
+
+      // O2 La tabla en dolares, abierta.
+      const fG = montar(X.FlujoCajaPanel, { loan: lG, pays: lpG }, [true]);
+      const ths = nodos(fG.arbol, n => n.tag === 'th').map(n => textos(n).join(''));
+      R.check('O2 en dolares: "Pesos recibidos", "Dolares entregados" y "TRM del ingreso", bajo "Lo que entró"',
+        ['Pesos recibidos', 'Dólares entregados', 'TRM del ingreso', 'Lo que entró', 'Cómo se aplicó'].every(t => ths.indexOf(t) !== -1) && ths.indexOf('Ingreso') === -1, ths);
+      const filas = nodos(fG.arbol, n => n.tag === 'tr' && !(n.props && n.props.className)).filter(n => n.kids.some(k => k.tag === 'td'));
+      const fila = cuotaN => filas.filter(f => textos(f).indexOf('Cuota #' + cuotaN) !== -1)[0];
+      const t3 = fila(3) ? textos(fila(3)) : [], t1 = fila(1) ? textos(fila(1)) : [];
+      R.check('O2 la cuota 3: los USD 460 que entrego y la TRM a la que entraron (1.571.196 / 460)',
+        t3.indexOf('460.00') !== -1 && t3.indexOf(new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(1571196 / 460)) !== -1, t3);
+      R.check('O2 la cuota 1, sin dolares registrados: "—" y "sin registrar" (no se inventan)', t1.indexOf('—') !== -1 && t1.indexOf('sin registrar') !== -1, t1);
+      R.check('O2 ya no hay linea "US$" bajo los pesos (era pesos / TRM pactada, no los dolares del cliente)',
+        conClase(fG.arbol, 'dp-usd').length === 0 && !/US\$/.test(fG.todo), conClase(fG.arbol, 'dp-usd').length);
+      const tot = conClase(fG.arbol, 'fcv-tot')[0];
+      R.check('O2 el pie suma los dolares registrados (USD 920,00) y dice cuantos pagos no incluye',
+        !!tot && textos(tot).indexOf('920.00') !== -1 && textos(tot).indexOf('no incluye 2 pagos') !== -1, tot && textos(tot));
+      R.check('O2 el titulo trae la TRM pactada', fG.todo.indexOf('TRM pactada $ ' + X.fmtN(lG.trmAcordada)) !== -1);
+
+      // O3 Cuadratura: "Total recibido" del panel = el pie del flujo de caja (la misma cifra).
+      const rec = conClase(dpG.arbol, 'dp-hero-mini')[0];
+      R.check('O3 "Total recibido" en dolares = USD 920,00, la cifra del pie del flujo, y dice que no incluye 2 pagos',
+        !!rec && rec.kids && textos(rec).join(' ').indexOf('920.00') !== -1 && textos(rec).join(' ').indexOf('no incluye 2 pagos sin dólares registrados') !== -1, rec && textos(rec));
+
+      // O4 Un prestamo en pesos: la tabla de siempre, sin columnas de dolares.
+      const lC = loans.filter(l => l.moneda !== 'USD' && X.flujoCajaDe(l, lpDe(l.id)).eventos.length >= 3)[0];
+      const fC = montar(X.FlujoCajaPanel, { loan: lC, pays: lpDe(lC.id) }, [true]);
+      const thsC = nodos(fC.arbol, n => n.tag === 'th').map(n => textos(n).join(''));
+      R.check('O4 en pesos la tabla no cambia: "Ingreso" y sin dolares, TRM ni grupos',
+        thsC.indexOf('Ingreso') !== -1 && ['Dólares entregados', 'TRM del ingreso', 'Lo que entró'].every(t => thsC.indexOf(t) === -1) && fC.todo.indexOf('TRM pactada') === -1, thsC);
+    }
+  }
+
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

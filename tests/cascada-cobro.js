@@ -100,7 +100,7 @@ function cargarCascada() {
   const api = vm.runInContext(
     '({planCascada,cobrableTotal,contextoCascada,proyeccionCobro,filasPreview,previewRecalculo,aplicarTransitoriaPreview,' +
     '_pmt,_tasaPeriodo,generateReciboCobro,generatePropuestaAbono,saldoConCaja,pendCuota,imputarCobros,cobrosDe,rbMedia,' +
-    'cierraEnDolares,faltaUSD})', ctx);
+    'cierraEnDolares,faltaUSD,dolaresPorPago,gananciaDe})', ctx);
   api.pdfs = pdfs;
   return api;
 }
@@ -1675,6 +1675,81 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
     srvL.close();
     R.check('L2 ANTI-VACIO: se probaron al menos 5 cuotas que la regla vieja dejaba abiertas', probados >= 5, 'probadas: ' + probados);
     R.eq('L2 pagar lo que falta en dolares SALDA la cuota (sin deuda fantasma)', cerrados, probados, fantasmas.join(' | '));
+  }
+
+  {
+    // ════════════════════════════════════════════════════════════════════════
+    R.seccion('M — dolares por pago: cada pago en dolares guarda sus dolares y la deuda que extinguio (post-4.1.4)');
+    // ════════════════════════════════════════════════════════════════════════
+    // El registro de pagos (`recibos`) guardaba solo {fecha, cop}: con una cuota pagada en dos partes no
+    // se podia saber la TRM de cada pago, y el efecto TRM de toda la cuota caia en el ultimo. Desde
+    // post-4.1.4 cada evento de un prestamo en dolares lleva `usd` y `obl`. Se prueba contra el servidor REAL.
+    const { faltaUSD, imputarCobros, dolaresPorPago, gananciaDe } = cargarCascada();
+    const js = x => Math.floor(x + 0.5);
+    const DB_M = copiaDeProduccion('cascada-dolares-por-pago');
+    const appM = require(path.join(REPO, 'backend', 'server.js'))(DB_M);
+    const srvM = http.createServer(appM);
+    const PORT_M = 3978;
+    await new Promise(ok => srvM.listen(PORT_M, '127.0.0.1', ok));
+    const fila = id => { const d = new Database(DB_M, { readonly: true }); try { return d.prepare('SELECT * FROM payments WHERE id = ?').get(id); } finally { d.close(); } };
+    const ledger = f => JSON.parse(f.recibos || '[]');
+    const trm = 3675;
+    const nuevo = async (nombre, moneda) => (await pedir('POST', '/api/loans', { nombre, moneda, montoOrigen: moneda === 'USD' ? 4800 : 4000000,
+      trmAcordada: moneda === 'USD' ? trm : 0, tasaMensual: 8, plazoMeses: 12, modalidad: 'Capital + Intereses', fechaInicio: hoy,
+      frecuencia: 'Mensual', estado: 'Activo' }, PORT_M)).json.id;
+
+    // M1-M3: una cuota en dolares en dos partes, cada una a una TRM del dia distinta (por debajo de la pactada).
+    const idU = await nuevo('ZZ Dolares Por Pago', 'USD');
+    const c1 = fila(idU + '-1');
+    const u1 = 200, cop1 = js(u1 * 3300);
+    await pedir('POST', '/api/payments/' + c1.id + '/partial', { monto: cop1, fecha: '2026-07-20', observaciones: '', montoUSD: u1 }, PORT_M);
+    const tras1 = fila(c1.id);
+    const u2 = faltaUSD(tras1, trm), cop2 = js(u2 * 3350);
+    await pedir('POST', '/api/payments/' + c1.id + '/partial', { monto: cop2, fecha: '2026-07-28', observaciones: '', montoUSD: u2 }, PORT_M);
+    const f1 = fila(c1.id), led1 = ledger(f1);
+    R.check('M1 la cuota quedo pagada con sus dos pagos en el registro', f1.estadoPago === 'Pagado' && led1.length === 2, led1);
+    R.check('M1 cada pago guarda sus dolares y la deuda que extinguio (el ultimo, lo que faltaba)',
+      led1.length === 2 && led1[0].usd === u1 && led1[0].obl === js(u1 * trm) && led1[1].usd === u2 && led1[1].obl === f1.cuotaTotal - js(u1 * trm), led1);
+    R.eq('M1 la suma de las deudas de cada pago es la cuota entera', led1.reduce((a, e) => a + e.obl, 0), f1.cuotaTotal);
+    const imp1 = imputarCobros(f1);
+    R.check('M2 el efecto TRM queda en el pago en que ocurrio: pesos - deuda de ese pago',
+      imp1.eventos.length === 2 && imp1.eventos[0].ajuste === cop1 - led1[0].obl && imp1.eventos[1].ajuste === cop2 - led1[1].obl &&
+      imp1.eventos.every(e => e.interes + e.capital + e.ajuste === e.cop), imp1.eventos);
+    // Los totales de la cuota son los MISMOS que sin `obl` (la regla de antes: todo el efecto en el ultimo).
+    const sinObl = Object.assign({}, f1, { recibos: JSON.stringify(led1.map(e => ({ fecha: e.fecha, cop: e.cop }))) });
+    const impViejo = imputarCobros(sinObl);
+    R.check('M2 los totales de la cuota no cambian (interes, capital, efecto TRM)',
+      ['interes', 'capital', 'ajuste', 'cobrado'].every(k => imp1.totales[k] === impViejo.totales[k]) &&
+      imp1.totales.interes === Math.round(f1.interesPeriodo) && imp1.totales.capital === Math.round(f1.abonoCapital),
+      { nuevo: imp1.totales, viejo: impViejo.totales });
+    R.check('M2 ANTI-VACIO: con la regla de antes el primer pago no llevaba efecto TRM',
+      impViejo.eventos[0].ajuste === 0 && imp1.eventos[0].ajuste < 0, [impViejo.eventos[0], imp1.eventos[0]]);
+    R.eq('M2 la ganancia de la cuota (piso en cero) es la misma con y sin dolares por pago', gananciaDe(f1, true).total, gananciaDe(sinObl, true).total);
+    const dp1 = dolaresPorPago(f1);
+    R.check('M3 los dolares de cada pago y la TRM a la que entraron (pesos / dolares)',
+      dp1.length === 2 && dp1[0].usd === u1 && Math.abs(dp1[0].trm - cop1 / u1) < 1e-9 && dp1[1].usd === u2 && Math.abs(dp1[1].trm - cop2 / u2) < 1e-9 &&
+      dp1.every(x => x.nPagos === 1 && !x.enOtroPago), dp1);
+    R.eq('M3 los dolares de la fila son la suma de los de sus pagos', Math.round((u1 + u2) * 100) / 100, f1.montoUSDRecibido);
+
+    // M4: el boton "Pagado" (PUT) de una cuota en dolares tambien deja sus dolares en el registro.
+    const c2 = fila(idU + '-2');
+    const usdC2 = faltaUSD(c2, trm), copC2 = js(usdC2 * 3500);
+    await pedir('PUT', '/api/payments/' + c2.id, { estadoPago: 'Pagado', fechaRecaudo: '2026-08-15', observaciones: '', montoCOPRecibido: copC2, montoUSDRecibido: usdC2 }, PORT_M);
+    const led2 = ledger(fila(c2.id));
+    R.check('M4 "Pagado" en dolares: un pago con sus dolares y la cuota entera como deuda',
+      led2.length === 1 && led2[0].cop === copC2 && led2[0].usd === usdC2 && led2[0].obl === c2.cuotaTotal, led2);
+
+    // M5: en pesos, y en dolares sin declarar los dolares, el registro queda como siempre: {fecha, cop}.
+    const idC = await nuevo('ZZ Pesos Por Pago', 'COP');
+    const p1 = fila(idC + '-1');
+    await pedir('POST', '/api/payments/' + p1.id + '/partial', { monto: 100000, fecha: '2026-07-20', observaciones: '' }, PORT_M);
+    await pedir('PUT', '/api/payments/' + fila(idC + '-2').id, { estadoPago: 'Pagado', fechaRecaudo: '2026-08-15', observaciones: '', montoCOPRecibido: 0, montoUSDRecibido: 0 }, PORT_M);
+    const c3 = fila(idU + '-3');
+    await pedir('POST', '/api/payments/' + c3.id + '/partial', { monto: 300000, fecha: '2026-07-21', observaciones: '' }, PORT_M);
+    const solos = [ledger(fila(p1.id)), ledger(fila(idC + '-2')), ledger(fila(c3.id))];
+    R.check('M5 en pesos y sin dolares declarados, cada pago sigue siendo solo {fecha, cop}',
+      solos.every(l => l.length === 1 && Object.keys(l[0]).sort().join(',') === 'cop,fecha'), solos);
+    srvM.close();
   }
 
   srv.close();

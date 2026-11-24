@@ -15,6 +15,8 @@
 //   - El ledger `recibos` es la fuente de verdad del flujo de caja: /partial hace
 //     push de cada parcial en SU fecha, PUT->Pagado agrega el REMANENTE, y
 //     PUT->revertir lo limpia a '[]'. Nunca ledger Y fallback a la vez.
+//     En un prestamo en dolares cada evento lleva ademas `usd` (los dolares de ese pago) y
+//     `obl` (la deuda que extinguio, en pesos a la TRM pactada). Post-4.1.4.
 //   - Pago completo por USD (Bug #23): una cuota USD se salda si el USD recibido
 //     cubre la cuota en USD, aunque los COP queden cortos por una baja de TRM. Se
 //     acepta la perdida cambiaria y se guarda el COP REAL, no el teorico.
@@ -33,6 +35,18 @@ const { cierraEnDolares } = require('../core/cobros');
 module.exports = function crearRutasPayments(ctx) {
   const { db, mutacionAtomica, ClientError, hoyStr, buildSchedule, runPayment } = ctx;
   const router = express.Router();
+
+  // Dolares del pago que salda una cuota por PUT (el boton "Pagado" del formulario): los que declara el
+  // formulario menos los que ya traian los pagos parciales de esa cuota. 0 en un prestamo en pesos o si
+  // no se declararon dolares: entonces el evento queda como siempre, solo con fecha y pesos.
+  function dolaresDelEvento(pay, prevRec, montoUSD) {
+    const usd = Math.round((+montoUSD || 0) * 100) / 100;
+    if (!(usd > 0)) return 0;
+    const loan = db.prepare('SELECT moneda, trmAcordada FROM loans WHERE id = ?').get(pay.prestamoId);
+    if (!loan || loan.moneda !== 'USD' || !(loan.trmAcordada > 0)) return 0;
+    const previos = prevRec.reduce((a, r) => a + (+r.usd || 0), 0);
+    return Math.max(0, Math.round((usd - previos) * 100) / 100);
+  }
 
   // ── API: Payments ─────────────────────────────────────────────────────────
   // Auto-extender cuotas de Intereses si faltan pocas pendientes
@@ -106,7 +120,15 @@ module.exports = function crearRutasPayments(ctx) {
       const target = Math.round((montoCOPRecibido || payBefore.cuotaTotal) || 0);
       const prevSum = prevRec.reduce((a, r) => a + (Math.round(+r.cop) || 0), 0);
       const remanente = target - prevSum;
-      if (remanente > 0) prevRec.push({ fecha: fechaRecaudo || hoyStr(), cop: remanente });
+      if (remanente > 0) {
+        const ev = { fecha: fechaRecaudo || hoyStr(), cop: remanente };
+        // Post-4.1.4 (dolares por pago): en un prestamo en dolares el evento guarda tambien los dolares
+        // de ESTE pago (`usd`) y la deuda que extinguio (`obl`, en pesos a la TRM pactada). Con eso el
+        // flujo de caja muestra la TRM de cada ingreso y el efecto TRM cae en el pago en que ocurrio.
+        const usdEv = dolaresDelEvento(payBefore, prevRec, montoUSDRecibido);
+        if (usdEv > 0) { ev.usd = usdEv; ev.obl = Math.max(0, Math.round(payBefore.cuotaTotal - (payBefore.partialPaid || 0))); }
+        prevRec.push(ev);
+      }
       newRecibos = JSON.stringify(prevRec);
     } else if ((estadoPago === 'Pendiente' || estadoPago === 'En Mora') && payBefore) {
       newRecibos = '[]';
@@ -229,7 +251,11 @@ module.exports = function crearRutasPayments(ctx) {
     // recaudo). La suma de los parciales == cuotaTotal al completar (montoNum <= restante).
     let recibosArr; try { recibosArr = JSON.parse(pay.recibos || '[]'); } catch (_) { recibosArr = []; }
     if (!Array.isArray(recibosArr)) recibosArr = [];
-    recibosArr.push({ fecha: fechaPago, cop: montoNum });
+    // Post-4.1.4 (dolares por pago): en dolares, el evento lleva los dolares de ESTE pago y la deuda que
+    // extinguio (`obl`): la misma cifra que suma a partialPaid (el pago que cierra, lo que faltaba).
+    const evento = { fecha: fechaPago, cop: montoNum };
+    if (esUSDLoan && usdNum > 0) { evento.usd = usdNum; evento.obl = completa ? Math.max(0, Math.round(pay.cuotaTotal - yaPagado)) : obligacion; }
+    recibosArr.push(evento);
     const recibosJSON = JSON.stringify(recibosArr);
 
     // `completa` ya se conoce aqui (se deriva de pay + monto), asi que la descripcion del

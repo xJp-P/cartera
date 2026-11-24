@@ -93,7 +93,9 @@ function main() {
                       // comprobacion de equivalencia no pueda "pasar" por no encontrarlos.
                       'devengoDiario', 'estadoDiario', 'esDiario', 'progresoCapital',
                       // Ganancia real (regla del PO, 2026-09-13): tablero y Rendimiento.
-                      'gananciaDe', 'gananciaDePrestamo'];
+                      'gananciaDe', 'gananciaDePrestamo',
+                      // Dolares por pago (post-4.1.4): flujo de caja y "Total recibido" en dolares.
+                      'dolaresPorPago', 'dolaresRecibidos'];
   const faltantes = [];
   NECESARIOS.forEach(function (n) {
     if (typeof simbolos[n] === 'function') H[n] = simbolos[n];
@@ -1419,6 +1421,79 @@ function main() {
       fechaRecaudo: null, recibos: '[{"fecha":"2026-09-04","cop":123446}]' }) ]);
     R.eq('construido (produccion): parcial en vuelo -> USD del interes que cubrio', gK.usd, Math.round(42681 / 3681 * 100) / 100);
     R.eq('construido (produccion): y en COP ese interes neto de la perdida de ese pago', gK.cop, 18372);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  R.seccion('10. Dolares por pago (post-4.1.4): cada pago con sus dolares, su TRM y su efecto TRM');
+  // ══════════════════════════════════════════════════════════════════════════
+  // El registro de pagos de un prestamo en dolares lleva, desde post-4.1.4, `usd` y `obl` (la deuda que
+  // ese pago extinguio) en cada evento. Propiedad: agregarselos a las filas que el fixture ya tiene NO
+  // mueve los totales de ninguna (interes, capital, efecto TRM, ganancia) ni el saldo de ningun prestamo.
+  {
+    const usdLoans = loans.filter(function (l) { return l.moneda === 'USD' && l.trmAcordada > 0; });
+    const conDolares = [], totalesMal = [], identidadMal = [], gananciaMal = [];
+    pays.forEach(function (p) {
+      const l = byLoan[String(p.prestamoId)];
+      if (!l || l.moneda !== 'USD') return;
+      const evs = H.cobrosDe(p);
+      if (evs.length !== 1 || !(p.montoUSDRecibido > 0)) return;
+      conDolares.push(p.id);
+      // Lo que escribiria el servidor hoy para ese pago: sus dolares y la deuda que extinguio.
+      const obl = p.estadoPago === 'Pagado' ? Math.round(p.cuotaTotal) : Math.round(p.partialPaid || 0);
+      const nueva = Object.assign({}, p, { recibos: JSON.stringify([{ fecha: evs[0].fecha, cop: evs[0].cop, usd: p.montoUSDRecibido, obl: obl }]) });
+      const a0 = H.imputarCobros(p), a1 = H.imputarCobros(nueva);
+      if (['interes', 'capital', 'ajuste', 'cobrado'].some(function (k) { return a0.totales[k] !== a1.totales[k]; })) totalesMal.push({ id: p.id, antes: a0.totales, despues: a1.totales });
+      a1.eventos.forEach(function (e) { if (e.interes + e.capital + e.ajuste !== e.cop) identidadMal.push({ id: p.id, e: e }); });
+      if (H.gananciaDe(p, true).total !== H.gananciaDe(nueva, true).total) gananciaMal.push(p.id);
+    });
+    R.check('10.1 ANTI-VACIO: el fixture tiene filas en dolares con sus dolares registrados', conDolares.length >= 4, conDolares.length);
+    R.eq('10.1 guardar dolares y deuda por pago no mueve los totales de ninguna fila', totalesMal.length, 0, muestra(totalesMal));
+    R.eq('10.1 y cada pago sigue cumpliendo interes + capital + efecto TRM = pesos', identidadMal.length, 0, muestra(identidadMal));
+    R.eq('10.1 ni la ganancia de ninguna fila', gananciaMal.length, 0, muestra(gananciaMal));
+
+    // 10.2 Totales en dolares: la suma de los dolares REGISTRADOS y cuantas filas con dinero no los tienen.
+    const totMal = [];
+    usdLoans.forEach(function (l) {
+      const lp = paysDe(l), D = H.dolaresRecibidos(l, lp);
+      let usd = 0, sin = 0;
+      lp.forEach(function (p) { if (!H.cobrosDe(p).length) return; if (p.montoUSDRecibido > 0) usd += p.montoUSDRecibido; else sin++; });
+      if (D.usd !== Math.round(usd * 100) / 100 || D.sinUSD !== sin) totMal.push({ id: l.id, D: D, usd: usd, sin: sin });
+      const fj = H.flujoCajaDe(l, lp);
+      if (fj.dolares.usd !== D.usd || fj.dolares.sinUSD !== D.sinUSD) totMal.push({ id: l.id, flujo: fj.dolares, D: D });
+    });
+    R.eq('10.2 "Total recibido" en dolares = dolares registrados, y el pie del flujo dice lo mismo', totMal.length, 0, muestra(totMal));
+    const lG = usdLoans.filter(function (l) { return Math.round(l.montoOrigen) === 4800; })[0];
+    const DG = lG ? H.dolaresRecibidos(lG, paysDe(lG)) : null;
+    R.check('10.2 el prestamo de USD 4.800 del fixture: USD 920,00 registrados y 2 pagos sin dolares',
+      !!DG && DG.usd === 920 && DG.sinUSD === 2 && DG.copConUSD === 1571196 + 1463096, DG);
+    const fjG = lG ? H.flujoCajaDe(lG, paysDe(lG)) : null;
+    const porCuota = {};
+    if (fjG) fjG.eventos.forEach(function (e) { porCuota[e.cuotaN] = e; });
+    R.check('10.2 su flujo: cuotas 1 y 2 sin dolares; 3 y 4 con USD 460 y la TRM del dia (pesos / dolares)',
+      !!fjG && porCuota[1].usd === null && porCuota[2].usd === null && porCuota[3].usd === 460 && porCuota[4].usd === 460 &&
+      Math.abs(porCuota[3].trmDia - 1571196 / 460) < 1e-9 && Math.abs(porCuota[4].trmDia - 1463096 / 460) < 1e-9,
+      fjG && [1, 2, 3, 4].map(function (n) { return porCuota[n] && [porCuota[n].usd, porCuota[n].trmDia]; }));
+    const lCOP = loans.filter(function (l) { return l.moneda !== 'USD' && H.flujoCajaDe(l, paysDe(l)).eventos.length > 0; })[0];
+    R.check('10.2 en un prestamo en pesos no hay dolares en el flujo', !!lCOP && H.flujoCajaDe(lCOP, paysDe(lCOP)).eventos.every(function (e) { return e.usd === null && e.trmDia === null; }) &&
+      H.dolaresRecibidos(lCOP, paysDe(lCOP)).usd === 0);
+
+    // 10.3 Casos construidos: una cuota de la copia pagada en dos partes.
+    const base = { id: 'dp-5', prestamoId: 'dp', cuotaN: 5, fechaPago: '2026-08-15', interesPeriodo: 1334953, abonoCapital: 355532,
+      cuotaTotal: 1690485, estadoPago: 'Pagado', fechaRecaudo: '2026-07-28', montoCOPRecibido: 1531000, montoUSDRecibido: 460, partialPaid: 1690485 };
+    const conObl = Object.assign({}, base, { recibos: JSON.stringify([{ fecha: '2026-07-20', cop: 660000, usd: 200, obl: 735000 }, { fecha: '2026-07-28', cop: 871000, usd: 260, obl: 955485 }]) });
+    const viejo = Object.assign({}, base, { recibos: JSON.stringify([{ fecha: '2026-07-20', cop: 660000 }, { fecha: '2026-07-28', cop: 871000 }]) });
+    const ev = H.imputarCobros(conObl).eventos.map(function (e) { return [e.interes, e.capital, e.ajuste]; });
+    R.eq('10.3 dos pagos (USD 200 a 3.300 y USD 260 a 3.350): cada uno con su efecto TRM', JSON.stringify(ev), JSON.stringify([[735000, 0, -75000], [599953, 355532, -84485]]));
+    R.eq('10.3 con el registro viejo (sin dolares por pago) todo el efecto cae en el ultimo', JSON.stringify(H.imputarCobros(viejo).eventos.map(function (e) { return [e.interes, e.capital, e.ajuste]; })),
+      JSON.stringify([[660000, 0, 0], [674953, 355532, -159485]]));
+    const dpV = H.dolaresPorPago(viejo);
+    R.check('10.3 registro viejo: los USD 460 van en el ultimo pago con la TRM promedio; el primero, "en el ultimo pago"',
+      dpV[0].usd === null && dpV[0].enOtroPago && dpV[1].usd === 460 && dpV[1].nPagos === 2 && Math.abs(dpV[1].trm - 1531000 / 460) < 1e-9, dpV);
+    const vivo = Object.assign({}, base, { estadoPago: 'Pendiente', fechaRecaudo: null, partialPaid: 735000, montoCOPRecibido: 660000, montoUSDRecibido: 200,
+      recibos: JSON.stringify([{ fecha: '2026-07-20', cop: 660000, usd: 200, obl: 735000 }]) });
+    const iv = H.imputarCobros(vivo);
+    R.check('10.3 un pago parcial en vuelo: cubre la deuda que extinguio, con su efecto TRM, y no queda dinero sin registrar',
+      iv.eventos[0].interes === 735000 && iv.eventos[0].ajuste === -75000 && iv.sinLedger === 0, iv);
   }
 
   db.close();

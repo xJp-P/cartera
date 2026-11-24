@@ -9,7 +9,7 @@
 // Nombres top-level con prefijo `op`/`OP_`: el arnes de pruebas aplana todos los modulos en un
 // mismo ambito.
 
-import { imputarCobros, pendCuota, computeLiquidacion, gananciaDePrestamo, esDiario, estadoDiario, progresoCapital, diasEntre, cobrosDe } from './dominio.js';
+import { imputarCobros, pendCuota, computeLiquidacion, gananciaDePrestamo, esDiario, estadoDiario, progresoCapital, diasEntre, cobrosDe, dolaresRecibidos } from './dominio.js';
 import { esAbono, esCuotaRegular } from './ids.js';
 import { addDays, contiene, facturaCode, fcCoincideDiario, payMatchesQuery, plegar } from './ui.js';
 import { fmt, fmtD } from './format.js';
@@ -77,13 +77,13 @@ function modeloPrestamo(l, lp, hoy){
   var gp = gananciaDePrestamo(l, lp);
   var esPrest = l.modalidad === 'Prestamo';
   var recCap = Math.round(imp.capital), recInt = Math.round(imp.interes), recTRM = Math.round(imp.ajuste), recTotal = Math.round(imp.cobrado);
-  var regPag = regulares.filter(function(p){ return p.estadoPago === 'Pagado'; });
   var aboPag = abonos.filter(function(p){ return p.estadoPago === 'Pagado'; });
-  var efectoUSD = esUSD && trm > 0
-    ? regPag.filter(function(p){ return p.montoUSDRecibido > 0; }).reduce(function(s, p){ return s + (p.montoUSDRecibido - p.cuotaTotal / trm); }, 0)
-      + aboPag.filter(function(p){ return p.montoUSDRecibido > 0; }).reduce(function(s, p){ return s + (p.montoUSDRecibido - p.abonoCapital / trm); }, 0)
-    : 0;
-  var recTotalUSD = esUSD && trm > 0 ? recCap / trm + recInt / trm + efectoUSD : 0;
+  // Post-4.1.4: el "Total recibido" en dolares son los dolares REGISTRADOS, la misma cifra del pie del
+  // flujo de caja (`dolaresRecibidos`). Antes se armaba convirtiendo capital e interes y sumando el
+  // efecto cambiario de las filas con dolares: suponia la cuota completa en dolares en las filas sin
+  // ellos, quedaba un centavo corto (cuota / TRM sin redondear) y no coincidia con el flujo.
+  var dol = dolaresRecibidos(l, lp);
+  var recTotalUSD = esUSD ? dol.usd : 0;
   var capAbonos = aboPag.reduce(function(s, p){ return s + p.abonoCapital; }, 0);
   var moraMonto = enMora.reduce(function(s, p){ return s + pendCuota(p); }, 0);
   var dv = esDiario(l) && activo ? estadoDiario(l, lp, hoy) : null;
@@ -108,7 +108,7 @@ function modeloPrestamo(l, lp, hoy){
   return { loan: l, lp: lp, esUSD: esUSD, trm: trm, regulares: regulares, abonos: abonos, pagadas: pagadas, total: regulares.length,
     enMora: enMora, pendientes: pendientes, prox: pendientes[0] || null, dProx: dProx, orig: orig, saldoMotor: saldoMotor, saldo: saldo,
     liq: liq, gp: gp, esPrest: esPrest, recCap: recCap, recInt: recInt, recTRM: recTRM, recTotal: recTotal,
-    recGan: esPrest ? recInt + recTRM : gp.cop, recTotalUSD: recTotalUSD, capAbonos: capAbonos, moraMonto: moraMonto,
+    recGan: esPrest ? recInt + recTRM : gp.cop, recTotalUSD: recTotalUSD, recSinUSD: esUSD ? dol.sinUSD : 0, capAbonos: capAbonos, moraMonto: moraMonto,
     moraDias: enMora.length ? diasEntre(enMora[0].fechaPago, hoy) : 0, dv: dv, pct: Math.max(0, Math.min(100, pct)),
     gananciaEsperada: gananciaEsperada, lotes: lotes, fechaFin: fechaFin, timeline: timeline, estado: estado, activo: activo, condonado: condonado };
 }

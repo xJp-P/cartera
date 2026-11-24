@@ -110,6 +110,24 @@
 .v4p .fcv-tot td { border-top: 1px solid var(--line-strong) !important; color: var(--ink); font-weight: 600; background: var(--surface-2); }
 .v4p .fcv-pie { padding: 10px 12px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.55; color: var(--ink-3); display: flex; flex-direction: column; gap: 4px; }
 .v4p .fcv-pie b { color: var(--ink-2); font-weight: 600; }
+/* Post-4.1.4 ("dolares por pago"). La rejilla deja 16 px: con -6 la separacion entre el cronograma y el
+   boton sigue siendo la de antes (10 + 10). */
+.v4p .fcv.dp-cuerpo-ancho { margin-top: -6px; }
+.v4p .fcv-t { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.v4p .fcv-t-trm { font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
+.v4p .fcv tr.fcv-grupos th { padding: 7px 8px 2px; border-bottom: 0; font-size: 10.5px; color: var(--ink-3); text-align: center; }
+.v4p .fcv tr.fcv-grupos th.g { border-bottom: 1px solid var(--line); letter-spacing: .02em; }
+.v4p .fcv tr.fcv-grupos + tr th { padding-top: 6px; }
+.v4p .fcv .fcv-nota.muted { color: var(--ink-3); font-weight: 500; }
+/* Panel angosto: la TRM va como segunda linea bajo los dolares. Ancho: en su propia columna. */
+.v4p .fcv-sub-trm { display: block; font-size: 10.5px; font-weight: 500; color: var(--ink-3); margin-top: 1px; }
+.v4p .fcv .fcv-col-trm, .v4p .fcv .fcv-g-ancho { display: none; }
+@container (min-width: 880px) {
+  .v4p .fcv .fcv-col-trm, .v4p .fcv .fcv-g-ancho { display: table-cell; }
+  .v4p .fcv .fcv-g-angosto { display: none; }
+  .v4p .fcv-sub-trm { display: none; }
+  .v4p .fcv td, .v4p .fcv th { padding-left: 10px; padding-right: 10px; }
+}
 
 /* Las cifras en dolares, en gris como en el resto de la app (opcion A del PO, 3.7.0) */
 .v4p .dp-usd { color: var(--ink-3); }

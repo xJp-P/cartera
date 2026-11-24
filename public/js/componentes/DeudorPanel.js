@@ -45,6 +45,14 @@ export function dpPuedeUnificar(activos){
   return Object.keys(c).some(function(m){ return c[m] >= 2; });
 }
 function dpMonto(m){ return m.esUSD ? 'USD ' + fmtN(m.loan.montoOrigen) : fmt(m.loan.montoOrigen); }
+// "Total recibido" en dolares (post-4.1.4): los dolares REGISTRADOS, la misma cifra del pie del flujo de
+// caja. Si hay pagos sin dolares registrados (de antes de que la app los pidiera), se dice cuantos quedan fuera.
+function dpTotalUSD(m){
+  if (!m.esUSD) return null;
+  if (!(m.recTotalUSD > 0)) return h('div', { className: 'dp-sub' }, 'sin dólares registrados');
+  return [h('span', { key: 'u' }, usdLinea(fmtUSD(m.recTotalUSD))),
+    m.recSinUSD > 0 && h('div', { key: 's', className: 'dp-sub' }, 'no incluye ' + m.recSinUSD + ' pago' + (m.recSinUSD === 1 ? '' : 's') + ' sin dólares registrados')];
+}
 
 // ── Cronograma: las 7 columnas universales, abonos intercalados ────────────────────
 function DpCronograma(p){
@@ -101,7 +109,7 @@ function DpRecaudado(p){
     h('div', { className: 'dp-card-t' }, 'Recaudado a la fecha'),
     h('div', { className: 'dp-hero-mini' },
       h('span', null, 'Total recibido'),
-      h('div', { className: 'r' }, h('div', { className: 'mono' }, fmt(m.recTotal)), m.esUSD && usdLinea(fmtUSD(m.recTotalUSD)))),
+      h('div', { className: 'r' }, h('div', { className: 'mono' }, fmt(m.recTotal)), dpTotalUSD(m))),
     dpFila(l.estado === 'Cancelado' ? 'Capital recuperado' : 'Capital recuperado', fmt(m.recCap), dpUsd(m, m.recCap)),
     dpFila('Intereses cobrados', (m.recInt > 0 ? '+' : '') + fmt(m.recInt), m.esUSD && m.recInt > 0 ? usdLinea(fmtUSD(m.gp.usd)) : null, m.recInt > 0 ? 'var(--green)' : 'var(--text3)'),
     m.esUSD && dpFila('Efecto TRM', (m.recTRM > 0 ? '+' : m.recTRM < 0 ? '-' : '') + fmt(Math.abs(m.recTRM)), null,
@@ -234,7 +242,7 @@ export function DeudorPanel(props){
     var unifEn = l.unificadoEn ? loans.filter(function(x){ return x.id === l.unificadoEn; })[0] || null : null;
     figuras = h('div', { className: 'dp-figs' },
       h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Capital prestado'), h('div', { className: 'dp-fig-v mono' }, dpMonto(m)), m.esUSD && h('div', { className: 'dp-fig-s' }, fmt(m.orig) + ' · TRM ' + fmtN(m.trm))),
-      h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Total recibido'), h('div', { className: 'dp-fig-v mono' }, fmt(m.recTotal)), m.esUSD && usdLinea(fmtUSD(m.recTotalUSD))),
+      h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Total recibido'), h('div', { className: 'dp-fig-v mono' }, fmt(m.recTotal)), dpTotalUSD(m)),
       m.condonado
         ? h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Intereses condonados'), h('div', { className: 'dp-fig-v mono', style: { color: 'var(--yellow)' } }, fmt(Math.round(l.interesesPerdidos || 0))),
             h('div', { className: 'dp-fig-s' }, 'capital recuperado al 100%'))
@@ -309,9 +317,12 @@ export function DeudorPanel(props){
       h('div', { className: 'dp-cuerpo' },
         h('div', { className: 'dp-cuerpo-main' },
           h('div', { className: 'dp-sec-t' }, esDiario(l) ? 'Cortes registrados' : 'Cronograma', l.modalidad === 'Intereses' && h('span', { className: 'dp-sec-n' }, 'pagadas, vencidas y la próxima · las siguientes se generan solas')),
-          h(DpCronograma, { m: m, hoy: hoy, focoPay: props.focoPay, onPay: m.activo ? props.onPay : null }),
-          h(FlujoCajaPanel, { loan: l, pays: pays })),
+          h(DpCronograma, { m: m, hoy: hoy, focoPay: props.focoPay, onPay: m.activo ? props.onPay : null })),
         h('div', { className: 'dp-cuerpo-lado' },
-          h(DpRecaudado, { m: m }), h(DpProyeccion, { m: m }), DpExtras({ m: m })))),
+          h(DpRecaudado, { m: m }), h(DpProyeccion, { m: m }), DpExtras({ m: m })),
+        // Post-4.1.4: el flujo de caja es el TERCER hijo de la rejilla. Con el panel en dos columnas
+        // baja a una franja de borde a borde (la columna de la derecha ya termino); en una sola
+        // columna el CSS lo deja justo bajo el cronograma, como antes (`.dp-cuerpo-ancho`).
+        h(FlujoCajaPanel, { loan: l, pays: pays }))),
     cronoPdf && h(CronogramaPdfModal, { loan: l, pays: m.lp, onClose: function(){ setCronoPdf(null); } }));
 }

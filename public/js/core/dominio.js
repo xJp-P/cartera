@@ -21,6 +21,8 @@
 //                       evento. `ajuste` es el hueco entre caja y composicion: en
 //                       USD es el efecto cambiario; en COP, el residuo de
 //                       redondeo de las filas legacy del Bug #43.
+//                       Un evento en dolares que trae `obl` (post-4.1.4) cubre esa
+//                       deuda, no sus pesos: el efecto TRM queda en ese pago.
 //                       NUNCA filtrar por estadoPago==='Pagado' para decidir si un
 //                       pago cuenta: eso es lo que hacia invisibles los parciales.
 //
@@ -51,8 +53,13 @@ export function cobrosDe(p){
   if(p.recibos){
     var arr; try{arr=JSON.parse(p.recibos);}catch(_){arr=null;}
     if(Array.isArray(arr)&&arr.length){
+      // Post-4.1.4: en dolares el evento trae tambien `usd` (los dolares de ese pago) y `obl` (la deuda
+      // que extinguio, en pesos a la TRM pactada). Solo viajan si estan: un evento en pesos sigue igual.
       return arr.filter(function(r){return r&&r.fecha&&(+r.cop)>0;})
-                .map(function(r){return {fecha:String(r.fecha),cop:Math.round(+r.cop)};});
+                .map(function(r){var e={fecha:String(r.fecha),cop:Math.round(+r.cop)};
+                  if((+r.usd)>0) e.usd=Math.round(+r.usd*100)/100;
+                  if((+r.obl)>0) e.obl=Math.round(+r.obl);
+                  return e;});
     }
   }
   if(p.estadoPago==='Pagado'&&p.fechaRecaudo){
@@ -103,12 +110,17 @@ export function imputarCobros(pay){
   var reconc=Math.round(pay.cuotaTotal||0)-intTotal;
   if(capTotal<=0&&reconc>0) capTotal=reconc;
   if(capTotal<0) capTotal=0;
-  var intPend=intTotal, capPend=capTotal, cobrado=0;
+  var intPend=intTotal, capPend=capTotal, cobrado=0, aplicado=0;
+  // Cada evento cubre su BASE: los pesos que entraron o, si el evento la trae (pagos en dolares desde
+  // post-4.1.4), la deuda que ESE pago extinguio a la TRM pactada. Asi el efecto cambiario de cada pago
+  // queda en su propia fila (ajuste = pesos - base) en vez de cargarse entero al ultimo. Los totales de
+  // la cuota no cambian: la suma de las bases es la misma obligacion que se anclaba al final.
   var out=evs.map(function(e){
     var cop=Math.round(e.cop||0);
-    var ai=Math.min(cop,intPend);          intPend-=ai;
-    var ac=Math.min(cop-ai,capPend);       capPend-=ac;
-    cobrado+=cop;
+    var base=(+e.obl)>0?Math.round(+e.obl):cop;
+    var ai=Math.min(base,intPend);         intPend-=ai;
+    var ac=Math.min(base-ai,capPend);      capPend-=ac;
+    cobrado+=cop; aplicado+=base;
     return {fecha:e.fecha,cop:cop,interes:ai,capital:ac,ajuste:0};
   });
   // Se imputa la OBLIGACION EXTINGUIDA, no la caja. En COP son la misma cifra; en un
@@ -122,7 +134,7 @@ export function imputarCobros(pay){
   // El remanente se ancla al ULTIMO evento, para que los totales cuadren con el motor y el
   // desfase quede visible como `ajuste` en vez de disfrazarse de capital cobrado.
   var oblTotal=saldada?(intTotal+capTotal):Math.round(pay.partialPaid||0);
-  var extra=Math.max(0,oblTotal-cobrado), absorbido=0;
+  var extra=Math.max(0,oblTotal-aplicado), absorbido=0;
   if(out.length>0&&extra>0&&(intPend>0||capPend>0)){
     var u=out[out.length-1];
     var ei=Math.min(extra,intPend); u.interes+=ei; intPend-=ei; extra-=ei; absorbido+=ei;
@@ -138,7 +150,7 @@ export function imputarCobros(pay){
   // para no romper la identidad "KPI == suma del grafico" que cobrosDe garantiza.
   // Se descuenta lo `absorbido`: ese hueco SI esta representado (es el efecto cambiario del
   // evento), y contarlo aqui marcaria la fila con el asterisco de baja fidelidad sin motivo.
-  var sinLedger=Math.max(0,Math.round(pay.partialPaid||0)-cobrado-absorbido);
+  var sinLedger=Math.max(0,Math.round(pay.partialPaid||0)-aplicado-absorbido);
   return {eventos:out,totales:{cobrado:cobrado,interes:ti,capital:tc,ajuste:ta},
           sinLedger:sinLedger,saldada:saldada};
 }
@@ -283,6 +295,50 @@ export function pendienteDeCuota(pay){
 // Auditado sobre la BD real: NINGUNA cuota pagada carece de fechaRecaudo, asi que esta fuente
 // cubre el 100% de la historia. Cada evento se enriquece con los metadatos de su fila padre:
 // el ledger aporta CUANDO y CUANTO, la fila aporta QUE era.
+// ── DOLARES RECIBIDOS (post-4.1.4, "dolares por pago") ─────────────────────────
+// Los dolares que el cliente entrego en cada pago de una fila, alineados con sus eventos de caja
+// (`cobrosDe`), y la TRM a la que entraron (pesos / dolares: no se guarda, se calcula):
+//   - el evento trae sus dolares (registro de pagos en dolares desde post-4.1.4): esos;
+//   - la fila tiene un solo pago: los dolares de la fila (`montoUSDRecibido`);
+//   - varios pagos sin dolares por pago (registrados antes): el total va en el ULTIMO de esos pagos,
+//     con la TRM promedio (`nPagos` dice cuantos cubre) y los demas quedan `enOtroPago`;
+//   - sin dolares registrados (pagos de antes de que la app los pidiera): null. No se inventan.
+export function dolaresPorPago(pay){
+  var evs=cobrosDe(pay);
+  var usdFila=Math.round((+(pay&&pay.montoUSDRecibido)||0)*100)/100;
+  var out=evs.map(function(e){ return {usd:(+e.usd)>0?+e.usd:null, cop:e.cop, copBase:e.cop, nPagos:1, enOtroPago:false}; });
+  var sinUsd=out.filter(function(x){ return x.usd==null; });
+  if(usdFila>0&&sinUsd.length){
+    var conocidos=out.reduce(function(s,x){ return s+(x.usd||0); },0);
+    var resto=Math.round((usdFila-conocidos)*100)/100;
+    if(resto>0){
+      var ult=sinUsd[sinUsd.length-1];
+      ult.usd=resto; ult.nPagos=sinUsd.length;
+      ult.copBase=sinUsd.reduce(function(s,x){ return s+x.cop; },0);
+      sinUsd.slice(0,-1).forEach(function(x){ x.enOtroPago=true; });
+    }
+  }
+  return out.map(function(x){
+    return {usd:x.usd, trm:x.usd>0?x.copBase/x.usd:null, nPagos:x.nPagos, enOtroPago:x.enOtroPago};
+  });
+}
+// Totales de un prestamo en dolares: los dolares REGISTRADOS (suma de `montoUSDRecibido` de cada fila
+// con dinero), cuantas filas con dinero no los tienen, y los pesos de las que si (para la TRM promedio).
+// Es la cifra de "Total recibido" en dolares del panel y el pie del flujo de caja: las dos la leen de aqui.
+export function dolaresRecibidos(loan, loanPays){
+  var r={usd:0, sinUSD:0, copConUSD:0};
+  if(!loan||loan.moneda!=='USD') return r;
+  (loanPays||[]).filter(function(p){ return String(p.prestamoId)===String(loan.id); }).forEach(function(p){
+    var evs=cobrosDe(p);
+    if(!evs.length) return;
+    var u=Math.round((+p.montoUSDRecibido||0)*100)/100;
+    if(u>0){ r.usd+=u; r.copConUSD+=evs.reduce(function(s,e){ return s+e.cop; },0); }
+    else r.sinUSD++;
+  });
+  r.usd=Math.round(r.usd*100)/100;
+  return r;
+}
+
 export function flujoCajaDe(loan, loanPays){
   if(!loan) return {eventos:[],totales:{ingreso:0,interes:0,capital:0,ajuste:0},inferidos:0};
   var esUSD=loan.moneda==='USD';
@@ -302,9 +358,10 @@ export function flujoCajaDe(loan, loanPays){
     var tieneLedger=false;
     try{var _l=JSON.parse(p.recibos||'[]'); tieneLedger=Array.isArray(_l)&&_l.length>0;}catch(_){}
     var inferido=!tieneLedger&&!(p.montoCOPRecibido>0);
+    var dol=esUSD?dolaresPorPago(p):[];
     imp.eventos.forEach(function(ev,k){
       evs.push({fecha:String(ev.fecha),cop:ev.cop,interes:ev.interes,capital:ev.capital,ajuste:ev.ajuste,
-        pay:p,k:k,nEv:imp.eventos.length,esUltimo:k===imp.eventos.length-1,inferido:inferido});
+        pay:p,k:k,nEv:imp.eventos.length,esUltimo:k===imp.eventos.length-1,inferido:inferido,dol:dol[k]||null});
     });
   });
   // Orden por fecha REAL del dinero; desempate por hora de registro. Importa: hay cuotas
@@ -327,9 +384,14 @@ export function flujoCajaDe(loan, loanPays){
     return {n:i+1,fecha:e.fecha,cop:e.cop,interes:e.interes,capital:e.capital,ajuste:e.ajuste,saldo:saldo,
       esAbono:filaEsAbono,parcialEnCurso:!saldado,inferido:e.inferido,
       cuotaN:p.cuotaN,vence:p.fechaPago,atraso:atraso,obs:p.observaciones||'',
-      usd:p.montoUSDRecibido||0,nEv:e.nEv};
+      nEv:e.nEv,
+      // En dolares (post-4.1.4): lo que el cliente entrego en ESTE pago y la TRM a la que entro.
+      // null = no registrados. `nPagos` > 1: el total de varios pagos viejos, con la TRM promedio.
+      usd:e.dol?e.dol.usd:null,trmDia:e.dol?e.dol.trm:null,
+      nPagos:e.dol?e.dol.nPagos:1,enOtroPago:!!(e.dol&&e.dol.enOtroPago)};
   });
-  return {eventos:out,totales:{ingreso:tg,interes:ti,capital:tc,ajuste:ta},inferidos:inf,origCOP:origCOP};
+  return {eventos:out,totales:{ingreso:tg,interes:ti,capital:tc,ajuste:ta},inferidos:inf,origCOP:origCOP,
+    dolares:dolaresRecibidos(loan,pays)};
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
