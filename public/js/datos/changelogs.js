@@ -799,5 +799,11 @@ export const CHANGELOGS = {
     'Sincronizar no anuncia un éxito falso: si la sincronización falla, la app lo dice y ya no muestra el aviso verde de que todo se recalculó.',
     'Datos de pago: el aviso de «guardados» solo aparece cuando de verdad se guardaron; si algo falla, ves el error.',
     'Registrar corte: el formulario de los créditos abiertos muestra su título, como los demás.'
+  ],
+  '4.1.5': [
+    'Flujo de caja a todo el ancho: en ventanas amplias ocupa todo el panel del cliente y ya no queda apretado al lado de las tarjetas.',
+    'Dólares y TRM de cada pago: en los préstamos en dólares, el flujo de caja muestra los dólares que entregó el cliente en cada pago y la TRM a la que entraron. Antes mostraba los pesos convertidos a la TRM pactada, que no eran los dólares recibidos.',
+    'El efecto de la TRM, en el pago en que ocurrió: si una cuota en dólares se paga en varias partes, cada pago muestra su propia TRM y su efecto, en vez de cargarlo todo al último.',
+    '«Total recibido» en dólares cuadra con el flujo de caja: suma los dólares registrados y avisa si algún pago no los tiene. Ya no se queda un centavo corto.'
   ]
 };
