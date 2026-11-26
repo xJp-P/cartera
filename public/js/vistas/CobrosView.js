@@ -21,7 +21,7 @@
 
 import { DeudorPanel } from '../componentes/DeudorPanel.js';
 import { Ico } from '../componentes/iconos.js';
-import { imputarCobros } from '../core/dominio.js';
+import { condonadoDe, imputarCobros } from '../core/dominio.js';
 import { copToUsd, fmt, fmtUSD } from '../core/format.js';
 import { esAbono, esCorte } from '../core/ids.js';
 import { bandejaCobro, opModalidad, opIniciales, opCorta, opRel, OP_MESES, OP_DIAS, opFecha } from '../core/operacion.js';
@@ -119,7 +119,8 @@ export function CobrosView(props){
       h('div', { className: 'cbv-monto' },
         h('div', { className: 'v' + (f.tramo === 'vencido' ? ' crit' : '') }, fmt(f.pend)),
         cbvUsd(l, f.pend),
-        parcial && h('div', { className: 'cbv-sub info' }, cbvYaAbono(p, l))),
+        parcial && h('div', { className: 'cbv-sub info' }, cbvYaAbono(p, l)),
+        condonadoDe(p) > 0 && h('div', { className: 'cbv-sub' }, 'se condonó ' + fmt(condonadoDe(p)))),
       h('div', { className: 'cbv-acc', onClick: function(e){ e.stopPropagation(); } },
         h('button', { className: 'cbv-icono', title: 'Factura de cobro (PDF) para enviarle', onClick: function(){ generateFacturaCobro(p, l, pays, props.datosPago); } }, h(Ico, { name: 'receipt', size: 15, sw: 2 })),
         h('button', { className: 'v4-btn ghost sm cbv-pago', title: 'Registrar el pago de esta cuota', onClick: function(){ props.onPay(p); } }, h(Ico, { name: 'check', size: 14, sw: 2.6 }), 'Pagó')));

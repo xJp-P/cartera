@@ -22,7 +22,7 @@
     ]
   },
   "valores": {
-    "bytes": 10525,
+    "bytes": 10590,
     "nFilas": 3,
     "nCeldas": 12,
     "celdasPorTr": [
@@ -65,6 +65,7 @@
       "r-tar-l",
       "r-tar-s",
       "r-tar-v",
+      "r-tot",
       "r-uno",
       "sub",
       "viejo"

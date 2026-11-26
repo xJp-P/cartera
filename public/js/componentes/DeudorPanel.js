@@ -16,7 +16,7 @@ import { Ico } from './iconos.js';
 import { FlujoCajaPanel } from './FlujoCajaPanel.js';
 import { GananciaBimonetaria, notaCOPGanancia } from './GananciaBimonetaria.js';
 import { CronogramaPdfModal } from '../modales/CronogramaPdfModal.js';
-import { preguntaInteresMes, esDiario, pendCuota, pendienteDeCuota, faltaUSD, imputarCobros, dolaresPorPago } from '../core/dominio.js';
+import { esCondonada, condonadoDe, preguntaInteresMes, esDiario, pendCuota, pendienteDeCuota, faltaUSD, imputarCobros, dolaresPorPago } from '../core/dominio.js';
 import { copToUsd, fmt, fmtN, fmtUSD } from '../core/format.js';
 import { esAbono } from '../core/ids.js';
 import { modeloDeudor, opModalidad, opIniciales, opCorta, opCortaAnio, opRel, opPlazo, opFrecuencia, opPuedeCambiarDia } from '../core/operacion.js';
@@ -156,10 +156,10 @@ function DpCronograma(p){
         h('span', { className: 'r mono' }, fmt(x.saldoFinal)),
         h('span', { className: 'c' }, h('span', { className: 'op-chip', style: { color: 'var(--blue)', background: 'var(--blue-bg)' } }, 'Abono')));
       var est = x.estadoPago, parcial = est !== 'Pagado' && (x.partialPaid || 0) > 0;
-      var cls = 'dp-crono-f' + (est === 'En Mora' ? ' mora' : '') + (x.id === proxId ? ' prox' : '') + (x.id === foco ? ' foco' : '') + (est === 'Pagado' ? ' pagada' : '');
+      var cls = 'dp-crono-f' + (est === 'En Mora' ? ' mora' : '') + (x.id === proxId ? ' prox' : '') + (x.id === foco ? ' foco' : '') + (est === 'Pagado' ? ' pagada' : '') + (esCondonada(x) ? ' condonada' : '');
       var capRec = Math.max(0, x.cuotaTotal - x.interesPeriodo);
       var capUSD = m.esUSD && m.trm > 0 ? Math.max(0, (Math.round(x.cuotaTotal / m.trm * 100) - Math.round(x.interesPeriodo / m.trm * 100)) / 100) : 0;
-      var chip = est === 'Pagado' ? ['Pagada', 'green'] : est === 'En Mora' ? ['Mora', 'red'] : parcial ? ['Parcial', 'blue'] : x.id === proxId ? ['Próxima', 'yellow'] : ['Pendiente', 'text3'];
+      var chip = esCondonada(x) ? ['Condonada', 'purple'] : est === 'Pagado' ? ['Pagada', 'green'] : est === 'En Mora' ? ['Mora', 'red'] : parcial ? ['Parcial', 'blue'] : x.id === proxId ? ['Próxima', 'yellow'] : ['Pendiente', 'text3'];
       var franja = parcial ? dpParcialFranja(dpParcial(m, x), x) : null;
       var fila = h('div', { key: x.id, className: cls + (franja ? ' con-parc' : '') },
         h('span', { className: 'muted' }, x.cuotaN),
@@ -167,7 +167,9 @@ function DpCronograma(p){
           est === 'En Mora' && h('div', { className: 'dp-sub', style: { color: 'var(--red)' } }, 'vencida ' + opRel(hoy, x.fechaPago)),
           x.id === proxId && h('div', { className: 'dp-sub', style: { color: 'var(--yellow)' } }, opRel(hoy, x.fechaPago)),
           est === 'Pagado' && x.fechaRecaudo && x.fechaRecaudo !== x.fechaPago && h('div', { className: 'dp-sub' }, 'cobrada ' + opCorta(x.fechaRecaudo))),
-        h('span', { className: 'r mono' }, fmt(x.interesPeriodo), m.esUSD && x.interesPeriodo > 0 ? dpUsd(m, x.interesPeriodo) : null),
+        h('span', { className: 'r mono' }, fmt(x.interesPeriodo), m.esUSD && x.interesPeriodo > 0 ? dpUsd(m, x.interesPeriodo) : null,
+          condonadoDe(x) > 0 && h('div', { className: 'dp-sub dp-condonado' }, x.interesPeriodo > 0
+            ? 'se condonó ' + fmt(condonadoDe(x)) + ' de ' + fmt(x.interesPeriodo + condonadoDe(x)) : 'condonado ' + fmt(condonadoDe(x)))),
         h('span', { className: 'r mono' }, fmt(capRec), m.esUSD && capRec > 0 ? usdLinea(fmtUSD(capUSD)) : null),
         h('span', { className: 'r mono strong' }, fmt(x.cuotaTotal), dpUsd(m, x.cuotaTotal)),
         h('span', { className: 'r mono' }, fmt(x.saldoFinal), dpUsd(m, x.saldoFinal)),

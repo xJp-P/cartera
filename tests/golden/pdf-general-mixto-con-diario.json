@@ -27,9 +27,9 @@
     ]
   },
   "valores": {
-    "bytes": 12799,
-    "nFilas": 10,
-    "nCeldas": 46,
+    "bytes": 13257,
+    "nFilas": 13,
+    "nCeldas": 61,
     "celdasPorTr": [
       4,
       4,
@@ -40,12 +40,15 @@
       5,
       5,
       5,
+      5,
+      5,
+      5,
       5
     ],
-    "nMontos": 36,
-    "hashMontos": "668e2786dcc40b842adfd5e6b8bbd6e591856c1b",
+    "nMontos": 39,
+    "hashMontos": "4be4d4a50476c9d33f0f30eab3f0db364c72eb50",
     "hashFname": "da3c8a05885158da3e44b693b85c6aa776fa79bf",
-    "hashTexto": "00d39aa33c53fafecd53e125785f679429bc3dde",
+    "hashTexto": "0482b8dbeabfad55b464b053d36d41cb9f60e944",
     "clases": [
       "",
       "chip venc",
@@ -72,10 +75,12 @@
       "r-rojo",
       "r-sec",
       "r-sec r-credito",
+      "r-sec r-venc",
       "r-sec-t",
       "r-sello",
       "r-t",
       "r-t r-deuda",
+      "r-tot",
       "sub",
       "vencida"
     ]

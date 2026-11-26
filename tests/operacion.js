@@ -1544,5 +1544,53 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.check('P6 los estilos de la franja viven en panel.css', ['.v4p .dp-crono-parc {', '.v4p .dp-parc-pagos {', '.v4p .dp-parc-efecto {'].every(x => panelCssP.indexOf(x) !== -1));
   }
 
+  R.seccion('Q — condonar con monto: el modal, el rótulo «Condonada» y Cobros (post-4.1.5)');
+  {
+    // El credito de solo intereses del fixture (cuotas de $300.000) con sus 5 cuotas vencidas al 31-jul.
+    const lA = loans.find(l => l.id === '1773655076017');
+    const moraA = pays.filter(p => p.prestamoId === lA.id && p.estadoPago === 'En Mora').sort((a, b) => a.fechaPago.localeCompare(b.fechaPago));
+    R.check('Q0 ANTI-VACIO: 5 cuotas vencidas de $300.000', moraA.length === 5 && moraA.every(p => Math.round(p.cuotaTotal) === 300000), moraA.length);
+    // El modal con $1.000.000 escritos (orden de useState: seleccion, motivo, enviando, monto).
+    const enviados = [];
+    const propsC = { loan: lA, pays, onConfirm: function(){ enviados.push([].slice.call(arguments)); return Promise.resolve(); }, onClose: () => {} };
+    const mo = montar(X.CondonarModal, propsC, [undefined, undefined, undefined, '1.000.000']);
+    const efectos = conClase(mo.arbol, 'cdm-ef').map(n => textos(n).join(''));
+    R.eq('Q1 cada cuota dice lo que le pasaria: 3 condonadas, la cuarta en parte y la quinta sin cambio',
+      efectos, ['Condonada', 'Condonada', 'Condonada', 'En parte · queda ' + X.fmt(200000), 'sin cambio']);
+    const comp = conClase(mo.arbol, 'cdm-comp').map(n => textos(n).join(' '));
+    const linea = r => comp.find(t => t.indexOf(r) === 0) || '';
+    R.check('Q2 el antes y el despues: lo vencido de $1.500.000 a $500.000 y "Debes hoy" baja $1.000.000',
+      linea('Lo vencido').indexOf(X.fmt(1500000) + ' → ' + X.fmt(500000)) !== -1 &&
+      linea('Debes hoy').indexOf(X.fmt(4500000) + ' → ' + X.fmt(3500000)) !== -1 && linea('Cuotas vencidas').indexOf('5 → 2') !== -1, comp);
+    const btn = botones(mo.arbol, /^Condonar \$/)[0];
+    R.check('Q3 el boton dice cuanto se condona', !!btn && textos(btn).join('') === 'Condonar ' + X.fmt(1000000), btn && textos(btn));
+    if (btn) btn.props.onClick();
+    R.check('Q3 y manda el monto escrito en pesos, con las 5 cuotas marcadas', enviados.length === 1 && enviados[0][3] === 1000000 && enviados[0][1].length === 5, enviados);
+    const mas = montar(X.CondonarModal, propsC, [undefined, undefined, undefined, '1.600.000']);
+    const btnMas = botones(mas.arbol, /^Condonar/)[0];
+    R.check('Q4 un monto mayor que lo vencido: el error lo dice y el boton queda apagado',
+      conClase(mas.arbol, 'cdm-error').length === 1 && !!btnMas && btnMas.props.disabled === true, mas.todo.slice(0, 200));
+
+    // Despues de condonar (en memoria, con el mismo reparto del modal): el panel y Cobros.
+    const paysC = X.aplicarCondonacion(pays, X.planCondonacion(moraA, 1000000));
+    const dp = montar(X.DeudorPanel, Object.assign(propsPanel(lA), { pays: paysC }), []);
+    const chips = conClase(dp.arbol, 'op-chip').map(n => textos(n).join(''));
+    R.eq('Q5 el cronograma rotula «Condonada» las 3 que el perdon saldo (siguen guardadas como pagadas)', chips.filter(t => t === 'Condonada').length, 3);
+    const subs = conClase(dp.arbol, 'dp-condonado').map(n => textos(n).join(''));
+    R.check('Q6 bajo el interes: «condonado $300.000» en las saldadas y «se condonó $100.000 de $300.000» en la que quedo en parte',
+      subs.filter(t => t === 'condonado ' + X.fmt(300000)).length === 3 && subs.indexOf('se condonó ' + X.fmt(100000) + ' de ' + X.fmt(300000)) !== -1, subs);
+    // En Cobros, las vencidas de un credito con 2+ van en un grupo plegado: se condona hasta dejar UNA
+    // (4 completas y $100.000 de la quinta), que se ve como fila propia.
+    const paysC1 = X.aplicarCondonacion(pays, X.planCondonacion(moraA, 1300000));
+    const cb = montar(X.CobrosView, Object.assign({}, propsCobros, { pays: paysC1 }), []);
+    const filaCb = conClase(cb.arbol, 'cbv-fila').map(f => textos(f).join(' ')).filter(t => t.indexOf('se condonó') !== -1);
+    R.check('Q7 en Cobros, la cuota condonada en parte lo dice bajo lo que falta', filaCb.length === 1 && filaCb[0].indexOf('se condonó ' + X.fmt(100000)) !== -1 &&
+      filaCb[0].indexOf(X.fmt(200000)) !== -1, filaCb);
+    R.check('Q8 la app le pasa el monto escrito al backend (el modal lo manda en su cuarto argumento)',
+      /function _doCondonar\(loanId,cuotas,obs,monto\)\{[\s\S]{0,400}if\(monto!=null\) body\.monto=monto;/.test(leer('public/js/app.js')) &&
+      /onConfirm:_doCondonar/.test(leer('public/js/app.js')));
+    R.check('Q7 y las saldadas por el perdon ya no estan por cobrar', !conClase(cb.arbol, 'cbv-fila').some(f => moraA.slice(0, 3).some(m => textos(f).join(' ').indexOf(X.opCorta(m.fechaPago)) !== -1 && textos(f).join(' ').indexOf('Elena') !== -1)));
+  }
+
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

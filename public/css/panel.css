@@ -73,6 +73,9 @@
 .v4p .dp-crono-f.prox { background: color-mix(in srgb, var(--warn) 7%, transparent); box-shadow: inset 2px 0 0 var(--warn); }
 .v4p .dp-crono-f.abono { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 2px 0 0 var(--accent); color: var(--info-text); }
 .v4p .dp-crono-f.foco { box-shadow: inset 0 0 0 1.5px var(--accent); }
+/* La cuota condonada (post-4.1.5): el chip en violeta y lo condonado bajo el interes; la fila, apagada */
+.v4p .dp-crono-f.condonada .mono { color: var(--ink-3); }
+.v4p .dp-condonado { color: var(--purple); }
 /* La cuota con pago parcial: una franja bajo su fila (post-4.1.5, aprobada por el PO sobre un prototipo) */
 .v4p .dp-crono-f.con-parc { border-bottom: 0; }
 .v4p .dp-crono-parc { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 6px; padding: 0 10px 11px;

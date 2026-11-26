@@ -979,8 +979,14 @@ module.exports = function crearRutasLoans(ctx) {
   // Excluye `Prestamo` (0%: no hay nada que condonar) y `Pago Unico`, cuya ganancia
   // pactada vive ADEMAS en la columna `loans.gananciaFija`: anular el `interesPeriodo`
   // de la cuota dejaria las dos fuentes contradiciendose.
+  //
+  // MONTO ESCRITO (post-4.1.5, aprobado por el PO sobre un prototipo): ademas de elegir
+  // cuotas se puede mandar `monto` (pesos). Se reparte de la cuota MAS VIEJA a la mas nueva
+  // entre las elegidas; la ultima a la que llega puede quedar condonada EN PARTE y sigue En
+  // Mora por lo que falta. Cada cuota guarda lo condonado en `payments.interesCondonado`. El
+  // reparto tiene su espejo en `planCondonacion` (dominio.js), que es lo que el modal muestra.
   router.post('/api/loans/:id/condonar-intereses', (req, res) => {
-    const { cuotas, observaciones } = req.body;
+    const { cuotas, observaciones, monto } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
     if (!loan) return res.status(404).json({ error: 'No encontrado' });
     // `accion` = 'condonacion' tambien como logTipo: el Historial lo pinta con icono y
@@ -1007,23 +1013,44 @@ module.exports = function crearRutasLoans(ctx) {
       // MAS lo que corre desde `fechaUltimoCorte`. Hay que apagar los dos: poner el
       // arrastre en 0 y adelantar la fecha del ultimo corte, o el devengo del tramo
       // abierto reaparece al instante y la condonacion no habria servido de nada.
+      //
+      // HASTA post-4.1.5 ESTA RAMA NO SE SOSTENIA: ponia el arrastre en 0 y adelantaba la
+      // fecha del ultimo corte, pero el devengo NO lee esas columnas (son cache): sale de
+      // los cortes. El interes condonado reaparecia al instante y se podia condonar otra vez.
+      // Ahora `devengoDiario` descuenta `loans.interesesCondonados` de lo pendiente, asi que
+      // basta con acumular ahi. El cache se re-deriva con el mismo motor.
       if (loan.modalidad === MODALIDAD_DIARIA) {
-        const dev = devengoDiario(loan, cortesDe(req.params.id), fecha);
-        if (dev.interesPendiente <= 0) {
+        const cortes = cortesDe(req.params.id);
+        const dev = devengoDiario(loan, cortes, fecha);
+        const pendiente = Math.round(dev.interesPendiente);
+        if (pendiente <= 0) {
           throw new ClientError('Este crédito no tiene interés devengado pendiente: no hay nada que condonar.');
         }
-        const condonado = Math.round(dev.interesPendiente);
-        // Cierre estricto de la modalidad: sin capital vivo Y sin devengo, el credito
-        // se salda. Tras condonar el devengo queda en 0, asi que basta con el capital.
-        const saldado = dev.capitalVivo === 0;
+        let condonado = pendiente;
+        if (monto !== undefined && monto !== null && String(monto).trim() !== '') {
+          const m = Math.round(+monto);
+          if (!(m > 0)) throw new ClientError('Escribe un monto a condonar mayor que cero.');
+          if (m > pendiente) {
+            throw new ClientError('Este crédito solo tiene $' + pendiente.toLocaleString('es-CO') + ' de interés devengado por condonar.');
+          }
+          condonado = m;
+        }
+        // Cierre estricto de la modalidad: sin capital vivo Y sin devengo pendiente.
+        const saldado = dev.capitalVivo === 0 && condonado === pendiente;
+        const cache = devengoDiario(Object.assign({}, loan,
+          { interesesCondonados: Math.round(+loan.interesesCondonados || 0) + condonado }), cortes, fecha).cache;
         return {
           descripcion: 'Condonaste $' + condonado.toLocaleString('es-CO') + ' de intereses a ' + loan.nombre +
-            ' — interés devengado a la fecha' + (saldado ? ' — crédito SALDADO' : '') + (nota ? ' (' + nota + ')' : ''),
+            (condonado < pendiente
+              ? ' — parte del interés devengado (queda debiendo $' + (pendiente - condonado).toLocaleString('es-CO') + ')'
+              : ' — interés devengado a la fecha') +
+            (saldado ? ' — crédito SALDADO' : '') + (nota ? ' (' + nota + ')' : ''),
           afectaCaja: false,   // no entro ni salio dinero: se redujo la deuda
-          payload: { ok: true, condonado: condonado, cuotas: [], saldado: saldado, modalidad: loan.modalidad },
+          payload: { ok: true, condonado: condonado, cuotas: [], saldado: saldado, modalidad: loan.modalidad,
+            quedaDebiendo: pendiente - condonado },
           aplicar: () => {
-            db.prepare('UPDATE loans SET interesAcumuladoPend = 0, fechaUltimoCorte = ?, interesesCondonados = COALESCE(interesesCondonados, 0) + ? WHERE id = ?')
-              .run(fecha, condonado, req.params.id);
+            db.prepare('UPDATE loans SET interesAcumuladoPend = ?, interesesCondonados = COALESCE(interesesCondonados, 0) + ? WHERE id = ?')
+              .run(cache.interesAcumuladoPend, condonado, req.params.id);
             if (saldado) {
               db.prepare("UPDATE loans SET estado = 'Finalizado', montoCOP = 0 WHERE id = ? AND estado = 'Activo'").run(req.params.id);
             }
@@ -1051,67 +1078,79 @@ module.exports = function crearRutasLoans(ctx) {
         seleccion = pedidas.map(id => porId.get(id));
       }
 
-      const condonado = Math.round(seleccion.reduce((s, p) => s + (p.interesPeriodo || 0), 0));
-      if (condonado <= 0) {
-        throw new ClientError('Las cuotas seleccionadas no tienen intereses: no hay nada que condonar.');
+      // ── CUANTO SE CONDONA Y A QUE CUOTAS ────────────────────────────────────
+      // De cada cuota se puede condonar su interes, pero sin dejarla por debajo de lo que ya
+      // tiene abonado: min(interes, cuota - abonado). Hasta post-4.1.5 una cuota con mas
+      // abonado que su capital se RECHAZABA; ahora se acota a lo que falta (el abono ya pago
+      // parte de ese interes). Un monto escrito se reparte de la cuota MAS VIEJA a la mas
+      // nueva; sin monto se condona todo lo condonable de las elegidas (como siempre).
+      const pesos = x => '$' + Math.round(x).toLocaleString('es-CO');
+      const ordenadas = seleccion.slice().sort((a, b) =>
+        String(a.fechaPago).localeCompare(String(b.fechaPago)) || ((a.cuotaN || 0) - (b.cuotaN || 0)));
+      const condonables = ordenadas.map(p => ({ p,
+        max: Math.max(0, Math.min(Math.round(p.interesPeriodo || 0), Math.round((p.cuotaTotal || 0) - (p.partialPaid || 0)))) }));
+      const totalCondonable = condonables.reduce((s, x) => s + x.max, 0);
+      if (totalCondonable <= 0) {
+        throw new ClientError('Las cuotas seleccionadas no tienen intereses por condonar.');
       }
-
-      // Una cuota con MAS dinero encima del que va a costar tras condonar dejaria un
-      // sobrante sin donde vivir: `imputarCobros` lo mandaria a `ajuste`, que significa
-      // efecto cambiario o residuo de redondeo, no "plata de mas". Se rechaza en vez de
-      // tragarselo en silencio; el usuario decide que hacer con ese parcial primero.
-      const excedidas = seleccion.filter(p => Math.round(p.partialPaid || 0) > Math.round(p.abonoCapital || 0));
-      if (excedidas.length) {
-        const c = excedidas[0];
-        throw new ClientError('La cuota #' + c.cuotaN + ' ya tiene abonado $' + Math.round(c.partialPaid).toLocaleString('es-CO') +
-          ', más que el capital que quedaría debiendo tras condonar ($' + Math.round(c.abonoCapital).toLocaleString('es-CO') +
-          '). Cóbrala o revierte ese abono antes de condonar sus intereses.');
+      let condonado = totalCondonable;
+      if (monto !== undefined && monto !== null && String(monto).trim() !== '') {
+        const m = Math.round(+monto);
+        if (!(m > 0)) throw new ClientError('Escribe un monto a condonar mayor que cero.');
+        if (m > totalCondonable) {
+          throw new ClientError('Las cuotas seleccionadas solo tienen ' + pesos(totalCondonable) + ' de intereses por condonar.');
+        }
+        condonado = m;
       }
+      let resto = condonado;
+      const filas = condonables.map(x => {
+        const c = Math.min(x.max, resto); resto -= c;
+        const p = x.p, interes = Math.round(p.interesPeriodo || 0), abonado = Math.round(p.partialPaid || 0);
+        const cuota = Math.round(p.cuotaTotal || 0) - c;
+        // Tras condonar, la cuota cuesta su capital mas el interes que no se perdono. Si lo ya
+        // abonado la cubre (en `Intereses` sin abono, cuando se condona todo: cuesta 0), queda
+        // saldada y su estado terminal es 'Pagado' — la app la ROTULA «Condonada» si no entro dinero.
+        return { id: p.id, cuotaN: p.cuotaN, interes, condonar: c, interesQueda: interes - c, cuotaQueda: cuota,
+          capital: Math.round(p.abonoCapital || 0), abonado, parcial: c < interes, saldada: abonado >= cuota,
+          previa: p.observaciones || '' };
+      }).filter(f => f.condonar > 0);
 
-      const filas = seleccion.map(p => {
-        const capital = Math.round(p.abonoCapital || 0);
-        // Tras condonar, la cuota cuesta exactamente su capital. En `Intereses` la mora
-        // es puro interes (capital 0), asi que queda en cero: no hay nada que cobrar y
-        // su estado terminal es 'Pagado'. Lo mismo si el parcial ya cubria ese capital.
-        const cubierta = Math.round(p.partialPaid || 0) >= capital;
-        return {
-          id: p.id, cuotaN: p.cuotaN, interes: Math.round(p.interesPeriodo || 0),
-          capital: capital, saldada: capital <= 0 || cubierta,
-        };
-      });
-
+      const completas = filas.filter(f => !f.parcial), enParte = filas.filter(f => f.parcial);
       const totalCapital = filas.reduce((s, f) => s + f.capital, 0);
       const nSaldadas = filas.filter(f => f.saldada).length;
+      const detalle = (completas.length ? completas.length + ' cuota' + (completas.length === 1 ? '' : 's') +
+          ' vencida' + (completas.length === 1 ? '' : 's') : '') +
+        (completas.length && enParte.length ? ' y ' : '') +
+        enParte.map(f => pesos(f.condonar) + ' de la cuota #' + f.cuotaN + ' (queda debiendo ' + pesos(f.cuotaQueda - f.abonado) + ')').join(', ');
 
       return {
-        descripcion: 'Condonaste $' + condonado.toLocaleString('es-CO') + ' de intereses a ' + loan.nombre +
-          ' — ' + filas.length + ' cuota' + (filas.length === 1 ? '' : 's') + ' vencida' + (filas.length === 1 ? '' : 's') +
+        descripcion: 'Condonaste ' + pesos(condonado) + ' de intereses a ' + loan.nombre + ' — ' + detalle +
           (totalCapital > 0 ? ' (sigue debiendo $' + totalCapital.toLocaleString('es-CO') + ' de capital)' : '') +
           (nota ? ' (' + nota + ')' : ''),
         afectaCaja: false,   // no entro ni salio dinero: se redujo la deuda
         payload: {
           ok: true, condonado: condonado, modalidad: loan.modalidad,
-          cuotas: filas.map(f => ({ id: f.id, cuotaN: f.cuotaN, condonado: f.interes, capitalRestante: f.capital })),
+          cuotas: filas.map(f => ({ id: f.id, cuotaN: f.cuotaN, condonado: f.condonar, parcial: f.parcial,
+            capitalRestante: f.capital, quedaDebiendo: Math.max(0, f.cuotaQueda - f.abonado) })),
           capitalEnMora: totalCapital, saldadas: nSaldadas,
         },
         aplicar: () => {
-          const upd = db.prepare(
-            'UPDATE payments SET interesPeriodo = 0, cuotaTotal = ?, estadoPago = ?, observaciones = ? WHERE id = ?');
+          const upd = db.prepare('UPDATE payments SET interesPeriodo = ?, cuotaTotal = ?, estadoPago = ?, observaciones = ?, ' +
+            'interesCondonado = COALESCE(interesCondonado, 0) + ? WHERE id = ?');
           filas.forEach(f => {
-            const previa = seleccion.find(p => p.id === f.id).observaciones || '';
-            const marca = 'Intereses condonados: $' + f.interes.toLocaleString('es-CO') + ' (' + fecha + ')' +
+            const marca = 'Intereses condonados: ' + pesos(f.condonar) + (f.parcial ? ' de ' + pesos(f.interes) : '') + ' (' + fecha + ')' +
               (nota ? ' — ' + nota : '');
-            upd.run(f.capital, f.saldada ? 'Pagado' : 'En Mora',
-              previa ? (previa + ' | ' + marca) : marca, f.id);
+            upd.run(f.interesQueda, f.cuotaQueda, f.saldada ? 'Pagado' : 'En Mora',
+              f.previa ? (f.previa + ' | ' + marca) : marca, f.condonar, f.id);
           });
-          // Una fila saldada por condonacion NO produjo caja. Se le limpia el ledger y
-          // se le deja `fechaRecaudo` en NULL A PROPOSITO: `cobrosDe` cae al fallback
-          // solo si hay `fechaRecaudo`, asi que sin ella no emite ningun evento. Con
-          // ella emitiria uno de $0 que ensuciaria "Transacciones del Mes" — y si algun
-          // dia `cuotaTotal` no fuera 0, el fallback `montoCOPRecibido || cuotaTotal`
-          // declararia como ingreso la cuota entera (el `0` es falsy).
+          // Una fila saldada por condonacion SIN dinero encima no produjo caja. Se le limpia el ledger y
+          // se le deja `fechaRecaudo` en NULL A PROPOSITO: `cobrosDe` solo cae al fallback si hay
+          // `fechaRecaudo`, asi que sin ella no emite ningun evento. Con ella emitiria uno de $0 que
+          // ensuciaria los cobros del mes — y si algun dia `cuotaTotal` no fuera 0, el fallback
+          // `montoCOPRecibido || cuotaTotal` declararia como ingreso la cuota entera (el `0` es falsy).
+          // Una fila con un abono encima conserva su ledger: ese dinero si entro.
           const limpiar = db.prepare("UPDATE payments SET recibos = '[]', montoCOPRecibido = 0, montoUSDRecibido = 0, fechaRecaudo = NULL, paidAt = NULL WHERE id = ?");
-          filas.filter(f => f.saldada && f.capital <= 0).forEach(f => limpiar.run(f.id));
+          filas.filter(f => f.saldada && f.abonado <= 0).forEach(f => limpiar.run(f.id));
 
           db.prepare('UPDATE loans SET interesesCondonados = COALESCE(interesesCondonados, 0) + ? WHERE id = ?')
             .run(condonado, req.params.id);

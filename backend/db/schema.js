@@ -243,6 +243,22 @@ function aplicarEsquema(db) {
   try { db.exec("ALTER TABLE loans ADD COLUMN cargaCuotas INTEGER DEFAULT 0"); } catch(_){}
   try { db.exec("ALTER TABLE payments ADD COLUMN cargaTrasladada REAL DEFAULT 0"); } catch(_){}
 
+  // interesCondonado (post-4.1.5) — cuanto interes se le CONDONO a esta cuota, acumulado. Lo escribe
+  // /condonar-intereses, que desde ahora acepta un monto y puede condonar una cuota EN PARTE, y es lo
+  // que rotula «Condonada» en el cronograma (`esCondonada`, dominio.js). Las condonaciones anteriores
+  // a la columna se reconstruyen desde la marca que dejaron en las observaciones ("Intereses
+  // condonados: $X (fecha)"). Idempotente: solo toca filas en 0 que traen la marca.
+  try { db.exec("ALTER TABLE payments ADD COLUMN interesCondonado REAL DEFAULT 0"); } catch(_){}
+  try {
+    const marcadas = db.prepare("SELECT id, observaciones FROM payments WHERE COALESCE(interesCondonado, 0) = 0 AND observaciones LIKE '%Intereses condonados: $%'").all();
+    const upd = db.prepare('UPDATE payments SET interesCondonado = ? WHERE id = ?');
+    marcadas.forEach(p => {
+      let total = 0;
+      String(p.observaciones).replace(/Intereses condonados: \$([\d.]+)/g, (_, n) => { total += +n.replace(/\./g, ''); return _; });
+      if (total > 0) upd.run(total, p.id);
+    });
+  } catch(_){}
+
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_log (

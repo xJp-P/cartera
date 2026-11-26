@@ -743,18 +743,19 @@ const CASOS = [
                'USD $', '--r-bg:#000000', '-2C-'],
     noContiene: ['Así va tu crédito', '#0d1117', 'Tus opciones de pago', 'Liquidar tus créditos'] },
 
-  // `Intereses` con muchas cuotas vencidas: las mas viejas se resumen en UNA fila con su total
-  // (nunca se omiten), y no hay "lo que falta por pagar" (el capital vence fuera de las cuotas).
+  // `Intereses` con muchas cuotas vencidas: desde post-4.1.5 van TODAS cuota por cuota (hasta
+  // entonces las mas viejas se resumian en una fila, "4 a 8 · 5 cuotas", que el cliente no sabia
+  // leer), y no hay "lo que falta por pagar" (el capital vence fuera de las cuotas).
   // Corre sobre `paysParcial`, con un abono de 120.000 encima de una cuota vencida: liquidar
   // RESTA lo ya abonado (`computeLiquidacion`), y la tarjeta tiene que explicarlo sin tocar el
   // capital. Sin un parcial, omitir esa resta pasaba la suite en verde (verificado).
   { nombre: 'general-intereses-resumen', gen: 'generateReciboGeneral', tema: 'light', celdas: 4,
     entrada: () => ({ loanIds: ['1773655076017'], hasta: '2026-11-02', tema: 'light', parcial: true }),
     ejecutar: () => S.generateReciboGeneral([L('1773655076017')], paysParcial, '', { hasta: '2026-11-02' }),
-    contiene: ['8 cuotas vencidas', 'hasta ', ' cuotas</span>', 'Sin plazo fijo', 'cuando quieras', 'plazo indefinido',
+    contiene: ['8 cuotas vencidas', 'Sin plazo fijo', 'cuando quieras', 'plazo indefinido', '<tr class="r-tot">',
                'capital ' + S.fmt(S.computeLiquidacion(L('1773655076017'), paysParcial, { hasta: '2026-11-02' }).capitalPendiente) + ' + intereses vencidos',
                ' − lo ya abonado ' + S.fmt(120000)],
-    noContiene: ['Te falta por pagar', 'Cómo pagar'] },
+    noContiene: ['Te falta por pagar', 'Cómo pagar', ' cuotas</span>', '>hasta ', '<tfoot><tr><td colspan="3">Total vencido'] },
 
   // Un deudor con un credito en pesos y otro en dolares: los totales no se suman entre si, se
   // imprimen juntos. Y el credito abierto de interes diario no entra, pero se ANUNCIA (doctrina
@@ -1686,6 +1687,66 @@ function loansDelCaso(caso) {
 }
 
 {
+  // post-4.1.5 (pedido del PO con un recibo real): condonar escribiendo un monto, el rotulo
+  // «Condonada» y lo vencido cuota por cuota. Se condona EN MEMORIA con el mismo reparto del
+  // modal (`planCondonacion` + `aplicarCondonacion`; la suite condonacion fija que el endpoint
+  // reparte igual). El caso es el credito de solo intereses del fixture con cuotas de $300.000.
+  R.seccion('S — condonación con monto, «Condonada» y lo vencido cuota por cuota (post-4.1.5)');
+  const ID = '1773655076017', hasta = '2026-11-02';
+  const L0 = L(ID);
+  const emitir = fn => { CAP.pdfs.length = 0; fn(); return CAP.pdfs.length === 1 ? sinMarco(CAP.pdfs[0].html) : ''; };
+  // `sinTags` deja el espacio duro de `fmt` como espacio comun: se compara con la cifra normalizada igual.
+  const visible = h => sinTags(h.replace(/<style[\s\S]*?<\/style>/gi, '')).replace(/\u00a0/g, ' ');
+  const pesos = n => S.fmt(n).replace(/\u00a0/g, ' ');
+  const filasVenc = h => { const t = (/<div class="r-sec r-venc">[\s\S]*?<\/table>/.exec(h) || [''])[0];
+    return { tabla: t, filas: (t.match(/<tr>[\s\S]*?<\/tr>/g) || []).filter(f => f.indexOf('<td') !== -1), tot: (t.match(/<tr class="r-tot">/g) || []).length }; };
+  // Las vencidas al corte quedan En Mora (la auto-mora de la app, ese dia).
+  const P1 = pays.map(p => p.prestamoId === ID && p.estadoPago === 'Pendiente' && p.fechaPago < hasta ? Object.assign({}, p, { estadoPago: 'En Mora' }) : p);
+  const mora = P1.filter(p => p.prestamoId === ID && p.estadoPago === 'En Mora');
+  ponerTema('light');
+
+  // Sin condonar: las 8 vencidas, una fila cada una, y el total UNA vez al final.
+  const h0 = emitir(() => S.generateReciboGeneral([L0], P1, '', { hasta }));
+  const v0 = filasVenc(h0);
+  R.check('S0 ANTI-VACIO: 8 cuotas vencidas de $300.000', mora.length === 8 && mora.every(p => Math.round(p.cuotaTotal) === 300000), mora.length);
+  R.check('S1 cuota por cuota: una fila por cada vencida, sin filas agrupadas ("4 a 8")', v0.filas.length === 8 && !/\d+ a \d+/.test(visible(v0.tabla)), v0.filas.length);
+  R.check('S1 el total va UNA vez, al final y no en un <tfoot> (Chromium lo repetia al pie de cada hoja)', v0.tot === 1 && v0.tabla.indexOf('<tfoot>') === -1, v0.tot);
+
+  // Condonar $1.700.000: las 5 mas viejas enteras y $200.000 de la sexta.
+  const plan = S.planCondonacion(mora, 1700000);
+  R.eq('S2 el monto se reparte de la cuota mas vieja a la mas nueva; la ultima, en parte',
+    plan.filas.map(f => f.condonar), [300000, 300000, 300000, 300000, 300000, 200000, 0, 0]);
+  const P2 = S.aplicarCondonacion(P1, plan);
+  const L2 = Object.assign({}, L0, { interesesCondonados: 1700000 });
+  const h2 = emitir(() => S.generateReciboGeneral([L2], P2, '', { hasta }));
+  const t2 = visible(h2), v2 = filasVenc(h2);
+  R.check('S3 lo vencido: 3 cuotas ($100.000 + $300.000 + $300.000), y la que quedo en parte dice cuanto se condono',
+    v2.filas.length === 3 && /se condonó \$\s200\.000/.test(visible(v2.filas[0])) && visible(v2.filas[0]).indexOf(pesos(100000)) !== -1 &&
+    t2.indexOf('3 cuotas vencidas') !== -1 && visible(v2.tabla).indexOf('Total vencido') !== -1 && visible(v2.tabla).indexOf(pesos(700000)) !== -1, visible(v2.tabla));
+  R.check('S4 la leyenda cuenta las condonadas aparte de las pagadas', /3 pagadas/.test(t2) && /5 condonadas/.test(t2) && /3 vencidas/.test(t2), (/\d+ pagadas[^.]{0,80}/.exec(t2) || [''])[0]);
+  R.check('S5 el papel le dice al cliente lo que ya se le condono', t2.indexOf('Se te condonaron ' + pesos(1700000) + ' de intereses') !== -1);
+  R.check('S6 "Debes hoy" = Liquidar deuda despues de condonar (capital + lo que queda vencido)',
+    S.computeLiquidacion(L2, P2.filter(p => p.prestamoId === ID), { hasta }).total === 3700000 && t2.indexOf(pesos(3700000)) !== -1);
+
+  // El cronograma PDF: la columna Estado dice «Condonada» y el interes lleva lo condonado.
+  const c2 = emitir(() => S.generateCronogramaPDF(L2, P2.filter(p => p.prestamoId === ID), false));
+  R.check('S7 cronograma: 5 cuotas «Condonada» y lo condonado bajo su interes (también la que quedo en parte)',
+    (c2.match(/badge-condonada">Condonada</g) || []).length === 5 && (c2.match(/Condonado \$\s300\.000/g) || []).length === 5 &&
+    (c2.match(/Condonado \$\s200\.000/g) || []).length === 1, (c2.match(/badge-condonada/g) || []).length);
+
+  // Cuotas de dos años distintos: las fechas llevan el año (sin el, "7 de marzo" saldria dos veces).
+  const h3 = emitir(() => S.generateReciboGeneral([L0], P1, '', { hasta: '2027-01-20' }));
+  R.check('S8 si alguna vencida es de otro año, las fechas lo dicen', visible(filasVenc(h3).tabla).indexOf('7 de marzo de 2026') !== -1 &&
+    visible(h3).indexOf('la más antigua del 7 de marzo de 2026') !== -1, visible(filasVenc(h3).tabla).slice(0, 200));
+  R.check('S8 y si todas son del año del corte, no (como siempre)', visible(v0.tabla).indexOf('de 2026') === -1);
+
+  // El recibo de pago: ninguna fila «Vencidas» agrupada en sus casos.
+  const cobros = CASOS.filter(c => c.gen === 'generateReciboCobro').map(c => generar(c).html);
+  R.check('S9 el recibo de pago tampoco agrupa lo vencido, y su total va una vez',
+    cobros.every(h => h.indexOf('chip venc">Vencidas<') === -1 && (h.indexOf('<table class="r-t">') === -1 || (h.match(/<tr class="r-tot">/g) || []).length === 1)), cobros.length);
+}
+
+{
   // 4.1.4 (bloque 4): en dolares, el TOTAL POR PAGAR del recibo de pago y de la propuesta es la suma de
   // sus filas ya convertidas. Hasta 4.1.3 se convertia la suma en pesos y el pie decia USD 1,600.01
   // bajo cuatro cuotas de USD 400.00. Se lee el papel tal como se imprime.
@@ -1702,7 +1763,7 @@ function loansDelCaso(caso) {
       nRec++;
       const filas = ((/<tbody>([\s\S]*?)<\/tbody>/.exec(t) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || []);
       const suma = filas.reduce((s, f) => { const m = montosB(f); return s + (m.length ? m[m.length - 1] : 0); }, 0);
-      const pie = centavos(sinTags((/<tfoot>([\s\S]*?)<\/tfoot>/.exec(t) || [, ''])[1]).replace(/^[^\d]*/, ''));
+      const pie = centavos(sinTags((/<tr class="r-tot">([\s\S]*?)<\/tr>/.exec(t) || [, ''])[1]).replace(/^[^\d]*/, ''));
       const falta = centavos((/Te falta por pagar<b[^>]*>USD \$([\d,.]+)/.exec(html) || [, '0'])[1].replace(/,/g, ''));
       if (pie !== suma) malasQ.push(caso.nombre + ': el pie ' + pie / 100 + ' no es la suma de las filas ' + suma / 100);
       if (falta && falta !== pie) malasQ.push(caso.nombre + ': "Te falta por pagar" ' + falta / 100 + ' != pie ' + pie / 100);

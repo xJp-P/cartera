@@ -15,7 +15,7 @@
 // `computeLiquidacion`, que resta el parcial APARTE; migrarlo lo restaria dos veces.
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
-import { imputarCobros, computeLiquidacion, proximoVencimiento, periodoEnCursoDe } from '../core/dominio.js';
+import { esCondonada, condonadoDe, imputarCobros, computeLiquidacion, proximoVencimiento, periodoEnCursoDe } from '../core/dominio.js';
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
@@ -111,6 +111,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     '.badge-pendiente{background:var(--r-soft-2);color:var(--r-text-2);border-color:var(--r-bd-2)}',
     '.badge-abono{background:var(--r-blue-bg);color:var(--r-blue);border-color:' + C.blueBd + '}',
     '.badge-parcial{background:var(--r-amber-bg);color:var(--r-amber);border-color:var(--r-amber-bd)}',
+    '.badge-condonada{background:var(--r-soft-2);color:var(--r-text-2);border-color:var(--r-bd-2)}',
     'tr.abono td{background:var(--r-blue-bg);color:var(--r-blue);font-weight:600}',
     'tr.total-row td{background:var(--r-green-bg);color:var(--r-green);font-weight:600}',
     'tr.total-row.abonos td{background:var(--r-blue-bg);color:var(--r-blue)}',
@@ -147,7 +148,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
       var filaEsAbono = esAbono(p);
       var isParcial = !filaEsAbono && (p.partialPaid||0) > 0 && p.estadoPago !== 'Pagado';
       var cls = filaEsAbono ? ' class="abono"' : isParcial ? ' class="mora"' : p.estadoPago === 'Pagado' ? ' class="pagado"' : p.estadoPago === 'En Mora' ? ' class="mora"' : ' class="pendiente"';
-      var badge = filaEsAbono ? '<span class="badge badge-abono">Abono</span>' : isParcial ? '<span class="badge badge-mora">'+(p.estadoPago==='En Mora'?'En Mora':'Pendiente')+'</span> <span class="badge badge-parcial">Parcial</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
+      var badge = filaEsAbono ? '<span class="badge badge-abono">Abono</span>' : isParcial ? '<span class="badge badge-mora">'+(p.estadoPago==='En Mora'?'En Mora':'Pendiente')+'</span> <span class="badge badge-parcial">Parcial</span>' : esCondonada(p) ? '<span class="badge badge-condonada">Condonada</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
       if (filaEsAbono) {
         // Un abono no devenga interes: la columna INTERES va en guion (no "$0", que se
         // confundiria con un interes calculado en cero).
@@ -170,7 +171,8 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
       var cuotaCell = '<strong>' + fmtDisp(cuoD) + '</strong>' +
         (isParcial ? '<br><span style="font-size:9px;opacity:0.75">Abonado ' + fvT(p.partialPaid||0) + '</span>' : '');
       return '<tr' + cls + '><td>' + p.cuotaN + '</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td>' +
-        '<td>' + fmtDisp(intD) + '</td><td>' + fmtDisp(capD) + '</td><td>' + cuotaCell + '</td>' +
+        '<td>' + fmtDisp(intD) + (condonadoDe(p) > 0 ? '<br><span style="font-size:9px;opacity:0.75">Condonado ' + fvT(condonadoDe(p)) + '</span>' : '') +
+        '</td><td>' + fmtDisp(capD) + '</td><td>' + cuotaCell + '</td>' +
         '<td>' + fvT(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
     }).join(''),
     // Filas de totales: 7 celdas (antes 6) y cada total alineado BAJO SU columna —

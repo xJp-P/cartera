@@ -489,6 +489,7 @@ export function devengoDiario(loan, cortes, hastaISO) {
   var interesDevengado = 0;
   var interesCobrado = 0;
   var capitalAbonado = 0;
+  var condonado = Math.max(0, Math.round(+loan.interesesCondonados || 0));
 
   var empujar = function (desde, hasta, base) {
     var dias = diasEntre(desde, hasta);
@@ -517,13 +518,17 @@ export function devengoDiario(loan, cortes, hastaISO) {
     tramos: tramos,
     interesDevengado: interesDevengado,
     interesCobrado: interesCobrado,
-    interesPendiente: Math.max(0, interesDevengado - interesCobrado),
+    // Lo CONDONADO por acuerdo (`loans.interesesCondonados`, post-4.1.5) tambien sale de lo
+    // pendiente: es interes que ya no se debe. Sin esto la condonacion de un credito abierto
+    // no se sostenia (el interes reaparecia al instante).
+    interesCondonado: condonado,
+    interesPendiente: Math.max(0, interesDevengado - interesCobrado - condonado),
     fechaUltimoCorte: ultimo ? ultimo.fechaPago : null,
     diasDesdeUltimoCorte: diasEntre(ultimo ? ultimo.fechaPago : loan.fechaInicio, hastaISO),
     diasTotales: diasEntre(loan.fechaInicio, hastaISO),
     cache: {
       fechaUltimoCorte: ultimo ? ultimo.fechaPago : loan.fechaInicio,
-      interesAcumuladoPend: Math.max(0, interesDevengado - interesCobrado
+      interesAcumuladoPend: Math.max(0, interesDevengado - interesCobrado - condonado
         - tramos[tramos.length - 1].interes),
     },
   };
@@ -543,6 +548,55 @@ export function cortesDe(loan, loanPays) {
 // siempre quieren "el devengo de ESTE prestamo, hoy".
 export function estadoDiario(loan, loanPays, hastaISO) {
   return devengoDiario(loan, cortesDe(loan, loanPays), hastaISO);
+}
+
+// ── CONDONACION: el monto escrito y el estado «Condonada» (post-4.1.5) ────────────
+// Aprobado por el PO sobre un prototipo con un caso real. `payments.interesCondonado` guarda
+// cuanto interes se le condono a cada cuota (acumulado); lo escribe /condonar-intereses.
+export function condonadoDe(p) { return Math.round(+(p && p.interesCondonado) || 0); }
+
+// «Condonada»: el perdon la saldo SIN que entrara dinero. Es un ROTULO: el estado guardado sigue
+// siendo 'Pagado', asi el saldo, la auto-finalizacion y los conteos no cambian. Una cuota que
+// ademas recibio un abono se rotula «Pagada» (si entro dinero), con lo condonado debajo.
+export function esCondonada(p) {
+  return !!p && p.estadoPago === 'Pagado' && condonadoDe(p) > 0 &&
+    Math.round(+p.partialPaid || 0) <= 0 && !((+p.montoCOPRecibido || 0) > 0);
+}
+
+// Espejo del endpoint (routes/loans.js): lo condonable de cada cuota es su interes sin bajarla
+// de lo ya abonado, min(interes, cuota - abonado), y un monto se reparte de la cuota MAS VIEJA a
+// la mas nueva; la ultima a la que llega puede quedar condonada en parte. `monto` null = todo lo
+// condonable. `error`: 'cero' (monto escrito <= 0) o 'excede' (mas de lo condonable).
+export function planCondonacion(cuotas, monto) {
+  var ord = (cuotas || []).slice().sort(function (a, b) {
+    return String(a.fechaPago).localeCompare(String(b.fechaPago)) || ((a.cuotaN || 0) - (b.cuotaN || 0));
+  });
+  var conds = ord.map(function (p) {
+    return { p: p, max: Math.max(0, Math.min(Math.round(p.interesPeriodo || 0), Math.round((p.cuotaTotal || 0) - (p.partialPaid || 0)))) };
+  });
+  var total = conds.reduce(function (s, x) { return s + x.max; }, 0);
+  var objetivo = monto == null ? total : Math.round(monto);
+  var error = monto != null && !(objetivo > 0) ? 'cero' : objetivo > total ? 'excede' : null;
+  var resto = error ? 0 : objetivo;
+  var filas = conds.map(function (x) {
+    var c = Math.min(x.max, resto); resto -= c;
+    var interes = Math.round(x.p.interesPeriodo || 0), ab = Math.round(x.p.partialPaid || 0), cuota = Math.round(x.p.cuotaTotal || 0) - c;
+    return { p: x.p, max: x.max, condonar: c, interes: interes, interesQueda: interes - c, cuotaQueda: cuota, abonado: ab,
+      parcial: c > 0 && c < interes, saldada: c > 0 && ab >= cuota, quedaDebiendo: Math.max(0, cuota - ab) };
+  });
+  return { total: total, condonado: error ? 0 : objetivo, filas: filas, error: error };
+}
+
+// El plan aplicado a una COPIA de las cuotas: el "despues" que muestra el modal, sin escribir nada.
+export function aplicarCondonacion(pays, plan) {
+  var por = {};
+  plan.filas.forEach(function (f) { if (f.condonar > 0) por[f.p.id] = f; });
+  return (pays || []).map(function (p) {
+    var f = por[p.id];
+    if (!f) return p;
+    return Object.assign({}, p, { interesPeriodo: f.interesQueda, cuotaTotal: f.cuotaQueda,
+      estadoPago: f.saldada ? 'Pagado' : p.estadoPago, interesCondonado: condonadoDe(p) + f.condonar });
+  });
 }
 
 // ── PROGRESO de un credito abierto ────────────────────────────────────────────

@@ -61,7 +61,7 @@ function cargarDominio() {
   sb.globalThis = sb;
   const ctx = vm.createContext(sb);
   vm.runInContext(orden.join('\n'), ctx);
-  return vm.runInContext('({cobrosDe,imputarCobros,saldoConCaja,planCascada,cobrableTotal})', ctx);
+  return vm.runInContext('({cobrosDe,imputarCobros,saldoConCaja,planCascada,cobrableTotal,planCondonacion,estadoDiario,computeLiquidacion,esCondonada})', ctx);
 }
 
 function pedir(method, ruta, body) {
@@ -83,7 +83,7 @@ function pedir(method, ruta, body) {
 }
 
 (async function main() {
-  const { cobrosDe, saldoConCaja, planCascada, cobrableTotal } = cargarDominio();
+  const { cobrosDe, saldoConCaja, planCascada, cobrableTotal, planCondonacion, estadoDiario, computeLiquidacion, esCondonada } = cargarDominio();
   R.check('los helpers reales del frontend se cargaron',
     typeof cobrosDe === 'function' && typeof saldoConCaja === 'function' && typeof planCascada === 'function');
 
@@ -369,6 +369,157 @@ function pedir(method, ruta, body) {
         Math.round(l.interesesCondonados || 0));
     }
   }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // post-4.1.5 — CONDONAR ESCRIBIENDO UN MONTO (aprobado por el PO sobre un prototipo)
+  // ════════════════════════════════════════════════════════════════════════════
+  // Copia y servidor PROPIOS: las secciones A-F ya condonaron la mora de varios creditos, y estas
+  // necesitan cuotas vencidas intactas. El caso es el credito de solo intereses del fixture con
+  // cuotas de $300.000 (el de un recibo real del PO, anonimizado).
+  const DB2 = copiaDeProduccion('condonacion-monto');
+  const app2 = require(path.join(REPO, 'backend', 'server.js'))(DB2);
+  const srv2 = http.createServer(app2);
+  const PORT2 = 3980;
+  await new Promise(ok => srv2.listen(PORT2, '127.0.0.1', ok));
+  const pedir2 = (method, ruta, body) => new Promise((res, rej) => {
+    const data = body ? JSON.stringify(body) : null;
+    const rq = http.request({ host: '127.0.0.1', port: PORT2, path: ruta, method,
+      headers: Object.assign({ 'Content-Type': 'application/json' }, data ? { 'Content-Length': Buffer.byteLength(data) } : {}) }, x => {
+      let b = ''; x.on('data', c => b += c);
+      x.on('end', () => { let j = null; try { j = JSON.parse(b || '{}'); } catch (_) {} res({ status: x.statusCode, json: j }); });
+    });
+    rq.on('error', rej); if (data) rq.write(data); rq.end();
+  });
+  const conDb2 = fn => { const d = new Database(DB2, { readonly: true }); try { return fn(d); } finally { d.close(); } };
+  const cargar2 = () => ({ loans: conDb2(d => d.prepare('SELECT * FROM loans').all()), pays: conDb2(d => d.prepare('SELECT * FROM payments').all()) });
+  await pedir2('GET', '/api/payments');   // auto-mora, como en la app real
+
+  // ── G — EL MONTO: de la cuota mas vieja a la mas nueva; la ultima, en parte ──
+  R.seccion('G — condonar escribiendo un monto: se reparte de la cuota más vieja a la más nueva');
+  {
+    const { loans, pays } = cargar2();
+    const l = loans.filter(x => x.estado === 'Activo' && x.modalidad === 'Intereses')
+      .find(x => moraDe(pays, x.id).filter(p => p.interesPeriodo > 0 && !(p.partialPaid > 0)).length >= 4);
+    R.check('G ANTI-VACIO: un credito de solo intereses con 4+ cuotas vencidas', !!l, l ? l.id : 'NINGUNO');
+    if (l) {
+      const mora = moraDe(pays, l.id).sort((a, b) => a.fechaPago.localeCompare(b.fechaPago));
+      const i0 = Math.round(mora[0].interesPeriodo), i1 = Math.round(mora[1].interesPeriodo), i2 = Math.round(mora[2].interesPeriodo);
+      const monto = i0 + i1 + Math.floor(i2 / 3);              // dos cuotas enteras y un tercio de la tercera
+      const plan = planCondonacion(mora, monto);
+      const cajaAntes = cajaDe(pays, l.id);
+      const liqAntes = computeLiquidacion(l, pays.filter(p => p.prestamoId === l.id), {}).total;
+
+      const r = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', { monto });
+      R.eq('G1 el endpoint acepta el monto', r.status, 200);
+      R.eq('G1 y condona exactamente lo escrito', Math.round(r.json.condonado), monto);
+      R.eq('G2 PARIDAD: el backend reparte igual que el modal (planCondonacion), cuota por cuota',
+        (r.json.cuotas || []).map(c => [c.id, c.condonado]), plan.filas.filter(f => f.condonar > 0).map(f => [f.p.id, f.condonar]));
+
+      const post = cargar2();
+      const fila = id => post.pays.find(p => p.id === id);
+      const lPost = post.loans.find(x => x.id === l.id);
+      R.check('G3 las dos mas viejas quedan saldadas sin dinero: estado Pagado, rotulo «Condonada»',
+        [mora[0], mora[1]].every(m => { const f = fila(m.id); return f.estadoPago === 'Pagado' && Math.round(f.cuotaTotal) === 0 && Math.round(f.interesCondonado) === Math.round(m.interesPeriodo) && esCondonada(f) && !f.fechaRecaudo; }),
+        [mora[0], mora[1]].map(m => fila(m.id)));
+      const f2 = fila(mora[2].id);
+      R.check('G4 la tercera queda condonada EN PARTE: sigue En Mora por lo que falta y guarda lo condonado',
+        f2.estadoPago === 'En Mora' && Math.round(f2.interesPeriodo) === i2 - Math.floor(i2 / 3) && Math.round(f2.cuotaTotal) === i2 - Math.floor(i2 / 3) &&
+        Math.round(f2.interesCondonado) === Math.floor(i2 / 3) && !esCondonada(f2) && /de \$/.test(f2.observaciones || ''), f2);
+      R.check('G5 las demas vencidas no se tocan', mora.slice(3).every(m => { const f = fila(m.id); return f.estadoPago === 'En Mora' && Math.round(f.cuotaTotal) === Math.round(m.cuotaTotal) && !(f.interesCondonado > 0); }));
+      R.eq('G6 loans.interesesCondonados acumula lo escrito', Math.round(lPost.interesesCondonados || 0), Math.round(l.interesesCondonados || 0) + monto);
+      R.eq('G6 CAJA CERO: no entra ni sale dinero', cajaDe(post.pays, l.id), cajaAntes);
+      R.eq('G6 "Debes hoy" baja exactamente lo condonado',
+        computeLiquidacion(lPost, post.pays.filter(p => p.prestamoId === l.id), {}).total, liqAntes - monto);
+      const hist = conDb2(d => d.prepare("SELECT mensaje FROM activity_log WHERE tipo = 'condonacion' ORDER BY rowid DESC LIMIT 1").get());
+      R.check('G7 el Historial dice cuantas completas y cuanto de la que quedo en parte',
+        !!hist && /2 cuotas vencidas y \$[\d.]+ de la cuota #\d+ \(queda debiendo \$[\d.]+\)/.test(hist.mensaje), hist && hist.mensaje);
+
+      // Montos invalidos: 4xx con la BD intacta.
+      const huella = JSON.stringify(cargar2().pays.filter(p => p.prestamoId === l.id).map(p => [p.id, p.cuotaTotal, p.estadoPago, p.interesCondonado]));
+      const total = planCondonacion(moraDe(cargar2().pays, l.id), null).total;
+      const rMas = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', { monto: total + 1 });
+      R.check('G8 un monto mayor que lo condonable se rechaza y dice cuanto hay', rMas.status === 400 && /solo tienen \$/.test(rMas.json.error || ''), rMas.json);
+      const rCero = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', { monto: 0 });
+      R.check('G8 un monto en cero se rechaza', rCero.status === 400 && /mayor que cero/.test(rCero.json.error || ''), rCero.json);
+      R.eq('G8 ANTI-REGRESION: los rechazos no escribieron nada', JSON.stringify(cargar2().pays.filter(p => p.prestamoId === l.id).map(p => [p.id, p.cuotaTotal, p.estadoPago, p.interesCondonado])), huella);
+
+      // Deshacer: todo vuelve, tambien lo condonado de cada cuota.
+      const und = await pedir2('POST', '/api/undo/' + r.json.undoId, {});
+      R.eq('G9 el deshacer se acepta', und.status, 200);
+      const back = cargar2();
+      R.check('G9 deshacer devuelve las cuotas y su interesCondonado a 0',
+        mora.every(m => { const f = back.pays.find(p => p.id === m.id); return f.estadoPago === 'En Mora' && Math.round(f.cuotaTotal) === Math.round(m.cuotaTotal) && !(f.interesCondonado > 0); }));
+      R.eq('G9 y loans.interesesCondonados', Math.round(back.loans.find(x => x.id === l.id).interesesCondonados || 0), Math.round(l.interesesCondonados || 0));
+    }
+  }
+
+  // ── H — UNA CUOTA CON UN ABONO A MEDIAS: se condona solo lo que falta ──
+  R.seccion('H — una cuota con abono: solo se condona lo que falta, y su dinero se conserva');
+  {
+    const { loans, pays } = cargar2();
+    const l = loans.filter(x => x.estado === 'Activo' && x.modalidad === 'Intereses')
+      .find(x => moraDe(pays, x.id).filter(p => p.interesPeriodo > 0 && !(p.partialPaid > 0)).length >= 1);
+    if (l) {
+      const c = moraDe(pays, l.id).sort((a, b) => a.fechaPago.localeCompare(b.fechaPago)).find(p => !(p.partialPaid > 0));
+      const abono = Math.round(c.cuotaTotal / 3);
+      const rp = await pedir2('POST', '/api/payments/' + c.id + '/partial', { monto: abono, fecha: hoy, observaciones: '' });
+      R.eq('H ANTI-VACIO: el abono a medias se registro', rp.status, 200);
+      const cajaAntes = cajaDe(cargar2().pays, l.id);
+      const max = Math.round(c.cuotaTotal) - abono;
+      const rMas = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', { cuotas: [c.id], monto: max + 1 });
+      R.check('H1 condonar mas de lo que falta se rechaza (antes la cuota entera se rechazaba)', rMas.status === 400, rMas.json);
+      const r = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', { cuotas: [c.id], monto: max });
+      R.eq('H2 condonar lo que falta se acepta', r.status, 200);
+      const f = cargar2().pays.find(p => p.id === c.id);
+      R.check('H2 la cuota queda saldada por el abono + lo condonado, sin rotulo «Condonada» (si entro dinero)',
+        f.estadoPago === 'Pagado' && Math.round(f.cuotaTotal) === abono && Math.round(f.interesCondonado) === max && !esCondonada(f), f);
+      R.check('H3 el dinero del abono se conserva: su evento de caja sigue', cobrosDe(f).reduce((s, e) => s + e.cop, 0) === abono && cajaDe(cargar2().pays, l.id) === cajaAntes,
+        { recibos: f.recibos, caja: cajaDe(cargar2().pays, l.id), antes: cajaAntes });
+    } else R.check('H ANTI-VACIO: un credito de solo intereses con una cuota vencida', false);
+  }
+
+  // ── I — EL CREDITO ABIERTO: la condonacion SE SOSTIENE (antes reaparecia al instante) ──
+  R.seccion('I — interés diario: lo condonado sale del devengo y no se puede condonar dos veces');
+  {
+    const { loans, pays } = cargar2();
+    const l = loans.find(x => x.estado === 'Activo' && x.modalidad === 'Interes Diario');
+    R.check('I ANTI-VACIO: un credito abierto activo', !!l, l ? l.id : 'NINGUNO');
+    if (l) {
+      const lp = () => cargar2().pays.filter(p => p.prestamoId === l.id);
+      const pend0 = Math.round(estadoDiario(l, pays.filter(p => p.prestamoId === l.id), hoy).interesPendiente);
+      R.check('I ANTI-VACIO: tiene interes devengado', pend0 > 0, pend0);
+      const mitad = Math.floor(pend0 / 2);
+      const r1 = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', { monto: mitad });
+      R.check('I1 condona una parte del devengo', r1.status === 200 && Math.round(r1.json.condonado) === mitad && Math.round(r1.json.quedaDebiendo) === pend0 - mitad, r1.json);
+      const l1 = cargar2().loans.find(x => x.id === l.id);
+      R.eq('I2 SE SOSTIENE: el devengo pendiente bajo exactamente lo condonado', Math.round(estadoDiario(l1, lp(), hoy).interesPendiente), pend0 - mitad);
+      R.eq('I2 la fecha del ultimo corte no se mueve (no hubo corte)', l1.fechaUltimoCorte, l.fechaUltimoCorte);
+      const r2 = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', {});
+      R.eq('I3 condonar el resto deja el devengo en cero', Math.round(r2.json.condonado), pend0 - mitad);
+      const l2 = cargar2().loans.find(x => x.id === l.id);
+      R.eq('I3 pendiente 0 tras condonar todo', Math.round(estadoDiario(l2, lp(), hoy).interesPendiente), 0);
+      const r3 = await pedir2('POST', '/api/loans/' + l.id + '/condonar-intereses', {});
+      R.check('I4 ya no se puede condonar otra vez (antes si: se contaba dos veces)', r3.status === 400, r3.json);
+      R.eq('I4 interesesCondonados = lo devengado, una sola vez', Math.round(l2.interesesCondonados || 0), Math.round(l.interesesCondonados || 0) + pend0);
+      R.eq('I5 "Debes hoy" del credito abierto = su capital', computeLiquidacion(l2, lp(), {}).total, Math.round(estadoDiario(l2, lp(), hoy).capitalVivo));
+    }
+  }
+
+  // ── J — LA MIGRACION: las condonaciones de antes de la columna se reconstruyen de su marca ──
+  R.seccion('J — migración: la marca en las observaciones llena interesCondonado (una vez)');
+  {
+    const c = cargar2().pays.find(p => p.estadoPago === 'En Mora' && p.id.indexOf('-ab-') === -1 && !(p.interesCondonado > 0));
+    if (c) {
+      const d = new Database(DB2);
+      d.prepare('UPDATE payments SET observaciones = ?, interesCondonado = 0 WHERE id = ?').run('Algo previo | Intereses condonados: $123.456 (2026-10-01)', c.id);
+      d.close();
+      require(path.join(REPO, 'backend', 'server.js'))(DB2);   // el arranque aplica el esquema
+      R.eq('J1 la marca vieja se convierte en interesCondonado', Math.round(cargar2().pays.find(p => p.id === c.id).interesCondonado), 123456);
+      require(path.join(REPO, 'backend', 'server.js'))(DB2);
+      R.eq('J2 idempotente: un segundo arranque no suma otra vez', Math.round(cargar2().pays.find(p => p.id === c.id).interesCondonado), 123456);
+    } else R.check('J ANTI-VACIO: una cuota En Mora para marcar', false);
+  }
+  srv2.close();
 
   srv.close();
   process.exit(R.finalizar());

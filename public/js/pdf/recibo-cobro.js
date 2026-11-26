@@ -37,7 +37,7 @@
 
 import { fmt, fmtUSD } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
-import { saldoConCaja, esDiario, pendCuota } from '../core/dominio.js';
+import { saldoConCaja, esDiario, pendCuota, esCondonada, condonadoDe } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 import { nombrePdf, montoArchivo, prestamoArchivo } from './nombres.js';
 import { rbCss, rbPaleta, rbCabecera, rbLarga, rbMedia, rbCorta, rbEsc, rbCampoValido, rbPlural, rbPrimerNombre, rbIniciales,
@@ -205,8 +205,10 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     // cronograma, asi que "por venir" contaria solo las 3 cuotas que el sistema tiene generadas.
     var nPag = regs.filter(function(p){ return p.estadoPago === 'Pagado'; }).length;
     var nVen = regs.filter(function(p){ return p.estadoPago === 'En Mora'; }).length;
+    var nCond = regs.filter(esCondonada).length;   // saldadas por condonacion: se cuentan aparte
     var barra = esIndef ? '' : rbBarraCuotas(regs, null);
-    var ley = '<div class="r-av-ley">' + rbLeyenda('green-2', rbPlural(nPag, 'pagada', 'pagadas')) +
+    var ley = '<div class="r-av-ley">' + rbLeyenda('green-2', rbPlural(nPag - nCond, 'pagada', 'pagadas')) +
+      (nCond ? rbLeyenda('muted', rbPlural(nCond, 'condonada', 'condonadas')) : '') +
       (nVen ? rbLeyenda('red', rbPlural(nVen, 'vencida', 'vencidas')) : '') +
       (esIndef ? '<span>plazo indefinido</span>' : rbLeyenda('track', (regs.length - nPag - nVen) + ' por venir')) + '</div>';
     // Dos saldos con nombre propio, y ninguno repite una cifra que el otro ya muestra (en un
@@ -227,12 +229,14 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     creditoHTML = '<div class="r-sec"><div class="r-sec-t">Así va tu crédito</div>' + barra + ley + '<div class="r-saldos">' + saldos + '</div></div>';
 
     // Tabla: lo vencido y la proxima, fila por fila; lo que viene despues, en UNA fila (el
-    // cliente necesita el detalle de lo que debe ya, no de dentro de un anio). Con muchas
-    // vencidas, las mas viejas tambien se resumen: el recibo tiene que caber en una hoja.
+    // cliente necesita el detalle de lo que debe ya, no de dentro de un anio). Lo vencido va
+    // SIEMPRE cuota por cuota (post-4.1.5, pedido del PO): juntar las mas viejas en una fila
+    // confundia al cliente. Si no cabe, sigue en la hoja siguiente con los titulos repetidos.
     function chip(cls, t){ return '<span class="chip ' + cls + '">' + t + '</span>'; }
     function celdaFalta(p){
       var ab = Math.round(p.partialPaid || 0);
-      return '<td class="n">' + (ab > 0 ? '<span class="sub">ya abonaste ' + money(ab) + ' de ' + money(p.cuotaTotal) + '</span>' : '') + '<b>' + money(pendCuota(p)) + '</b></td>';
+      return '<td class="n">' + (condonadoDe(p) > 0 ? '<span class="sub">se condonó ' + money(condonadoDe(p)) + '</span>' : '') +
+        (ab > 0 ? '<span class="sub">ya abonaste ' + money(ab) + ' de ' + money(p.cuotaTotal) + '</span>' : '') + '<b>' + money(pendCuota(p)) + '</b></td>';
     }
     function filaResumen(grupo, estadoHTML){
       var a = grupo[0], z = grupo[grupo.length - 1];
@@ -242,10 +246,9 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
         '<b>' + fmtUni(mon.sumaU(grupo.map(pendCuota))) + '</b></td></tr>';
     }
     var filas = '';
-    var viejas = vencidas.length > 4 ? vencidas.slice(0, vencidas.length - 3) : [];
-    if (viejas.length) filas += filaResumen(viejas, chip('venc', 'Vencidas'));
-    vencidas.slice(viejas.length).forEach(function(p){
-      filas += '<tr><td>' + p.cuotaN + deN + '</td><td>' + rbMedia(p.fechaPago) + '</td><td>' + chip('venc', 'Vencida') + '</td>' + celdaFalta(p) + '</tr>';
+    var otroAnio = vencidas.some(function(p){ return String(p.fechaPago).slice(0, 4) !== anio; });
+    vencidas.forEach(function(p){
+      filas += '<tr><td>' + p.cuotaN + deN + '</td><td>' + (otroAnio ? rbLarga(p.fechaPago) : rbMedia(p.fechaPago)) + '</td><td>' + chip('venc', 'Vencida') + '</td>' + celdaFalta(p) + '</tr>';
     });
     var futuras = pend.filter(function(p){ return pendCuota(p) > 0; });
     if (futuras[0]) filas += '<tr><td>' + futuras[0].cuotaN + deN + '</td><td>' + rbMedia(futuras[0].fechaPago) + '</td><td>' + chip('prox', 'Próxima') + '</td>' + celdaFalta(futuras[0]) + '</tr>';
@@ -254,7 +257,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     else if (resto.length > 1) filas += filaResumen(resto, chip('pend', 'Por vencer'));
     if (filas) {
       cuotasHTML = '<div class="r-sec"><div class="r-sec-t">Tus cuotas</div><table class="r-t"><thead><tr><th>Cuota</th><th>Vence</th><th>Estado</th><th class="n">Te falta</th></tr></thead>' +
-        '<tbody>' + filas + '</tbody><tfoot><tr><td colspan="3">' + (esIndef ? 'Total de estas cuotas' : 'Total por pagar') + '</td><td class="n">' + totalTxt + '</td></tr></tfoot></table></div>';
+        '<tbody>' + filas + '<tr class="r-tot"><td colspan="3">' + (esIndef ? 'Total de estas cuotas' : 'Total por pagar') + '</td><td class="n">' + totalTxt + '</td></tr></tbody></table></div>';
     }
   }
 
@@ -275,6 +278,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
   var html = [
     '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>' + titulo + '</title><style>'
   ].concat(rbCss(C)).concat([
+    '.r-t tr.r-tot td{border-bottom:0;font-weight:600;padding-top:7px}',
     '.r-paso{display:flex;gap:10px;align-items:flex-start}',
     '.r-paso+.r-paso{margin-top:6px}',
     '.r-n{flex-shrink:0;width:20px;height:20px;margin-top:1px;border-radius:99px;background:var(--r-soft-2);color:var(--r-text-2);font-size:11px;font-weight:600;line-height:20px;text-align:center}',

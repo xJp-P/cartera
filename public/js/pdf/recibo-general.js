@@ -34,7 +34,7 @@
 
 import { fmt, fmtUSD } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
-import { computeLiquidacion, diasEntre, esDiario, pendCuota, pendienteDeCuota, proximoVencimiento, saldoConCaja } from '../core/dominio.js';
+import { esCondonada, condonadoDe, computeLiquidacion, diasEntre, esDiario, pendCuota, pendienteDeCuota, proximoVencimiento, saldoConCaja } from '../core/dominio.js';
 import { esAbono, esCuotaRegular } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { nombrePdf } from './nombres.js';
@@ -152,7 +152,7 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
     hero = '<div class="r-hero ambar"><div class="r-hero-l"><small>Para ponerte al día</small><div class="r-monto' + (mixto ? ' mixto' : '') + '">' + monto(vencT) + '</div>' +
       '<div class="r-quien"><b>' + rbEsc(nombre) + '</b> <span>· ' + rbPlural(nVenc, 'cuota vencida', 'cuotas vencidas') +
       (conVenc.length > 1 ? ' en ' + conVenc.length + ' créditos' : '') + (nVenc > 1 ? ', la más antigua del ' : ', del ') +
-      rbMedia(masVieja.fechaPago) + ' (' + rbPlural(dias, 'día', 'días') + ')</span></div></div><div class="r-sello">' + RB_ICONO_RELOJ + '</div></div>';
+      (String(masVieja.fechaPago).slice(0, 4) !== anio ? rbLarga(masVieja.fechaPago) : rbMedia(masVieja.fechaPago)) + ' (' + rbPlural(dias, 'día', 'días') + ')</span></div></div><div class="r-sello">' + RB_ICONO_RELOJ + '</div></div>';
   } else if (proxima) {
     var pm = proxima.m;
     hero = '<div class="r-hero"><div class="r-hero-l"><small>Estás al día · tu próxima cuota</small><div class="r-monto">' + pm.mon.fmtUni(pm.proxU) + '</div>' +
@@ -200,6 +200,13 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
     ? { cop: Math.max(0, faltaT.cop - liqT.cop), usd: Math.max(0, faltaT.usd - liqT.usd) } : null;
   var proxN = mods.filter(function(m){ return m.prox; }).length;
   var notas = ['<div><b>Debes hoy</b> = ' + detLiq + ' · ' + vigTxt + (hay(liqMesT) ? ' (incluye el interés del periodo en curso)' : '') + '.</div>'];
+  // Lo que ya se condono (post-4.1.5), cada moneda por su lado: el cliente tiene que verlo en el papel.
+  var condT = activos.reduce(function(t, l){
+    var c = Math.round(+l.interesesCondonados || 0);
+    if (c <= 0) return t;
+    return l.moneda === 'USD' && +l.trmAcordada > 0 ? { cop: t.cop, usd: t.usd + Math.round(c / l.trmAcordada * 100) / 100 } : { cop: t.cop + c, usd: t.usd };
+  }, { cop: 0, usd: 0 });
+  if (hay(condT)) notas.push('<div>Se te condonaron <b>' + monto(condT) + '</b> de intereses: ya no están en estas cifras.</div>');
   if (Mo.hayIndef && plazoMods.length) notas.push('<div>"Si sigues con tus cuotas" no incluye el capital de tu crédito de solo intereses (' + monto(Mo.capIndefT) + '), que pagas cuando quieras.</div>');
   if (ahorro && (ahorro.cop > 0 || ahorro.usd > 0)) notas.push('<div>Liquidando hoy te ahorrarías <b>' + monto(ahorro) + '</b> de los intereses que traen tus cuotas.</div>');
   if (hayVenc && proxN) notas.push('<div>Para quedar al día y pagar también ' + (proxN > 1 ? 'la próxima cuota de cada crédito' : 'la próxima cuota') + ': <b>' +
@@ -215,36 +222,39 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
   function chip(cls, t){ return '<span class="chip ' + cls + '">' + t + '</span>'; }
   var tablaVenc = '';
   if (hayVenc) {
-    var tope = Math.max(2, Math.floor(5 / conVenc.length));
+    // UNA FILA POR CUOTA VENCIDA, siempre (post-4.1.5, pedido del PO con un recibo real): hasta
+    // entonces las mas viejas se juntaban en una sola fila ("4 a 8 · 5 cuotas") para caber en una
+    // hoja, y el cliente no sabia leerla. Si no caben, la tabla sigue en la hoja siguiente: el marco
+    // repite el margen, el <thead> repite los titulos y ninguna fila se parte (`.r-t tr`). El total
+    // va UNA vez, al final (en un <tfoot> Chromium lo repetia al pie de cada hoja). Si alguna cuota
+    // es de otro año, todas las fechas llevan el año.
+    var otroAnio = conVenc.some(function(m){ return m.venc.some(function(p){ return String(p.fechaPago).slice(0, 4) !== anio; }); });
+    var fechaV = function(f){ return otroAnio ? rbLarga(f) : rbMedia(f); };
     var filas = '';
     conVenc.forEach(function(m){
       var col = varios ? '<td>' + rotulo(m) + '</td>' : '';
-      var viejas = m.venc.length > tope ? m.venc.slice(0, m.venc.length - (tope - 1)) : [];
-      if (viejas.length) {
-        var a = viejas[0], z = viejas[viejas.length - 1];
-        filas += '<tr>' + col + '<td>' + a.cuotaN + ' a ' + z.cuotaN + m.deN + '</td><td>' + rbCorta(a.fechaPago, anio) + ' a ' + rbCorta(z.fechaPago, anio) + '</td>' +
-          '<td>' + chip('venc', 'hasta ' + rbPlural(diasEntre(a.fechaPago, hasta), 'día', 'días')) + '</td>' +
-          '<td class="n"><span class="sub">' + viejas.length + ' cuotas</span><b>' + m.mon.fmtUni(m.mon.sumaU(viejas.map(pendCuota))) + '</b></td></tr>';
-      }
-      m.venc.slice(viejas.length).forEach(function(p){
-        var d = diasEntre(p.fechaPago, hasta), ab = Math.round(p.partialPaid || 0);
-        filas += '<tr>' + col + '<td>' + p.cuotaN + m.deN + '</td><td>' + rbMedia(p.fechaPago) + '</td><td>' + chip('venc', rbPlural(d, 'día', 'días')) + '</td>' +
-          '<td class="n">' + (ab > 0 ? '<span class="sub">ya abonaste ' + m.mon.money(ab) + ' de ' + m.mon.money(p.cuotaTotal) + '</span>' : '') + '<b>' + m.mon.money(pendCuota(p)) + '</b></td></tr>';
+      m.venc.forEach(function(p){
+        var d = diasEntre(p.fechaPago, hasta), ab = Math.round(p.partialPaid || 0), cond = condonadoDe(p);
+        filas += '<tr>' + col + '<td>' + p.cuotaN + m.deN + '</td><td>' + fechaV(p.fechaPago) + '</td><td>' + chip('venc', rbPlural(d, 'día', 'días')) + '</td>' +
+          '<td class="n">' + (cond > 0 ? '<span class="sub">se condonó ' + m.mon.money(cond) + '</span>' : '') +
+          (ab > 0 ? '<span class="sub">ya abonaste ' + m.mon.money(ab) + ' de ' + m.mon.money(p.cuotaTotal) + '</span>' : '') + '<b>' + m.mon.money(pendCuota(p)) + '</b></td></tr>';
       });
     });
     var intTxt = hay(intVencT) ? ' <span class="sub">· de eso, intereses ' + monto(intVencT) + '</span>' : '';
-    tablaVenc = '<div class="r-sec"><div class="r-sec-t">Lo que está vencido</div><table class="r-t"><thead><tr>' + (varios ? '<th>Crédito</th>' : '') +
-      '<th>Cuota</th><th>Venció</th><th>Mora</th><th class="n">Te falta</th></tr></thead><tbody>' + filas + '</tbody>' +
-      '<tfoot><tr><td colspan="' + (varios ? 4 : 3) + '">Total vencido' + intTxt + '</td><td class="n">' + monto(vencT) + '</td></tr></tfoot></table></div>';
+    tablaVenc = '<div class="r-sec r-venc"><div class="r-sec-t">Lo que está vencido</div><table class="r-t"><thead><tr>' + (varios ? '<th>Crédito</th>' : '') +
+      '<th>Cuota</th><th>Venció</th><th>Mora</th><th class="n">Te falta</th></tr></thead><tbody>' + filas +
+      '<tr class="r-tot"><td colspan="' + (varios ? 4 : 3) + '">Total vencido' + intTxt + '</td><td class="n">' + monto(vencT) + '</td></tr></tbody></table></div>';
   }
 
   // ── 5. ASI VA TU CREDITO: la barra y su leyenda (las cifras ya estan en "Tu deuda hoy") ──
   function bloqueCredito(m){
-    var nPag = m.regs.filter(function(p){ return p.estadoPago === 'Pagado'; }).length;
+    var nCond = m.regs.filter(esCondonada).length;
+    var nPag = m.regs.filter(function(p){ return p.estadoPago === 'Pagado'; }).length - nCond;
     var porVenir = m.pend.length - (m.prox ? 1 : 0);
     var abonos = m.abonos.slice(0, 2).map(function(a){ return m.mon.money(a.abonoCapital) + ' el ' + rbCorta(a.fechaRecaudo || a.fechaPago, anio); }).join(', ') +
       (m.abonos.length > 2 ? ' y ' + (m.abonos.length - 2) + ' más' : '');
     var ley = '<div class="r-av-ley">' + rbLeyenda('green-2', rbPlural(nPag, 'pagada', 'pagadas')) +
+      (nCond ? rbLeyenda('muted', rbPlural(nCond, 'condonada', 'condonadas')) : '') +
       (m.venc.length ? rbLeyenda('red', rbPlural(m.venc.length, 'vencida', 'vencidas')) : '') +
       (m.esIndef ? '<span>plazo indefinido</span>' : (m.prox ? rbLeyenda('blue', 'la próxima') : '') + rbLeyenda('track', porVenir + ' por venir')) +
       (abonos ? '<span>· abono a capital: ' + abonos + '</span>' : '') +
@@ -275,6 +285,9 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
     '.r-aparte{margin-top:10px;font-size:12px;color:var(--r-muted)}',
     '.r-pagar{padding:7px 14px;border-radius:12px;background:var(--r-soft);font-size:12.5px;line-height:1.42;white-space:pre-wrap}',
     '.r-credito{break-inside:avoid}',
+    // Lo vencido puede seguir en la hoja siguiente (sus filas no se parten) y su total va una vez, al final.
+    '.r-sec.r-venc{break-inside:auto}',
+    '.r-t tr.r-tot td{border-bottom:0;font-weight:600;padding-top:7px}',
     // "Tu deuda hoy": la columna "Debes hoy" es la respuesta a "cuanto debo": va mas marcada.
     '.r-deuda td:nth-child(3),.r-deuda th:nth-child(3){background:var(--r-soft)}',
     '.r-deuda tfoot td{font-size:14px}',

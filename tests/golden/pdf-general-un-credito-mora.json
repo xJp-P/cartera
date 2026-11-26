@@ -24,7 +24,7 @@
     ]
   },
   "valores": {
-    "bytes": 11413,
+    "bytes": 11518,
     "nFilas": 5,
     "nCeldas": 20,
     "celdasPorTr": [
@@ -62,6 +62,7 @@
       "r-quien",
       "r-sec",
       "r-sec r-credito",
+      "r-sec r-venc",
       "r-sec-t",
       "r-sello",
       "r-t",
@@ -71,6 +72,7 @@
       "r-tar-l",
       "r-tar-s",
       "r-tar-v",
+      "r-tot",
       "r-tres",
       "sub",
       "vencida"

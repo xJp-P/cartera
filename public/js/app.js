@@ -705,8 +705,11 @@ function App(){
   // No emite recibo ni toca caja: lo que cambia es cuanto DEBE el cliente. Por eso
   // el toast habla de deuda y no de dinero recibido, y por eso el backend marca la
   // entrada del journal con `afectaCaja: false` (sin la falsa alarma del recibo).
-  function _doCondonar(loanId,cuotas,obs){
+  function _doCondonar(loanId,cuotas,obs,monto){
     var body={observaciones:obs||''};
+    // El monto escrito (post-4.1.5): el backend lo reparte de la cuota mas vieja a la mas nueva.
+    // Sin el, condona todo lo condonable de las cuotas elegidas.
+    if(monto!=null) body.monto=monto;
     // Sin lista, el backend condona TODAS las cuotas en mora. En credito abierto no
     // hay cuotas que enviar, asi que el campo se omite en vez de mandar un array vacio.
     if(cuotas&&cuotas.length) body.cuotas=cuotas;

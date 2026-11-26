@@ -495,6 +495,7 @@ function devengoDiario(loan, cortes, hastaISO) {
   let interesDevengado = 0;
   let interesCobrado = 0;
   let capitalAbonado = 0;
+  const condonado = Math.max(0, Math.round(+loan.interesesCondonados || 0));
 
   const empujar = (desde, hasta, base) => {
     let dias = diasEntre(desde, hasta);
@@ -529,7 +530,11 @@ function devengoDiario(loan, cortes, hastaISO) {
     // Lo que el cliente debe HOY de intereses. Clamp a 0: si pago de mas en un
     // corte (redondeo, o un pago voluntario por encima), no se le queda debiendo
     // al reves — ese excedente es un asunto del corte, no del devengo.
-    interesPendiente: Math.max(0, interesDevengado - interesCobrado),
+    // Lo CONDONADO por acuerdo (`loans.interesesCondonados`, post-4.1.5) tambien sale de lo
+    // pendiente: es interes que ya no se debe. Sin esto la condonacion de un credito abierto
+    // no se sostenia (el interes reaparecia al instante).
+    interesCondonado: condonado,
+    interesPendiente: Math.max(0, interesDevengado - interesCobrado - condonado),
     fechaUltimoCorte: ultimo ? ultimo.fechaPago : null,
     diasDesdeUltimoCorte: diasEntre(ultimo ? ultimo.fechaPago : loan.fechaInicio, hastaISO),
     diasTotales: diasEntre(loan.fechaInicio, hastaISO),
@@ -545,7 +550,7 @@ function devengoDiario(loan, cortes, hastaISO) {
     // camino no existe. La columna significa "desde cuando corre el tramo abierto".
     cache: {
       fechaUltimoCorte: ultimo ? ultimo.fechaPago : loan.fechaInicio,
-      interesAcumuladoPend: Math.max(0, interesDevengado - interesCobrado
+      interesAcumuladoPend: Math.max(0, interesDevengado - interesCobrado - condonado
         - tramos[tramos.length - 1].interes),
     },
   };

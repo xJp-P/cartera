@@ -235,6 +235,54 @@
 .un-acc .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 .un-k-nota { padding: 4px 11px 8px; margin: 0; }
 
+/* ── CONDONAR INTERESES (post-4.1.5, prefijo cdm-) ──────────────────────────────
+   El monto escrito, el antes y el despues, y cada cuota vencida con lo que le pasaria. Aprobado por el
+   PO sobre un prototipo. El violeta es el de «Condonada» en el cronograma. */
+.cdm-sub { font-size: 13px; color: var(--ink-3); margin-top: -2px; }
+.cdm-aviso { border-radius: 12px; padding: 10px 13px; font-size: 12.5px; line-height: 1.55; color: var(--warn-text); }
+.cdm-aviso b { font-weight: 650; }
+.cdm-vacio { border-radius: 12px; padding: 14px; font-size: 12.5px; color: var(--ink-3); text-align: center; }
+.cdm-monto-f { display: flex; align-items: center; gap: 8px; }
+.cdm-monto-f .inp { flex: 1; font-size: 16px; font-weight: 600; }
+.cdm-pre { font-size: 14px; font-weight: 600; color: var(--ink-3); }
+.cdm-todo { flex: 0 0 auto; background: transparent; border: 1px solid var(--line); color: var(--ink-2); border-radius: 9px; padding: 8px 11px;
+  font: 600 12px var(--font); cursor: pointer; white-space: nowrap; }
+.cdm-todo.on { color: var(--purple); background: var(--purple-bg); border-color: var(--purple-bd); }
+.cdm-ayuda { font-size: 12px; color: var(--ink-3); line-height: 1.5; margin-top: 6px; }
+.cdm-ayuda b { color: var(--ink-2); font-weight: 600; }
+.cdm-error { border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: var(--crit-text); margin-top: 8px; }
+.cdm-res { border-radius: 12px; padding: 10px 13px; margin-top: 10px; }
+.cdm-res-t { font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.cdm-comp { display: grid; grid-template-columns: 1fr auto auto auto; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+.cdm-comp-l { color: var(--ink-2); }
+.cdm-comp-a { color: var(--ink-3); text-decoration: line-through; }
+.cdm-flecha { color: var(--ink-3); }
+.cdm-comp-d { grid-column: 4; font-weight: 650; color: var(--ink); }
+.cdm-comp.fuerte .cdm-comp-l { color: var(--ink); font-weight: 650; }
+.cdm-comp.fuerte .cdm-comp-d { color: var(--purple); }
+.cdm-comp.suave .cdm-comp-d { color: var(--ink-2); font-weight: 500; }
+.cdm-cab { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: .06em; margin: 14px 0 7px; }
+.cdm-esp { flex: 1; }
+.cdm-lista { display: flex; flex-direction: column; gap: 6px; }
+.cdm-cuota { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; border: 1px solid var(--line); border-radius: 11px; padding: 9px 12px; background: var(--surface-2); }
+.cdm-cuota input { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+.cdm-cuota.toca { border-color: var(--purple-bd); background: var(--purple-bg); }
+.cdm-cuota-i { flex: 1; min-width: 0; }
+.cdm-cuota-t, .cdm-cuota-s { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink); }
+.cdm-cuota-t b { font-weight: 650; }
+.cdm-cuota-s { font-size: 12px; margin-top: 2px; color: var(--ink-2); }
+.cdm-muted { color: var(--ink-3); }
+.cdm-int { font-weight: 650; }
+.cdm-c { color: var(--purple); font-weight: 650; }
+.cdm-ef { font-size: 11.5px; font-weight: 600; border-radius: 99px; padding: 1px 9px; white-space: nowrap; }
+.cdm-ef.cond { color: var(--purple); background: var(--purple-bg); border: 1px solid var(--purple-bd); }
+.cdm-ef.parte { color: var(--crit-text); background: var(--crit-soft); }
+.cdm-ef.nada { color: var(--ink-3); font-weight: 500; }
+.cdm-nota { font-size: 12px; color: var(--ink-3); line-height: 1.55; }
+.cdm-acc { display: flex; gap: 10px; margin-top: 6px; }
+.cdm-cancelar { flex: 1; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); border-radius: 13px; padding: 12px 8px;
+  font: 600 13.5px var(--font); cursor: pointer; }
+
 /* ── RECIBO DE COBRO GENERAL: el modal previo (post-4.0.0, punto 4 del PO; prefijo rg-) ──────
    Las tres cifras de "Tu deuda hoy" tal como se imprimen y la casilla del interes del periodo en
    curso, credito por credito. */
