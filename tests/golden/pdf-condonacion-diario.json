@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "caso": "condonacion-diario",
+  "generador": "generateConstanciaCondonacion",
+  "tema": "light",
+  "entradaHash": "b10869c0beb2610aa546f846831612255437c383",
+  "estructura": {
+    "docTitle": "Constancia de condonación",
+    "h1": [],
+    "cabeceras": [],
+    "etiquetas": [
+      "Qué se condonó",
+      "Interés devengado",
+      "Se condonó",
+      "Queda por pagar",
+      "Así queda tu crédito",
+      "Debes hoy",
+      "Capital"
+    ]
+  },
+  "valores": {
+    "bytes": 9162,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 9,
+    "hashMontos": "6282433104d62b55da9076db3b71e1567b1cbb37",
+    "hashFname": "1c0df69b5a4ce45ce768362685b14d4d5a95e366",
+    "hashTexto": "4eb6909cbad3ad51d9c0291a62a5616fa859bc8d",
+    "clases": [
+      "cd-aviso",
+      "r-cab",
+      "r-doc",
+      "r-dos",
+      "r-hero",
+      "r-hero-l",
+      "r-logo",
+      "r-marca",
+      "r-monto",
+      "r-pie",
+      "r-pie-d",
+      "r-quien",
+      "r-sec",
+      "r-sec-t",
+      "r-sello",
+      "r-tar",
+      "r-tar-l",
+      "r-tar-s",
+      "r-tar-v",
+      "r-tres"
+    ]
+  }
+}

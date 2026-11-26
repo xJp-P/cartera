@@ -33,6 +33,7 @@ export var PDF_DOCUMENTOS = {
   propuestaAbono: 'Propuesta de abono',
   propuestaUnificacion: 'Propuesta de unificación',
   constanciaUnificacion: 'Constancia de unificación',
+  condonacion: 'Constancia de condonación',
   reporte: 'Reporte de préstamos activos'
 };
 

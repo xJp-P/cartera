@@ -172,6 +172,15 @@ const CASOS = [
     gen: () => S.generateConstanciaUnificacion(S.planUnificacion(loans.filter(l => l.nombre === 'Bruno Salgado' && l.estado === 'Activo'), pays, '2026-07-31',
       { corrido: true, nuevo: { plazo: 12 } }), 'Bruno Salgado', { datosPago: 'Nequi 300 000 0000 · Bancolombia ahorros 000-000000-00', nuevoId: 'x-unif' }) },
 ];
+// La constancia de condonacion (post-4.1.5): un credito de solo intereses con $1.000.000 condonados
+// (3 cuotas completas y 1 en parte), en memoria con el reparto del modal. Cabe en UNA hoja.
+CASOS.push({ doc: 'condonacion-una-hoja', tema: 'light', paginasMin: 1, paginasMax: 1, v4: true, gen: () => {
+  const id = '1773655076017', lp = pays.filter(p => p.prestamoId === id);
+  const plan = S.planCondonacion(lp.filter(p => p.estadoPago === 'En Mora'), 1000000);
+  return S.generateConstanciaCondonacion(Object.assign({}, L(id), { interesesCondonados: plan.condonado }), S.aplicarCondonacion(lp, plan),
+    { fecha: '2026-07-31', condonado: plan.condonado, observaciones: 'Acuerdo de pago', pre: { loan: L(id), pays: lp },
+      cuotas: plan.filas.filter(f => f.condonar > 0).map(f => ({ id: f.p.id, cuotaN: f.p.cuotaN, condonado: f.condonar, parcial: f.parcial, quedaDebiendo: f.quedaDebiendo })) });
+} });
 const LETRAS_V4 = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold'];
 const dir = path.join(WORK, `pdf-nativo-${process.pid}-${Date.now()}`);
 fs.mkdirSync(dir, { recursive: true });

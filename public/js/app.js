@@ -37,6 +37,7 @@ import { generateReciboCorte } from './pdf/recibo-corte.js';
 import { generateReciboAbono }   from './pdf/recibo-abono.js';
 import { generateReciboCobro }   from './pdf/recibo-cobro.js';
 import { generatePropuestaUnificacion, generateConstanciaUnificacion } from './pdf/unificacion.js';
+import { generateConstanciaCondonacion } from './pdf/condonacion.js';
 
 // Vistas — Etapa 3/B7. El estado sigue en `App` y baja por props.
 import { DashView } from './vistas/DashView.js';
@@ -705,8 +706,11 @@ function App(){
   // No emite recibo ni toca caja: lo que cambia es cuanto DEBE el cliente. Por eso
   // el toast habla de deuda y no de dinero recibido, y por eso el backend marca la
   // entrada del journal con `afectaCaja: false` (sin la falsa alarma del recibo).
-  function _doCondonar(loanId,cuotas,obs,monto){
+  function _doCondonar(loanId,cuotas,obs,monto,genPdf){
     var body={observaciones:obs||''};
+    // La foto de ANTES, para el "antes" de la constancia (lo vencido y "Debes hoy").
+    var loanPre=loans.find(function(l){ return l.id===loanId; });
+    var paysPre=pays.filter(function(p){ return p.prestamoId===loanId; });
     // El monto escrito (post-4.1.5): el backend lo reparte de la cuota mas vieja a la mas nueva.
     // Sin el, condona todo lo condonable de las cuotas elegidas.
     if(monto!=null) body.monto=monto;
@@ -718,9 +722,19 @@ function App(){
       // modal se cerraria anunciando exito sobre una escritura que no ocurrio (Bug #33).
       if(!r){showToast('No se pudo contactar la aplicación.','error');return;}
       if(r.error){showToast(r.error,'error');return;}
-      return reload().then(function(){
+      return reload().then(function(fresh){
         setCondonarModal(null);
         showToast('Intereses condonados: '+fmt(r.condonado||0));
+        // CONSTANCIA DE CONDONACION (post-4.1.5): el soporte del acuerdo. Se arma con lo APLICADO —la
+        // respuesta del backend (que se condono en cada cuota) y el cronograma ya persistido tras el
+        // reload—, nunca con lo que el modal planeaba. Solo si la escritura ocurrio, y en try/catch: un
+        // fallo del PDF nunca puede romper una condonacion que ya quedo registrada.
+        try{
+          var fl=((fresh&&fresh[0])||loans).find(function(x){ return x.id===loanId; });
+          var fp=((fresh&&fresh[1])||pays).filter(function(p){ return p.prestamoId===loanId; });
+          if(fl&&genPdf!==false) generateConstanciaCondonacion(fl,fp,{fecha:nowStr(),condonado:r.condonado,cuotas:r.cuotas||[],
+            observaciones:obs,pre:{loan:loanPre,pays:paysPre}});
+        }catch(e){}
       });
     });
   }

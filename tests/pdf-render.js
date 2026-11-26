@@ -123,7 +123,9 @@ const GENERADORES = ['generateCronogramaPDF', 'generateReportePrestamosPDF',
                      // Los tres del credito abierto (golden desde el rediseño v4, 2026-11-13).
                      'generateEstadoCuentaDiario', 'generateReciboCorte', 'generateFacturaCobroDiario',
                      // La unificacion de prestamos (post-4.0.0): la propuesta y la constancia.
-                     'generatePropuestaUnificacion', 'generateConstanciaUnificacion'];
+                     'generatePropuestaUnificacion', 'generateConstanciaUnificacion',
+                     // La constancia de condonacion (post-4.1.5).
+                     'generateConstanciaCondonacion'];
 const faltantes = GENERADORES.filter(n => typeof S[n] !== 'function');
 if (faltantes.length) {
   abortar('El frontend no expone estos generadores como funciones top-level: ' + faltantes.join(', ') +
@@ -411,6 +413,28 @@ const paysHero = JSON.parse(JSON.stringify(pays));
 const UNIF_BRUNO = ['1773656401497', '1773656997026zqmp', '1782872189716p6cz'];
 const UNIF_GABRIELA = ['1773657323435hkkb', '1782151590658w66y'];
 const unifLoans = ids => ids.map(id => L(id));
+
+// La condonacion EN MEMORIA, con el reparto del modal (planCondonacion + aplicarCondonacion; la suite
+// condonacion fija que el endpoint reparte igual). Devuelve lo que la app le pasa a la constancia:
+// el prestamo y sus cuotas YA condonados y `cond` (la respuesta del endpoint + la foto de antes).
+function condonarEnMemoria(id, monto, hasta, obs) {
+  const L0 = L(id);
+  const lp = pays.filter(p => p.prestamoId === id).map(p => p.estadoPago === 'Pendiente' && p.fechaPago < hasta && S.esCuotaRegular(p)
+    ? Object.assign({}, p, { estadoPago: 'En Mora' }) : p);
+  if (S.esDiario(L0)) {
+    const pend = Math.round(S.estadoDiario(L0, lp, hasta).interesPendiente);
+    const c = monto == null ? pend : monto;
+    return { loan: Object.assign({}, L0, { interesesCondonados: Math.round(+L0.interesesCondonados || 0) + c }), pays: lp,
+      cond: { fecha: hasta, condonado: c, cuotas: [], observaciones: obs || '', pre: { loan: L0, pays: lp } } };
+  }
+  const plan = S.planCondonacion(lp.filter(p => p.estadoPago === 'En Mora' && S.esCuotaRegular(p)), monto);
+  return { loan: Object.assign({}, L0, { interesesCondonados: Math.round(+L0.interesesCondonados || 0) + plan.condonado }),
+    pays: S.aplicarCondonacion(lp, plan),
+    cond: { fecha: hasta, condonado: plan.condonado, observaciones: obs || '', pre: { loan: L0, pays: lp },
+      cuotas: plan.filas.filter(f => f.condonar > 0).map(f => ({ id: f.p.id, cuotaN: f.p.cuotaN, condonado: f.condonar, parcial: f.parcial, quedaDebiendo: f.quedaDebiendo })) } };
+}
+const CONDONAR_INT = '1773655076017';        // solo intereses, cuotas de $300.000, 5 vencidas al 31-jul
+const CONDONAR_USD = '1782151590658w66y';    // C+I en dolares con una cuota vencida (interes + capital)
 const CASOS = [
   // ── generateCronogramaPDF — 4 modalidades, COP y USD, mora, abono, parcial ────────────
   { nombre: 'crono-capint-cop-abono', gen: 'generateCronogramaPDF', tema: 'light', celdas: 7,
@@ -724,6 +748,25 @@ const CASOS = [
     ejecutar: () => S.generatePropuestaUnificacion(S.planUnificacion(unifLoans(UNIF_GABRIELA), pays, '2026-07-31', { destino: 'capital', nuevo: { plazo: 8 } }), 'Gabriela Rios', {}),
     contiene: ['Si unificamos tus 2 préstamos, pagarías', 'USD $', 'de intereses que pasan a capital', 'PU-Ga-3107'],
     noContiene: ['NaN', 'undefined'] },
+
+  // La constancia de condonacion (post-4.1.5): el soporte del acuerdo, armado con lo aplicado.
+  { nombre: 'condonacion-intereses-parte', gen: 'generateConstanciaCondonacion', tema: 'light', celdas: 6,
+    entrada: () => ({ loanIds: [CONDONAR_INT], hasta: '2026-07-31', opc: 'monto 1.000.000 (3 completas y 1 en parte)', tema: 'light' }),
+    ejecutar: () => { const c = condonarEnMemoria(CONDONAR_INT, 1000000, '2026-07-31', 'Acuerdo de pago'); return S.generateConstanciaCondonacion(c.loan, c.pays, c.cond); },
+    contiene: ['Constancia de condonación', 'Intereses condonados', 'No es un pago', 'Qué se condonó', 'cuotas completas', 'En parte',
+               'Así queda tu crédito', 'Lo vencido', 'Debes hoy', 'sin cambios', 'Motivo del acuerdo', 'CD-El-017-3107'],
+    noContiene: ['Recibimos', 'Cómo pagar', 'NaN', 'undefined'] },
+  { nombre: 'condonacion-capint-usd', gen: 'generateConstanciaCondonacion', tema: 'dark', celdas: 6,
+    entrada: () => ({ loanIds: [CONDONAR_USD], hasta: '2026-07-31', opc: 'todo el interes vencido', tema: 'dark' }),
+    ejecutar: () => { const c = condonarEnMemoria(CONDONAR_USD, null, '2026-07-31'); return S.generateConstanciaCondonacion(c.loan, c.pays, c.cond); },
+    contiene: ['Constancia de condonación', 'USD $', 'Queda el capital', 'CD-Ga-66y-3107'],
+    noContiene: ['Motivo del acuerdo', 'NaN', 'undefined'] },
+  { nombre: 'condonacion-diario', gen: 'generateConstanciaCondonacion', tema: 'light', celdas: null,
+    entrada: () => ({ loanIds: ['fixture-diario-01'], hasta: '2026-08-31', opc: 'la mitad del devengo', tema: 'light' }),
+    ejecutar: () => { const pend = Math.round(S.estadoDiario(L('fixture-diario-01'), pays.filter(p => p.prestamoId === 'fixture-diario-01'), '2026-08-31').interesPendiente);
+      const c = condonarEnMemoria('fixture-diario-01', Math.floor(pend / 2), '2026-08-31'); return S.generateConstanciaCondonacion(c.loan, c.pays, c.cond); },
+    contiene: ['Constancia de condonación', 'Interés devengado', 'Se condonó', 'Queda por pagar', 'CD-Ni--01-3108'],
+    noContiene: ['Lo vencido', 'NaN', 'undefined'] },
 
   { nombre: 'general-al-dia', gen: 'generateReciboGeneral', tema: 'light', celdas: null,
     entrada: () => ({ loanIds: ['1776205975507jkph'], hasta: '2026-07-31', tema: 'light' }),
@@ -1276,7 +1319,7 @@ const GENERADORES_V4 = ['generateReciboCobro', 'generateReciboGeneral',
                         'generateRecibo', 'generateFacturaCobro', 'generateReciboAbono', 'generatePropuestaAbono',
                         'generateEstadoLiquidacion', 'generateEstadoCuentaDiario', 'generateReciboCorte',
                         'generateFacturaCobroDiario', 'generateCronogramaPDF', 'generateReportePrestamosPDF',
-                        'generatePropuestaUnificacion', 'generateConstanciaUnificacion'];
+                        'generatePropuestaUnificacion', 'generateConstanciaUnificacion', 'generateConstanciaCondonacion'];
 R.seccion('V4 · los documentos rediseñados: Inter, el logo de la app y el papel del tema');
 {
   const casosV4 = CASOS.filter(c => GENERADORES_V4.indexOf(c.gen) !== -1);
@@ -1747,6 +1790,49 @@ function loansDelCaso(caso) {
 }
 
 {
+  // post-4.1.5: la constancia de condonacion. Cuenta lo APLICADO (la respuesta del endpoint y el
+  // cronograma ya condonado), y sus cifras salen de los helpers de siempre.
+  R.seccion('T — la constancia de condonación: lo aplicado, cuota por cuota (post-4.1.5)');
+  const vis = h => sinTags(h.replace(/<style[\s\S]*?<\/style>/gi, '')).replace(/\u00a0/g, ' ');
+  const pesos = n => S.fmt(n).replace(/\u00a0/g, ' ');
+  const c1 = condonarEnMemoria(CONDONAR_INT, 1000000, '2026-07-31', 'Acuerdo <pago> & cia');
+  const d1 = S.htmlConstanciaCondonacion(c1.loan, c1.pays, c1.cond, { dark: false });
+  const tabla = (/<div class="r-sec cd-cuotas">[\s\S]*?<\/table>/.exec(d1.html) || [''])[0];
+  const filas = (tabla.match(/<tr>[\s\S]*?<\/tr>/g) || []).filter(f => f.indexOf('<td') !== -1);
+  const tot = vis((/<tr class="r-tot">[\s\S]*?<\/tr>/.exec(tabla) || [''])[0]);
+  R.check('T0 ANTI-VACIO: 5 cuotas vencidas de $300.000 y $1.000.000 condonados (3 completas y 1 en parte)',
+    c1.cond.cuotas.length === 4 && c1.cond.cuotas.filter(c => c.parcial).length === 1 && c1.cond.condonado === 1000000, c1.cond.cuotas);
+  R.check('T1 una fila por cuota condonada, en el orden en que vencieron: 3 «Condonada» y 1 «En parte»',
+    filas.length === 4 && (tabla.match(/>Condonada</g) || []).length === 3 && (tabla.match(/chip parte/g) || []).length === 1 &&
+    filas.map(f => vis(f).split(' ')[0]).join(',') === c1.cond.cuotas.map(c => c.cuotaN).join(','), filas.map(vis));
+  R.check('T2 el total: interés $1.200.000, se condonó $1.000.000 y queda $200.000 (la cuota en parte)',
+    tot.indexOf(pesos(1200000)) !== -1 && tot.indexOf(pesos(1000000)) !== -1 && tot.indexOf(pesos(200000)) !== -1, tot);
+  R.eq('T2 la cifra grande es lo condonado', vis((/<div class="r-monto">([\s\S]*?)<\/div>/.exec(d1.html) || [, ''])[1]), pesos(1000000));
+  const lp0 = c1.cond.pre.pays, liqA = S.computeLiquidacion(c1.cond.pre.loan, lp0, { hasta: '2026-07-31' }), liqD = S.computeLiquidacion(c1.loan, c1.pays, { hasta: '2026-07-31' });
+  const t1 = vis(d1.html);
+  R.check('T3 "Así queda": lo vencido baja a $500.000 (antes $1.500.000) y "Debes hoy" baja exactamente lo condonado',
+    t1.indexOf('Lo vencido ' + pesos(500000)) !== -1 && t1.indexOf('antes ' + pesos(1500000)) !== -1 &&
+    liqA.total - liqD.total === 1000000 && t1.indexOf('Debes hoy ' + pesos(liqD.total)) !== -1 && t1.indexOf('antes ' + pesos(liqA.total)) !== -1, t1.slice(t1.indexOf('Así queda'), t1.indexOf('Así queda') + 260));
+  R.check('T4 el capital no cambia, y el papel lo dice', t1.indexOf('Capital ' + pesos(liqA.capitalPendiente) + ' sin cambios') !== -1 && liqA.capitalPendiente === liqD.capitalPendiente);
+  R.check('T5 dice que no es un pago y escapa el motivo', t1.indexOf('No es un pago') !== -1 && t1.indexOf('no entró dinero') !== -1 &&
+    d1.html.indexOf('Acuerdo &lt;pago&gt; &amp; cia') !== -1 && d1.html.indexOf('<pago>') === -1);
+  R.eq('T6 el nombre de archivo: documento, cliente, lo condonado y la fecha', d1.fname, 'Constancia de condonación - Elena Vargas - $1.000.000 - 2026-07-31');
+  // En dolares: solo dolares, tambien en el nombre; todo el interes de una cuota de capital + intereses.
+  const c2 = condonarEnMemoria(CONDONAR_USD, null, '2026-07-31');
+  const d2 = S.htmlConstanciaCondonacion(c2.loan, c2.pays, c2.cond, { dark: true });
+  R.check('T7 en dolares: «Queda el capital» y el nombre en dolares', c2.cond.cuotas.length === 1 && d2.html.indexOf('Queda el capital') !== -1 &&
+    /^Constancia de condonación - .* - USD \$[\d,]+\.\d\d - 2026-07-31$/.test(d2.fname), d2.fname);
+  // Credito abierto: el devengo antes, lo condonado y lo que queda (antes - condonado).
+  const lpD = pays.filter(p => p.prestamoId === 'fixture-diario-01');
+  const pend = Math.round(S.estadoDiario(L('fixture-diario-01'), lpD, '2026-08-31').interesPendiente);
+  const c3 = condonarEnMemoria('fixture-diario-01', Math.floor(pend / 2), '2026-08-31');
+  const t3 = vis(S.htmlConstanciaCondonacion(c3.loan, c3.pays, c3.cond, { dark: false }).html);
+  R.check('T8 credito abierto: devengo ' + pend + ', se condona la mitad y queda el resto (el devengo descuenta lo condonado)',
+    pend > 0 && t3.indexOf('Interés devengado ' + pesos(pend)) !== -1 && t3.indexOf('Se condonó ' + pesos(Math.floor(pend / 2))) !== -1 &&
+    t3.indexOf('Queda por pagar ' + pesos(pend - Math.floor(pend / 2))) !== -1, t3.slice(t3.indexOf('Qué se condonó'), t3.indexOf('Qué se condonó') + 200));
+}
+
+{
   // 4.1.4 (bloque 4): en dolares, el TOTAL POR PAGAR del recibo de pago y de la propuesta es la suma de
   // sus filas ya convertidas. Hasta 4.1.3 se convertia la suma en pesos y el pie decia USD 1,600.01
   // bajo cuatro cuotas de USD 400.00. Se lee el papel tal como se imprime.
@@ -1858,17 +1944,17 @@ function loansDelCaso(caso) {
   const faltan = Object.keys(esperados).filter(k => !(k in vistos));
   R.check('P3 ANTI-VACIO: los casos de referencia existen', faltan.length === 0, faltan.join(', '));
   R.eq('P3 los nombres de referencia, literales', Object.keys(esperados).map(k => vistos[k]), Object.keys(esperados).map(k => esperados[k]));
-  // Cada generador por su rotulo (los 14), sobre los casos.
+  // Cada generador por su rotulo (los 15), sobre los casos.
   const rotuloDe = { generateCronogramaPDF: ['Cronograma'], generateReportePrestamosPDF: ['Reporte de préstamos activos'],
     generateRecibo: ['Recibo de pago'], generateFacturaCobro: ['Factura de cobro'], generateFacturaCobroDiario: ['Factura de cobro'],
     generateReciboAbono: ['Recibo de abono', 'Paz y salvo'], generateReciboCobro: ['Recibo de pago', 'Paz y salvo'],
     generateReciboCorte: ['Recibo de corte', 'Paz y salvo'], generateReciboGeneral: ['Recibo de cobro general'],
     generateEstadoLiquidacion: ['Estado de liquidación'], generateEstadoCuentaDiario: ['Estado de cuenta'],
     generatePropuestaAbono: ['Propuesta de abono'], generatePropuestaUnificacion: ['Propuesta de unificación'],
-    generateConstanciaUnificacion: ['Constancia de unificación'] };
+    generateConstanciaUnificacion: ['Constancia de unificación'], generateConstanciaCondonacion: ['Constancia de condonación'] };
   const gens = new Set(nombresPorCaso.map(n => n.gen));
   const malRot = nombresPorCaso.filter(n => !(rotuloDe[n.gen] || []).some(r => n.fname.indexOf(r + ' - ') === 0)).map(n => n.caso.nombre + ': ' + n.fname);
-  R.check('P4 cada generador nombra su documento (' + gens.size + ' generadores en los casos)', gens.size === 14 && malRot.length === 0,
+  R.check('P4 cada generador nombra su documento (' + gens.size + ' generadores en los casos)', gens.size === 15 && malRot.length === 0,
           'generadores: ' + gens.size + ' · ' + malRot.slice(0, 4).join(' | '));
   // P5 — el recibo de corte lleva su propio codigo (CT-), ya no el RC- del recibo del cobro.
   const cortes = nombresPorCaso.filter(n => n.gen === 'generateReciboCorte');

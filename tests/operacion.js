@@ -1587,8 +1587,22 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.check('Q7 en Cobros, la cuota condonada en parte lo dice bajo lo que falta', filaCb.length === 1 && filaCb[0].indexOf('se condonó ' + X.fmt(100000)) !== -1 &&
       filaCb[0].indexOf(X.fmt(200000)) !== -1, filaCb);
     R.check('Q8 la app le pasa el monto escrito al backend (el modal lo manda en su cuarto argumento)',
-      /function _doCondonar\(loanId,cuotas,obs,monto\)\{[\s\S]{0,400}if\(monto!=null\) body\.monto=monto;/.test(leer('public/js/app.js')) &&
+      /function _doCondonar\(loanId,cuotas,obs,monto,genPdf\)\{[\s\S]{0,800}if\(monto!=null\) body\.monto=monto;/.test(leer('public/js/app.js')) &&
       /onConfirm:_doCondonar/.test(leer('public/js/app.js')));
+    // La constancia en PDF: una casilla marcada por defecto; desmarcada, el modal manda `false` y la app no la emite.
+    const casilla = conClase(mo.arbol, 'cdm-gen')[0];
+    const chk = casilla && nodos(casilla, n => n.tag === 'input')[0];
+    R.check('Q9 la casilla «Generar constancia de condonación (PDF)» nace marcada y viaja en el quinto argumento',
+      !!chk && chk.props.checked === true && textos(casilla).join('') === 'Generar constancia de condonación (PDF)' && enviados[0][4] === true, enviados[0]);
+    const sinPdf = montar(X.CondonarModal, propsC, [undefined, undefined, undefined, '1.000.000', false]);
+    const btnSin = botones(sinPdf.arbol, /^Condonar \$/)[0];
+    if (btnSin) btnSin.props.onClick();
+    R.check('Q9 desmarcada, el modal manda false', enviados.length === 2 && enviados[1][4] === false, enviados[1]);
+    const app = leer('public/js/app.js');
+    R.check('Q10 la app la emite DESPUES de recargar, con lo aplicado (la respuesta del backend), solo si la casilla esta marcada',
+      /function _doCondonar\(loanId,cuotas,obs,monto,genPdf\)/.test(app) &&
+      /return reload\(\)\.then\(function\(fresh\)\{[\s\S]{0,1400}if\(fl&&genPdf!==false\) generateConstanciaCondonacion\(fl,fp,\{fecha:nowStr\(\),condonado:r\.condonado,cuotas:r\.cuotas/.test(app) &&
+      /pre:\{loan:loanPre,pays:paysPre\}/.test(app));
     R.check('Q7 y las saldadas por el perdon ya no estan por cobrar', !conClase(cb.arbol, 'cbv-fila').some(f => moraA.slice(0, 3).some(m => textos(f).join(' ').indexOf(X.opCorta(m.fechaPago)) !== -1 && textos(f).join(' ').indexOf('Elena') !== -1)));
   }
 

@@ -54,6 +54,8 @@ export function CondonarModal(props){
   var s2=useState(''); var obs=s2[0]; var setObs=s2[1];
   var s3=useState(false); var sending=s3[0]; var setSending=s3[1];
   var s4=useState(''); var montoTxt=s4[0]; var setMontoTxt=s4[1];   // '' = todo lo condonable
+  // La constancia en PDF (el soporte del acuerdo): marcada por defecto, como el recibo del cobro.
+  var s5=useState(true); var genPdf=s5[0]; var setGenPdf=s5[1];
 
   function toggle(id){ setSel(sel.indexOf(id)!==-1?sel.filter(function(x){ return x!==id; }):sel.concat([id])); }
 
@@ -91,7 +93,7 @@ export function CondonarModal(props){
     if(!puede) return;
     return _submitGuard(sending,setSending,function(){
       // En credito abierto no se manda seleccion: no hay cuotas que elegir.
-      return onConfirm(loan.id, diario?null:elegidas.map(function(p){ return p.id; }), obs, montoCOP);
+      return onConfirm(loan.id, diario?null:elegidas.map(function(p){ return p.id; }), obs, montoCOP, genPdf);
     });
   }
 
@@ -195,6 +197,11 @@ export function CondonarModal(props){
       'Queda en el Historial y se puede deshacer desde ahí. ',
       diario?'Después podrás cobrar el capital normalmente.'
             :'Cada cuota guarda cuánto se le condonó: las que quedan saldadas dicen «Condonada» en el cronograma. Después cobra el resto con «Registrar cobro».'),
+
+    // ── La constancia: el soporte de la condonacion para el cliente (se emite solo si el backend confirma) ──
+    intCondonar>0&&h('label',{className:'cdm-gen'},
+      h('input',{type:'checkbox',checked:genPdf,onChange:function(){ setGenPdf(!genPdf); }}),
+      'Generar constancia de condonación (PDF)'),
 
     h('div',{className:'cdm-acc'},
       h('button',{onClick:onClose,className:'v4m-pulsa cdm-cancelar'},'Cancelar'),

@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "caso": "condonacion-intereses-parte",
+  "generador": "generateConstanciaCondonacion",
+  "tema": "light",
+  "entradaHash": "b70d3da5457756e547cc13bd23a48e6c243e6c2a",
+  "estructura": {
+    "docTitle": "Constancia de condonación",
+    "h1": [],
+    "cabeceras": [
+      "Cuota",
+      "Venció",
+      "Interés",
+      "Se condonó",
+      "Queda debiendo",
+      "Estado"
+    ],
+    "etiquetas": [
+      "Qué se condonó · # cuotas completas y # en parte",
+      "Así queda tu crédito",
+      "Lo vencido",
+      "Debes hoy",
+      "Capital"
+    ]
+  },
+  "valores": {
+    "bytes": 10067,
+    "nFilas": 6,
+    "nCeldas": 36,
+    "celdasPorTr": [
+      6,
+      6,
+      6,
+      6,
+      6,
+      6
+    ],
+    "nMontos": 20,
+    "hashMontos": "67e484d3f03442214c22ec7aedfe90aef9e4f34b",
+    "hashFname": "5501ed69f34289aa0255863b6696de97c4f889d8",
+    "hashTexto": "93a26003ba9657f1529fad689f33cebf48048831",
+    "clases": [
+      "cd-aviso",
+      "cd-motivo",
+      "chip cond",
+      "chip parte",
+      "n",
+      "r-cab",
+      "r-doc",
+      "r-hero",
+      "r-hero-l",
+      "r-logo",
+      "r-marca",
+      "r-monto",
+      "r-pie",
+      "r-pie-d",
+      "r-quien",
+      "r-sec",
+      "r-sec cd-cuotas",
+      "r-sec-t",
+      "r-sello",
+      "r-t",
+      "r-tar",
+      "r-tar-l",
+      "r-tar-s",
+      "r-tar-v",
+      "r-tot",
+      "r-tres"
+    ]
+  }
+}
