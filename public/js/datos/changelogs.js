@@ -805,5 +805,14 @@ export const CHANGELOGS = {
     'Dólares y TRM de cada pago: en los préstamos en dólares, el flujo de caja muestra los dólares que entregó el cliente en cada pago y la TRM a la que entraron. Antes mostraba los pesos convertidos a la TRM pactada, que no eran los dólares recibidos.',
     'El efecto de la TRM, en el pago en que ocurrió: si una cuota en dólares se paga en varias partes, cada pago muestra su propia TRM y su efecto, en vez de cargarlo todo al último.',
     '«Total recibido» en dólares cuadra con el flujo de caja: suma los dólares registrados y avisa si algún pago no los tiene. Ya no se queda un centavo corto.'
+  ],
+  '4.1.6': [
+    'Cuotas con un abono, claras en el cronograma: debajo de la cuota ves lo que entró y lo que falta. En dólares, cada pago con sus dólares, los pesos que realmente entraron y su TRM, y una línea con el efecto de la TRM. En Cobros también ves cuánto abonó en dólares y cuántos pesos entraron.',
+    'Pagos en dólares en varias partes, bien repartidos: si una cuota tenía un abono registrado antes de la versión 4.1.5 y llega uno nuevo, cada pago conserva su propio efecto de la TRM y la ganancia ya no sube por la diferencia.',
+    'Condonar un monto exacto: escribes cuánto vas a perdonar y la app lo aplica de la cuota vencida más vieja a la más nueva. La última puede quedar condonada en parte y sigue vencida por lo que falta. Antes de confirmar ves cómo quedan lo vencido y lo que debe hoy.',
+    'Cuotas «Condonada»: las cuotas que el perdón dejó saldadas sin dinero se ven como «Condonada» en el cronograma, en Cobros y en los PDF, y las condonadas en parte dicen cuánto se perdonó.',
+    'Constancia de condonación en PDF: al condonar puedes generar el soporte del acuerdo (la casilla viene marcada): cuánto se condonó y en qué cuotas, cómo quedan lo vencido y lo que debe hoy, y que el capital no cambia. Aclara que no es un pago.',
+    'Recibos cuota por cuota: el recibo de cobro general y el recibo de pago listan cada cuota vencida con su fecha y su valor, sin agruparlas. Si no caben en una hoja, la tabla sigue en la siguiente.',
+    'Créditos de interés diario: la condonación ahora se sostiene y el interés perdonado no vuelve a aparecer.'
   ]
 };
