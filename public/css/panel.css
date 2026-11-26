@@ -73,6 +73,36 @@
 .v4p .dp-crono-f.prox { background: color-mix(in srgb, var(--warn) 7%, transparent); box-shadow: inset 2px 0 0 var(--warn); }
 .v4p .dp-crono-f.abono { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 2px 0 0 var(--accent); color: var(--info-text); }
 .v4p .dp-crono-f.foco { box-shadow: inset 0 0 0 1.5px var(--accent); }
+/* La cuota con pago parcial: una franja bajo su fila (post-4.1.5, aprobada por el PO sobre un prototipo) */
+.v4p .dp-crono-f.con-parc { border-bottom: 0; }
+.v4p .dp-crono-parc { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 6px; padding: 0 10px 11px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.v4p .dp-crono-f.mora.con-parc + .dp-crono-parc { background: color-mix(in srgb, var(--crit) 7%, transparent); box-shadow: inset 2px 0 0 var(--crit); }
+.v4p .dp-parc-cuerpo { border: 1px solid var(--blue-bd); border-radius: 10px; background: var(--surface); padding: 9px 12px 10px; }
+.v4p .dp-parc-t { font-size: 11.5px; color: var(--ink-3); }
+.v4p .dp-parc-t b { color: var(--info-text); font-weight: 600; }
+.v4p .dp-parc-cifras { display: flex; align-items: flex-end; gap: 22px; margin-top: 6px; flex-wrap: wrap; }
+.v4p .dp-parc-b { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.v4p .dp-parc-l { font-size: 10.5px; font-weight: 500; color: var(--ink-3); }
+.v4p .dp-parc-v { font-family: var(--font-mono, 'Cascadia Code', Consolas, monospace); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: var(--ink); }
+.v4p .dp-parc-b.falta .dp-parc-v { color: var(--info-text); font-weight: 700; }
+.v4p .dp-parc-c { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--ink-3); }
+.v4p .dp-parc-barra { flex: 1 1 140px; min-width: 120px; padding-bottom: 3px; }
+.v4p .dp-parc-barra .op-bar { height: 5px; }
+.v4p .dp-parc-pct { font-size: 10.5px; color: var(--ink-3); margin-top: 3px; text-align: right; }
+.v4p .dp-parc-pagos { margin-top: 9px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.v4p .dp-parc-pf { display: grid; grid-template-columns: minmax(90px, 1.2fr) minmax(70px, 1fr); gap: 8px; padding: 5px 10px; border-top: 1px solid var(--line); color: var(--ink-2); }
+.v4p .dp-parc-pagos.usd .dp-parc-pf { grid-template-columns: minmax(90px, 1.2fr) repeat(4, minmax(70px, 1fr)); }
+.v4p .dp-parc-pf:first-child { border-top: 0; }
+.v4p .dp-parc-pf.cab { font-size: 10.5px; color: var(--ink-3); background: var(--surface-2); }
+.v4p .dp-parc-pf.tot { color: var(--ink); font-weight: 600; background: var(--surface-2); }
+.v4p .dp-parc-pf .r { text-align: right; }
+.v4p .dp-parc-pf .neg, .v4p .dp-parc-efecto b.neg { color: var(--crit-text); }
+.v4p .dp-parc-pf .pos, .v4p .dp-parc-efecto b.pos { color: var(--good-text); }
+.v4p .dp-parc-efecto { font-size: 11px; color: var(--ink-2); margin-top: 8px; line-height: 1.45; }
+.v4p .dp-parc-efecto b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.v4p .dp-parc-nota { font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+.v4p .dp-parc-efecto + .dp-parc-nota { margin-top: 2px; }
 .v4p .dp-card { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
 .v4p .dp-card-t { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-2); }
 .v4p .dp-hero-mini, .v4p .dp-fila + .dp-fila, .v4p .dp-gb { border-color: var(--line); }

@@ -91,6 +91,13 @@ export function CobrosView(props){
   var visibles = filas.filter(function(f){ return tramo === 'todo' || f.tramo === tramo; });
 
   function elegir(f){ setSel({ nombre: f.l.nombre, loanId: f.l.id, payId: f.p.id }); }
+  // "ya abonó" de una cuota con pago parcial (post-4.1.5, regla del PO): en dolares, los dolares que entrego el
+  // cliente y los pesos que REALMENTE entraron; nunca la deuda valorada a la TRM pactada. En pesos, lo abonado.
+  function cbvYaAbono(p, l){
+    if (!(l.moneda === 'USD' && l.trmAcordada > 0)) return 'ya abonó ' + fmt(p.partialPaid);
+    var usd = Math.round((+p.montoUSDRecibido || 0) * 100) / 100;
+    return 'ya abonó ' + (usd > 0 ? fmtUSD(usd).replace('USD $', 'US$ ') + ' · ' : '') + 'entraron ' + fmt(imputarCobros(p).totales.cobrado);
+  }
   function avatar(nombre, tono){ return h('span', { className: 'cbv-av' + (tono ? ' ' + tono : '') }, opIniciales(nombre)); }
   function fila(f, enGrupo, i){
     var p = f.p, l = f.l, on = sel && sel.payId === p.id, parcial = (p.partialPaid || 0) > 0;
@@ -112,7 +119,7 @@ export function CobrosView(props){
       h('div', { className: 'cbv-monto' },
         h('div', { className: 'v' + (f.tramo === 'vencido' ? ' crit' : '') }, fmt(f.pend)),
         cbvUsd(l, f.pend),
-        parcial && h('div', { className: 'cbv-sub info' }, 'ya abonó ' + fmt(p.partialPaid))),
+        parcial && h('div', { className: 'cbv-sub info' }, cbvYaAbono(p, l))),
       h('div', { className: 'cbv-acc', onClick: function(e){ e.stopPropagation(); } },
         h('button', { className: 'cbv-icono', title: 'Factura de cobro (PDF) para enviarle', onClick: function(){ generateFacturaCobro(p, l, pays, props.datosPago); } }, h(Ico, { name: 'receipt', size: 15, sw: 2 })),
         h('button', { className: 'v4-btn ghost sm cbv-pago', title: 'Registrar el pago de esta cuota', onClick: function(){ props.onPay(p); } }, h(Ico, { name: 'check', size: 14, sw: 2.6 }), 'Pagó')));

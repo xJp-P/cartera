@@ -16,7 +16,7 @@ import { Ico } from './iconos.js';
 import { FlujoCajaPanel } from './FlujoCajaPanel.js';
 import { GananciaBimonetaria, notaCOPGanancia } from './GananciaBimonetaria.js';
 import { CronogramaPdfModal } from '../modales/CronogramaPdfModal.js';
-import { preguntaInteresMes, esDiario, pendCuota } from '../core/dominio.js';
+import { preguntaInteresMes, esDiario, pendCuota, pendienteDeCuota, faltaUSD, imputarCobros, dolaresPorPago } from '../core/dominio.js';
 import { copToUsd, fmt, fmtN, fmtUSD } from '../core/format.js';
 import { esAbono } from '../core/ids.js';
 import { modeloDeudor, opModalidad, opIniciales, opCorta, opCortaAnio, opRel, opPlazo, opFrecuencia, opPuedeCambiarDia } from '../core/operacion.js';
@@ -26,7 +26,7 @@ import { generateCronogramaPDF } from '../pdf/cronograma.js';
 import { generateEstadoCuentaDiario } from '../pdf/estado-cuenta.js';
 import { generateFacturaCobroDiario } from '../pdf/factura-cobro.js';
 import { puedeReciboGeneral } from '../pdf/recibo-general.js';
-import { usdLinea } from './CifraUSD.js';
+import { usdLinea, usdPiezas } from './CifraUSD.js';
 
 var DP_EST = {
   mora: ['En mora', 'red'], hoy: ['Cobra hoy', 'yellow'], semana: ['Cobra esta semana', 'yellow'], aldia: ['Al día', 'green'],
@@ -54,6 +54,89 @@ function dpTotalUSD(m){
     m.recSinUSD > 0 && h('div', { key: 's', className: 'dp-sub' }, 'no incluye ' + m.recSinUSD + ' pago' + (m.recSinUSD === 1 ? '' : 's') + ' sin dólares registrados')];
 }
 
+// ── La cuota con pago parcial: una franja bajo su fila (post-4.1.5, aprobada por el PO sobre un prototipo) ──
+// Reglas del PO:
+//   - "Abonó" = lo que REALMENTE entró: los dólares que entregó el cliente y los PESOS DE CAJA (el registro de
+//     pagos), con la TRM a la que entraron. Nunca la deuda valorada a la TRM pactada.
+//   - "Falta" = deuda: en dólares `faltaUSD` (la cifra del formulario de pago y la factura) y en pesos "a la TRM
+//     pactada", con esa etiqueta: los pesos reales dependen de la TRM del día en que pague.
+//   - Como los pesos ya no suman la cuota, la línea del EFECTO TRM nombra la diferencia. Es el `ajuste` de
+//     `imputarCobros`: la misma cifra que el flujo de caja muestra para cada pago.
+//   - Con varios pagos, un renglón por pago (dólares, pesos, TRM y efecto de cada uno) y el efecto NETO.
+//   - En pesos no hay TRM: lo que entró es lo que se abonó, sin línea de efecto.
+// La celda "Valor cuota" queda con la cuota y sus dólares juntos: antes "abonó · falta" iba en medio y los
+// dólares de la cuota ENTERA se leían como lo que faltaba.
+function dpParcial(m, x){
+  var esUSD = m.esUSD && m.trm > 0;
+  var imp = imputarCobros(x);
+  var dp = esUSD ? dolaresPorPago(x) : [];
+  var usd = Math.round((+x.montoUSDRecibido || 0) * 100) / 100;
+  var caja = imp.totales.cobrado;
+  var eventos = imp.eventos.map(function(e, k){
+    var u = dp[k] || {};
+    return { fecha: e.fecha, cop: e.cop, ajuste: Math.round(e.ajuste), usd: u.usd != null ? u.usd : null, trm: u.trm || null,
+      nPagos: u.nPagos || 1, enOtroPago: !!u.enOtroPago };
+  });
+  return { esUSD: esUSD, caja: caja, usd: usd > 0 ? usd : null, trmIngreso: usd > 0 && caja > 0 ? caja / usd : null,
+    eventos: eventos, varios: eventos.length > 1, efecto: esUSD ? Math.round(imp.totales.ajuste) : 0,
+    faltaCOP: pendCuota(x), faltaUSD: esUSD ? faltaUSD(x, m.trm) : 0, pend: pendienteDeCuota(x),
+    pct: x.cuotaTotal > 0 ? Math.min(100, Math.round((x.partialPaid || 0) / x.cuotaTotal * 100)) : 0 };
+}
+function dpTRM(n){ return new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
+function dpSigno(v){ return (v < 0 ? '−' : '+') + fmt(Math.abs(v)); }
+function dpParcialFranja(d, x){
+  var evs = d.eventos;
+  var cuando = evs.length === 1 ? 'el ' + opCortaAnio(evs[0].fecha)
+    : evs.length > 1 ? 'en ' + evs.length + ' pagos, el último el ' + opCortaAnio(evs[evs.length - 1].fecha) : '';
+  var abono = d.esUSD
+    ? [h('span', { key: 'u', className: 'dp-parc-v' }, d.usd != null ? usdPiezas(fmtUSD(d.usd)) : '—'),
+       h('span', { key: 'c', className: 'dp-parc-c' }, d.caja > 0
+         ? 'entraron ' + fmt(d.caja) + (d.trmIngreso ? ' · TRM ' + (d.varios ? 'promedio ' : '') + dpTRM(d.trmIngreso) : '')
+         : 'pesos no registrados')]
+    : h('span', { className: 'dp-parc-v' }, fmt(d.caja));
+  var falta = d.esUSD
+    ? [h('span', { key: 'u', className: 'dp-parc-v' }, usdPiezas(fmtUSD(d.faltaUSD))),
+       h('span', { key: 'c', className: 'dp-parc-c' }, fmt(d.faltaCOP) + ' a la TRM pactada')]
+    : h('span', { className: 'dp-parc-v' }, fmt(d.faltaCOP));
+  var nota = d.pend.interes <= 0 ? 'Ya cubrió el interés de la cuota: lo que falta es capital.'
+    : d.pend.capital <= 0 ? 'Lo que falta es interés.'
+    : 'Falta ' + fmt(d.pend.interes) + ' de interés y ' + fmt(d.pend.capital) + ' de capital.';
+  // El efecto se calla por debajo de $5: es el residuo de redondeo de las filas viejas (Bug #43), como en el flujo.
+  var efecto = d.esUSD && Math.abs(d.efecto) > 5 && h('div', { className: 'dp-parc-efecto' },
+    h('b', { className: d.efecto < 0 ? 'neg' : 'pos' }, 'Efecto TRM ' + (d.varios ? 'neto ' : '') + dpSigno(d.efecto)),
+    ': el cliente pagó los dólares completos de ' + (d.varios ? 'estos abonos' : 'este abono') + '; la diferencia es cambiaria, no deuda.');
+  var celdaEf = function(v){ return h('span', { className: 'r ' + (v < 0 ? 'neg' : v > 0 ? 'pos' : '') }, Math.abs(v) > 5 ? dpSigno(v) : '—'); };
+  var detalle = d.varios && h('div', { className: 'dp-parc-pagos' + (d.esUSD ? ' usd' : '') },
+    h('div', { className: 'dp-parc-pf cab' }, h('span', null, 'Pago'),
+      d.esUSD && h('span', { className: 'r' }, 'Dólares'), h('span', { className: 'r' }, 'Entraron'),
+      d.esUSD && h('span', { className: 'r' }, 'TRM del ingreso'), d.esUSD && h('span', { className: 'r' }, 'Efecto TRM')),
+    evs.map(function(e, k){
+      return h('div', { key: k, className: 'dp-parc-pf' }, h('span', null, opCortaAnio(e.fecha)),
+        d.esUSD && h('span', { className: 'r' }, e.usd != null ? usdPiezas(fmtUSD(e.usd)) : (e.enOtroPago ? 'en el último' : '—')),
+        h('span', { className: 'r' }, fmt(e.cop)),
+        d.esUSD && h('span', { className: 'r' }, e.trm ? dpTRM(e.trm) + (e.nPagos > 1 ? ' prom.' : '') : '—'),
+        d.esUSD && celdaEf(e.ajuste));
+    }),
+    h('div', { className: 'dp-parc-pf tot' }, h('span', null, 'Total'),
+      d.esUSD && h('span', { className: 'r' }, d.usd != null ? usdPiezas(fmtUSD(d.usd)) : '—'),
+      h('span', { className: 'r' }, fmt(d.caja)),
+      d.esUSD && h('span', { className: 'r' }, d.trmIngreso ? dpTRM(d.trmIngreso) + ' prom.' : '—'),
+      d.esUSD && celdaEf(d.efecto)));
+  return h('div', { key: x.id + '-parc', className: 'dp-crono-parc' },
+    h('span', null),
+    h('div', { className: 'dp-parc-cuerpo' },
+      h('div', { className: 'dp-parc-t' }, h('b', null, 'Pago parcial'), ' ', cuando),
+      h('div', { className: 'dp-parc-cifras' },
+        h('div', { className: 'dp-parc-b' }, h('div', { className: 'dp-parc-l' }, 'Abonó'), abono),
+        h('div', { className: 'dp-parc-b falta' }, h('div', { className: 'dp-parc-l' }, 'Falta'), falta),
+        h('div', { className: 'dp-parc-barra' },
+          h('div', { className: 'op-bar' }, h('div', { style: { width: d.pct + '%', background: 'var(--blue)' } })),
+          h('div', { className: 'dp-parc-pct' }, d.pct + '% de la cuota'))),
+      detalle,
+      efecto,
+      h('div', { className: 'dp-parc-nota' }, nota)));
+}
+
 // ── Cronograma: las 7 columnas universales, abonos intercalados ────────────────────
 function DpCronograma(p){
   var m = p.m, l = m.loan, hoy = p.hoy, foco = p.focoPay;
@@ -77,7 +160,8 @@ function DpCronograma(p){
       var capRec = Math.max(0, x.cuotaTotal - x.interesPeriodo);
       var capUSD = m.esUSD && m.trm > 0 ? Math.max(0, (Math.round(x.cuotaTotal / m.trm * 100) - Math.round(x.interesPeriodo / m.trm * 100)) / 100) : 0;
       var chip = est === 'Pagado' ? ['Pagada', 'green'] : est === 'En Mora' ? ['Mora', 'red'] : parcial ? ['Parcial', 'blue'] : x.id === proxId ? ['Próxima', 'yellow'] : ['Pendiente', 'text3'];
-      return h('div', { key: x.id, className: cls },
+      var franja = parcial ? dpParcialFranja(dpParcial(m, x), x) : null;
+      var fila = h('div', { key: x.id, className: cls + (franja ? ' con-parc' : '') },
         h('span', { className: 'muted' }, x.cuotaN),
         h('span', null, opCortaAnio(x.fechaPago),
           est === 'En Mora' && h('div', { className: 'dp-sub', style: { color: 'var(--red)' } }, 'vencida ' + opRel(hoy, x.fechaPago)),
@@ -85,14 +169,13 @@ function DpCronograma(p){
           est === 'Pagado' && x.fechaRecaudo && x.fechaRecaudo !== x.fechaPago && h('div', { className: 'dp-sub' }, 'cobrada ' + opCorta(x.fechaRecaudo))),
         h('span', { className: 'r mono' }, fmt(x.interesPeriodo), m.esUSD && x.interesPeriodo > 0 ? dpUsd(m, x.interesPeriodo) : null),
         h('span', { className: 'r mono' }, fmt(capRec), m.esUSD && capRec > 0 ? usdLinea(fmtUSD(capUSD)) : null),
-        h('span', { className: 'r mono strong' }, fmt(x.cuotaTotal),
-          parcial && h('div', { className: 'dp-sub', style: { color: 'var(--blue)' } }, 'abonó ' + fmt(x.partialPaid) + ' · falta ' + fmt(pendCuota(x))),
-          dpUsd(m, x.cuotaTotal)),
+        h('span', { className: 'r mono strong' }, fmt(x.cuotaTotal), dpUsd(m, x.cuotaTotal)),
         h('span', { className: 'r mono' }, fmt(x.saldoFinal), dpUsd(m, x.saldoFinal)),
         h('span', { className: 'c' },
           est !== 'Pagado' && p.onPay
             ? h('button', { className: 'op-chip btn', title: 'Registrar el pago de esta cuota', style: { color: 'var(--' + chip[1] + ')', background: chip[1] === 'text3' ? 'var(--bg3)' : 'var(--' + chip[1] + '-bg)' }, onClick: function(){ p.onPay(x); } }, chip[0])
             : h('span', { className: 'op-chip', style: { color: 'var(--' + chip[1] + ')', background: chip[1] === 'text3' ? 'var(--bg3)' : 'var(--' + chip[1] + '-bg)' } }, chip[0])));
+      return franja ? [fila, franja] : fila;
     }));
 }
 

@@ -1496,6 +1496,56 @@ function main() {
       iv.eventos[0].interes === 735000 && iv.eventos[0].ajuste === -75000 && iv.sinLedger === 0, iv);
   }
 
+
+  // ══════════════════════════════════════════════════════════════════════════
+  R.seccion('11. Registro MIXTO: un pago viejo sin `obl` junto a uno nuevo con `obl` (post-4.1.5)');
+  // ══════════════════════════════════════════════════════════════════════════
+  // La cuota #4 del prestamo de USD 1.600 (cifras reales): un primer parcial registrado ANTES de 4.1.5 (sin
+  // dolares ni deuda por pago) y un segundo, nuevo, de USD 10 que entraron como $ 40.000 (TRM 4.000). Hasta este
+  // arreglo el efecto del viejo caia en el nuevo: flujo "—" y -21.119 en vez de -24.309 y +3.190, y la ganancia
+  // en pesos de la cuota subia 3.190 (una ganancia cambiaria no suma).
+  {
+    const base = { id: 'mx-4', prestamoId: 'mx', cuotaN: 4, fechaPago: '2026-09-19', interesPeriodo: 42681, abonoCapital: 538157,
+      cuotaTotal: 580838, estadoPago: 'En Mora', fechaRecaudo: null };
+    const viejo = { fecha: '2026-09-04', cop: 123446 };
+    const nuevo = { fecha: '2026-11-20', cop: 40000, usd: 10, obl: 36810 };
+    const mixto = Object.assign({}, base, { montoCOPRecibido: 163446, montoUSDRecibido: 50.14, partialPaid: 147755 + 36810,
+      recibos: JSON.stringify([viejo, nuevo]) });
+    const im = H.imputarCobros(mixto);
+    R.eq('11.1 cada pago con su efecto TRM: -24.309 el viejo, +3.190 el nuevo',
+      JSON.stringify(im.eventos.map(function (e) { return [e.interes, e.capital, e.ajuste]; })),
+      JSON.stringify([[42681, 105074, -24309], [0, 36810, 3190]]));
+    R.check('11.1 y los totales de la cuota: interes 42.681, capital 141.884, efecto neto -21.119, sin dinero sin registrar',
+      im.totales.interes === 42681 && im.totales.capital === 141884 && im.totales.ajuste === -21119 && im.totales.cobrado === 163446 && im.sinLedger === 0, im.totales);
+    R.eq('11.2 la ganancia en pesos de la cuota: el interes menos la perdida del pago viejo (la ganancia del nuevo no suma)',
+      H.gananciaDe(mixto, true).total, 42681 - 24309);
+    const dp = H.dolaresPorPago(mixto);
+    R.check('11.3 los dolares de cada pago: los del viejo salen del total de la fila (USD 40.14 a 3.075,39)',
+      dp[0].usd === 40.14 && Math.abs(dp[0].trm - 123446 / 40.14) < 1e-9 && dp[1].usd === 10 && dp[1].trm === 4000, dp);
+    // Cierre: el cliente paga lo que falta. Cada pago conserva su efecto.
+    const cierre = Object.assign({}, base, { estadoPago: 'Pagado', fechaRecaudo: '2026-12-01', montoCOPRecibido: 163446 + 387540,
+      montoUSDRecibido: 157.79, partialPaid: 580838,
+      recibos: JSON.stringify([viejo, nuevo, { fecha: '2026-12-01', cop: 387540, usd: 107.65, obl: 580838 - 184565 }]) });
+    R.eq('11.4 al cerrar la cuota cada pago conserva su efecto (-24.309, +3.190, -8.733)',
+      JSON.stringify(H.imputarCobros(cierre).eventos.map(function (e) { return e.ajuste; })), JSON.stringify([-24309, 3190, -8733]));
+    // Sin mezcla no cambia nada: solo pagos viejos (la regla de siempre: el remanente al ultimo) y solo nuevos.
+    const soloViejos = Object.assign({}, base, { montoCOPRecibido: 163446, montoUSDRecibido: 50.14, partialPaid: 184565,
+      recibos: JSON.stringify([viejo, { fecha: '2026-11-20', cop: 40000 }]) });
+    R.eq('11.5 solo pagos viejos: la regla de siempre (todo el efecto en el ultimo)',
+      JSON.stringify(H.imputarCobros(soloViejos).eventos.map(function (e) { return e.ajuste; })), JSON.stringify([0, -21119]));
+    const soloNuevos = Object.assign({}, base, { montoCOPRecibido: 163446, montoUSDRecibido: 50.14, partialPaid: 184565,
+      recibos: JSON.stringify([{ fecha: '2026-09-04', cop: 123446, usd: 40.14, obl: 147755 }, nuevo]) });
+    R.eq('11.5 solo pagos nuevos: cada uno con su deuda (igual que antes de este arreglo)',
+      JSON.stringify(H.imputarCobros(soloNuevos).eventos.map(function (e) { return e.ajuste; })), JSON.stringify([-24309, 3190]));
+    // Dos pagos viejos y uno nuevo: la deuda que falta de los viejos va al ULTIMO viejo; el primero cubre sus pesos.
+    const dosViejos = Object.assign({}, base, { montoCOPRecibido: 100000 + 23446 + 40000, montoUSDRecibido: 50.14, partialPaid: 184565,
+      recibos: JSON.stringify([{ fecha: '2026-09-01', cop: 100000 }, { fecha: '2026-09-04', cop: 23446 }, nuevo]) });
+    const iv = H.imputarCobros(dosViejos);
+    R.check('11.6 dos pagos viejos y uno nuevo: el primero cubre sus pesos, el segundo carga el efecto de los viejos, el nuevo el suyo',
+      iv.eventos[0].ajuste === 0 && iv.eventos[1].ajuste === -24309 && iv.eventos[2].ajuste === 3190 &&
+      iv.eventos.every(function (e) { return e.interes + e.capital + e.ajuste === e.cop; }), iv.eventos);
+  }
+
   db.close();
   return R.finalizar();
 }

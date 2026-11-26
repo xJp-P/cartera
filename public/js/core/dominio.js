@@ -115,9 +115,23 @@ export function imputarCobros(pay){
   // post-4.1.4), la deuda que ESE pago extinguio a la TRM pactada. Asi el efecto cambiario de cada pago
   // queda en su propia fila (ajuste = pesos - base) en vez de cargarse entero al ultimo. Los totales de
   // la cuota no cambian: la suma de las bases es la misma obligacion que se anclaba al final.
-  var out=evs.map(function(e){
+  // Registro MIXTO (post-4.1.5): pagos viejos SIN `obl` (anteriores a que se guardara) junto a pagos que lo
+  // traen. La deuda de los viejos es la obligacion total menos la de los que la traen, y va al ULTIMO pago
+  // viejo (los demas cubren sus pesos), igual que la regla de siempre anclaba el remanente. Sin esto el
+  // efecto del pago viejo caia en el pago nuevo: su perdida se escondia y la ganancia de la cuota salia
+  // inflada por la ganancia cambiaria del nuevo, que no debe sumar. Sin ningun `obl`, o con todos, no
+  // cambia nada.
+  var oblTot0=saldada?(intTotal+capTotal):Math.round(pay.partialPaid||0);
+  var conObl=evs.map(function(e){return (+e.obl)>0;});
+  var bases=evs.map(function(e,k){return conObl[k]?Math.round(+e.obl):Math.round(e.cop||0);});
+  if(conObl.some(Boolean)&&conObl.some(function(x){return !x;})){
+    var ultViejo=conObl.lastIndexOf(false);
+    var otros=bases.reduce(function(s,b,k){return k===ultViejo?s:s+b;},0);
+    bases[ultViejo]=Math.max(0,oblTot0-otros);
+  }
+  var out=evs.map(function(e,k){
     var cop=Math.round(e.cop||0);
-    var base=(+e.obl)>0?Math.round(+e.obl):cop;
+    var base=bases[k];
     var ai=Math.min(base,intPend);         intPend-=ai;
     var ac=Math.min(base-ai,capPend);      capPend-=ac;
     cobrado+=cop; aplicado+=base;

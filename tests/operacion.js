@@ -1495,5 +1495,54 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     }
   }
 
+  R.seccion('P — la cuota con pago parcial: una franja bajo su fila, con los pesos reales (post-4.1.5)');
+  {
+    // El prestamo de USD 1.600 del fixture, con su cuota 2 a medio pagar en memoria: un pago VIEJO (sin dolares
+    // ni deuda por pago, como antes de 4.1.5) de USD 100 que entraron como $ 307.539, y uno NUEVO de USD 10 que
+    // entraron como $ 40.000 (TRM 4.000).
+    const lU = loans.filter(l => l.moneda === 'USD' && Math.round(l.montoOrigen) === 1600 && l.estado === 'Activo')[0];
+    const c2 = lU && pays.filter(p => p.prestamoId === lU.id && p.cuotaN === 2)[0];
+    R.check('P0 ANTI-VACIO: el prestamo de USD 1.600 y su cuota 2 sin pagar', !!c2 && c2.estadoPago !== 'Pagado', c2 && c2.estadoPago);
+    if (c2) {
+      const trm = lU.trmAcordada, obl1 = Math.round(100 * trm), obl2 = Math.round(10 * trm);
+      const c2p = Object.assign({}, c2, { partialPaid: obl1 + obl2, montoCOPRecibido: 307539 + 40000, montoUSDRecibido: 110,
+        recibos: JSON.stringify([{ fecha: '2026-07-20', cop: 307539 }, { fecha: '2026-07-28', cop: 40000, usd: 10, obl: obl2 }]) });
+      const paysU = pays.map(p => p.id === c2.id ? c2p : p);
+      const dpU = montar(X.DeudorPanel, Object.assign(propsPanel(lU), { pays: paysU }), []);
+      const filas = conClase(dpU.arbol, 'dp-crono-f');
+      const fila2 = filas.filter(f => /\bcon-parc\b/.test(f.props.className))[0];
+      const franja = conClase(dpU.arbol, 'dp-crono-parc')[0];
+      const tf = franja ? textos(franja).join('') : '';
+      R.check('P1 la cuota con pago parcial lleva su franja, y la celda "Valor cuota" ya no dice "abonó · falta"',
+        !!fila2 && !!franja && textos(fila2).join(' ').indexOf('abonó') === -1, fila2 && textos(fila2));
+      const efectoNeto = (307539 + 40000) - (obl1 + obl2);
+      R.check('P2 "Abonó": los dolares entregados y los PESOS QUE ENTRARON, con la TRM promedio',
+        tf.indexOf('110.00') !== -1 && tf.indexOf('entraron ' + X.fmt(347539) + ' · TRM promedio ' + X.dpTRM(347539 / 110)) !== -1, tf);
+      R.check('P2 "Falta": los dolares que faltan y los pesos "a la TRM pactada"',
+        tf.indexOf(String(X.faltaUSD(c2p, trm).toFixed(2))) !== -1 && tf.indexOf(X.fmt(X.pendCuota(c2p)) + ' a la TRM pactada') !== -1, tf);
+      R.check('P3 un renglon por pago con SU efecto TRM (el viejo, por diferencia) y el neto',
+        tf.indexOf('−' + X.fmt(obl1 - 307539)) !== -1 && tf.indexOf('+' + X.fmt(40000 - obl2)) !== -1 &&
+        tf.indexOf('Efecto TRM neto −' + X.fmt(-efectoNeto)) !== -1 && conClase(franja, 'dp-parc-pf').length === 4, tf);
+      // Cobros: la misma regla en la fila de la cuota.
+      const cbU = montar(X.CobrosView, Object.assign({}, propsCobros, { pays: paysU }), []);
+      const filaCb = conClase(cbU.arbol, 'cbv-fila').map(f => textos(f).join(' ')).filter(t => /ya abonó/.test(t))[0] || '';
+      R.check('P4 en Cobros: "ya abonó US$ 110.00 · entraron $ 347.539" (no la deuda a la TRM pactada)',
+        filaCb.indexOf('ya abonó US$ 110.00 · entraron ' + X.fmt(347539)) !== -1, filaCb);
+    }
+    // En pesos: lo que entro es lo que se abono; sin TRM ni efecto.
+    const lC = loans.filter(l => l.moneda !== 'USD' && l.estado === 'Activo' && l.modalidad === 'Capital + Intereses')[0];
+    const cC = lC && pays.filter(p => p.prestamoId === lC.id && p.estadoPago !== 'Pagado' && !X.esAbono(p)).sort((a, b) => a.fechaPago.localeCompare(b.fechaPago))[0];
+    if (cC) {
+      const cCp = Object.assign({}, cC, { partialPaid: 71000, montoCOPRecibido: 71000, recibos: JSON.stringify([{ fecha: '2026-07-20', cop: 71000 }]) });
+      const dpC = montar(X.DeudorPanel, Object.assign(propsPanel(lC), { pays: pays.map(p => p.id === cC.id ? cCp : p) }), []);
+      const frC = conClase(dpC.arbol, 'dp-crono-parc')[0];
+      const tC = frC ? textos(frC).join('') : '';
+      R.check('P5 en pesos: "Abonó $ 71.000" y lo que falta, sin TRM ni efecto TRM',
+        !!frC && tC.indexOf(X.fmt(71000)) !== -1 && tC.indexOf(X.fmt(X.pendCuota(cCp))) !== -1 && !/TRM/.test(tC), tC);
+    } else R.check('P5 ANTI-VACIO: un prestamo en pesos con una cuota sin pagar', false);
+    const panelCssP = leer('public/css/panel.css');
+    R.check('P6 los estilos de la franja viven en panel.css', ['.v4p .dp-crono-parc {', '.v4p .dp-parc-pagos {', '.v4p .dp-parc-efecto {'].every(x => panelCssP.indexOf(x) !== -1));
+  }
+
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

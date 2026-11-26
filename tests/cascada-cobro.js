@@ -1752,6 +1752,47 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
     srvM.close();
   }
 
+
+  {
+    // ════════════════════════════════════════════════════════════════════════
+    R.seccion('N — registro mixto: un pago viejo (sin dolares por pago) y uno nuevo en la misma cuota (post-4.1.5)');
+    // ════════════════════════════════════════════════════════════════════════
+    // Contra el servidor REAL. Un primer parcial se deja como lo guardaban las versiones anteriores a 4.1.5 (solo
+    // fecha y pesos) y luego entra un segundo parcial nuevo, con dolares y deuda. Cada pago tiene que quedar con
+    // SU efecto TRM: pesos que entraron menos la deuda que extinguio (dolares x TRM pactada).
+    const { imputarCobros, dolaresPorPago } = cargarCascada();
+    const js = x => Math.floor(x + 0.5);
+    const DB_N = copiaDeProduccion('cascada-registro-mixto');
+    const appN = require(path.join(REPO, 'backend', 'server.js'))(DB_N);
+    const srvN = http.createServer(appN);
+    const PORT_N = 3979;
+    await new Promise(ok => srvN.listen(PORT_N, '127.0.0.1', ok));
+    const trm = 3681;
+    const rL = await pedir('POST', '/api/loans', { nombre: 'ZZ Registro Mixto', moneda: 'USD', montoOrigen: 1600, trmAcordada: trm,
+      tasaMensual: 7.931, plazoMeses: 4, modalidad: 'Capital + Intereses', fechaInicio: hoy, frecuencia: 'Mensual', estado: 'Activo' }, PORT_N);
+    const id = rL.json.id + '-1';
+    const u1 = 40.14, cop1 = 123446, u2 = 10, cop2 = 40000;
+    await pedir('POST', '/api/payments/' + id + '/partial', { monto: cop1, fecha: '2026-07-20', observaciones: '', montoUSD: u1 }, PORT_N);
+    // El primer pago, como lo dejaba una version anterior: sin `usd` ni `obl` en su evento.
+    { const d = new Database(DB_N); const f = d.prepare('SELECT recibos FROM payments WHERE id = ?').get(id);
+      const led = JSON.parse(f.recibos).map(e => ({ fecha: e.fecha, cop: e.cop }));
+      d.prepare('UPDATE payments SET recibos = ? WHERE id = ?').run(JSON.stringify(led), id); d.close(); }
+    await pedir('POST', '/api/payments/' + id + '/partial', { monto: cop2, fecha: '2026-07-28', observaciones: '', montoUSD: u2 }, PORT_N);
+    const fila = (() => { const d = new Database(DB_N, { readonly: true }); try { return d.prepare('SELECT * FROM payments WHERE id = ?').get(id); } finally { d.close(); } })();
+    const led = JSON.parse(fila.recibos);
+    R.check('N1 ANTI-VACIO: el registro quedo mixto (el primer pago sin deuda por pago, el segundo con ella)',
+      led.length === 2 && !('obl' in led[0]) && led[1].obl === js(u2 * trm) && led[1].usd === u2, led);
+    const im = imputarCobros(fila);
+    R.check('N2 cada pago con su efecto TRM: pesos que entraron menos dolares x TRM pactada',
+      im.eventos.length === 2 && im.eventos[0].ajuste === cop1 - js(u1 * trm) && im.eventos[1].ajuste === cop2 - js(u2 * trm), im.eventos);
+    R.check('N2 ANTI-VACIO: un efecto negativo (TRM baja) y uno positivo (TRM alta)', im.eventos[0].ajuste < 0 && im.eventos[1].ajuste > 0, im.eventos);
+    R.eq('N3 el efecto neto es pesos que entraron menos la deuda pagada', im.totales.ajuste, (cop1 + cop2) - fila.partialPaid);
+    const dp = dolaresPorPago(fila);
+    R.check('N4 los dolares de cada pago: el viejo, por diferencia con el total de la fila',
+      dp[0].usd === u1 && dp[1].usd === u2 && Math.round(fila.montoUSDRecibido * 100) / 100 === u1 + u2, dp);
+    srvN.close();
+  }
+
   srv.close();
   process.exit(R.finalizar());
 })().catch(e => {
