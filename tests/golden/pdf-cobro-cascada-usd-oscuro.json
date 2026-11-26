@@ -19,28 +19,24 @@
       "Para ponerte al día",
       "Tu próxima cuota",
       "Así va tu crédito",
-      "Tus cuotas"
+      "Lo que está vencido"
     ]
   },
   "valores": {
-    "bytes": 11904,
-    "nFilas": 5,
-    "nCeldas": 20,
+    "bytes": 11646,
+    "nFilas": 3,
+    "nCeldas": 12,
     "celdasPorTr": [
-      4,
-      4,
       4,
       4,
       4
     ],
-    "nMontos": 15,
-    "hashMontos": "eb9a7b79915547a609ad88556ee88dd62c7cbd40",
+    "nMontos": 12,
+    "hashMontos": "a04301f115dcb237339d1390f68f61103c61689e",
     "hashFname": "254afd6f652112e1bf6a571172341959b7675264",
-    "hashTexto": "d56358f5b01bb77ddea799eb74542691c0f8e121",
+    "hashTexto": "f270109626812ce2a045306f4aba3149c1e1971e",
     "clases": [
       "",
-      "chip pend",
-      "chip prox",
       "chip venc",
       "n",
       "pagada",
@@ -68,6 +64,7 @@
       "r-quien",
       "r-saldos",
       "r-sec",
+      "r-sec r-venc",
       "r-sec-t",
       "r-sello",
       "r-t",
@@ -78,7 +75,6 @@
       "r-tar-v",
       "r-tip",
       "r-tot",
-      "sub",
       "vencida",
       "viejo"
     ]

@@ -16,7 +16,12 @@
 //   3. "Lo que sigue": cuanto le falta para ponerse al dia, su proxima cuota y la suma exacta
 //      que lo deja al dia.
 //   4. "Asi va tu credito": la barra de cuotas y dos saldos con nombre propio.
-//   5. "Tus cuotas": 4 columnas, el estado en palabras; las cuotas lejanas en UNA fila.
+//   5. "Lo que esta vencido": SOLO las cuotas atrasadas, una por fila, con su total; sin nada
+//      vencido, no hay tabla (post-4.1.6, decision del PO). Hasta entonces se llamaba "Tus
+//      cuotas" y listaba ademas la proxima y las por venir (estas, en UNA fila resumen): esa fila
+//      se veia desordenada, y en `Intereses` sumaba las 3 cuotas que el sistema genera adelante,
+//      un total sin sentido. La proxima esta en "Lo que sigue" y el total que falta en "Asi va tu
+//      credito"; el plan entero es el cronograma.
 //   6. Un cierre que certifica el pago.
 //
 // ── POR QUE NO ALCANZABAN LOS RECIBOS QUE YA EXISTIAN ────────────────────────
@@ -123,6 +128,18 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
       : 'tus <b>cuotas del ' + enLista(ps.map(function(p){ return rbMedia(cualDe(p).fecha); })) + '</b> (cuotas ' +
         (seguidas && ns.length > 2 ? ns[0] + ' a ' + ns[ns.length - 1] : enLista(ns)) + deN + ')';
   }
+  // Una cuota que este cobro SALDA y que antes se condono en parte vale menos que su cuota: sin
+  // decirlo, "saldamos cuatro cuotas" por menos de lo que valen cuatro cuotas parece un error
+  // (post-4.1.6, primera condonacion con monto en produccion). El monto va sin clase de rubro:
+  // ya esta contado en la frase.
+  function notaCondonada(ps){
+    return ps.map(function(p){
+      var c = cualDe(p), cond = c.fila ? condonadoDe(c.fila) : 0;
+      if (!(cond > 0)) return '';
+      return ' De tu cuota del ' + rbMedia(c.fecha) + ' solo faltaban <b>' + fmtUni(uni(p.obligacionCOP)) + '</b>: los otros ' +
+        money(cond) + ' de intereses se condonaron.';
+    }).join('');
+  }
   var grupos = [];
   pasos.forEach(function(p){
     var saldaMora = p.tipo === 'partial' && p.salda && !p.esInteresMes;
@@ -134,7 +151,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     if (p.tipo === 'abono') return 'Abonamos <b class="r-a">' + fmtUni(uni(p.obligacionCOP)) + '</b> a tu capital: baja tu saldo y los intereses que vienen.';
     // El tiempo verbal importa: la cuota del interes del mes NO vencio, se pago por adelantado.
     if (p.esInteresMes) return 'Adelantamos el interés de ' + cualesDe(g.pasos) + ', que aún no vence: ' + partesDe(g.pasos) + '.';
-    if (p.salda) return 'Saldamos ' + cualesDe(g.pasos) + ': ' + partesDe(g.pasos) + '.';
+    if (p.salda) return 'Saldamos ' + cualesDe(g.pasos) + ': ' + partesDe(g.pasos) + '.' + notaCondonada(g.pasos);
     // Lo que falta sale de la fila persistida, no de `restanteCuota`, que se calcula al PLANEAR:
     // si despues un abono regenera el cronograma esa cifra deja de ser cierta.
     var c = cualDe(p);
@@ -154,7 +171,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
   var barraCuotaHTML = '';
   if (cuotaBarra) {
     var f = cuotaBarra.fila;
-    // Las mismas cifras que la fila de esa cuota en "Tus cuotas" (una sola conversion cada una).
+    // Las mismas cifras que la fila de esa cuota en "Lo que esta vencido" (una sola conversion cada una).
     var abU = uni(f.partialPaid), pct = f.cuotaTotal > 0 ? Math.max(1, Math.min(99, Math.round(f.partialPaid / f.cuotaTotal * 100))) : 0;
     barraCuotaHTML = '<div class="r-cuota"><div class="r-barra"><div class="pag" style="width:' + pct + '%"></div></div>' +
       '<div class="r-ley"><span class="ok">' + (abU === cuotaBarra.hoyU ? 'Pagado hoy ' + fmtUni(abU) : 'Abonado ' + fmtUni(abU) + ' · hoy ' + fmtUni(cuotaBarra.hoyU)) + '</span>' +
@@ -173,7 +190,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
   var sigueHTML = '', creditoHTML = '', cuotasHTML = '';
   if (!esPazYSalvo) {
     var prox = pend[0] || null;
-    // Lo vencido es la suma de sus filas de "Tus cuotas", cada una ya convertida (mon.sumaU).
+    // Lo vencido es la suma de sus filas de "Lo que esta vencido", cada una ya convertida (mon.sumaU).
     var moraU = mon.sumaU(vencidas.map(pendCuota)), proxU = prox ? uni(pendCuota(prox)) : 0;
     var tarjetas = [];
     if (moraViva > 0) {
@@ -191,7 +208,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
       ((moraViva > 0 && prox) ? '<div class="r-tip">' + RB_ICONO_TIP + '<span>Si pagas <b>' + fmtUni(moraU + proxU) + '</b> a más tardar el ' +
         rbMedia(prox.fechaPago) + ', quedas completamente al día.</span></div>' : '') + '</div>' : '';
 
-    // Lo que queda: vencidas y por vencer, desde las filas persistidas.
+    // Lo que queda (vencidas y por vencer, desde las filas persistidas): es el "Te falta por pagar".
     var porPagar = regs.filter(function(p){ return p.estadoPago !== 'Pagado' && pendCuota(p) > 0; });
     // El total es la SUMA de las filas impresas, no la conversion de la suma (4.1.4): en dolares el
     // pie decia USD 1,600.01 bajo filas que suman 1,600.00. La Propuesta suma igual (cascada J).
@@ -228,36 +245,27 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     }
     creditoHTML = '<div class="r-sec"><div class="r-sec-t">Así va tu crédito</div>' + barra + ley + '<div class="r-saldos">' + saldos + '</div></div>';
 
-    // Tabla: lo vencido y la proxima, fila por fila; lo que viene despues, en UNA fila (el
-    // cliente necesita el detalle de lo que debe ya, no de dentro de un anio). Lo vencido va
-    // SIEMPRE cuota por cuota (post-4.1.5, pedido del PO): juntar las mas viejas en una fila
-    // confundia al cliente. Si no cabe, sigue en la hoja siguiente con los titulos repetidos.
+    // Tabla "Lo que esta vencido" (post-4.1.6, decision del PO): SOLO las cuotas atrasadas, una
+    // por fila, en las dos modalidades. Juntar las mas viejas en una fila confundia al cliente
+    // (post-4.1.5) y la fila resumen de las por venir se veia desordenada (post-4.1.6). Si no
+    // cabe, sigue en la hoja siguiente con los titulos repetidos (`r-venc`, como el recibo general).
     function chip(cls, t){ return '<span class="chip ' + cls + '">' + t + '</span>'; }
     function celdaFalta(p){
       var ab = Math.round(p.partialPaid || 0);
       return '<td class="n">' + (condonadoDe(p) > 0 ? '<span class="sub">se condonó ' + money(condonadoDe(p)) + '</span>' : '') +
         (ab > 0 ? '<span class="sub">ya abonaste ' + money(ab) + ' de ' + money(p.cuotaTotal) + '</span>' : '') + '<b>' + money(pendCuota(p)) + '</b></td>';
     }
-    function filaResumen(grupo, estadoHTML){
-      var a = grupo[0], z = grupo[grupo.length - 1];
-      var iguales = grupo.every(function(p){ return Math.round(pendCuota(p)) === Math.round(pendCuota(a)); });
-      return '<tr><td>' + a.cuotaN + ' a ' + z.cuotaN + '</td><td>' + rbCorta(a.fechaPago, anio) + ' a ' + rbCorta(z.fechaPago, anio) + '</td><td>' + estadoHTML + '</td>' +
-        '<td class="n">' + (iguales ? '<span class="sub">' + grupo.length + ' × ' + money(pendCuota(a)) + '</span>' : '') +
-        '<b>' + fmtUni(mon.sumaU(grupo.map(pendCuota))) + '</b></td></tr>';
-    }
+    // UN formato de fecha en toda la tabla: si alguna fila es de otro anio, todas lo llevan.
+    var conAnio = vencidas.some(function(p){ return String(p.fechaPago).slice(0, 4) !== anio; });
+    function fechaFila(f){ return conAnio ? rbLarga(f) : rbMedia(f); }
     var filas = '';
-    var otroAnio = vencidas.some(function(p){ return String(p.fechaPago).slice(0, 4) !== anio; });
     vencidas.forEach(function(p){
-      filas += '<tr><td>' + p.cuotaN + deN + '</td><td>' + (otroAnio ? rbLarga(p.fechaPago) : rbMedia(p.fechaPago)) + '</td><td>' + chip('venc', 'Vencida') + '</td>' + celdaFalta(p) + '</tr>';
+      filas += '<tr><td>' + p.cuotaN + deN + '</td><td>' + fechaFila(p.fechaPago) + '</td><td>' + chip('venc', 'Vencida') + '</td>' + celdaFalta(p) + '</tr>';
     });
-    var futuras = pend.filter(function(p){ return pendCuota(p) > 0; });
-    if (futuras[0]) filas += '<tr><td>' + futuras[0].cuotaN + deN + '</td><td>' + rbMedia(futuras[0].fechaPago) + '</td><td>' + chip('prox', 'Próxima') + '</td>' + celdaFalta(futuras[0]) + '</tr>';
-    var resto = futuras.slice(1);
-    if (resto.length === 1) filas += '<tr><td>' + resto[0].cuotaN + deN + '</td><td>' + rbMedia(resto[0].fechaPago) + '</td><td>' + chip('pend', 'Por vencer') + '</td>' + celdaFalta(resto[0]) + '</tr>';
-    else if (resto.length > 1) filas += filaResumen(resto, chip('pend', 'Por vencer'));
     if (filas) {
-      cuotasHTML = '<div class="r-sec"><div class="r-sec-t">Tus cuotas</div><table class="r-t"><thead><tr><th>Cuota</th><th>Vence</th><th>Estado</th><th class="n">Te falta</th></tr></thead>' +
-        '<tbody>' + filas + '<tr class="r-tot"><td colspan="3">' + (esIndef ? 'Total de estas cuotas' : 'Total por pagar') + '</td><td class="n">' + totalTxt + '</td></tr></tbody></table></div>';
+      cuotasHTML = '<div class="r-sec r-venc"><div class="r-sec-t">Lo que está vencido</div><table class="r-t"><thead><tr><th>Cuota</th><th>Vence</th><th>Estado</th><th class="n">Te falta</th></tr></thead>' +
+        '<tbody>' + filas + '<tr class="r-tot"><td colspan="3">Total vencido</td><td class="n">' +
+        fmtUni(mon.sumaU(vencidas.map(pendCuota))) + '</td></tr></tbody></table></div>';
     }
   }
 
@@ -283,6 +291,7 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     '.r-paso+.r-paso{margin-top:6px}',
     '.r-n{flex-shrink:0;width:20px;height:20px;margin-top:1px;border-radius:99px;background:var(--r-soft-2);color:var(--r-text-2);font-size:11px;font-weight:600;line-height:20px;text-align:center}',
     '.r-frase{font-size:13.5px;line-height:1.42}',
+    '.r-sec.r-venc{break-inside:auto}',
     '.r-cuota{margin-top:8px;padding:10px 14px;border:1px solid var(--r-bd);border-radius:14px;background:var(--r-card)}',
     '.r-barra{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--r-track)}',
     '.r-barra .pag{background:var(--r-green-2)}',

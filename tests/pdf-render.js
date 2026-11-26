@@ -606,8 +606,10 @@ const CASOS = [
     // Rediseño v4: con la app en tema oscuro, el oscuro de la app (el #0d1117 viejo ya no aparece).
     contiene: ['Recibo de pago', 'Recibimos tu pago', 'Cómo se aplicó tu pago', 'Saldamos tu', 'Abonamos',
                'class="r-a"', 'USD $', 'RC-', '--r-bg:#000000', 'Así va tu crédito',
-               'Te falta por pagar', 'De eso, capital', 'Tus cuotas', 'Total por pagar', 'Cómo se imputa el pago'],
-    noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos', 'Equivalen a', 'TRM', '#0d1117'] },
+               'Te falta por pagar', 'De eso, capital', 'Lo que está vencido', 'Total vencido', 'Cómo se imputa el pago'],
+    // post-4.1.6: la tabla lleva SOLO lo vencido (sin la proxima ni las por venir).
+    noContiene: ['Total aplicado', 'TOTAL RECIBIDO', 'Intereses vencidos', 'Equivalen a', 'TRM', '#0d1117',
+                 'Tus cuotas', 'Por vencer', 'Total por pagar'] },
 
   // ── generatePropuestaAbono — el papel que se manda ANTES de cobrar ────────────────────
   // Lo que este caso fija: que el documento NO se presente como comprobante. Un papel con
@@ -670,35 +672,38 @@ const CASOS = [
     entrada: () => ({ loanId: '1782151590658w66y', cascada: 'interesMes', tema: 'dark', dark: true }),
     ejecutar: () => S.generateReciboCobro(L('1782151590658w66y'), pays,
       cobroConInteresMes(L('1782151590658w66y'), pays)),
-    contiene: ['Adelantamos el interés de', 'que aún no vence', 'class="r-m"', 'Tus cuotas', 'Total por pagar'],
-    noContiene: ['queda debiendo', 'Total aplicado'] },
+    contiene: ['Adelantamos el interés de', 'que aún no vence', 'class="r-m"', 'Lo que está vencido', 'Total vencido'],
+    noContiene: ['queda debiendo', 'Total aplicado', 'Por vencer', 'Total por pagar'] },
 
   // Modalidad `Intereses`: varias cuotas vencidas saldadas van en UNA frase, y NO hay "Te falta
   // por pagar": sus cuotas son de puro interes y el capital vence fuera de ellas, asi que la suma
   // anunciaria MENOS deuda de la que hay (medido sobre este credito: 2.700.000 bajo un capital
-  // de 3.000.000). El total de la tabla se rotula como lo que es.
+  // de 3.000.000). Desde post-4.1.6 la tabla es solo lo vencido: sus cuotas por vencer son las 3 que
+  // el sistema genera adelante, y sumarlas daba un "Total de estas cuotas" sin sentido.
   { nombre: 'cobro-cascada-cop-intereses', gen: 'generateReciboCobro', tema: 'light', celdas: 4,
     entrada: () => ({ loanId: '1773655076017', cascada: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateReciboCobro(L('1773655076017'), pays,
       cobroDe(L('1773655076017'), pays)),
     contiene: ['Saldamos tus <b>cuotas del', 'Cómo se imputa el pago', 'Saldo de capital', 'plazo indefinido',
-               'Total de estas cuotas'],
-    noContiene: ['Te falta por pagar', 'Total por pagar', 'De eso, capital'] },
+               'Lo que está vencido', 'Total vencido'],
+    noContiene: ['Te falta por pagar', 'Total por pagar', 'De eso, capital', 'Total de estas cuotas', 'Por vencer'] },
 
   // Un cobro de UN solo paso: sin mora, la cascada degenera en un abono. Sin numeracion de
-  // pasos ni nota de imputacion (no hay nada que repartir), y sin "Para ponerte al dia".
-  { nombre: 'cobro-un-solo-paso', gen: 'generateReciboCobro', tema: 'light', celdas: 4,
+  // pasos ni nota de imputacion (no hay nada que repartir), y sin "Para ponerte al dia". Sin nada
+  // vencido no hay tabla (post-4.1.6): la proxima esta en "Lo que sigue" y el total en la tarjeta.
+  { nombre: 'cobro-un-solo-paso', gen: 'generateReciboCobro', tema: 'light', celdas: null,
     entrada: () => ({ loanId: '17795544041379obc', cascada: true, unPaso: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateReciboCobro(L('17795544041379obc'), pays,
       cobroDe(L('17795544041379obc'), pays)),
-    contiene: ['Abonamos', 'Tu próxima cuota', 'Te falta por pagar', 'De eso, capital', 'Total por pagar', 'Por vencer'],
-    noContiene: ['Cómo se imputa el pago', 'class="r-n"', 'Para ponerte al día'] },
+    contiene: ['Abonamos', 'Tu próxima cuota', 'Te falta por pagar', 'De eso, capital'],
+    noContiene: ['Cómo se imputa el pago', 'class="r-n"', 'Para ponerte al día', 'Lo que está vencido', 'Por vencer'] },
 
   // Una sola cuota viva con un parcial que ya cubrio su interes: lo que falta por pagar y el
   // capital son EL MISMO numero (es una identidad: cuota - abonado = capital + interes -
   // abonado), y ninguna cifra se repite: queda un solo saldo. La cuota a medias dice lo
-  // abonado en su fila. El fixture no tiene un credito en ese estado; se construye en memoria.
-  { nombre: 'cobro-hero-un-solo-pago', gen: 'generateReciboCobro', tema: 'light', celdas: 4,
+  // abonado en "Tu proxima cuota" (sin nada vencido no hay tabla, post-4.1.6). El fixture no tiene
+  // un credito en ese estado; se construye en memoria.
+  { nombre: 'cobro-hero-un-solo-pago', gen: 'generateReciboCobro', tema: 'light', celdas: null,
     entrada: () => ({ loanId: LOAN_HERO, hero: true, tema: 'light', dark: false }),
     ejecutar: () => S.generateReciboCobro(L(LOAN_HERO), paysHero, cobroDe(L(LOAN_HERO), paysHero)),
     contiene: ['Tu próxima cuota', 'ya abonaste', 'Te falta por pagar', 'class="r-cap"'],
@@ -713,7 +718,7 @@ const CASOS = [
       pasos: [{ tipo: 'abono', obligacionCOP: 200000, obligacionUSD: 0,
                 interes: 0, capital: 200000, cajaCOP: 200000 }] }),
     contiene: ['PAZ Y SALVO', 'Paz y salvo', 'cancelada la totalidad', '¡Felicidades'],
-    noContiene: ['Te falta por pagar', 'Tus cuotas', 'Lo que sigue'] },
+    noContiene: ['Te falta por pagar', 'Tus cuotas', 'Lo que está vencido', 'Lo que sigue'] },
 
   // ── generateReciboGeneral — el aviso de cobro con toda la deuda de un deudor (3.5.0) ──────
   // El prototipo aprobado por el PO usaba el credito ...jkph del fixture: al 31-jul esta al
@@ -1833,6 +1838,74 @@ function loansDelCaso(caso) {
 }
 
 {
+  // post-4.1.6 (decision del PO tras la primera condonacion con monto en produccion): el recibo de
+  // pago lista SOLO lo vencido ("Lo que esta vencido"), con un solo formato de fecha, y cuando el
+  // cobro salda una cuota condonada en parte dice cuanto faltaba y cuanto se condono. Se arma el
+  // caso real en memoria: el credito de solo intereses del fixture, condonado en $1.700.000.
+  R.seccion('U — recibo de pago: solo lo vencido, un formato de fecha, la cuota condonada en parte (post-4.1.6)');
+  const ID = '1773655076017', hasta = '2026-11-02';
+  const vis = h => sinTags(h.replace(/<style[\s\S]*?<\/style>/gi, '')).replace(/\u00a0/g, ' ');
+  const pesos = n => S.fmt(n).replace(/\u00a0/g, ' ');
+  const emitir = fn => { CAP.pdfs.length = 0; fn(); return CAP.pdfs.length === 1 ? sinMarco(CAP.pdfs[0].html) : ''; };
+  const tablaDe = h => (/<div class="r-sec r-venc">[\s\S]*?<\/table>/.exec(h) || [''])[0];
+  const filasDe = t => (t.match(/<tr>[\s\S]*?<\/tr>/g) || []).filter(f => f.indexOf('<td') !== -1);
+  const P1 = pays.map(p => p.prestamoId === ID && p.estadoPago === 'Pendiente' && p.fechaPago < hasta ? Object.assign({}, p, { estadoPago: 'En Mora' }) : p);
+  const mora = P1.filter(p => p.prestamoId === ID && p.estadoPago === 'En Mora');
+  const P2 = S.aplicarCondonacion(P1, S.planCondonacion(mora, 1700000));
+  const L2 = Object.assign({}, L(ID), { interesesCondonados: 1700000 });
+  const lp2 = P2.filter(p => p.prestamoId === ID);
+  // Cobrar `monto` sobre el estado condonado: el plan es el del motor y el "despues" salda las
+  // cuotas que el plan salda (lo que haria /partial).
+  const cobrar = monto => {
+    const plan = S.planCascada(L2, lp2, { obligacionCOP: monto, cajaCOP: monto, obligacionUSD: 0 });
+    const salda = {}; plan.pasos.forEach(p => { if (p.salda && p.payId) salda[p.payId] = true; });
+    const post = P2.map(p => salda[p.id] ? Object.assign({}, p, { estadoPago: 'Pagado', partialPaid: p.cuotaTotal, montoCOPRecibido: p.cuotaTotal }) : p);
+    return { plan, post };
+  };
+  ponerTema('light');
+  const vivas = lp2.filter(p => p.estadoPago === 'En Mora');
+  R.check('U0 ANTI-VACIO: tras condonar $1.700.000 quedan 3 vencidas ($100.000 + $300.000 + $300.000)',
+    vivas.length === 3 && vivas.map(S.pendCuota).join(',') === '100000,300000,300000', vivas.map(S.pendCuota));
+
+  // Paga todo lo vencido: no queda tabla (la proxima esta en "Lo que sigue").
+  const c1 = cobrar(700000);
+  const h1 = emitir(() => S.generateReciboCobro(L2, c1.post, { fecha: hasta, pasos: c1.plan.pasos, pre: {} }));
+  const t1 = vis(h1);
+  R.check('U1 sin nada vencido no hay tabla: ni "Tus cuotas", ni "Por vencer", ni el total de las 3 cuotas generadas adelante',
+    c1.plan.pasos.length === 3 && h1.indexOf('<table') === -1 && t1.indexOf('Tus cuotas') === -1 && t1.indexOf('Por vencer') === -1 &&
+    t1.indexOf('Total de estas cuotas') === -1 && t1.indexOf('Tu próxima cuota') !== -1, c1.plan.pasos.length);
+  R.check('U2 la cuota condonada en parte dice cuanto faltaba y cuanto se condono',
+    // (`sinTags` deja un espacio donde cerraba el <b>: se tolera antes de los dos puntos)
+    t1.replace(/ +:/g, ':').indexOf('solo faltaban ' + pesos(100000) + ': los otros ' + pesos(200000) + ' de intereses se condonaron.') !== -1,
+    t1.slice(t1.indexOf('Saldamos'), t1.indexOf('Saldamos') + 260));
+  R.check('U2 y esa cifra no se suma dos veces: el interes declarado sigue siendo lo cobrado ($700.000)',
+    (h1.match(/<b class="r-i">[^<]*<\/b>/g) || []).map(vis).join('|') === pesos(700000), (h1.match(/<b class="r-i">[^<]*<\/b>/g) || []).map(vis));
+
+  // Paga solo las dos mas viejas: la tabla lleva SOLO la que sigue vencida, con su total.
+  const c2 = cobrar(400000);
+  const h2 = emitir(() => S.generateReciboCobro(L2, c2.post, { fecha: hasta, pasos: c2.plan.pasos, pre: {} }));
+  const tb2 = tablaDe(h2), f2 = filasDe(tb2);
+  R.check('U3 "Lo que está vencido": una fila por cuota vencida, sin la proxima ni las por venir, y su total',
+    f2.length === 1 && vis(tb2).indexOf('Lo que está vencido') !== -1 && vis(tb2).indexOf('Total vencido ' + pesos(300000)) !== -1 &&
+    tb2.indexOf('chip prox') === -1 && tb2.indexOf('Por vencer') === -1 && vis(h2).indexOf('Tus cuotas') === -1, vis(tb2));
+  R.check('U3 las fechas del mismo año que el recibo, sin el año', vis(tb2).indexOf(' de 2026') === -1, vis(tb2));
+
+  // Una vencida de otro año: TODAS las fechas de la tabla llevan el año (un solo formato).
+  const ant = lp2.filter(p => p.estadoPago === 'Pagado' && p.fechaPago < '2026-01-01' && !(S.condonadoDe(p) > 0))[0];
+  const post3 = c2.post.map(p => ant && p.id === ant.id ? Object.assign({}, p, { estadoPago: 'En Mora', partialPaid: 0, montoCOPRecibido: 0 }) : p);
+  const h3 = emitir(() => S.generateReciboCobro(L2, post3, { fecha: hasta, pasos: c2.plan.pasos, pre: {} }));
+  const f3 = filasDe(tablaDe(h3)).map(vis);
+  R.check('U4 si una fila es de otro año, todas llevan el año (antes: "7 de diciembre" junto a "7 ene 2027")',
+    !!ant && f3.length === 2 && f3.every(f => / de 20\d\d /.test(f + ' ')), f3);
+
+  // Anti-trivial de la nota: un cobro sin condonacion no la lleva.
+  const sinCond = CASOS.filter(c => c.gen === 'generateReciboCobro').map(c => generar(c).html);
+  R.check('U5 sin cuotas condonadas, la nota no aparece', sinCond.every(h => h.indexOf('se condonaron') === -1), sinCond.length);
+  R.check('U6 ningun recibo de pago lista cuotas por venir ni agrupa filas ("10 a 12")',
+    sinCond.every(h => h.indexOf('Por vencer') === -1 && h.indexOf('chip prox') === -1 && !/<td>\d+ a \d+<\/td>/.test(h)), sinCond.length);
+}
+
+{
   // 4.1.4 (bloque 4): en dolares, el TOTAL POR PAGAR del recibo de pago y de la propuesta es la suma de
   // sus filas ya convertidas. Hasta 4.1.3 se convertia la suma en pesos y el pie decia USD 1,600.01
   // bajo cuatro cuotas de USD 400.00. Se lee el papel tal como se imprime.
@@ -1844,21 +1917,27 @@ function loansDelCaso(caso) {
                                        loansDelCaso(c).every(l => l.moneda === 'USD') && loansDelCaso(c).length)) {
     const html = sinMarco(generar(caso).html);
     if (caso.gen === 'generateReciboCobro') {
-      const t = (/<table class="r-t">[\s\S]*?<\/table>/.exec(html) || [''])[0];
-      if (!t) continue;
-      nRec++;
-      const filas = ((/<tbody>([\s\S]*?)<\/tbody>/.exec(t) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || []);
-      const suma = filas.reduce((s, f) => { const m = montosB(f); return s + (m.length ? m[m.length - 1] : 0); }, 0);
-      const pie = centavos(sinTags((/<tr class="r-tot">([\s\S]*?)<\/tr>/.exec(t) || [, ''])[1]).replace(/^[^\d]*/, ''));
-      const falta = centavos((/Te falta por pagar<b[^>]*>USD \$([\d,.]+)/.exec(html) || [, '0'])[1].replace(/,/g, ''));
-      if (pie !== suma) malasQ.push(caso.nombre + ': el pie ' + pie / 100 + ' no es la suma de las filas ' + suma / 100);
-      if (falta && falta !== pie) malasQ.push(caso.nombre + ': "Te falta por pagar" ' + falta / 100 + ' != pie ' + pie / 100);
-      // Lo que la regla VIEJA imprimia: la conversion de la suma en pesos (anti-vacio).
+      // post-4.1.6 la tabla es solo lo vencido: su pie suma sus filas, y "Te falta por pagar" suma
+      // lo que queda de CADA cuota viva ya convertida (las filas persistidas que el recibo leyo).
       const L0 = loansDelCaso(caso)[0];
-      if (L0 && pie === suma) {
-        const cop = pays.filter(p => p.prestamoId === L0.id && S.esCuotaRegular(p) && p.estadoPago !== 'Pagado')
-          .reduce((s2, p) => s2 + S.pendCuota(p), 0);
-        if (Math.round(cop / L0.trmAcordada * 100) !== suma) descuadreViejo++;
+      const datos = caso.nombre === 'cobro-hero-un-solo-pago' ? paysHero : pays;
+      const quedan = datos.filter(p => L0 && p.prestamoId === L0.id && S.esCuotaRegular(p) && p.estadoPago !== 'Pagado' && S.pendCuota(p) > 0);
+      const sumaU = quedan.reduce((s2, p) => s2 + Math.round(S.pendCuota(p) / L0.trmAcordada * 100), 0);
+      const t = (/<table class="r-t">[\s\S]*?<\/table>/.exec(html) || [''])[0];
+      const falta = centavos((/Te falta por pagar<b[^>]*>USD \$([\d,.]+)/.exec(html) || [, '0'])[1].replace(/,/g, ''));
+      if (!t && !falta) continue;
+      nRec++;
+      if (t) {
+        const filas = ((/<tbody>([\s\S]*?)<\/tbody>/.exec(t) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || []);
+        const suma = filas.reduce((s, f) => { const m = montosB(f); return s + (m.length ? m[m.length - 1] : 0); }, 0);
+        const pie = centavos(sinTags((/<tr class="r-tot">([\s\S]*?)<\/tr>/.exec(t) || [, ''])[1]).replace(/^[^\d]*/, ''));
+        if (pie !== suma) malasQ.push(caso.nombre + ': el pie ' + pie / 100 + ' no es la suma de las filas ' + suma / 100);
+      }
+      if (falta && falta !== sumaU) malasQ.push(caso.nombre + ': "Te falta por pagar" ' + falta / 100 + ' != la suma de lo que queda ' + sumaU / 100);
+      // Lo que la regla VIEJA imprimia: la conversion de la suma en pesos (anti-vacio).
+      if (falta) {
+        const cop = quedan.reduce((s2, p) => s2 + S.pendCuota(p), 0);
+        if (Math.round(cop / L0.trmAcordada * 100) !== sumaU) descuadreViejo++;
       }
     } else {
       nProp++;
@@ -1873,7 +1952,7 @@ function loansDelCaso(caso) {
   }
   R.check('Q1 ANTI-VACIO: recibos y propuestas en dolares, y al menos uno donde convertir la suma en pesos daba otra cifra',
           nRec >= 2 && nProp >= 2 && descuadreViejo >= 1, { recibos: nRec, propuestas: nProp, descuadreViejo: descuadreViejo });
-  R.check('Q2 el pie, "Te falta por pagar" y el "Total por pagar" de la propuesta = la suma de sus filas', malasQ.length === 0, malasQ.join('\n      '));
+  R.check('Q2 el pie = la suma de sus filas, "Te falta por pagar" = la suma de lo que queda de cada cuota, y el "Total por pagar" de la propuesta = la suma de sus filas', malasQ.length === 0, malasQ.join('\n      '));
   // El recibo del boton Pago, en el SEGUNDO pago de una cuota en dolares: si los dolares cubren lo que
   // falta, la cuota se salda (misma regla del backend, `cierraEnDolares`) y el papel lo dice. Antes solo
   // miraba si ESE pago cubria la cuota entera y lo titulaba "Recibo de Abono Parcial". Se arma en memoria

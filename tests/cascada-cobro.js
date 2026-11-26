@@ -1489,8 +1489,10 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           if (!m) return NaN;
           return m[1] ? parseFloat(m[2].replace(/,/g, '')) : parseInt(m[2].replace(/[^0-9]/g, ''), 10);
         };
-        // La propuesta lo declara en su tarjeta "Total por pagar"; el recibo lo totaliza
-        // al pie de "Lo que queda por pagar". Es la MISMA cifra vista antes y despues.
+        // La propuesta lo declara en su tarjeta "Total por pagar"; el recibo, en "Te falta por pagar".
+        // Es la MISMA cifra vista antes y despues. Desde post-4.1.6 la tabla del recibo es solo lo
+        // vencido, asi que la cifra de referencia sale de las filas PERSISTIDAS: lo que queda de cada
+        // cuota viva, ya convertida a la moneda visible (la regla de 4.1.4).
         const totalPropuesta = (() => {
           const m = /<div class="pa-cl">Total por pagar<\/div>([\s\S]*?)<\/div>\s*<\/div>/.exec(htmlProp);
           if (!m) return NaN;
@@ -1498,8 +1500,12 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           return numJ(vals[vals.length - 1] || '');
         })();
         const totalRecibo = (() => {
-          const m = /<td colspan="3">Total por pagar<\/td><td class="n">([\s\S]*?)<\/td>/.exec(htmlRec);
-          return m ? numJ(m[1]) : NaN;
+          const quedan = post.pays.filter(p => p.prestamoId === loanQ.id && !esAbono(p) && p.estadoPago !== 'Pagado')
+            .map(p => Math.max(0, Math.round(p.cuotaTotal || 0) - Math.round(p.partialPaid || 0))).filter(x => x > 0);
+          if (!quedan.length) return NaN;
+          return loanQ.moneda === 'USD'
+            ? quedan.reduce((s, c) => s + Math.round(c / loanQ.trmAcordada * 100), 0) / 100
+            : quedan.reduce((s, c) => s + c, 0);
         })();
         // Y en su TARJETA, que es lo que de verdad se compara: las dos encabezan el bloque
         // de "asi queda el credito", en el mismo lugar visual de cada papel. Mientras el
@@ -1518,7 +1524,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           ' tarjeta=' + JSON.stringify(totalReciboCard));
         R.eq('J la propuesta promete el MISMO total que el recibo entrega',
           totalPropuesta, totalRecibo);
-        R.eq('J la tarjeta del recibo y su tabla declaran el MISMO total',
+        R.eq('J la tarjeta del recibo declara lo que queda de cada cuota persistida',
           totalReciboCard && totalReciboCard.valor, totalRecibo);
         R.eq('J los dos papeles LIDERAN con la misma cifra',
           totalReciboCard && totalReciboCard.valor, totalPropuesta);

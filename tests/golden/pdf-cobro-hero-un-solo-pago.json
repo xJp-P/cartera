@@ -7,37 +7,25 @@
   "estructura": {
     "docTitle": "Recibo de pago",
     "h1": [],
-    "cabeceras": [
-      "Cuota",
-      "Vence",
-      "Estado",
-      "Te falta"
-    ],
+    "cabeceras": [],
     "etiquetas": [
       "Cómo se aplicó tu pago",
       "Lo que sigue",
       "Tu próxima cuota",
-      "Así va tu crédito",
-      "Tus cuotas"
+      "Así va tu crédito"
     ]
   },
   "valores": {
-    "bytes": 10590,
-    "nFilas": 3,
-    "nCeldas": 12,
-    "celdasPorTr": [
-      4,
-      4,
-      4
-    ],
-    "nMontos": 11,
-    "hashMontos": "312098ef768200539d4255e056d5c3ef492b048b",
+    "bytes": 10144,
+    "nFilas": 0,
+    "nCeldas": 0,
+    "celdasPorTr": [],
+    "nMontos": 7,
+    "hashMontos": "b5b169c64f0ab77f6f00984b460a2be01e828cdf",
     "hashFname": "5e92bcc09a58cefe09c2df1400af2c9991f0b730",
-    "hashTexto": "c144a9ef8c277a551b5538e36986e3088cee94d8",
+    "hashTexto": "d6299f5f34cb621f7f66f967748d92da7c3f0e75",
     "clases": [
       "abonada",
-      "chip prox",
-      "n",
       "pagada",
       "r-a",
       "r-av",
@@ -60,14 +48,11 @@
       "r-sec",
       "r-sec-t",
       "r-sello",
-      "r-t",
       "r-tar",
       "r-tar-l",
       "r-tar-s",
       "r-tar-v",
-      "r-tot",
       "r-uno",
-      "sub",
       "viejo"
     ]
   }
