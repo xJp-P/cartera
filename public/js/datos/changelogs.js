@@ -814,5 +814,15 @@ export const CHANGELOGS = {
     'Constancia de condonación en PDF: al condonar puedes generar el soporte del acuerdo (la casilla viene marcada): cuánto se condonó y en qué cuotas, cómo quedan lo vencido y lo que debe hoy, y que el capital no cambia. Aclara que no es un pago.',
     'Recibos cuota por cuota: el recibo de cobro general y el recibo de pago listan cada cuota vencida con su fecha y su valor, sin agruparlas. Si no caben en una hoja, la tabla sigue en la siguiente.',
     'Créditos de interés diario: la condonación ahora se sostiene y el interés perdonado no vuelve a aparecer.'
+  ],
+  '4.1.7': [
+    'Congelar un préstamo: desde el panel del cliente pausas los intereses desde la fecha que elijas, sin plazo, hasta que lo descongeles. Lo vencido se sigue debiendo y lo puedes cobrar, condonar o liquidar. Funciona en préstamos de solo intereses, de capital + intereses y en créditos abiertos de interés diario. Los días del periodo que ya corrieron se cobran en una cuota de cierre, o los puedes perdonar.',
+    'Descongelar: el interés vuelve a correr desde ese día y la primera cuota cobra solo los días reales. Congelar y descongelar se pueden deshacer desde el Historial, y los préstamos congelados se ven marcados en Cartera, Cobros, el Resumen y los PDF.',
+    'Recibo de pago renovado: «Cómo se aplicó tu pago» es ahora una tabla con los intereses y el capital de cada cuota, y «Así quedó tu crédito» muestra en tarjetas el capital, tu próxima cuota y lo que falta, con su valor de antes. Dice si el pago dejó al cliente al día o cuánto le falta para ponerse al día, y solo lista lo que está vencido.',
+    'Propuesta de abono renovada: con el mismo estilo del recibo, el monto del abono sale una sola vez y se ve cuánto bajaría el capital (y, en los préstamos de solo intereses, el interés de cada mes). Nada aparece tachado.',
+    'Registrar cobro: la ventana muestra cuánto baja el capital con el cobro, y ya no dice «saldado» cuando una cuota vencida queda a medias.',
+    'Condonar con monto, más claro: solo llevan palomita las cuotas a las que llega el monto; las demás aparecen atenuadas. Si desmarcas una cuota más vieja, el monto pasa a la siguiente.',
+    'Estado de liquidación: las cuotas condonadas dicen «Condonada» y cuánto se condonó, y un préstamo congelado lo indica con su vigencia correcta.',
+    'Cronograma en PDF: un préstamo congelado lleva una sola nota clara, y el pie del documento ya no queda solo en una hoja aparte.'
   ]
 };
