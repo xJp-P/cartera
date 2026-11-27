@@ -1005,7 +1005,7 @@ module.exports = function crearRutasLoans(ctx) {
   // desde la fecha del congelamiento no corren intereses ni nacen cuotas, hasta descongelarlo a
   // mano. Se guarda la DECISION en `congelamientos` y el motor la aplica (engine.js, "CONGELAR
   // PRESTAMO"), asi que todas las rutas que rehacen cuotas la respetan solas. Sin caja.
-  const CONGELABLES = ['Intereses'];
+  const CONGELABLES = ['Intereses', 'Capital + Intereses'];
   const ymdLocal = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const pesosC = x => '$' + Math.round(x).toLocaleString('es-CO');
   const MESES_C = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -1067,8 +1067,8 @@ module.exports = function crearRutasLoans(ctx) {
       // ── FASE 1: lectura + validacion + computo, sin escribir ──
       if (loan.estado !== 'Activo') throw new ClientError('Solo se congela un crédito activo (este está ' + loan.estado + ').');
       if (CONGELABLES.indexOf(loan.modalidad) === -1) {
-        throw new ClientError(loan.modalidad === MODALIDAD_DIARIA || loan.modalidad === 'Capital + Intereses'
-          ? 'Los créditos de ' + (loan.modalidad === MODALIDAD_DIARIA ? 'interés diario' : 'capital + intereses') + ' todavía no se pueden congelar.'
+        throw new ClientError(loan.modalidad === MODALIDAD_DIARIA
+          ? 'Los créditos de interés diario todavía no se pueden congelar.'
           : 'Un crédito ' + (loan.modalidad === 'Prestamo' ? 'sin intereses' : 'de pago único') + ' no genera intereses por período: no hay nada que congelar.');
       }
       if (loan.congeladoDesde) throw new ClientError('Este crédito ya está congelado desde el ' + fechaC(loan.congeladoDesde) + '.');
@@ -1164,11 +1164,13 @@ module.exports = function crearRutasLoans(ctx) {
         base = ymdLocal(b);
         diaPago = +primer.slice(8, 10);
       }
+      // En C+I la cuota de cierre ocupo un numero sin amortizar: el plazo suma esa cuota.
+      const masPlazo = loan.modalidad === 'Capital + Intereses' && !abierto.perdona ? 1 : 0;
       const historial = congelamientosDe(loan).map((c, k, a) => k === a.length - 1 ? Object.assign({}, c, { hasta: D, primerPago: primer }) : c);
       const loanN = Object.assign({}, loan, {
         congeladoDesde: null, congelamientos: JSON.stringify(historial), diaPago: diaPago, fechaBaseCronograma: base,
         periodoIrregularN: N, periodoIrregularDesde: D, periodoIrregularMora: 0,
-        plazoMeses: +loan.plazoMeses || 0
+        plazoMeses: (+loan.plazoMeses || 0) + masPlazo
       });
       const pays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
       const { schedule, borrar } = rehacerPendientes(loanN, pays);

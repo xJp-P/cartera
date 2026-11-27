@@ -2090,11 +2090,12 @@ function loansDelCaso(caso) {
   const vis = h => sinTags(h.replace(/<style[\s\S]*?<\/style>/gi, '')).replace(/ /g, ' ');
   const pesos = n => S.fmt(n).replace(/ /g, ' ');
   ponerTema('light');
-  const ID = '1773655076017', HOYV = '2026-07-31';
+  const ID = '1773655076017', IDC = '1776205975507jkph', HOYV = '2026-07-31';
   const pE = S.cgPlanCongelar(L(ID), pays, '2026-07-20', false, HOYV);
-  R.check('V0 ANTI-VACIO: el plan congela con cuota de cierre', pE.ok && !!pE.cierre, pE.error);
-  const paysV = pays.filter(p => p.prestamoId !== ID).concat(pE.paysN);
-  const loansV = loans.map(l => l.id === ID ? pE.loanN : l);
+  const pC = S.cgPlanCongelar(L(IDC), pays, '2026-07-25', false, HOYV);
+  R.check('V0 ANTI-VACIO: los dos planes congelan con cuota de cierre', pE.ok && pC.ok && !!pE.cierre && !!pC.cierre, [pE.error, pC.error]);
+  const paysV = pays.filter(p => p.prestamoId !== ID && p.prestamoId !== IDC).concat(pE.paysN, pC.paysN);
+  const loansV = loans.map(l => l.id === ID ? pE.loanN : l.id === IDC ? pC.loanN : l);
   const hE = emitir(() => S.generateCronogramaPDF(pE.loanN, paysV, false));
   const tE = vis(hE);
   R.check('V1 cronograma (solo intereses): la cuota de cierre aparece aunque este por vencer, con su insignia y sus dias',
@@ -2102,6 +2103,8 @@ function loansDelCaso(caso) {
   R.check('V1 y la nota: «Congelado desde el …: no corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo»',
     /<div class="nota nota-hielo"><strong>Congelado desde el [^<]+\.<\/strong> No corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo\.<\/div>/.test(hE) &&
     hE.indexOf('.nota-hielo{') !== -1);
+  const hC = emitir(() => S.generateCronogramaPDF(pC.loanN, paysV, false));
+  R.check('V2 cronograma (capital + intereses): la fecha de finalización queda «En pausa (congelado)»', vis(hC).indexOf('Fecha de finalización En pausa (congelado)') !== -1, vis(hC).slice(0, 500));
   const hN = emitir(() => S.generateCronogramaPDF(L(ID), pays, false));
   R.check('V2 ANTI-TRIVIAL: sin congelar, ni la nota ni su estilo', hN.indexOf('nota-hielo') === -1 && hN.indexOf('>Cierre<') === -1);
   const pD = S.cgPlanDescongelar(pE.loanN, paysV.filter(p => p.prestamoId === ID), HOYV, null, HOYV);
@@ -2109,14 +2112,28 @@ function loansDelCaso(caso) {
   R.check('V3 descongelado: la nota dice cuanto estuvo congelado (y la cuota de cierre sigue)', pD.ok &&
     vis(hD).indexOf('Estuvo congelado del') !== -1 && vis(hD).indexOf('(11 días): en ese tiempo no corrieron intereses.') !== -1 && />Cierre</.test(hD), vis(hD).slice(-600));
   const hR = emitir(() => S.generateReportePrestamosPDF(loansV, paysV, false));
-  R.check('V4 reporte de activos: el congelado con su marca, y su estilo', (hR.match(/<span class="badge badge-hielo">Congelado<\/span>/g) || []).length === 1 && hR.indexOf('.badge-hielo{') !== -1);
+  R.check('V4 reporte de activos: los dos congelados con su marca, y su estilo', (hR.match(/<span class="badge badge-hielo">Congelado<\/span>/g) || []).length === 2 && hR.indexOf('.badge-hielo{') !== -1);
   const hRN = emitir(() => S.generateReportePrestamosPDF(loans, pays, false));
   R.check('V4 ANTI-TRIVIAL: sin congelados, ni la marca ni su estilo', hRN.indexOf('badge-hielo') === -1);
-  const hG = emitir(() => S.generateReciboGeneral([pE.loanN], paysV, '', { hasta: HOYV }));
+  const hG = emitir(() => S.generateReciboGeneral([pC.loanN], paysV, '', { hasta: HOYV }));
   const tG = vis(hG);
-  R.check('V5 recibo general: «Si sigues con tus cuotas» dice «Congelado» y la nota lo explica',
+  R.check('V5 recibo general: «Si sigues con tus cuotas» dice «Congelado» (no la suma de la cuota de cierre) y la nota lo explica',
     /Si sigues con tus cuotas\s*Congelado/.test(tG) && tG.indexOf('Tu crédito está congelado desde el') !== -1 && tG.indexOf('se siguen debiendo') !== -1, tG.slice(0, 700));
-  const hGN = emitir(() => S.generateReciboGeneral([L(ID)], pays, '', { hasta: HOYV }));
+  // Con varios creditos (Bruno, tres de capital + intereses, uno congelado): el total de «Si sigues con
+  // tus cuotas» suma solo los que siguen corriendo, y la nota dice que el congelado no esta.
+  const IDB = '1773656401497';
+  const pB = S.cgPlanCongelar(L(IDB), pays, '2026-07-22', false, HOYV);
+  const paysB = pays.filter(p => p.prestamoId !== IDB).concat(pB.paysN);
+  const delB = loans.filter(l => l.nombre === L(IDB).nombre).map(l => l.id === IDB ? pB.loanN : l);
+  const MoB = S.modeloReciboGeneral(delB, paysB, { hasta: HOYV });
+  const otros = MoB.mods.filter(m => !m.cong);
+  const hB = emitir(() => S.generateReciboGeneral(delB, paysB, '', { hasta: HOYV }));
+  const pieB = (/<tfoot>[\s\S]*?<\/tfoot>/.exec(hB) || [''])[0];
+  R.check('V6 varios creditos: el congelado dice «congelado» y el total de «Si sigues» suma SOLO los demas (con la nota)',
+    pB.ok && MoB.mods.length === 3 && MoB.mods.filter(m => m.cong).length === 1 && MoB.mods.find(m => m.cong).faltaU === null &&
+    MoB.faltaT.cop === otros.reduce((t, m) => t + m.faltaU, 0) && vis(pieB).indexOf(MoB.monto(MoB.faltaT).replace(/ /g, ' ')) !== -1 &&
+    /<span class="sub">congelado<\/span>/.test(hB) && vis(hB).indexOf('no incluye tu crédito congelado') !== -1, vis(pieB));
+  const hGN = emitir(() => S.generateReciboGeneral([L(IDC)], pays, '', { hasta: HOYV }));
   R.check('V5 ANTI-TRIVIAL: sin congelar, el recibo general no dice «congelado»', vis(hGN).toLowerCase().indexOf('congelad') === -1);
 }
 

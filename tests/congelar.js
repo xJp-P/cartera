@@ -299,6 +299,47 @@ async function ejecutarPlan(loanId, plan, fecha, obs) {
     R.check('D5 deshacer el congelamiento y el abono lo devuelve byte a byte', huella(ID) === inicial);
   }
 
+  // ══ E — CAPITAL + INTERESES ════════════════════════════════════════════════════════════
+  // El C+I del fixture: 4.000.000 al 7,4572%, 14 cuotas, dia 14; al 31-jul, 1 a 3 pagadas, un abono
+  // el 18-jul y la 4 por vencer el 14-ago. Se congela el 25-jul: la 4 se cierra con 11 dias.
+  R.seccion('E — capital + intereses: la cuota de cierre no amortiza y el plazo suma esa cuota');
+  const IDC = '1776205975507jkph';
+  const inicialC = huella(IDC);
+  const antesC = regsDe(IDC);
+  const c4a = antesC.find(p => p.cuotaN === 4);
+  const rC = await pedir('POST', '/api/loans/' + IDC + '/congelar', { desde: '2026-07-25' });
+  {
+    const regs = regsDe(IDC), c4 = regs.find(p => p.cuotaN === 4);
+    const esperado = Math.round(c4a.saldoInicial * 7.4572 / 100 * 11 / 30);
+    R.check('E1 ANTI-VACIO: la cuota 4 estaba por vencer el 14-ago con capital', c4a.estadoPago === 'Pendiente' && c4a.fechaPago === '2026-08-14' && c4a.abonoCapital > 0);
+    R.check('E1 la 4 se cierra con 11 días de interés, sin capital, y se quitan las cuotas 5 a 14',
+      rC.status === 200 && c4 && Math.abs(Math.round(c4.interesPeriodo) - esperado) <= 1 && Math.round(c4.abonoCapital) === 0 &&
+      Math.round(c4.saldoFinal) === Math.round(c4.saldoInicial) && regs.every(p => p.cuotaN <= 4) && rC.json.quitadas === 10,
+      JSON.stringify({ c4, esperado, quitadas: rC.json && rC.json.quitadas }));
+    const h = huellaCuotas(IDC);
+    await pedir('POST', '/api/recalculate');
+    R.check('E2 /recalculate lo deja idéntico', huellaCuotas(IDC) === h);
+  }
+  const rC2 = await pedir('POST', '/api/loans/' + IDC + '/descongelar', {});
+  {
+    const l = loanDe(IDC), regs = regsDe(IDC).filter(p => p.estadoPago !== 'Pagado');
+    const nuevas = regs.filter(p => p.cuotaN >= 5);
+    const capital = nuevas.reduce((s, p) => s + Math.round(p.abonoCapital), 0);
+    const saldo = Math.round(c4a.saldoInicial);
+    R.check('E3 descongelar: el plazo pasa de 14 a 15 cuotas (la de cierre no amortizó)', rC2.status === 200 && +l.plazoMeses === 15, l.plazoMeses);
+    R.check('E3 quedan las mismas 10 cuotas que amortizan (5 a 14 → 5 a 15) y saldan el capital exacto',
+      nuevas.length === 11 && capital === saldo && Math.round(nuevas[nuevas.length - 1].saldoFinal) === 0, { n: nuevas.length, capital, saldo });
+    const c5 = nuevas[0];
+    R.check('E3 la primera, el 14-ago, cobra 14 días de interés (desde el 31-jul)', c5.fechaPago === '2026-08-14' && /14 días/.test(c5.observaciones), JSON.stringify(c5));
+    R.check('E3 la de cierre sigue igual', JSON.stringify(regsDe(IDC).find(p => p.cuotaN === 4)) === JSON.stringify(regsDe(IDC).find(p => p.cuotaN === 4)) &&
+      Math.round(regsDe(IDC).find(p => p.cuotaN === 4).abonoCapital) === 0);
+    const h = huellaCuotas(IDC);
+    await pedir('POST', '/api/recalculate');
+    R.check('E4 /recalculate tras descongelar deja todo igual (cierre fijo, PMT sobre las que amortizan)', huellaCuotas(IDC) === h);
+  }
+  await deshacerUltimo(IDC); await deshacerUltimo(IDC);
+  R.check('E5 deshacer los dos devuelve el C+I byte a byte', huella(IDC) === inicialC);
+
   // ══ F — EL ESPEJO DEL MODAL: la vista previa dice lo mismo que el servidor ════════════
   // Las dos ventanas calculan EN VIVO (cgPlanCongelar / cgPlanDescongelar, public/js/core/congelar.js)
   // lo que el servidor va a hacer. Aqui se arma el plan sobre la BD, se ejecuta la ruta real y se
@@ -315,6 +356,11 @@ async function ejecutarPlan(loanId, plan, fecha, obs) {
     { id: '1773655076017', desde: '2026-07-25', perdonar: true, primer: '2026-09-07', n: 'solo intereses · perdonar, primer pago elegido' },
     { id: '1773651755465', desde: '2026-07-31', perdonar: false, primer: null, n: 'solo intereses · el mismo día del vencimiento: 0 días, nada que cobrar' },
     { id: '1773656070840', desde: '2026-07-16', perdonar: false, primer: '2026-08-20', n: 'solo intereses · día 15, primer pago corrido' },
+    { id: '1776205975507jkph', desde: '2026-07-25', perdonar: false, primer: null, n: 'capital + intereses · cobrar' },
+    { id: '1776205975507jkph', desde: '2026-07-20', perdonar: true, primer: null, n: 'capital + intereses · perdonar' },
+    { id: '1773656401497', desde: '2026-07-22', perdonar: false, primer: '2026-09-15', n: 'capital + intereses · día 15' },
+    { id: '1773657323435hkkb', desde: '2026-07-18', perdonar: false, primer: null, n: 'capital + intereses en dólares' },
+    { id: '17795544041379obc', desde: '2026-07-30', perdonar: false, primer: null, n: 'capital + intereses · día 25' },
   ];
   let casosVivos = 0, conCierre = 0, conPerdon = 0, conPlazo = 0;
   for (const k of casos) {
@@ -349,14 +395,8 @@ async function ejecutarPlan(loanId, plan, fecha, obs) {
     await deshacerUltimo(k.id); await deshacerUltimo(k.id);
     R.check('F ' + k.n + ': deshacer los dos lo deja como estaba', huella(k.id) === antes);
   }
-  R.check('F ANTI-VACIO: los ' + casos.length + ' casos congelaron de verdad, con y sin cuota de cierre',
-    casosVivos === casos.length && conCierre === 2 && conPerdon === 2 && conPlazo === 0, { casosVivos, conCierre, conPerdon, conPlazo });
-  {
-    const antes = huellaTodo();
-    const r = await pedir('POST', '/api/loans/1776205975507jkph/congelar', { desde: '2026-07-25' });
-    R.check('F capital + intereses todavía no se congela (llega en el siguiente commit): 400 y BD intacta',
-      r.status === 400 && /capital \+ intereses todavía no se pueden congelar/.test(r.json && r.json.error) && huellaTodo() === antes, r.json);
-  }
+  R.check('F ANTI-VACIO: los ' + casos.length + ' casos congelaron de verdad, con y sin cuota de cierre, y alguno sumó plazo',
+    casosVivos === casos.length && conCierre === 6 && conPerdon === 3 && conPlazo >= 3, { casosVivos, conCierre, conPerdon, conPlazo });
   // Los rechazos dicen lo mismo en la vista previa y en el servidor (y no escriben).
   const rechazos = [
     { id: '1773655076017', desde: '2026-08-02', n: 'fecha futura' },
@@ -378,6 +418,38 @@ async function ejecutarPlan(loanId, plan, fecha, obs) {
       !D.cgPuedeCongelar(Object.assign({}, l, { congeladoDesde: '2026-07-20' }), lp, HOY));
   }
 
+  // ══ G — EL COBRO DE UN CREDITO CONGELADO (la cascada contra el server real) ═══════════════
+  // Cobrar «el interes del periodo en curso» con abono sobre un credito congelado: la proxima cuota es
+  // la de CIERRE, cuyo interes es FIJO (sus dias corrieron con el capital de entonces). El plan no puede
+  // recalcularlo sobre el capital que deja el abono (eso cobraria menos y la diferencia se iria a capital,
+  // la clase del Bug #66); el abono baja el capital y el motor regenera la de cierre igual.
+  R.seccion('G — cobrar con abono un crédito congelado: el interés de la cuota de cierre es fijo');
+  {
+    const antes = huella(IDC);
+    const rG = await pedir('POST', '/api/loans/' + IDC + '/congelar', { desde: '2026-07-25' });
+    const lG = loanDe(IDC), pG = paysDe(IDC);
+    const cie = pG.find(p => p.cuotaN === rG.json.cierre.cuotaN);
+    const plan = D.planCascada(lG, pG, { obligacionCOP: 1000000, cajaCOP: 1000000, obligacionUSD: 0 }, { incluirInteresMes: true });
+    const pasoMes = plan.pasos.find(p => p.esInteresMes);
+    const pasoAbo = plan.pasos.find(p => p.tipo === 'abono');
+    R.check('G1 el plan cobra el interes de la cuota de cierre ENTERO (fijo) y abona el resto a capital',
+      rG.status === 200 && plan.ok && !!pasoMes && pasoMes.payId === cie.id && pasoMes.interes === Math.round(cie.interesPeriodo) &&
+      !!pasoAbo && pasoAbo.obligacionCOP === 1000000 - pasoMes.interes, JSON.stringify({ pasos: plan.pasos.map(p => [p.tipo, p.interes, p.obligacionCOP]), cierre: cie.interesPeriodo }));
+    const est = await ejecutarPlan(IDC, plan, HOY, 'cobro congelado');
+    const cie2 = paysDe(IDC).find(p => p.id === cie.id);
+    const imp = D.imputarCobros(cie2).totales;
+    R.check('G2 tras ejecutarlo, la cuota de cierre conserva su interes y lo cobrado se reconoce TODO como interes',
+      est.ok && Math.round(cie2.interesPeriodo) === Math.round(cie.interesPeriodo) && Math.round(+cie2.partialPaid) === pasoMes.interes &&
+      Math.round(imp.interes) === pasoMes.interes && Math.round(imp.capital) === 0, JSON.stringify({ est: est.error, cie2: [cie2.interesPeriodo, cie2.partialPaid], imp }));
+    // La de cierre no tiene capital: cobrar su interes la salda. Y el abono no hace nacer ninguna cuota.
+    const regs2 = regsDe(IDC).filter(p => p.estadoPago === 'Pendiente');
+    const abo = paysDe(IDC).filter(p => esAb(p));
+    R.check('G3 la de cierre queda pagada, el abono no hace nacer cuotas y el credito sigue activo y congelado (no se cierra solo)',
+      cie2.estadoPago === 'Pagado' && regs2.length === 0 && abo.some(p => Math.round(p.abonoCapital) === pasoAbo.obligacionCOP) &&
+      loanDe(IDC).estado === 'Activo' && !!loanDe(IDC).congeladoDesde, JSON.stringify({ est: cie2.estadoPago, pend: regs2.map(p => p.cuotaN), abo: abo.map(p => p.abonoCapital) }));
+    for (let k = 0; k < est.hechos.length + 1; k++) await deshacerUltimo(IDC);
+    R.check('G4 deshacer el cobro y el congelamiento lo deja byte a byte como estaba', huella(IDC) === antes);
+  }
 
   srv.close();
   process.exit(R.finalizar());

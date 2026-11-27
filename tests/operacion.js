@@ -554,12 +554,12 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const menu = conClase(dpMenu.arbol, 'dp-menu')[0];
     const opciones = menu ? nodos(menu, n => n.tag === 'button').map(b => textos(b).join('')) : [];
     R.eq('D2 el menu "Más" de un C+I mensual con mora',
-      opciones, ['Reestructurar cuotas', 'Cambiar día de pago', 'Condonar intereses', 'Editar datos', 'Cerrar préstamo (forzar)', 'Eliminar préstamo']);
+      opciones, ['Reestructurar cuotas', 'Cambiar día de pago', 'Congelar préstamo', 'Condonar intereses', 'Editar datos', 'Cerrar préstamo (forzar)', 'Eliminar préstamo']);
     llamadasAcc.length = 0;
     nodos(menu, n => n.tag === 'button').forEach(b => b.props.onClick());
     R.eq('D2 cada opcion llama a su accion con ese prestamo (Eliminar, con su id)',
       llamadasAcc.map(x => x.k + ':' + (typeof x.arg === 'string' ? x.arg : x.arg.id)),
-      ['onReestructurar', 'onCambiarDia', 'onCondonar', 'onEdit', 'onForceClose'].map(k => k + ':' + l.id).concat(['onDelete:' + l.id]));
+      ['onReestructurar', 'onCambiarDia', 'onCongelar', 'onCondonar', 'onEdit', 'onForceClose'].map(k => k + ':' + l.id).concat(['onDelete:' + l.id]));
     // Cronograma: las 7 columnas universales.
     const cab = conClase(dp.arbol, 'dp-crono-h')[0];
     R.eq('D3 el cronograma lleva las 7 columnas universales', cab ? textos(cab) : [], ['#', 'Vence', 'Interés', 'Abono a capital', 'Valor cuota', 'Saldo', 'Estado']);
@@ -1688,6 +1688,19 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const filasE = conClase(cb.arbol, 'cbv-fila').map(f => textos(f).join(' ')).filter(x => x.indexOf('Elena') !== -1);
     R.check('R10 Cobros: las filas de Elena llevan «❄ congelado» y la del 7 ago dice «de cierre»',
       filasE.length >= 2 && filasE.every(x => /❄ congelado/.test(x)) && filasE.some(x => /cuota 9 · de cierre/.test(x)), filasE);
+    // El modal de cobro de un C+I congelado: sin opciones de recalculo (el backend las rechaza) y con la nota.
+    const lJ = loans.find(l => l.id === '1776205975507jkph');
+    const planJ = X.cgPlanCongelar(lJ, pays, '2026-07-25', false, HOY);
+    const paysJ = pays.filter(p => p.prestamoId !== lJ.id).concat(planJ.paysN);
+    const cm = montar(X.CobroModal, { loan: planJ.loanN, pays: paysJ, onConfirm: () => Promise.resolve(null), onClose: () => {}, onRequestLiquidar: () => {} }, ['1000000']);
+    const tCm = cm.todo.replace(/ /g, ' ');
+    R.check('R11 el cobro de un C+I congelado con abono: sin «QUÉ HACER CON EL CRONOGRAMA» y con la nota del congelamiento',
+      planJ.ok && tCm.indexOf('QUÉ HACER CON EL CRONOGRAMA') === -1 && /❄ Congelado: no se generan cuotas/.test(tCm), tCm.slice(0, 200));
+    const cmN = montar(X.CobroModal, { loan: lJ, pays, onConfirm: () => Promise.resolve(null), onClose: () => {}, onRequestLiquidar: () => {} }, ['1000000']);
+    R.check('R11 ANTI-TRIVIAL: sin congelar, el mismo cobro SI ofrece las opciones de recalculo', cmN.todo.indexOf('QUÉ HACER CON EL CRONOGRAMA') !== -1);
+    R.check('R11 la casilla del interés nombra la cuota de cierre y dice que no cambia con el abono (sin congelar, la de siempre)',
+      /Incluir el interés de la cuota de cierre/.test(tCm) && /sus días ya corrieron, así que no cambia con el abono/.test(tCm) &&
+      /Incluir intereses del mes actual/.test(cmN.todo) && /se liquida sobre el capital que quede/.test(cmN.todo));
     // El Historial nombra los dos movimientos nuevos.
     const log = [{ id: 1, fecha: '2026-07-31 10:00:00', tipo: 'congelar', mensaje: 'Congelaste el préstamo de Elena Vargas desde el 20 de julio de 2026', undo_id: null },
       { id: 2, fecha: '2026-07-31 11:00:00', tipo: 'descongelar', mensaje: 'Descongelaste el préstamo de Elena Vargas el 31 de julio de 2026', undo_id: null }];

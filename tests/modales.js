@@ -286,6 +286,7 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     ['CondonarModal (credito abierto)', X.CondonarModal, { loan: L(DIARIO), pays, onConfirm: prom, onClose: nada }],
     ['CongelarModal', X.CongelarModal, { loan: L(INT_MORA), pays, hoy: '2026-07-31', onConfirm: prom, onClose: nada }],
     ['CongelarModal (perdonar los dias)', X.CongelarModal, { loan: L(INT_MORA), pays, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-07-20', true]],
+    ['CongelarModal (C+I, otra fecha)', X.CongelarModal, { loan: L(CI_AB), pays, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-07-25']],
     ['CongelarModal (fecha antes del periodo)', X.CongelarModal, { loan: L(INT_MORA), pays, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-06-01']],
     ['DescongelarModal', X.DescongelarModal, { loan: planCg.loanN, pays: paysCg, hoy: '2026-07-31', onConfirm: prom, onClose: nada }],
     ['DescongelarModal (primer pago elegido)', X.DescongelarModal, { loan: planCg.loanN, pays: paysCg, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-07-31', '2026-09-07']],

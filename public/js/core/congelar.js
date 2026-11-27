@@ -15,7 +15,7 @@ import { pmt, cargaDeCuotaPreview, fechaPagoFrecuencia } from './calculo.js';
 
 // Las modalidades que se congelan (las de cuotas con interes por periodo). El credito abierto es la
 // fase 2; Prestamo (0%) y Pago unico no generan interes por periodo.
-export var CG_MODALIDADES = ['Intereses'];
+export var CG_MODALIDADES = ['Intereses', 'Capital + Intereses'];
 
 var CG_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 function cgFechaC(iso){ var p = String(iso).split('-'); return (+p[2]) + ' de ' + CG_MESES[+p[1] - 1] + ' de ' + p[0]; }
@@ -245,7 +245,7 @@ export function cgPlanDescongelar(loan, pays, desde, primerPago, hoy){
   var freq = loan.frecuencia || 'Mensual', N = cgPrimeraCongelada(abierto), base, diaPago = loan.diaPago;
   if (freq === 'Semanal' || freq === 'Quincenal') base = cgSumarDias(primer, -N * (freq === 'Semanal' ? 7 : 14));
   else { var b = new Date(primer + 'T12:00:00'); b.setDate(1); b.setMonth(b.getMonth() - N); base = cgYmd(b); diaPago = +primer.slice(8, 10); }
-  var masPlazo = 0;
+  var masPlazo = loan.modalidad === 'Capital + Intereses' && !abierto.perdona ? 1 : 0;
   var historial = congelamientosDe(loan).map(function(c, k, a){ return k === a.length - 1 ? Object.assign({}, c, { hasta: D, primerPago: primer }) : c; });
   var loanN = Object.assign({}, loan, { congeladoDesde: null, congelamientos: JSON.stringify(historial), diaPago: diaPago, fechaBaseCronograma: base,
     periodoIrregularN: N, periodoIrregularDesde: D, periodoIrregularMora: 0, plazoMeses: (+loan.plazoMeses || 0) + masPlazo });
