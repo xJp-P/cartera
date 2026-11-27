@@ -42,7 +42,7 @@
 
 import { fmt, fmtUSD } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
-import { saldoConCaja, esDiario, pendCuota, esCondonada, condonadoDe } from '../core/dominio.js';
+import { saldoConCaja, esDiario, pendCuota, esCondonada, condonadoDe, congeladoAbierto, cierreDeCuota } from '../core/dominio.js';
 import { esAbono } from '../core/ids.js';
 import { nombrePdf, montoArchivo, prestamoArchivo } from './nombres.js';
 import { rbCss, rbPaleta, rbCabecera, rbLarga, rbMedia, rbCorta, rbEsc, rbCampoValido, rbPlural, rbPrimerNombre, rbIniciales,
@@ -96,6 +96,10 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
   // "cuota 3 de 10". En `Intereses` el plazo es indefinido y no hay "de".
   var deN = esIndef ? '' : ' de ' + regs.length;
   function cuotaDe(p){ return 'cuota ' + p.cuotaN + deN; }
+  // Congelado (post-4.1.6): mientras siga congelado no corren intereses ni nacen cuotas, asi que el
+  // recibo no puede decir «cada mes pagas los intereses» ni sumar las cuotas que quedan como si fueran
+  // toda la deuda (en C+I solo queda la de cierre: el capital no vive en ninguna cuota).
+  var cong = congeladoAbierto(loan);
 
   // ── 2. COMO SE APLICO TU PAGO ──────────────────────────────────────────────
   // Una FRASE por movimiento, y las cuotas vencidas que se saldaron seguidas van en UNA sola
@@ -200,8 +204,9 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     }
     if (prox) {
       var abProx = Math.round(prox.partialPaid || 0);
-      tarjetas.push(rbTarjeta('', 'Tu próxima cuota', fmtUni(proxU),
-        'vence el ' + rbLarga(prox.fechaPago) + ' (' + cuotaDe(prox) + ')' +
+      var esCierre = !!(cong && cierreDeCuota(loan, prox.cuotaN));
+      tarjetas.push(rbTarjeta('', esCierre ? 'Tu cuota de cierre' : 'Tu próxima cuota', fmtUni(proxU),
+        'vence el ' + rbLarga(prox.fechaPago) + ' (' + cuotaDe(prox) + ')' + (esCierre ? ' · los días de interés antes del congelamiento' : '') +
         (abProx > 0 ? ' · ya abonaste ' + money(abProx) + ' de ' + money(prox.cuotaTotal) : '')));
     }
     sigueHTML = tarjetas.length ? '<div class="r-sec"><div class="r-sec-t">Lo que sigue</div>' + rbRejilla(tarjetas) +
@@ -227,13 +232,19 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
     var ley = '<div class="r-av-ley">' + rbLeyenda('green-2', rbPlural(nPag - nCond, 'pagada', 'pagadas')) +
       (nCond ? rbLeyenda('muted', rbPlural(nCond, 'condonada', 'condonadas')) : '') +
       (nVen ? rbLeyenda('red', rbPlural(nVen, 'vencida', 'vencidas')) : '') +
-      (esIndef ? '<span>plazo indefinido</span>' : rbLeyenda('track', (regs.length - nPag - nVen) + ' por venir')) + '</div>';
+      (cong ? (prox && cierreDeCuota(loan, prox.cuotaN) ? rbLeyenda('blue', 'la de cierre') : '') + '<span>congelado desde el ' + rbCorta(cong.desde, anio) + '</span>'
+        : esIndef ? '<span>plazo indefinido</span>' : rbLeyenda('track', (regs.length - nPag - nVen) + ' por venir')) + '</div>';
     // Dos saldos con nombre propio, y ninguno repite una cifra que el otro ya muestra (en un
     // `Prestamo` sin interes lo que falta ES el capital). En `Intereses` no hay "total por
     // pagar": sus cuotas son de puro interes y el capital vence fuera de ellas, asi que la suma
     // anunciaria MENOS deuda de la que hay (medido: 2.700.000 bajo un capital de 3.000.000).
     var saldos;
-    if (esIndef) {
+    if (cong) {
+      // Congelado: solo el capital, que es lo que se sigue debiendo (lo vencido y la de cierre ya
+      // estan en «Lo que sigue»). Sumar las cuotas anunciaria MENOS deuda de la que hay.
+      saldos = '<div>Saldo de capital<b class="r-cap">' + saldoTxt + '</b><span class="viejo">' +
+        (saldoAntes > saldoDespues ? 'antes de este pago: ' + money(saldoAntes) : 'se sigue debiendo') + '</span></div>';
+    } else if (esIndef) {
       saldos = '<div>Saldo de capital<b class="r-cap">' + saldoTxt + '</b><span class="viejo">' +
         (saldoAntes > saldoDespues ? 'antes de este pago: ' + money(saldoAntes) : 'se paga al final; cada mes pagas los intereses') + '</span></div>';
     } else {
@@ -243,7 +254,9 @@ export function generateReciboCobro(loan, allPays, cobro, opts) {
         : '<div>Te falta por pagar<b class="r-tot">' + totalTxt + '</b><span class="viejo">' + antesTot + '</span></div>' +
           '<div>De eso, capital<b class="r-cap">' + saldoTxt + '</b><span class="viejo">el resto son los intereses de las cuotas que faltan</span></div>';
     }
-    creditoHTML = '<div class="r-sec"><div class="r-sec-t">Así va tu crédito</div>' + barra + ley + '<div class="r-saldos">' + saldos + '</div></div>';
+    creditoHTML = '<div class="r-sec"><div class="r-sec-t">Así va tu crédito</div>' + barra + ley + '<div class="r-saldos">' + saldos + '</div>' +
+      (cong ? '<div class="r-nota"><b>Tu crédito está congelado desde el ' + rbLarga(cong.desde) + '.</b> No corren intereses ni se generan cuotas hasta que se descongele.' +
+        (vencidas.length ? ' Lo vencido se sigue debiendo.' : '') + '</div>' : '') + '</div>';
 
     // Tabla "Lo que esta vencido" (post-4.1.6, decision del PO): SOLO las cuotas atrasadas, una
     // por fila, en las dos modalidades. Juntar las mas viejas en una fila confundia al cliente

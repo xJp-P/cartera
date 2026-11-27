@@ -2177,6 +2177,48 @@ function loansDelCaso(caso) {
   R.check('V10 el estado de liquidación: el valor no cambia mientras siga congelado, y el interés acumulado son 5 días (sin 10 congelados)',
     tLQ.indexOf('Este valor no cambia mientras el crédito siga congelado.') !== -1 && tLQ.indexOf('5 día(s) x ' + pesos(1000) + ' por día, sin 10 día(s) congelados') !== -1 &&
     tLQ.indexOf('válido únicamente para el') === -1 && tLQ.indexOf(pesos(1005000)) !== -1, tLQ.slice(0, 900));
+
+  // ── El recibo de pago de un préstamo congelado (post-4.1.6, hallado en las pruebas del PO) ──
+  // Decía «se paga al final; cada mes pagas los intereses» y no mencionaba el congelamiento. Ahora lo
+  // dice con su fecha, muestra el capital como saldo y nombra la cuota de cierre.
+  const cobroCg = (loan, lp, objetivo) => {
+    const plan = S.planCascada(loan, lp, { obligacionCOP: objetivo, cajaCOP: objetivo, obligacionUSD: 0 });
+    return { ok: plan.ok && plan.pasos.length > 0, cobro: { fecha: HOYV, pasos: plan.pasos, observaciones: '',
+      pre: { saldoCaja: S.saldoConCaja(loan, lp.filter(p => p.prestamoId === loan.id)) } } };
+  };
+  // Solo intereses, cobrando los días: la de cierre (7-ago) sigue por vencer y lo vencido se cobra en parte.
+  const lpE = paysV.filter(p => p.prestamoId === ID);
+  const cE = cobroCg(pE.loanN, lpE, 600000);
+  const hRE = emitir(() => S.generateReciboCobro(pE.loanN, paysV, cE.cobro));
+  const tRE = vis(hRE);
+  R.check('V11 recibo de pago congelado (solo intereses): dice desde cuándo, nombra la cuota de cierre y no promete intereses mensuales',
+    cE.ok && tRE.indexOf('Tu crédito está congelado desde el 20 de julio de 2026.') !== -1 && tRE.indexOf('No corren intereses ni se generan cuotas hasta que se descongele.') !== -1 &&
+    tRE.indexOf('Lo vencido se sigue debiendo.') !== -1 && tRE.indexOf('Tu cuota de cierre') !== -1 &&
+    tRE.indexOf('los días de interés antes del congelamiento') !== -1 && tRE.indexOf('congelado desde el 20 jul') !== -1 && tRE.indexOf('la de cierre') !== -1 &&
+    tRE.indexOf('cada mes pagas los intereses') === -1 && tRE.indexOf('plazo indefinido') === -1, tRE.slice(0, 1500));
+  // El caso de las pruebas del PO: días perdonados (no queda ninguna cuota) y todo lo vencido pagado.
+  const pP = S.cgPlanCongelar(L(ID), pays, '2026-07-20', true, HOYV);
+  const lpP = pP.paysN.filter(p => p.prestamoId === ID);
+  const cP = cobroCg(pP.loanN, lpP, 1500000);
+  const lpPdesp = lpP.map(p => p.estadoPago === 'En Mora' ? Object.assign({}, p, { estadoPago: 'Pagado', partialPaid: p.cuotaTotal, montoCOPRecibido: p.cuotaTotal,
+    fechaRecaudo: HOYV, recibos: JSON.stringify([{ fecha: HOYV, cop: p.cuotaTotal }]) }) : p);
+  const hRP = emitir(() => S.generateReciboCobro(pP.loanN, pays.filter(p => p.prestamoId !== ID).concat(lpPdesp), cP.cobro));
+  const tRP = vis(hRP);
+  R.check('V11 días perdonados y todo pagado (el caso de las pruebas del PO): el capital «se sigue debiendo», sin «Lo que sigue» ni intereses mensuales',
+    pP.ok && cP.ok && tRP.indexOf('Tu crédito está congelado desde el 20 de julio de 2026.') !== -1 &&
+    /Saldo de capital\s*\$\s3\.000\.000\s*se sigue debiendo/.test(tRP) && (tRP.match(/3\.000\.000/g) || []).length === 1 &&
+    tRP.indexOf('Lo que sigue') === -1 && tRP.indexOf('cada mes pagas los intereses') === -1 && tRP.indexOf('Lo vencido se sigue debiendo') === -1, tRP.slice(0, 1500));
+  // Capital + intereses: no suma las cuotas que quedan (solo la de cierre: anunciaría MENOS deuda).
+  const lpC = paysV.filter(p => p.prestamoId === IDC);
+  const cC = cobroCg(pC.loanN, lpC, 300000);
+  const tRC2 = vis(emitir(() => S.generateReciboCobro(pC.loanN, paysV, cC.cobro)));
+  R.check('V12 recibo de pago congelado (capital + intereses): el saldo es el capital, sin «Te falta por pagar» ni «De eso, capital»',
+    cC.ok && tRC2.indexOf('Saldo de capital') !== -1 && tRC2.indexOf('Te falta por pagar') === -1 && tRC2.indexOf('De eso, capital') === -1 &&
+    tRC2.indexOf('Tu crédito está congelado desde el 25 de julio de 2026.') !== -1 && tRC2.indexOf('por venir') === -1, tRC2.slice(0, 1500));
+  const cN = cobroCg(L(ID), pays.filter(p => p.prestamoId === ID), 600000);
+  const tRN = vis(emitir(() => S.generateReciboCobro(L(ID), pays, cN.cobro)));
+  R.check('V12 ANTI-TRIVIAL: sin congelar, el mismo recibo no dice «congelado» y conserva «plazo indefinido»',
+    cN.ok && tRN.toLowerCase().indexOf('congelad') === -1 && tRN.indexOf('plazo indefinido') !== -1 && tRN.indexOf('Tu próxima cuota') !== -1);
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────
