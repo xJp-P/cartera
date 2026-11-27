@@ -87,6 +87,7 @@ const ENDPOINTS = [
   'POST /api/loans/:id/abono', 'POST /api/loans/:id/reestructurar',
   'POST /api/loans/:id/force-close', 'POST /api/loans/:id/cambiar-dia-pago',
   'POST /api/loans/:id/corte', 'POST /api/loans/:id/condonar-intereses', 'POST /api/unificaciones',
+  'POST /api/loans/:id/congelar', 'POST /api/loans/:id/descongelar',
   'POST /api/recalculate', 'GET /api/config', 'PUT /api/config', 'GET /api/activity',
   'GET /api/undo', 'POST /api/undo/:id',
   'GET /api/debts', 'GET /api/debts/:id', 'POST /api/debts',
@@ -824,6 +825,32 @@ async function faseEscritura() {
         '/api/loans/' + lCond.id + '/condonar-intereses', {}, '4xx');
       await rechazo('POST /api/loans/:id/condonar-intereses', 'condonar un prestamo inexistente', 'POST',
         '/api/loans/no-existe/condonar-intereses', {}, 404);
+    }
+
+    // ── POST /api/loans/:id/congelar y /descongelar (post-4.1.6) ──────────────
+    // Contrato HTTP (200 con undoId, 4xx, 404) sobre un prestamo creado para la prueba. Lo fino
+    // (la cuota de cierre fija, /recalculate idempotente, la liquidacion, deshacer exacto, C+I)
+    // vive en la suite `congelar`.
+    R.seccion('POST /api/loans/:id/congelar y /descongelar');
+    {
+      const lCg = (await pedir(S, 'POST', '/api/loans', { nombre: 'ZZ Congelar E2E', cedula: '9', telefono: '9', moneda: 'COP', trmAcordada: 4100,
+        montoOrigen: 1000000, montoCOP: 1000000, tasaMensual: 5, plazoMeses: 0, modalidad: 'Intereses', fechaInicio: '2026-06-15', diaPago: 15,
+        estado: 'Activo', notas: '', frecuencia: 'Mensual' })).json;
+      await pedir(S, 'GET', '/api/payments');
+      const rCg = await pedir(S, 'POST', '/api/loans/' + lCg.id + '/congelar', {});
+      marcar('POST /api/loans/:id/congelar');
+      R.check('POST /congelar responde 200', rCg.status === 200, 'status=' + rCg.status + ' ' + rCg.text.slice(0, 200));
+      exigirUndoId(rCg, 'POST /congelar');
+      R.eq('congelar deja la marca en el prestamo', conDb(DB, d => d.prepare('SELECT congeladoDesde FROM loans WHERE id=?').get(lCg.id)).congeladoDesde, hoyStr());
+      await rechazo('POST /api/loans/:id/congelar', 'congelar dos veces', 'POST', '/api/loans/' + lCg.id + '/congelar', {}, '4xx');
+      await rechazo('POST /api/loans/:id/congelar', 'congelar un prestamo inexistente', 'POST', '/api/loans/no-existe/congelar', {}, 404);
+      const rDc = await pedir(S, 'POST', '/api/loans/' + lCg.id + '/descongelar', {});
+      marcar('POST /api/loans/:id/descongelar');
+      R.check('POST /descongelar responde 200', rDc.status === 200, 'status=' + rDc.status + ' ' + rDc.text.slice(0, 200));
+      exigirUndoId(rDc, 'POST /descongelar');
+      R.eq('descongelar quita la marca', conDb(DB, d => d.prepare('SELECT congeladoDesde FROM loans WHERE id=?').get(lCg.id)).congeladoDesde, null);
+      await rechazo('POST /api/loans/:id/descongelar', 'descongelar uno que no esta congelado', 'POST', '/api/loans/' + lCg.id + '/descongelar', {}, '4xx');
+      await rechazo('POST /api/loans/:id/descongelar', 'descongelar un prestamo inexistente', 'POST', '/api/loans/no-existe/descongelar', {}, 404);
     }
 
     // ── POST /api/unificaciones (post-4.0.0) ────────────────────────────────

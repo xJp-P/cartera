@@ -32,11 +32,13 @@ var HS_TIPOS = {
   pago: ['check', 'good', 'Pago'], abono: ['dollar', 'good', 'Abono'], reestructuracion: ['calc', 'info', 'Reestructuración'],
   cierre: ['alert', 'crit', 'Cierre forzoso'], deshacer: ['refresh', 'purple', 'Deshecho'], 'cambio-fecha': ['calendar', 'info', 'Cambio de fecha'],
   deuda: ['briefcase', 'neutral', 'Mis deudas'], condonacion: ['shield', 'warn', 'Condonación'],
-  unificacion: ['refresh', 'info', 'Unificación']
+  unificacion: ['refresh', 'info', 'Unificación'],
+  // Congelar préstamo (post-4.1.6): no mueven caja, cambian lo que corre.
+  congelar: ['snow', 'info', 'Congelado'], descongelar: ['snow', 'good', 'Descongelado']
 };
 var HS_GRUPOS = [['todos', 'Todo'], ['cobros', 'Cobros'], ['prestamos', 'Préstamos'], ['deudas', 'Mis deudas'], ['deshacer', 'Deshechos']];
 var HS_GRUPO_DE = { pago: 'cobros', abono: 'cobros', prestamo: 'prestamos', edicion: 'prestamos', eliminacion: 'prestamos',
-  reestructuracion: 'prestamos', 'cambio-fecha': 'prestamos', cierre: 'prestamos', condonacion: 'prestamos', unificacion: 'prestamos', deuda: 'deudas', deshacer: 'deshacer' };
+  reestructuracion: 'prestamos', 'cambio-fecha': 'prestamos', cierre: 'prestamos', condonacion: 'prestamos', unificacion: 'prestamos', congelar: 'prestamos', descongelar: 'prestamos', deuda: 'deudas', deshacer: 'deshacer' };
 var HS_PERIODOS = [['todo', 'Todo'], ['hoy', 'Hoy'], ['7', '7 días'], ['30', '30 días'], ['mes', 'Este mes'], ['rango', 'Elegir fechas']];
 var HS_PERIODO_TXT = { todo: 'en todo el historial', hoy: 'hoy', '7': 'en los últimos 7 días', '30': 'en los últimos 30 días', mes: 'este mes', rango: 'en las fechas elegidas' };
 var HS_PAGINA = 120;

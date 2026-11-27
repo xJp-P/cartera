@@ -45,6 +45,10 @@ module.exports = function crearRutasUnificacion(ctx) {
     if (unicos.length < 2) return res.status(400).json({ error: 'Para unificar hacen falta al menos dos préstamos distintos.' });
     const loans = unicos.map(id => db.prepare('SELECT * FROM loans WHERE id = ?').get(id));
     if (loans.some(l => !l)) return res.status(404).json({ error: 'Alguno de los préstamos no existe.' });
+    // Congelar (post-4.1.6): un prestamo congelado no se unifica (su cuota de cierre y su historial
+    // no tienen como pasar al nuevo). Primero se descongela.
+    const congelado = loans.find(l => l.congeladoDesde);
+    if (congelado) return res.status(400).json({ error: 'El préstamo de ' + congelado.nombre + ' está congelado: descongélalo antes de unificarlo.' });
     const nuevoId = Date.now().toString() + Math.random().toString(36).slice(2, 6);
 
     return mutacionAtomica(req, res, {

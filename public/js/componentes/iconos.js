@@ -57,7 +57,9 @@ export var ICONS = {
   sparkle:     'M12 2l2 6.5L20.5 10l-6.5 2L12 18.5 10 12l-6.5-1.5L10 8.5 12 2z',
   shield:      'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   wallet:      'M4 5h16a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2z M2 10h20 M7 15h3',
-  receipt:     'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M8 13h8 M8 17h8 M8 9h2'
+  receipt:     'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M8 13h8 M8 17h8 M8 9h2',
+  // Congelar prestamo (post-4.1.6): un copo de nieve de seis brazos.
+  snow:        'M12 2v20 M3.34 7l17.32 10 M3.34 17l17.32-10 M9 3.5l3 2 3-2 M9 20.5l3-2 3 2 M4.2 10.6l2.6-.9-.5-2.7 M19.8 13.4l-2.6.9.5 2.7 M4.2 13.4l2.6.9-.5 2.7 M19.8 10.6l-2.6-.9.5-2.7'
 };
 
 export function Ico(props){

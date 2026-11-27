@@ -1,4 +1,5 @@
-// tests/modales.js — LOS MODALES (rediseño v4): la base comun, la confirmacion y los 17 modales.
+// tests/modales.js — LOS MODALES (rediseño v4): la base comun, la confirmacion y los 18 archivos de modales
+// (19 modales: CongelarModal.js trae tambien DescongelarModal, post-4.1.6).
 //
 // La fase visual de los modales llevo a produccion la base que aprobo el PO sobre el prototipo: fondo
 // oscuro con desenfoque, la tarjeta que entra con fundido y escala, campos de 44 px con anillo azul al
@@ -144,17 +145,19 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
   const CI = '1773656997026zqmp', INT_MORA = '1773655076017', USD_MORA = '1782151590658w66y', DIARIO = 'fixture-diario-01', CI_AB = '1776205975507jkph';
 
   // 4.1.4: `AbonoModal` se borro (no tenia entrada desde 2.9.6; el cobro en cascada lo absorbio).
-  R.seccion('0 — el arnes ve la base, la confirmacion y los 17 modales; el fixture trae los casos');
-  const MODALES = ['CambiarDiaModal', 'CobroModal', 'CondonarModal', 'ConfirmModal', 'ConfirmUndoModal', 'CorteModal', 'CronogramaPdfModal',
+  R.seccion('0 — el arnes ve la base, la confirmacion y los 18 archivos de modales; el fixture trae los casos');
+  const MODALES = ['CambiarDiaModal', 'CobroModal', 'CondonarModal', 'ConfirmModal', 'ConfirmUndoModal', 'CongelarModal', 'CorteModal', 'CronogramaPdfModal',
     'DebtModal', 'DebtPayModal', 'DeleteDebtModal', 'LiquidarModal', 'LoanModal', 'PayModal', 'PreflightMoraModal', 'ReciboGeneralModal', 'RestructureModal', 'UnificarModal'];
+  // Los modales que viven en el archivo de otro (post-4.1.6: congelar y descongelar van juntos).
+  const MODALES_EXTRA = ['DescongelarModal'];
   const archivos = fs.readdirSync(path.join(REPO, 'public/js/modales')).filter(f => /\.js$/.test(f)).map(f => f.replace(/\.js$/, '')).sort();
-  R.eq('0 public/js/modales trae exactamente los 17 modales', archivos, MODALES.slice().sort());
-  R.check('0 el arnes ve Modal, Fld, ABtn, ST y los 17', ['Modal', 'Fld', 'ABtn', 'ST'].concat(MODALES).every(k => X[k] !== undefined));
+  R.eq('0 public/js/modales trae exactamente los 18 archivos de modales', archivos, MODALES.slice().sort());
+  R.check('0 el arnes ve Modal, Fld, ABtn, ST y los 19 modales', ['Modal', 'Fld', 'ABtn', 'ST'].concat(MODALES, MODALES_EXTRA).every(k => X[k] !== undefined));
   R.check('0 anti-vacio: el fixture trae un C+I con cuotas pendientes, un Intereses con mora, un USD con mora y el credito abierto',
     est(CI, 'Pendiente').length > 0 && est(INT_MORA, 'En Mora').length > 0 && est(USD_MORA, 'En Mora').length > 0 && !!L(DIARIO));
   const conBase = archivos.filter(f => /import \{[^}]*\bModal\b[^}]*\} from '\.\.\/componentes\/base\.js'/.test(leer('public/js/modales/' + f + '.js')));
-  R.check('0 16 de los 17 modales salen de la base comun (el 17, la confirmacion, arma su propia tarjeta)',
-    conBase.length === 16 && conBase.indexOf('ConfirmModal') === -1, conBase);
+  R.check('0 17 de los 18 archivos de modales salen de la base comun (la confirmacion arma su propia tarjeta)',
+    conBase.length === 17 && conBase.indexOf('ConfirmModal') === -1, conBase);
 
   // ── A — LA BASE ───────────────────────────────────────────────────────────
   R.seccion('A — la base comun: Modal, Fld y ABtn');
@@ -241,7 +244,11 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     pildora.props.style.color === 'var(--crit-text)' && unir(pildora) === '! En Mora');
 
   // ── D — LOS 17 MODALES RENDERIZADOS ───────────────────────────────────────
-  R.seccion('D — los 17 modales renderizados con el fixture, en varios estados');
+  R.seccion('D — los 19 modales renderizados con el fixture, en varios estados');
+  // Congelar (post-4.1.6): el credito de solo intereses congelado el 20-jul, armado en memoria con el
+  // espejo del modal (el mismo que la seccion F de tests/congelar.js ata al servidor).
+  const planCg = X.cgPlanCongelar(L(INT_MORA), pays, '2026-07-20', false, '2026-07-31');
+  const paysCg = pays.filter(p => String(p.prestamoId) !== INT_MORA).concat(planCg.paysN);
   const deuda = { id: 'd1', titulo: 'Compra del carro', acreedor: 'banco popular', concepto: '5% mensual - Cuota inicial', monto_original: 1000000,
     saldo_pendiente: 500000, estado: 'Activa', fecha_creacion: '2026-07-01', total_cargos: 0, total_abonos: 500000 };
   const pend = est(CI, 'Pendiente')[0];
@@ -277,6 +284,11 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     ['CobroModal (sobra dinero)', X.CobroModal, { loan: L(INT_MORA), pays, onConfirm: prom, onClose: nada, onRequestLiquidar: nada }, ['999999999']],
     ['CondonarModal', X.CondonarModal, { loan: L(INT_MORA), pays, onConfirm: prom, onClose: nada }],
     ['CondonarModal (credito abierto)', X.CondonarModal, { loan: L(DIARIO), pays, onConfirm: prom, onClose: nada }],
+    ['CongelarModal', X.CongelarModal, { loan: L(INT_MORA), pays, hoy: '2026-07-31', onConfirm: prom, onClose: nada }],
+    ['CongelarModal (perdonar los dias)', X.CongelarModal, { loan: L(INT_MORA), pays, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-07-20', true]],
+    ['CongelarModal (fecha antes del periodo)', X.CongelarModal, { loan: L(INT_MORA), pays, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-06-01']],
+    ['DescongelarModal', X.DescongelarModal, { loan: planCg.loanN, pays: paysCg, hoy: '2026-07-31', onConfirm: prom, onClose: nada }],
+    ['DescongelarModal (primer pago elegido)', X.DescongelarModal, { loan: planCg.loanN, pays: paysCg, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-07-31', '2026-09-07']],
     ['CorteModal', X.CorteModal, { loan: L(DIARIO), pays, onSave: prom, onClose: nada }, [undefined, undefined, '100000']],
     ['CorteModal (fecha futura)', X.CorteModal, { loan: L(DIARIO), pays, onSave: prom, onClose: nada }, ['2026-08-15']],
     ['CambiarDiaModal', X.CambiarDiaModal, { loan: L(CI), pays, onReload: nada, onClose: nada }, ['15']],
@@ -330,7 +342,7 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     });
     conClase(v, 'v4m-btn').forEach(b => { if (clsDe(b).length !== 2) abtnSinTono.push(nom + ' · ' + unir(b)); });
   }
-  R.check('D1 las ' + ESCENAS.length + ' escenas se renderizan sin excepciones y cubren los 17 modales', errores.length === 0 && vistos.size === 17, errores.concat([[...vistos].length]));
+  R.check('D1 las ' + ESCENAS.length + ' escenas se renderizan sin excepciones y cubren los 19 modales', errores.length === 0 && vistos.size === 19, errores.concat([[...vistos].length]));
   R.check('D1 los 15 modales de la base van dentro de la tarjeta comun (y la confirmacion en la suya)',
     Object.entries(arboles).every(([n, a]) => conClase(a, 'v4m-sheet').length === 1 && conClase(a, n.indexOf('ConfirmModal') === 0 ? 'v4m-confirm' : 'v4m-body').length === 1));
   R.check('D2 ningun estilo en linea de los que el prototipo armonizaba (cada uno vive en una clase de modales.css)', armonizados.length === 0, armonizados.slice(0, 15));
@@ -543,6 +555,61 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
     llamadas.length = 0;
     boton(montar(X.PayModal, base, [undefined, undefined, undefined, undefined, undefined, 'parcial', '1000', String(Math.round((falta + 0.02) * 100) / 100)]).arbol, 'Registrar parcial').props.onClick();
     R.eq('F5 en modo parcial, mas dolares de los que faltan se rechaza', llamadas.length, 0);
+  }
+
+  // ── G — CONGELAR Y DESCONGELAR: LA VENTANA ES DINAMICA (post-4.1.6, Fase 1) ──────
+  // Se montan las dos ventanas REALES. Al cambiar la fecha o elegir cobrar o perdonar los dias del
+  // periodo en curso, las cifras y la vista previa se mueven (son lo que hara el servidor: la seccion F
+  // de tests/congelar.js ata el espejo a la ruta real). Credito de solo intereses del fixture:
+  // 3.000.000 al 10 %, dia 7; la cuota 9 vence el 7-ago y su periodo empezo el 7-jul.
+  R.seccion('G — congelar y descongelar: las cifras y la vista previa se mueven con la eleccion');
+  {
+    const base = { loan: L(INT_MORA), pays, hoy: '2026-07-31', onConfirm: () => Promise.resolve(null), onClose: nada };
+    const cobrar31 = montar(X.CongelarModal, base).arbol;                       // hoy: 24 dias corridos
+    const cobrar20 = montar(X.CongelarModal, base, ['2026-07-20']).arbol;       // 13 dias
+    const perdon20 = montar(X.CongelarModal, base, ['2026-07-20', true]).arbol; // perdonarlos
+    const txt = a => unir(a).replace(/ /g, ' ');
+    const filasDe = (a, cls) => conClase(a, 'cgm-f').filter(n => clsDe(n).indexOf(cls) !== -1);
+    R.check('G1 por defecto se COBRAN los dias corridos: «Cobrarlos: $ 240.000» (24 dias) y la cuota del 7 ago queda en ese valor',
+      /Cobrarlos: \$ 240\.000/.test(txt(cobrar31)) && /Los 24 días del período en curso/.test(txt(cobrar31)) &&
+      filasDe(cobrar31, 'cierre').length === 1 && /Cierre/.test(unir(filasDe(cobrar31, 'cierre')[0])), txt(cobrar31).slice(0, 400));
+    R.check('G2 al mover la fecha al 20-jul la cifra se mueve sola: 13 dias = $ 130.000',
+      /Cobrarlos: \$ 130\.000/.test(txt(cobrar20)) && /Los 13 días del período en curso/.test(txt(cobrar20)));
+    const res = a => unir(conClase(a, 'cgm-res')[0] || {}).replace(/ /g, ' ');
+    R.check('G3 «Así queda»: cobrando, la cuota del 7 ago pasa de $ 300.000 a $ 130.000; perdonando, «se quita»',
+      /Cuota del 7 ago.*\$ 300\.000.*→.*\$ 130\.000/.test(res(cobrar20)) && /Cuota del 7 ago.*\$ 300\.000.*se quita/.test(res(perdon20)) && !/130\.000/.test(res(perdon20)),
+      [res(cobrar20), res(perdon20)]);
+    R.check('G4 la vista previa: cobrando, 1 cuota de cierre y 3 que se quitan; perdonando, ninguna de cierre y 4 que se quitan',
+      filasDe(cobrar20, 'cierre').length === 1 && filasDe(cobrar20, 'quita').length === 3 &&
+      filasDe(perdon20, 'cierre').length === 0 && filasDe(perdon20, 'quita').length === 4);
+    R.check('G4 y lo vencido queda en la vista previa: las 3 mas recientes y «2 cuotas vencidas anteriores · se siguen debiendo»',
+      filasDe(cobrar20, 'mora').length === 3 && conClase(cobrar20, 'cgm-mas').some(n => unir(n) === '2 cuotas vencidas anteriores · se siguen debiendo') && /se sigue debiendo/.test(res(cobrar20)));
+    // Medido en la app: dentro del cuerpo flexible de la ventana, un bloque con `overflow: hidden` se
+    // encogia a 2 px y la vista previa no se veia (el arnes no mide alturas).
+    R.check('G4 la vista previa no se encoge dentro de la ventana (`flex: none`)', /\.cgm-crono \{[^}]*flex: none;/.test(leer('public/css/modales.css')));
+    const plan = X.cgPlanCongelar(L(INT_MORA), pays, '2026-07-20', false, '2026-07-31');
+    R.check('G5 las cifras de la ventana son las del espejo (el plan que el servidor ejecuta)',
+      plan.ok && plan.cierre.interes === 130000 && plan.quitadas.length === 3 && res(cobrar20).indexOf('$ ' + plan.capital.toLocaleString('es-CO')) !== -1);
+    // El boton manda la decision elegida, con la fecha.
+    const env = [];
+    const conEnvio = Object.assign({}, base, { onConfirm: (id, body) => { env.push([id, body]); return Promise.resolve(null); } });
+    boton(montar(X.CongelarModal, conEnvio, ['2026-07-20', true, 'viaje']).arbol, 'Congelar préstamo').props.onClick();
+    R.eq('G6 «Congelar préstamo» envia la fecha, la opcion (perdonar) y el motivo', env, [[INT_MORA, { desde: '2026-07-20', perdonar: true, observaciones: 'viaje' }]]);
+    const mal = montar(X.CongelarModal, conEnvio, ['2026-06-01']).arbol;
+    const bMal = boton(mal, 'Congelar préstamo');
+    R.check('G7 una fecha antes del periodo en curso muestra el mismo aviso del servidor y apaga el boton',
+      /Congela desde el 7 de julio de 2026 o después/.test(txt(mal)) && bMal && bMal.props.disabled === true);
+    // Descongelar: el credito congelado el 20-jul (cobrando 13 dias), armado en memoria con el espejo.
+    const des = montar(X.DescongelarModal, { loan: planCg.loanN, pays: paysCg, hoy: '2026-07-31', onConfirm: prom, onClose: nada }).arbol;
+    const desSep = montar(X.DescongelarModal, { loan: planCg.loanN, pays: paysCg, hoy: '2026-07-31', onConfirm: prom, onClose: nada }, ['2026-07-31', '2026-09-07']).arbol;
+    R.check('G8 descongelar el 31-jul: el primer pago sugerido es el 7 ago y cobra 7 dias de interes ($ 70.000)',
+      /Sugerido: 7 ago 2026/.test(txt(des)) && /Primera cuota \(7 ago\).*\$ 70\.000/.test(res(des)) && /7 días desde el 31 jul/.test(res(des)), res(des));
+    R.check('G9 al elegir otro primer pago (7-sep) la cifra se mueve: 38 dias = $ 380.000, y despues cuotas de $ 300.000',
+      /Primera cuota \(7 sept?\).*\$ 380\.000/.test(res(desSep)) && /38 días/.test(res(desSep)) && /Después, cada cuota.*\$ 300\.000/.test(res(desSep)), res(desSep));
+    R.check('G10 «Lo vencido» son las 5 cuotas en mora ($ 1.500.000), sin sumar la cuota de cierre, que va en su propia linea ($ 130.000)',
+      /Lo vencido\s*\$ 1\.500\.000 · se sigue debiendo/.test(res(des)) && /Cuota de cierre \(7 ago\)\s*\$ 130\.000 · se sigue debiendo/.test(res(des)), res(des));
+    R.check('G10 la cuota de cierre sigue debiendose en la vista previa (con su franja del congelamiento)',
+      conClase(des, 'cgm-f').some(n => clsDe(n).indexOf('cierre') !== -1) && conClase(des, 'cgm-hielo').length === 1);
   }
 
   process.exit(R.finalizar());

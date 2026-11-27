@@ -218,7 +218,7 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   const sinPeso = v => String(v).replace(/^-?\$\s*/, '');
   const llamadasAcc = [];
   const acciones = {};
-  ['onCobro', 'onCorte', 'onLiquidar', 'onReestructurar', 'onCambiarDia', 'onCondonar', 'onEdit', 'onDelete', 'onForceClose', 'onNewLoan']
+  ['onCobro', 'onCorte', 'onLiquidar', 'onReestructurar', 'onCambiarDia', 'onCondonar', 'onCongelar', 'onDescongelar', 'onEdit', 'onDelete', 'onForceClose', 'onNewLoan']
     .forEach(k => { acciones[k] = arg => llamadasAcc.push({ k, arg }); });
   // El recibo general (post-4.0.0, punto 4): el boton le pide a App `onReciboGeneral(nombre, prestamos)`.
   const llamadasRG = [];
@@ -1604,6 +1604,98 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       /return reload\(\)\.then\(function\(fresh\)\{[\s\S]{0,1400}if\(fl&&genPdf!==false\) generateConstanciaCondonacion\(fl,fp,\{fecha:nowStr\(\),condonado:r\.condonado,cuotas:r\.cuotas/.test(app) &&
       /pre:\{loan:loanPre,pays:paysPre\}/.test(app));
     R.check('Q7 y las saldadas por el perdon ya no estan por cobrar', !conClase(cb.arbol, 'cbv-fila').some(f => moraA.slice(0, 3).some(m => textos(f).join(' ').indexOf(X.opCorta(m.fechaPago)) !== -1 && textos(f).join(' ').indexOf('Elena') !== -1)));
+  }
+
+  // ── R — CONGELAR PRESTAMO EN LA INTERFAZ (post-4.1.6, Fase 1) ────────────────────────
+  // El credito de solo intereses del fixture (Elena, 3.000.000 al 10 %, dia 7, cuotas 4 a 8 vencidas),
+  // congelado el 20-jul cobrando los 13 dias corridos: armado en memoria con el espejo de los modales
+  // (`cgPlanCongelar`), que la seccion F de tests/congelar.js ata al servidor fila a fila.
+  R.seccion('R — congelar: la marca, el aviso, los botones, la cuota de cierre y la marca en Cartera y Cobros');
+  {
+    const clsDe = n => ((n && n.props && n.props.className) || '').split(/\s+/);
+    const lE = loans.find(l => l.id === '1773655076017');
+    const plan = X.cgPlanCongelar(lE, pays, '2026-07-20', false, HOY);
+    R.check('R0 ANTI-VACIO: el plan congela con cuota de cierre de $ 130.000 (13 dias) y quita 3 cuotas',
+      plan.ok && plan.cierre && plan.cierre.interes === 130000 && plan.quitadas.length === 3, plan.error);
+    const lC = plan.loanN;
+    const paysC = pays.filter(p => p.prestamoId !== lE.id).concat(plan.paysN);
+    const loansC = loans.map(l => l.id === lE.id ? lC : l);
+    const pp = extra => Object.assign(propsPanel(lC), { loans: loansC, pays: paysC }, extra || {});
+    const dp = montar(X.DeudorPanel, pp(), []);
+    const t = dp.todo.replace(/ /g, ' ');
+    R.check('R1 la marca «❄ Congelado desde 20 jul» en la cabecera del prestamo y «congelado» en su pestaña',
+      conClase(dp.arbol, 'dp-chip-hielo').some(n => textos(n).join('') === '❄ Congelado desde 20 jul') && /❄ congelado/.test(t));
+    const aviso = conClase(dp.arbol, 'dp-hielo-aviso')[0];
+    const tAv = aviso ? textos(aviso).join('').replace(/ /g, ' ') : '';
+    R.check('R2 el aviso: desde cuando, lo vencido que se sigue debiendo y la cuota que se cerro con sus dias',
+      /Congelado desde el 20 jul 2026\./.test(tAv) && /Las 5 cuotas vencidas se siguen debiendo/.test(tAv) &&
+      /La cuota del 7 ago 2026 se cerró con 13 días de interés \(\$ 130\.000 en vez de \$ 300\.000\)/.test(tAv) && /El capital no cambia/.test(tAv), tAv);
+    llamadasAcc.length = 0;
+    const bDes = botones(dp.arbol, /^Descongelar$/);
+    R.check('R3 el boton «Descongelar» a la vista, ANTES de Registrar cobro, y abre su ventana con ese prestamo',
+      bDes.length === 1 && nodos(conClase(dp.arbol, 'dp-acc')[0], n => n.tag === 'button').map(b => textos(b).join(''))[0] === 'Descongelar');
+    if (bDes[0]) bDes[0].props.onClick();
+    R.eq('R3 (la accion)', llamadasAcc.map(x => x.k + ':' + x.arg.id), ['onDescongelar:' + lE.id]);
+    R.check('R3 «Registrar cobro» sigue (lo vencido se cobra), ya no como boton principal',
+      botones(dp.arbol, /^Registrar cobro$/).length === 1 && clsDe(botones(dp.arbol, /^Registrar cobro$/)[0]).indexOf('pri') === -1);
+    const dpM = montar(X.DeudorPanel, pp(), [undefined, undefined, true]);
+    const menu = conClase(dpM.arbol, 'dp-menu')[0];
+    const ops = menu ? nodos(menu, n => n.tag === 'button').map(b => textos(b).join('')) : [];
+    R.eq('R4 el menu «Más» congelado: sin cambiar dia ni congelar otra vez (condonar y editar siguen)',
+      ops, ['Condonar intereses', 'Editar datos', 'Cerrar préstamo (forzar)', 'Eliminar préstamo']);
+    R.check('R4 y dice por que: «Cambiar el día de pago: descongélalo primero.»',
+      conClase(dpM.arbol, 'dp-menu-nota').some(n => textos(n).join('') === 'Cambiar el día de pago: descongélalo primero.'));
+    const cierre = conClase(dp.arbol, 'cierre').filter(n => clsDe(n).indexOf('dp-crono-f') !== -1)[0];
+    const tCi = cierre ? textos(cierre).join(' ').replace(/ /g, ' ') : '';
+    R.check('R5 el cronograma: la cuota de cierre con su chip, sus dias (del 7 jul al 20 jul), sin capital, y lo que valia antes',
+      !!cierre && /Cierre/.test(tCi) && /cierre: 13 días de interés \(del 7 jul al 20 jul\), sin capital/.test(tCi) && /antes \$ 300\.000/.test(tCi) && /\$ 130\.000/.test(tCi), tCi);
+    R.check('R5 y la franja del congelamiento al final («no corren intereses ni se generan cuotas»)',
+      conClase(dp.arbol, 'dp-hielo').some(n => /Congelado desde el 20 jul 2026 · no corren intereses ni se generan cuotas/.test(textos(n).join(''))));
+    R.check('R6 «Lo que queda por vencer»: la de cierre, y despues nada; la renta mensual, en pausa',
+      /Lo que queda por vencer/.test(t) && /la de cierre; después, nada/.test(t) && /En pausa/.test(t));
+    // Sin congelar, el mismo prestamo ofrece «Congelar préstamo» y la abre con ese prestamo.
+    const dpN = montar(X.DeudorPanel, propsPanel(lE), [undefined, undefined, true]);
+    const opN = nodos(conClase(dpN.arbol, 'dp-menu')[0], n => n.tag === 'button');
+    llamadasAcc.length = 0;
+    opN.filter(b => textos(b).join('') === 'Congelar préstamo').forEach(b => b.props.onClick());
+    R.eq('R7 sin congelar, «Más» ofrece «Congelar préstamo» y abre su ventana', llamadasAcc.map(x => x.k + ':' + x.arg.id), ['onCongelar:' + lE.id]);
+    const lPU = loans.find(l => l.modalidad === 'Pago Unico' && l.estado === 'Activo');
+    const opPU = nodos(conClase(montar(X.DeudorPanel, propsPanel(lPU), [undefined, undefined, true]).arbol, 'dp-menu')[0], n => n.tag === 'button').map(b => textos(b).join(''));
+    R.check('R7 un Pago único no ofrece congelar (no genera interés por período)', !!lPU && opPU.indexOf('Congelar préstamo') === -1, opPU);
+    // Descongelado: la franja del periodo congelado va antes de la primera cuota nueva, que dice sus dias.
+    const plan2 = X.cgPlanDescongelar(lC, paysC, HOY, null, HOY);
+    const paysD = paysC.filter(p => p.prestamoId !== lE.id).concat(plan2.paysN);
+    const dpD = montar(X.DeudorPanel, Object.assign(propsPanel(plan2.loanN), { loans: loans.map(l => l.id === lE.id ? plan2.loanN : l), pays: paysD }), []);
+    const tD = dpD.todo.replace(/ /g, ' ');
+    R.check('R8 descongelado: «Congelado del 20 jul 2026 al 31 jul 2026 · 11 días sin intereses ni cuotas», y la cuota 10 cobra 7 dias desde el 31 jul',
+      plan2.ok && conClase(dpD.arbol, 'dp-hielo').some(n => textos(n).join('') === 'Congelado del 20 jul 2026 al 31 jul 2026 · 11 días sin intereses ni cuotas') &&
+      /primera tras descongelar: 7 días de interés desde el 31 jul/.test(tD) && conClase(dpD.arbol, 'reanuda').length === 1 &&
+      conClase(dpD.arbol, 'dp-hielo-aviso').length === 0 && botones(dpD.arbol, /^Descongelar$/).length === 0,
+      { ok: plan2.ok, franja: /Congelado del 20 jul 2026 al 31 jul 2026 · 11 días sin intereses ni cuotas/.test(tD), primera: /primera tras descongelar: 7 días de interés desde el 31 jul/.test(tD),
+        reanuda: conClase(dpD.arbol, 'reanuda').length, hielo: conClase(dpD.arbol, 'dp-hielo').map(n => textos(n).join('')), crono: conClase(dpD.arbol, 'dp-crono-f').map(n => textos(n).join(' ')).slice(-4) });
+    // Cartera: el filtro «Congelados» solo existe con alguien congelado, y el chip del prestamo lo dice.
+    const ctC = montar(X.CarteraView, Object.assign({}, propsCartera, { loans: loansC, pays: paysC }), []);
+    const filtros = conClase(ctC.arbol, 'ctv-filtro').map(n => textos(n).join(''));
+    R.check('R9 Cartera: el filtro «Congelados» con su conteo (1) y el chip «· ❄ congelado»',
+      filtros.indexOf('Congelados1') !== -1 && conClase(ctC.arbol, 'congelado').some(n => /❄ congelado/.test(textos(n).join(''))), filtros);
+    const ctN = montar(X.CarteraView, propsCartera, []);
+    R.check('R9 sin ningun congelado, el filtro no aparece', conClase(ctN.arbol, 'ctv-filtro').every(n => !/^Congelados/.test(textos(n).join(''))));
+    const ctF = montar(X.CarteraView, Object.assign({}, propsCartera, { loans: loansC, pays: paysC }), [undefined, 'congelados']);
+    R.check('R9 y filtra: solo queda Elena', conClase(ctF.arbol, 'ctv-nombre').map(n => textos(n).join('')).join('|') === 'Elena Vargas',
+      conClase(ctF.arbol, 'ctv-nombre').map(n => textos(n).join('')));
+    // Cobros: lo vencido de un credito congelado se sigue cobrando, con su marca; la cuota de cierre lo dice.
+    const cb = montar(X.CobrosView, Object.assign({}, propsCobros, { loans: loansC, pays: paysC }), []);
+    const filasE = conClase(cb.arbol, 'cbv-fila').map(f => textos(f).join(' ')).filter(x => x.indexOf('Elena') !== -1);
+    R.check('R10 Cobros: las filas de Elena llevan «❄ congelado» y la del 7 ago dice «de cierre»',
+      filasE.length >= 2 && filasE.every(x => /❄ congelado/.test(x)) && filasE.some(x => /cuota 9 · de cierre/.test(x)), filasE);
+    // El Historial nombra los dos movimientos nuevos.
+    const log = [{ id: 1, fecha: '2026-07-31 10:00:00', tipo: 'congelar', mensaje: 'Congelaste el préstamo de Elena Vargas desde el 20 de julio de 2026', undo_id: null },
+      { id: 2, fecha: '2026-07-31 11:00:00', tipo: 'descongelar', mensaje: 'Descongelaste el préstamo de Elena Vargas el 31 de julio de 2026', undo_id: null }];
+    const hv = montar(X.HistorialView, { actLog: log, undoLog: [], onUndo: () => {}, onRefresh: () => {}, deudores: deudores }, []);
+    R.check('R12 Historial: «Congelado» y «Descongelado» con su rotulo (no el tipo crudo)', /Congelado/.test(hv.todo) && /Descongelado/.test(hv.todo) && !/\bcongelar\b|\bdescongelar\b/.test(hv.todo), hv.todo.slice(0, 200));
+    // La edicion bloquea los campos financieros de un prestamo con un congelamiento en su historia.
+    R.check('R13 LoanModal: un congelamiento en la historia cuenta como actividad (campos financieros bloqueados)',
+      /if\(loan\.congeladoDesde\|\|congelamientosDe\(loan\)\.length\) return true;/.test(leer('public/js/modales/LoanModal.js')));
   }
 
   process.exit(R.finalizar());

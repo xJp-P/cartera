@@ -18,7 +18,7 @@
 // porque el arnes de pruebas aplana todos los modulos en un solo ambito y un nombre repetido lo romperia.
 
 import { Ico } from '../componentes/iconos.js';
-import { cobrosDe, imputarCobros, pendCuota, esDiario, estadoDiario, gananciaDe, ratioCapitalizado, capitalRefinanciadoDe, diasEntre } from '../core/dominio.js';
+import { cobrosDe, imputarCobros, pendCuota, esDiario, estadoDiario, gananciaDe, ratioCapitalizado, capitalRefinanciadoDe, diasEntre, estaCongelado, cierreDeCuota } from '../core/dominio.js';
 import { copToUsd, fmt, fmtD, fmtUSD } from '../core/format.js';
 import { h, useEffect, useMemo, useRef, useState } from '../core/react.js';
 import { nowStr, properCase } from '../core/ui.js';
@@ -140,8 +140,9 @@ function rzParaCobrar(filas, hoy){
   var por = {};
   filas.forEach(function(f){
     if (f.tramo !== 'vencido' && f.tramo !== 'hoy') return;
-    var g = por[f.l.nombre] = por[f.l.nombre] || { nombre: f.l.nombre, loanId: f.l.id, total: 0, venc: 0, hoyN: 0, vieja: null, usd: 0, todoUSD: true };
+    var g = por[f.l.nombre] = por[f.l.nombre] || { nombre: f.l.nombre, loanId: f.l.id, total: 0, venc: 0, hoyN: 0, vieja: null, usd: 0, todoUSD: true, congelado: false };
     g.total += f.pend;
+    if (estaCongelado(f.l)) g.congelado = true;   // congelar (post-4.1.6): lo vencido se sigue cobrando
     if (f.tramo === 'vencido'){ g.venc++; if (!g.vieja || f.p.fechaPago < g.vieja) g.vieja = f.p.fechaPago; }
     else g.hoyN++;
     if (f.l.moneda === 'USD' && f.l.trmAcordada > 0) g.usd += f.pend / f.l.trmAcordada; else g.todoUSD = false;
@@ -349,6 +350,7 @@ function V4PorCobrar(p){
     var det = g.venc
       ? rzPl(g.venc, 'cuota vencida', 'cuotas vencidas') + ' · hace ' + rzPl(g.dias, 'día') + (g.hoyN ? ' · y ' + rzPl(g.hoyN, 'vence', 'vencen') + ' hoy' : '')
       : (g.hoyN > 1 ? g.hoyN + ' cuotas vencen hoy' : 'vence hoy');
+    if (g.congelado) det += ' · ❄ congelado';
     return h(V4Fila, { key: g.nombre, i: i, av: h(V4Avatar, { nombre: g.nombre, alerta: g.venc > 0, hoy: !g.venc }), nombre: properCase(g.nombre),
       detalle: det, sTono: g.venc ? 'crit' : 'warn', monto: fmt(g.total), usd: g.todoUSD && g.usd ? fmtUSD(g.usd) : null,
       onClick: function(){ onNameClick(g.nombre, g.loanId); } });
@@ -356,7 +358,7 @@ function V4PorCobrar(p){
   var filasSem = semana.slice(0, RZ_PC_MAX).map(function(f, i){
     var d = rzFecha(f.p.fechaPago);
     return h(V4Fila, { key: f.p.id, i: i, av: h('span', { className: 'v4-dia' }, h('b', null, d.getDate()), RZ_DIAS[d.getDay()].slice(0, 3)),
-      nombre: properCase(f.l.nombre), detalle: 'Cuota ' + f.p.cuotaN + (f.p.partialPaid > 0 ? ' · ya abonó una parte' : ''),
+      nombre: properCase(f.l.nombre), detalle: 'Cuota ' + f.p.cuotaN + (cierreDeCuota(f.l, f.p.cuotaN) ? ' de cierre' : '') + (f.p.partialPaid > 0 ? ' · ya abonó una parte' : '') + (estaCongelado(f.l) ? ' · ❄ congelado' : ''),
       monto: fmt(f.pend), usd: f.l.moneda === 'USD' && f.l.trmAcordada > 0 ? fmtUSD(f.pend / f.l.trmAcordada) : null,
       onClick: function(){ onNameClick(f.l.nombre, f.l.id, f.p.id); } });
   });

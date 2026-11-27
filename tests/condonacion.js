@@ -99,7 +99,11 @@ function pedir(method, ruta, body) {
     pays:  conDb(d => d.prepare('SELECT * FROM payments').all()),
   });
   const esAbono = p => p.id.indexOf('-ab-') !== -1;
-  const hoy = new Date().toISOString().slice(0, 10);
+  // La fecha LOCAL, la misma de `hoyStr` del backend. Con `toISOString` (UTC) la suite fallaba cada
+  // noche desde las 19:00 hora de Colombia: el backend ya devengaba un dia menos que el que la prueba
+  // esperaba (hallado el 2026-11-26 a las 20:26).
+  const _h = new Date();
+  const hoy = _h.getFullYear() + '-' + String(_h.getMonth() + 1).padStart(2, '0') + '-' + String(_h.getDate()).padStart(2, '0');
   await pedir('GET', '/api/payments');   // auto-mora, como en la app real
 
   // Caja TOTAL de un prestamo segun `cobrosDe` (la misma que ve el usuario).

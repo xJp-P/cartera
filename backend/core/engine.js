@@ -121,10 +121,18 @@ function buildSchedule(loan, startN, startSaldo, numCuotas) {
   const baseCron = loan.fechaBaseCronograma || fechaInicio;
   const montoCOP = startSaldo !== undefined ? startSaldo : loan.montoCOP;
   const indefinido = modalidad === 'Intereses';
-  const totalCuotas = numCuotas !== undefined ? numCuotas : (indefinido ? cuotasHastaHoy(fechaInicio, startN, 3, freq) : (loan.plazoMeses || 12));
+  const totalCuotas = numCuotas !== undefined ? numCuotas : (indefinido ? cuotasHastaHoy(inicioCuenta(loan), startN, 3, freq) : (loan.plazoMeses || 12));
   const r = tasaPeriodo(tasaMensual / 100, freq);
   let saldo = montoCOP;
-  const cuotaFija = pmt(r, totalCuotas, montoCOP);
+  // CONGELAR (post-4.1.6): las cuotas de CIERRE que caen en esta generacion no amortizan, asi que
+  // el PMT se reparte entre las demas. Sin cierres, `amortizan === totalCuotas`: identico a siempre.
+  const cierresN = {};
+  if (modalidad === 'Intereses' || modalidad === 'Capital + Intereses') {
+    for (let k = 0; k < totalCuotas; k++) { const c = cierreDe(loan, startN + k); if (c) cierresN[startN + k] = c; }
+  }
+  const nCierres = Object.keys(cierresN).length;
+  const amortizan = totalCuotas - nCierres;
+  const cuotaFija = nCierres ? (amortizan > 0 ? pmt(r, amortizan, montoCOP) : 0) : pmt(r, totalCuotas, montoCOP);
   const rows = [];
 
   // Prestamo sin intereses: 1 cuota por el capital total (interesPeriodo=0, abonoCapital=capital).
@@ -189,12 +197,16 @@ function buildSchedule(loan, startN, startSaldo, numCuotas) {
   //                          PMT converge al interes puro y el prestamo no amortiza nada)
   // Solo se absorbe el primero. El segundo se respeta: ahi la ultima cuota SI es distinta de
   // verdad y ocultarlo seria mentir sobre la deuda.
-  const tolResidual = Math.max(totalCuotas * 2 + 2, Math.ceil(cuotaNominal * 0.02));
+  const tolResidual = Math.max((nCierres ? amortizan : totalCuotas) * 2 + 2, Math.ceil(cuotaNominal * 0.02));
+  // La ultima cuota que AMORTIZA (una de cierre al final no se lleva el residual).
+  let ultimaAmort = totalCuotas - 1;
+  while (ultimaAmort >= 0 && cierresN[startN + ultimaAmort]) ultimaAmort--;
 
   for (let i = 0; i < totalCuotas; i++) {
     const cuotaN = startN + i;
+    if (cierresN[cuotaN]) { rows.push(filaCierre(loan, cierresN[cuotaN], cuotaN, saldo)); continue; }
     let interes = Math.round(saldo * r);
-    const isLast  = indefinido ? false : (i === totalCuotas - 1);
+    const isLast  = indefinido ? false : (i === ultimaAmort);
     let capital, cuota;
 
     if (indefinido || modalidad === 'Intereses') {
@@ -237,7 +249,11 @@ function buildSchedule(loan, startN, startSaldo, numCuotas) {
   // vivo de esta generacion. Va despues del ajuste de la ultima cuota: si la transitoria fuera
   // tambien la ultima, ese ajuste no puede deshacer el prorrateo.
   // Y despues, la carga de intereses trasladados de una unificacion (si la hay).
-  return aplicarCargaTrasladada(loan, aplicarPeriodoIrregular(loan, rows), !indefinido);
+  // CONGELADO (post-4.1.6): nada despues del congelamiento; y como esta generacion ya no termina
+  // el prestamo, la ultima fila no absorbe la carga de las cuotas que aun no existen.
+  const abierto = congeladoAbierto(loan);
+  const vivas = abierto ? rows.filter(p => p.cuotaN < primeraCongelada(abierto)) : rows;
+  return aplicarCargaTrasladada(loan, aplicarPeriodoIrregular(loan, vivas), !indefinido && !abierto);
 }
 
 /**
@@ -275,6 +291,9 @@ function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
   const MAX_ITER = 1000; // safety net
   let i = 0;
   while (saldo > 0 && i < MAX_ITER) {
+    // CONGELAR (post-4.1.6): la cuota de cierre ocupa su numero sin amortizar.
+    const cierre = cierreDe(loan, cuotaN);
+    if (cierre) { rows.push(filaCierre(loan, cierre, cuotaN, saldo)); cuotaN++; i++; continue; }
     const interes = Math.round(saldo * r);
     // Si esta cuota completa o exceria el saldo, es la ultima (residual)
     const saldoMasInteres = saldo + interes;
@@ -315,8 +334,71 @@ function buildScheduleFixedPMT(loan, startN, saldoInicial, cuotaFija) {
   if (i >= MAX_ITER) throw new Error('Cuota demasiado baja: requiere más de ' + MAX_ITER + ' cuotas para saldar.');
   // Tambien aqui: un abono o una reestructura con "fijar cuota" regenera la transitoria por
   // este generador, no por `buildSchedule`. Y la carga de una unificacion: esta generacion
-  // termina el prestamo, asi que su ultima fila absorbe lo que no quepa.
-  return aplicarCargaTrasladada(loan, aplicarPeriodoIrregular(loan, rows), true);
+  // termina el prestamo, asi que su ultima fila absorbe lo que no quepa (salvo congelado: ahi no
+  // termina nada, y despues del congelamiento no nace ninguna fila).
+  const abierto = congeladoAbierto(loan);
+  const vivas = abierto ? rows.filter(p => p.cuotaN < primeraCongelada(abierto)) : rows;
+  return aplicarCargaTrasladada(loan, aplicarPeriodoIrregular(loan, vivas), !abierto);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONGELAR PRESTAMO (post-4.1.6, aprobado por el PO sobre una maqueta)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Un prestamo congelado sigue Activo: lo vencido se sigue debiendo y se cobra, se condona y se
+// liquida igual; lo que cambia es que NO corren intereses ni nacen cuotas desde la fecha del
+// congelamiento, indefinidamente, hasta que se descongela a mano. Solo `Intereses` y
+// `Capital + Intereses` (el credito abierto es la fase 2).
+//
+// SE GUARDA LA DECISION, el motor la aplica (la doctrina de la transitoria, Bug #70). En
+// `loans.congelamientos` (JSON) vive el historial: { desde, hasta, cuotaN, fecha, dias, interes,
+// perdona, inicio, cuotaAntes }; `loans.congeladoDesde` es el `desde` del abierto (NULL = no
+// congelado), para consultarlo sin leer el JSON. Asi las rutas que rehacen cuotas (recalcular al
+// arrancar, editar, abono, extension automatica) lo respetan sin tocarlas una por una.
+//
+// LA CUOTA DE CIERRE: la cuota en curso al congelar se cierra con el interes de los dias ya
+// corridos (del inicio de su periodo al congelamiento), SIN capital, y vence en su fecha de
+// siempre. Es FIJA: el motor la reproduce igual en cada generacion (mismo monto, misma fecha),
+// tambien despues de descongelar. No se recalcula con un abono: esos dias ya corrieron con el
+// capital de entonces. Si se perdonan los dias (`perdona`), no hay cuota de cierre.
+//
+// AL DESCONGELAR, el interes vuelve a correr ese dia: la primera cuota es la transitoria del motor
+// (`periodoIrregular*`, dias reales desde la reactivacion) y la base del cronograma se corre para
+// que las fechas sigan en el dia de pago. En C+I el plazo suma la cuota de cierre (no amortizo).
+function congelamientosDe(loan) {
+  const v = loan && loan.congelamientos;
+  if (Array.isArray(v)) return v;
+  try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; }
+}
+// El congelamiento abierto, o null.
+function congeladoAbierto(loan) {
+  if (!loan || !loan.congeladoDesde) return null;
+  const a = congelamientosDe(loan);
+  const c = a[a.length - 1];
+  return c && !c.hasta ? c : null;
+}
+// La cuota de cierre de la cuota N (si un congelamiento la cerro y no se perdonaron sus dias).
+function cierreDe(loan, n) {
+  return congelamientosDe(loan).find(c => +c.cuotaN === n && !c.perdona && Math.round(+c.interes || 0) > 0 && c.fecha) || null;
+}
+// El primer numero de cuota que el congelamiento deja SIN generar: la siguiente a la de cierre, o
+// la propia cuota en curso si sus dias se perdonaron.
+function primeraCongelada(c) { return c.perdona ? +c.cuotaN : +c.cuotaN + 1; }
+function filaCierre(loan, c, cuotaN, saldo) {
+  const s = Math.round(saldo), i = Math.round(+c.interes || 0);
+  return {
+    id: `${loan.id}-${cuotaN}`, prestamoId: loan.id, nombreCliente: loan.nombre, cuotaN: cuotaN,
+    fechaPago: c.fecha, saldoInicial: s, interesPeriodo: i, abonoCapital: 0, cuotaTotal: i, saldoFinal: s,
+    estadoPago: 'Pendiente', fechaRecaudo: null, observaciones: textoCierre(c),
+    montoCOPRecibido: 0, montoUSDRecibido: 0, partialPaid: 0, extraConsolidado: 0
+  };
+}
+function textoCierre(c) { return 'Cierre por congelamiento: ' + c.dias + ' días de interés'; }
+// Desde donde se cuentan los periodos de un credito de solo intereses para saber cuantas cuotas
+// generar: con un congelamiento en su historia, desde la base del cronograma (que se corrio al
+// descongelar); si no, desde la fecha de inicio, como siempre.
+function inicioCuenta(loan) {
+  return congelamientosDe(loan).length ? (loan.fechaBaseCronograma || loan.fechaInicio) : loan.fechaInicio;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -609,6 +691,8 @@ function transitoriaDe(loan, row) {
 function aplicarPeriodoIrregular(loan, rows) {
   const n = +(loan && loan.periodoIrregularN) || 0;
   if (!n || !loan.periodoIrregularDesde) return rows;
+  // Una cuota de cierre por congelamiento ya trae su interes fijo: la transitoria no la toca.
+  if (cierreDe(loan, n)) return rows;
   // Solo las modalidades de cuota periodica con interes. En Prestamo y Pago Unico no hay
   // periodo que prorratear, y el credito abierto ya cobra por dias.
   if (loan.modalidad !== 'Intereses' && loan.modalidad !== 'Capital + Intereses') return rows;
@@ -752,4 +836,10 @@ module.exports = {
   primerPagoRegular,
   inicioPeriodoRegular,
   resolverPrimerPago,
+  congelamientosDe,
+  congeladoAbierto,
+  cierreDe,
+  primeraCongelada,
+  textoCierre,
+  inicioCuenta,
 };

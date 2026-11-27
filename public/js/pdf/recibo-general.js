@@ -34,7 +34,7 @@
 
 import { fmt, fmtUSD } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
-import { esCondonada, condonadoDe, computeLiquidacion, diasEntre, esDiario, pendCuota, pendienteDeCuota, proximoVencimiento, saldoConCaja } from '../core/dominio.js';
+import { esCondonada, condonadoDe, computeLiquidacion, diasEntre, esDiario, pendCuota, pendienteDeCuota, proximoVencimiento, saldoConCaja, estaCongelado, cierreDeCuota } from '../core/dominio.js';
 import { esAbono, esCuotaRegular } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { nombrePdf } from './nombres.js';
@@ -69,12 +69,15 @@ export function modeloReciboGeneral(loansDeudor, allPays, opts) {
     var L = computeLiquidacion(l, lp, { hasta: hasta, incluyeProxMes: incluye(l) });
     var L0 = L.incluyeProxMes ? computeLiquidacion(l, lp, { hasta: hasta }) : L;
     var esIndef = l.modalidad === 'Intereses';
+    // Congelado (post-4.1.6): no corren intereses ni nacen cuotas, asi que "si sigues con tus cuotas"
+    // no aplica (sumaria solo la de cierre y anunciaria MENOS deuda: el capital vive fuera de ellas).
+    var cong = estaCongelado(l);
     // Lo vencido es una SUMA de cuotas: se suma ya convertido a la moneda visible, como sus filas en
     // "Lo que esta vencido" (4.1.4). En dolares convertir la suma daba un centavo de mas.
     var vencU = mon.sumaU(venc.map(pendCuota));
     var vencCOP = venc.reduce(function(s, p){ return s + pendCuota(p); }, 0);
     var m = {
-      l: l, i: i, mon: mon, lp: lp, regs: regs, venc: venc, pend: pend, prox: pend[0] || null, sig: pend[1] || null, esIndef: esIndef,
+      l: l, i: i, mon: mon, lp: lp, regs: regs, venc: venc, pend: pend, prox: pend[0] || null, sig: pend[1] || null, esIndef: esIndef, cong: cong,
       deN: esIndef ? '' : ' de ' + regs.length,
       vencU: vencU,
       intVencU: mon.uni(venc.reduce(function(s, p){ return s + pendienteDeCuota(p).interes; }, 0)),
@@ -93,7 +96,7 @@ export function modeloReciboGeneral(loansDeudor, allPays, opts) {
       validoHasta: L.incluyeProxMes && L.periodoIrregular ? L.validoHasta : proximoVencimiento(l, lp, hasta),
       // "Si sigues con tus cuotas": todas las que quedan, sin saldar. En `Intereses` no aplica: sus
       // cuotas son de puro interes y el capital va aparte (la suma anunciaria MENOS deuda).
-      faltaU: esIndef ? null : mon.sumaU(regs.filter(function(p){ return p.estadoPago !== 'Pagado'; }).map(pendCuota)),
+      faltaU: (esIndef || cong) ? null : mon.sumaU(regs.filter(function(p){ return p.estadoPago !== 'Pagado'; }).map(pendCuota)),
       capU: mon.uni(saldoConCaja(l, lp)),
       abonos: lp.filter(function(p){ return esAbono(p) && p.estadoPago === 'Pagado'; })
     };
@@ -110,7 +113,8 @@ export function modeloReciboGeneral(loansDeudor, allPays, opts) {
     hasta: hasta, activos: activos, diarios: diarios, mods: mods, varios: activos.length > 1, soloUSD: soloUSD,
     vencT: suma('vencU'), intVencT: suma('intVencU'), proxT: suma('proxU'), liqT: suma('liqU'), liqCapT: suma('liqCapU'),
     liqIntT: suma('liqIntU'), liqParcT: suma('liqParcU'), liqMesT: suma('liqMesU'), faltaT: suma('faltaU'),
-    hayIndef: mods.some(function(m){ return m.esIndef; }), capIndefT: suma('capU', function(m){ return m.esIndef; }),
+    hayIndef: mods.some(function(m){ return m.esIndef && !m.cong; }), capIndefT: suma('capU', function(m){ return m.esIndef && !m.cong; }),
+    hayCong: mods.some(function(m){ return m.cong; }), capCongT: suma('capU', function(m){ return m.cong; }),
     // Para el modal: los creditos donde la pregunta del interes en curso tiene respuesta.
     conMes: mods.filter(function(m){ return m.mesPosible > 0; }),
     monto: function(t){ return soloUSD ? fmtUSD((t.usd || 0) / 100) : rbMixto(t); }
@@ -169,14 +173,14 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
   var detLiq = 'capital ' + monto(liqCapT) + (hay(liqIntT) ? ' + intereses vencidos ' + monto(liqIntT) : '') +
     (hay(liqMesT) ? ' + interés del periodo en curso ' + monto(liqMesT) : '') + (hay(liqParcT) ? ' − lo ya abonado ' + monto(liqParcT) : '');
   var vigTxt = vigencias[0] ? 'válido hasta el ' + rbCorta(vigencias[0], anio) : 'calculado al ' + rbCorta(hasta, anio);
-  var plazoMods = mods.filter(function(m){ return !m.esIndef; });
+  var plazoMods = mods.filter(function(m){ return !m.esIndef && !m.cong; });
   var deuda;
   if (varios) {
     var filasD = mods.map(function(m){
       return '<tr><td>' + rotulo(m) + '<span class="sub"> · ' + montoPrestamo(m) + ' · ' + opModalidad(m.l.modalidad, true) + '</span></td>' +
         '<td class="n">' + (m.vencU ? '<span class="r-rojo">' + m.mon.fmtUni(m.vencU) + '</span>' : '—') + '</td>' +
         '<td class="n"><b>' + m.mon.fmtUni(m.liqU) + '</b>' + (m.inclMes ? '<span class="sub r-blk">con el interés en curso</span>' : '') + '</td>' +
-        '<td class="n">' + (m.faltaU == null ? '<span class="sub">sin plazo fijo</span>' : m.mon.fmtUni(m.faltaU)) + '</td></tr>';
+        '<td class="n">' + (m.cong ? '<span class="sub">congelado</span>' : m.faltaU == null ? '<span class="sub">sin plazo fijo</span>' : m.mon.fmtUni(m.faltaU)) + '</td></tr>';
     }).join('');
     deuda = '<table class="r-t r-deuda"><thead><tr><th>Crédito</th><th class="n">Vencido</th><th class="n">Debes hoy</th><th class="n">Si sigues con tus cuotas</th></tr></thead>' +
       '<tbody>' + filasD + '</tbody><tfoot><tr><td>Total</td><td class="n">' + (hay(vencT) ? monto(vencT) : '—') + '</td><td class="n">' + monto(liqT) + '</td>' +
@@ -186,7 +190,9 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
     deuda = rbRejilla([
       rbTarjeta(hayVenc ? 'ambar' : '', 'Vencido', hayVenc ? monto(vencT) : monto({ cop: 0, usd: 0 }), hayVenc ? 'lo que necesitas para ponerte al día' : 'no tienes cuotas vencidas'),
       rbTarjeta('r-fuerte', 'Debes hoy', monto(liqT), 'si liquidas todo hoy'),
-      m1.esIndef
+      m1.cong
+        ? rbTarjeta('', 'Si sigues con tus cuotas', 'Congelado', 'desde el ' + rbCorta(m1.l.congeladoDesde, anio) + ' no corren intereses ni se generan cuotas; el capital (' + m1.mon.fmtUni(m1.capU) + ') se sigue debiendo')
+      : m1.esIndef
         ? rbTarjeta('', 'Si sigues con tus cuotas', 'Sin plazo fijo', 'cada mes pagas los intereses; el capital (' + m1.mon.fmtUni(m1.capU) + ') cuando quieras')
         : rbTarjeta('', 'Si sigues con tus cuotas', monto(faltaT), 'todas las cuotas que te quedan, con sus intereses')
     ]);
@@ -196,7 +202,7 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
   // cubriendo tambien la proxima cuota. Reemplaza a "Tus opciones de pago" (punto 4 del PO): lo
   // minimo ya es la cifra grande y liquidar ya es "Debes hoy".
   // Cada moneda por su lado y nunca negativa: un ahorro de "USD $-0.01" no es un ahorro.
-  var ahorro = plazoMods.length && !Mo.hayIndef
+  var ahorro = plazoMods.length && !Mo.hayIndef && !Mo.hayCong
     ? { cop: Math.max(0, faltaT.cop - liqT.cop), usd: Math.max(0, faltaT.usd - liqT.usd) } : null;
   var proxN = mods.filter(function(m){ return m.prox; }).length;
   var notas = ['<div><b>Debes hoy</b> = ' + detLiq + ' · ' + vigTxt + (hay(liqMesT) ? ' (incluye el interés del periodo en curso)' : '') + '.</div>'];
@@ -207,6 +213,12 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
     return l.moneda === 'USD' && +l.trmAcordada > 0 ? { cop: t.cop, usd: t.usd + Math.round(c / l.trmAcordada * 100) / 100 } : { cop: t.cop + c, usd: t.usd };
   }, { cop: 0, usd: 0 });
   if (hay(condT)) notas.push('<div>Se te condonaron <b>' + monto(condT) + '</b> de intereses: ya no están en estas cifras.</div>');
+  // Congelado (post-4.1.6): se dice en el papel, con su fecha, y que el capital sigue debiendose.
+  mods.filter(function(m){ return m.cong; }).forEach(function(m){
+    notas.push('<div>' + (varios ? rotulo(m) + ': congelado' : 'Tu crédito está congelado') + ' desde el ' + rbCorta(m.l.congeladoDesde, anio) +
+      ': no corren intereses ni se generan cuotas. Lo vencido y el capital (' + m.mon.fmtUni(m.capU) + ') se siguen debiendo.</div>');
+  });
+  if (Mo.hayCong && plazoMods.length) notas.push('<div>"Si sigues con tus cuotas" no incluye ' + (mods.filter(function(m){ return m.cong; }).length > 1 ? 'tus créditos congelados' : 'tu crédito congelado') + ' (capital ' + monto(Mo.capCongT) + ').</div>');
   if (Mo.hayIndef && plazoMods.length) notas.push('<div>"Si sigues con tus cuotas" no incluye el capital de tu crédito de solo intereses (' + monto(Mo.capIndefT) + '), que pagas cuando quieras.</div>');
   if (ahorro && (ahorro.cop > 0 || ahorro.usd > 0)) notas.push('<div>Liquidando hoy te ahorrarías <b>' + monto(ahorro) + '</b> de los intereses que traen tus cuotas.</div>');
   if (hayVenc && proxN) notas.push('<div>Para quedar al día y pagar también ' + (proxN > 1 ? 'la próxima cuota de cada crédito' : 'la próxima cuota') + ': <b>' +
@@ -256,14 +268,15 @@ export function generateReciboGeneral(loansDeudor, allPays, datosPago, opts) {
     var ley = '<div class="r-av-ley">' + rbLeyenda('green-2', rbPlural(nPag, 'pagada', 'pagadas')) +
       (nCond ? rbLeyenda('muted', rbPlural(nCond, 'condonada', 'condonadas')) : '') +
       (m.venc.length ? rbLeyenda('red', rbPlural(m.venc.length, 'vencida', 'vencidas')) : '') +
-      (m.esIndef ? '<span>plazo indefinido</span>' : (m.prox ? rbLeyenda('blue', 'la próxima') : '') + rbLeyenda('track', porVenir + ' por venir')) +
+      (m.cong ? (m.prox && cierreDeCuota(m.l, m.prox.cuotaN) ? rbLeyenda('blue', 'la de cierre') : '') + '<span>congelado desde el ' + rbCorta(m.l.congeladoDesde, anio) + '</span>'
+        : m.esIndef ? '<span>plazo indefinido</span>' : (m.prox ? rbLeyenda('blue', 'la próxima') : '') + rbLeyenda('track', porVenir + ' por venir')) +
       (abonos ? '<span>· abono a capital: ' + abonos + '</span>' : '') +
       '<span class="r-linea">de eso, capital <b>' + m.mon.fmtUni(m.capU) + '</b></span></div>';
     var titulo = varios
       ? rotulo(m) + ' · ' + montoPrestamo(m) + ' · ' + opModalidad(m.l.modalidad) + ' · desde el ' + rbLarga(m.l.fechaInicio)
       : 'Así va tu crédito · ' + montoPrestamo(m) + ' desde el ' + rbLarga(m.l.fechaInicio);
     return '<div class="r-sec r-credito"><div class="r-sec-t">' + titulo + '</div>' +
-      (m.esIndef ? '' : rbBarraCuotas(m.regs, m.prox ? m.prox.cuotaN : null)) + ley + '</div>';
+      (m.esIndef || m.cong ? '' : rbBarraCuotas(m.regs, m.prox ? m.prox.cuotaN : null)) + ley + '</div>';
   }
   var creditos = mods.map(bloqueCredito).join('') + (diarios.length
     ? '<div class="r-aparte">' + (diarios.length > 1 ? 'Tus ' + diarios.length + ' créditos abiertos' : 'Tu crédito abierto') +

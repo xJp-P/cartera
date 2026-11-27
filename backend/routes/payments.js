@@ -51,7 +51,8 @@ module.exports = function crearRutasPayments(ctx) {
   // ── API: Payments ─────────────────────────────────────────────────────────
   // Auto-extender cuotas de Intereses si faltan pocas pendientes
   function autoExtendSoloIntereses() {
-    const activeIndefinidos = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Intereses'").all();
+    // Un credito congelado (post-4.1.6) no genera cuotas: no se extiende.
+    const activeIndefinidos = db.prepare("SELECT * FROM loans WHERE estado = 'Activo' AND modalidad = 'Intereses' AND congeladoDesde IS NULL").all();
     for (const loan of activeIndefinidos) {
       const allPays = db.prepare('SELECT * FROM payments WHERE prestamoId = ? ORDER BY cuotaN DESC').all(loan.id);
       const regulares = allPays.filter(p => esCuotaRegular(p));
@@ -159,9 +160,11 @@ module.exports = function crearRutasPayments(ctx) {
         // sin ganancia) tambien la cumple -> quedaba fuera de 'regulares', 'todasPagadas' nunca era
         // true y el prestamo no auto-finalizaba al pagar (gemelo backend del Bug #26).
         const regulares = allPays.filter(p => esCuotaRegular(p));
+        // Congelado (post-4.1.6): con todo lo vencido pagado no quedan cuotas, pero el capital sigue
+        // debiendose; por eso el UPDATE de abajo exige que NO este congelado.
         const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
         if (todasPagadas) {
-          db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
+          db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo' AND congeladoDesde IS NULL").run(pay.prestamoId);
         }
       }
     }
@@ -286,7 +289,7 @@ module.exports = function crearRutasPayments(ctx) {
       const regulares = allPays.filter(p => esCuotaRegular(p)); // abono = id con '-ab-' (canonico, ver Bug #26)
       const todasPagadas = regulares.length > 0 && regulares.every(p => p.estadoPago === 'Pagado');
       if (todasPagadas) {
-        db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo'").run(pay.prestamoId);
+        db.prepare("UPDATE loans SET estado = 'Finalizado', cuotaFijaPactada = 0 WHERE id = ? AND estado = 'Activo' AND congeladoDesde IS NULL").run(pay.prestamoId);
       }
     } else {
       // Solo suma al partialPaid, estado permanece

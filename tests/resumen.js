@@ -887,5 +887,27 @@ function metricsComoApp(X, loans, pays) {
   R.check('E10 "reducir movimiento" del sistema apaga las animaciones de Rendimiento',
     rd.indexOf('@media(prefers-reduced-motion:reduce){.v4r*,.v4r*::before,.v4r*::after{animation:none!important;transition:none!important;}}') !== -1);
 
+  // ── S — CONGELAR PRESTAMO: la marca en el Resumen y en Rendimiento (post-4.1.6, Fase 1) ──────────
+  // El credito de solo intereses del fixture congelado el 20-jul cobrando sus 13 dias, armado en memoria
+  // con el espejo de los modales. Sigue activo: lo vencido se sigue cobrando y la vista lo marca.
+  R.seccion('S — congelar: la marca en «Por cobrar» del Resumen y en la tabla de Rendimiento');
+  {
+    const lE = loans.find(l => l.id === '1773655076017');
+    const plan = X.cgPlanCongelar(lE, pays, '2026-07-20', false, HOY);
+    const loansC = loans.map(l => l.id === lE.id ? plan.loanN : l);
+    const paysC = pays.filter(p => p.prestamoId !== lE.id).concat(plan.paysN);
+    const dv = pintar({ type: X.DashView, props: Object.assign({}, props, { loans: loansC, pays: paysC }), children: [] });
+    const filasPc = conClase(dv, 'v4-fila').map(n => textos(n).join(' ')).filter(t => t.indexOf('Elena') !== -1);
+    R.check('S1 «Para cobrar ya»: la fila de Elena dice «❄ congelado» (lo vencido se sigue cobrando)',
+      plan.ok && filasPc.some(t => /cuotas vencidas/.test(t) && /❄ congelado/.test(t)), filasPc);
+    R.check('S1 «Esta semana»: la cuota 9 del 7 ago es la de cierre (con su marca)', filasPc.some(t => /Cuota 9 de cierre · ❄ congelado/.test(t)), filasPc);
+    const dvN = pintar({ type: X.DashView, props: props, children: [] });
+    R.check('S1 ANTI-TRIVIAL: sin congelar, ninguna fila del Resumen lleva la marca', textos(dvN).join(' ').indexOf('❄') === -1);
+    const rdC = montarR(X.PortfolioView, Object.assign({}, propsR, { loans: loansC, pays: paysC }), []);
+    const filaR = conClase(rdC, 'rdv-fila').map(n => textos(n).join(' ')).filter(t => t.indexOf('Elena') !== -1);
+    R.check('S2 Rendimiento: la fila de Elena lleva la marca «❄ Congelado» bajo su estado', filaR.length === 1 && /❄ Congelado/.test(filaR[0]), filaR);
+    R.check('S2 ANTI-TRIVIAL: sin congelar, Rendimiento no la lleva', textos(montarR(X.PortfolioView, propsR, [])).join(' ').indexOf('❄') === -1);
+  }
+
   process.exit(R.finalizar());
 })().catch(e => { console.error(e); process.exit(1); });

@@ -2079,6 +2079,47 @@ function loansDelCaso(caso) {
           /defaultPath: path\.join\(app\.getPath\('documents'\), require\('\.\/nombre-archivo'\)\.limpiarNombreArchivo\(filename\) \+ '\.pdf'\)/.test(mainJs));
 }
 
+{
+  // ── V — CONGELAR PRESTAMO EN LOS DOCUMENTOS (post-4.1.6, Fase 1) ──────────────────────
+  // Un credito congelado sigue activo y sus papeles lo dicen: el cronograma (la cuota de cierre y la
+  // nota del congelamiento), el reporte de activos (la marca) y el recibo general (no anuncia "si
+  // sigues con tus cuotas": sumaria solo la de cierre y diria MENOS deuda). Los estados se arman en
+  // memoria con el espejo de los modales; sin congelamientos los documentos no cambian (los golden).
+  R.seccion('V — congelar: el cronograma, el reporte de activos y el recibo general lo dicen');
+  const emitir = fn => { CAP.pdfs.length = 0; fn(); return CAP.pdfs.length === 1 ? sinMarco(CAP.pdfs[0].html) : ''; };
+  const vis = h => sinTags(h.replace(/<style[\s\S]*?<\/style>/gi, '')).replace(/ /g, ' ');
+  const pesos = n => S.fmt(n).replace(/ /g, ' ');
+  ponerTema('light');
+  const ID = '1773655076017', HOYV = '2026-07-31';
+  const pE = S.cgPlanCongelar(L(ID), pays, '2026-07-20', false, HOYV);
+  R.check('V0 ANTI-VACIO: el plan congela con cuota de cierre', pE.ok && !!pE.cierre, pE.error);
+  const paysV = pays.filter(p => p.prestamoId !== ID).concat(pE.paysN);
+  const loansV = loans.map(l => l.id === ID ? pE.loanN : l);
+  const hE = emitir(() => S.generateCronogramaPDF(pE.loanN, paysV, false));
+  const tE = vis(hE);
+  R.check('V1 cronograma (solo intereses): la cuota de cierre aparece aunque este por vencer, con su insignia y sus dias',
+    /<span class="badge badge-abono">Cierre<\/span>/.test(hE) && tE.indexOf('cierre: 13 días de interés') !== -1 && tE.indexOf(pesos(130000)) !== -1, tE.slice(0, 300));
+  R.check('V1 y la nota: «Congelado desde el …: no corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo»',
+    /<div class="nota nota-hielo"><strong>Congelado desde el [^<]+\.<\/strong> No corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo\.<\/div>/.test(hE) &&
+    hE.indexOf('.nota-hielo{') !== -1);
+  const hN = emitir(() => S.generateCronogramaPDF(L(ID), pays, false));
+  R.check('V2 ANTI-TRIVIAL: sin congelar, ni la nota ni su estilo', hN.indexOf('nota-hielo') === -1 && hN.indexOf('>Cierre<') === -1);
+  const pD = S.cgPlanDescongelar(pE.loanN, paysV.filter(p => p.prestamoId === ID), HOYV, null, HOYV);
+  const hD = emitir(() => S.generateCronogramaPDF(pD.loanN, paysV.filter(p => p.prestamoId !== ID).concat(pD.paysN), false));
+  R.check('V3 descongelado: la nota dice cuanto estuvo congelado (y la cuota de cierre sigue)', pD.ok &&
+    vis(hD).indexOf('Estuvo congelado del') !== -1 && vis(hD).indexOf('(11 días): en ese tiempo no corrieron intereses.') !== -1 && />Cierre</.test(hD), vis(hD).slice(-600));
+  const hR = emitir(() => S.generateReportePrestamosPDF(loansV, paysV, false));
+  R.check('V4 reporte de activos: el congelado con su marca, y su estilo', (hR.match(/<span class="badge badge-hielo">Congelado<\/span>/g) || []).length === 1 && hR.indexOf('.badge-hielo{') !== -1);
+  const hRN = emitir(() => S.generateReportePrestamosPDF(loans, pays, false));
+  R.check('V4 ANTI-TRIVIAL: sin congelados, ni la marca ni su estilo', hRN.indexOf('badge-hielo') === -1);
+  const hG = emitir(() => S.generateReciboGeneral([pE.loanN], paysV, '', { hasta: HOYV }));
+  const tG = vis(hG);
+  R.check('V5 recibo general: «Si sigues con tus cuotas» dice «Congelado» y la nota lo explica',
+    /Si sigues con tus cuotas\s*Congelado/.test(tG) && tG.indexOf('Tu crédito está congelado desde el') !== -1 && tG.indexOf('se siguen debiendo') !== -1, tG.slice(0, 700));
+  const hGN = emitir(() => S.generateReciboGeneral([L(ID)], pays, '', { hasta: HOYV }));
+  R.check('V5 ANTI-TRIVIAL: sin congelar, el recibo general no dice «congelado»', vis(hGN).toLowerCase().indexOf('congelad') === -1);
+}
+
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────
 
 R.seccion('cobertura de la suite');

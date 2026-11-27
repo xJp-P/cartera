@@ -48,6 +48,7 @@ const SUITES = [
   { nombre: 'arranque',      archivo: 'arranque.js',      desc: 'el arranque v4: la ventana de arranque, la carga dentro de la app y las novedades' },
   { nombre: 'calculadora',   archivo: 'calculadora.js',   desc: 'la Calculadora v4: calculos identicos a los de antes y al motor, y la vista nueva' },
   { nombre: 'unificacion',   archivo: 'unificacion.js',   desc: 'unificar prestamos: modal == server == motor, caja intacta, deshacer exacto, la carga y el cierre forzoso' },
+  { nombre: 'congelar',      archivo: 'congelar.js',      desc: 'congelar y descongelar: la cuota de cierre fija, sin cuotas ni intereses, deshacer exacto' },
 ];
 
 const args  = process.argv.slice(2);

@@ -259,6 +259,13 @@ function aplicarEsquema(db) {
     });
   } catch(_){}
 
+  // CONGELAR PRESTAMO (post-4.1.6) — `congeladoDesde`: desde cuando esta congelado (NULL = no lo
+  // esta); `congelamientos`: el historial de congelamientos como DECISIONES (JSON), con la cuota de
+  // cierre de cada uno. El motor las aplica en cada generacion (ver "CONGELAR PRESTAMO" en
+  // engine.js). Columnas nuevas con su valor por defecto: ningun prestamo existente cambia.
+  try { db.exec("ALTER TABLE loans ADD COLUMN congeladoDesde TEXT"); } catch(_){}
+  try { db.exec("ALTER TABLE loans ADD COLUMN congelamientos TEXT DEFAULT '[]'"); } catch(_){}
+
   // ── Tabla de historial de acciones ──────────────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_log (

@@ -9,7 +9,7 @@
 // Nombres top-level con prefijo `op`/`OP_`: el arnes de pruebas aplana todos los modulos en un
 // mismo ambito.
 
-import { imputarCobros, pendCuota, computeLiquidacion, gananciaDePrestamo, esDiario, estadoDiario, progresoCapital, diasEntre, cobrosDe, dolaresRecibidos } from './dominio.js';
+import { imputarCobros, pendCuota, computeLiquidacion, gananciaDePrestamo, esDiario, estadoDiario, progresoCapital, diasEntre, cobrosDe, dolaresRecibidos, estaCongelado, cierreDeCuota } from './dominio.js';
 import { esAbono, esCuotaRegular } from './ids.js';
 import { addDays, contiene, facturaCode, fcCoincideDiario, payMatchesQuery, plegar } from './ui.js';
 import { fmt, fmtD } from './format.js';
@@ -97,7 +97,11 @@ function modeloPrestamo(l, lp, hoy){
   var fechaFin = ult ? (ult.fechaRecaudo || ult.fechaPago) : null;
   // Linea de tiempo del cronograma: cuotas + abonos intercalados. En Intereses las pendientes son
   // infinitas (se generan solas): se muestra solo la PROXIMA, que es la que se esta cobrando.
-  var cronoCuotas = regulares.filter(function(p){ return l.modalidad !== 'Intereses' || p.estadoPago !== 'Pendiente' || (pendientes[0] && p.id === pendientes[0].id); });
+  // Congelar (post-4.1.6): si la proxima es la cuota de cierre de un congelamiento ya levantado, se
+  // muestra tambien la que sigue (la primera que nacio al descongelar).
+  var verPend = {};
+  if (pendientes[0]) { verPend[pendientes[0].id] = true; if (pendientes[1] && cierreDeCuota(l, pendientes[0].cuotaN) && !estaCongelado(l)) verPend[pendientes[1].id] = true; }
+  var cronoCuotas = regulares.filter(function(p){ return l.modalidad !== 'Intereses' || p.estadoPago !== 'Pendiente' || verPend[p.id]; });
   var timeline = cronoCuotas.concat(abonos).sort(porFecha);
   var dProx = pendientes[0] ? diasEntre(hoy, pendientes[0].fechaPago) : null;
   // Un cierre forzoso que solo dejo intereses sin cobrar (capital recuperado al 100%) es una
@@ -110,7 +114,8 @@ function modeloPrestamo(l, lp, hoy){
     liq: liq, gp: gp, esPrest: esPrest, recCap: recCap, recInt: recInt, recTRM: recTRM, recTotal: recTotal,
     recGan: esPrest ? recInt + recTRM : gp.cop, recTotalUSD: recTotalUSD, recSinUSD: esUSD ? dol.sinUSD : 0, capAbonos: capAbonos, moraMonto: moraMonto,
     moraDias: enMora.length ? diasEntre(enMora[0].fechaPago, hoy) : 0, dv: dv, pct: Math.max(0, Math.min(100, pct)),
-    gananciaEsperada: gananciaEsperada, lotes: lotes, fechaFin: fechaFin, timeline: timeline, estado: estado, activo: activo, condonado: condonado };
+    gananciaEsperada: gananciaEsperada, lotes: lotes, fechaFin: fechaFin, timeline: timeline, estado: estado, activo: activo, condonado: condonado,
+    congelado: activo && estaCongelado(l) };
 }
 
 var OP_PESO = { mora: 0, hoy: 1, semana: 2, aldia: 3, abierto: 4, finalizado: 5, cancelado: 5, condonado: 5 };

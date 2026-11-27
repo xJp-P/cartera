@@ -36,7 +36,7 @@
 
 import { esAbono } from './ids.js';
 import { _tasaPeriodo } from './calculo.js';
-import { esTransitoria, interesTransitoria } from './dominio.js';
+import { esTransitoria, interesTransitoria, cierreDeCuota } from './dominio.js';
 
 // Suma con redondeo a peso entero (doctrina de enteros de v2.2.0, Bug #43).
 function r0(n){ return Math.round(n||0); }
@@ -253,8 +253,14 @@ export function planCascada(loan, allPays, entrada, opts){
   // (3.2.0): el mes completo haria cobrar un interes que la cuota regenerada no tiene, y la
   // diferencia terminaria imputada a capital (la clase del Bug #66).
   var proxTransitoria=!!ctx.proximaCuota&&esTransitoria(loan, ctx.proximaCuota.cuotaN);
+  // La cuota de cierre de un congelamiento (post-4.1.6) tiene el interes FIJO: sus dias ya corrieron
+  // con el capital de entonces y el motor la regenera igual tras un abono. Solo desaparece si el
+  // abono salda todo el capital (no queda cronograma), como el periodo en curso de cualquier credito.
+  var proxCierre=!!ctx.proximaCuota&&!!cierreDeCuota(loan, ctx.proximaCuota.cuotaN);
   var interesPendSobre=function(saldoCOP){
-    var I=proxTransitoria
+    var I=proxCierre
+      ? (saldoCOP>0?r0(ctx.proximaCuota.interesPeriodo):0)
+      : proxTransitoria
       ? interesTransitoria(loan, r0(Math.max(0, saldoCOP)), ctx.proximaCuota.fechaPago)
       : r0(Math.max(0, saldoCOP)*ctx.tasaPeriodo);
     return Math.max(0, I-Math.min(yaPagProx, I));

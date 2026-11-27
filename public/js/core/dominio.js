@@ -669,6 +669,27 @@ function sumarDiasISO(iso, n){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
+// ── CONGELAR PRESTAMO (post-4.1.6) — el espejo del motor (engine.js, "CONGELAR PRESTAMO") ──────
+// `congelamientos` (JSON) es el historial de congelamientos como DECISIONES; `congeladoDesde`, el
+// del abierto. Un prestamo congelado sigue Activo: lo vencido se debe y se cobra; desde esa fecha
+// no corren intereses ni nacen cuotas. La cuota en curso se cerro con los dias corridos (fija).
+export function congelamientosDe(loan){
+  var v = loan && loan.congelamientos;
+  if (Array.isArray(v)) return v;
+  try { var a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; }
+}
+export function congeladoAbierto(loan){
+  if (!loan || !loan.congeladoDesde) return null;
+  var a = congelamientosDe(loan), c = a[a.length - 1];
+  return c && !c.hasta ? c : null;
+}
+// Congelado de verdad: activo y con un congelamiento abierto.
+export function estaCongelado(loan){ return !!(loan && loan.estado === 'Activo' && congeladoAbierto(loan)); }
+// El congelamiento que cerro la cuota N con sus dias corridos (o null).
+export function cierreDeCuota(loan, n){
+  return congelamientosDe(loan).filter(function(c){ return +c.cuotaN === +n && !c.perdona && Math.round(+c.interes || 0) > 0 && c.fecha; })[0] || null;
+}
+
 export function computeLiquidacion(loan, loanPays, opts){
   opts = opts || {};
   var esUSD = loan.moneda === 'USD';
@@ -735,6 +756,17 @@ export function computeLiquidacion(loan, loanPays, opts){
     intProxMes = interesPeriodoParcial(capitalPendiente, +loan.tasaMensual || 0, frecuencia, diasCobrados);
     var cubre = sumarDiasISO(irregular.desde, diasCobrados);
     validoHasta = cubre < hastaLiq ? hastaLiq : cubre;
+  }
+  // ── CONGELADO (post-4.1.6, regla del PO) ────────────────────────────────────
+  // Mientras esta congelado no corre ningun periodo: "el interes del periodo en curso" son los dias
+  // hasta el congelamiento, que viven en la cuota de cierre (si no se perdonaron y aun no vencio:
+  // vencida, ya esta en `intMora`). La casilla los ofrece en vez de un periodo entero.
+  var cong = (aplicaInteres && !esDiario(loan)) ? congeladoAbierto(loan) : null;
+  var filaCierre = null;
+  if (cong) {
+    irregular = null; diasCobrados = 0; validoHasta = null;
+    filaCierre = cong.perdona ? null : (regs.filter(function(p){ return p.cuotaN === +cong.cuotaN && p.estadoPago === 'Pendiente'; })[0] || null);
+    intProxMes = filaCierre ? Math.max(0, Math.round((+filaCierre.interesPeriodo || 0) - (+filaCierre.cargaTrasladada || 0))) : 0;
   }
   var intExtra = incluye ? intProxMes : 0;
 
@@ -820,6 +852,9 @@ export function computeLiquidacion(loan, loanPays, opts){
     frecuencia: frecuencia,
     enGracia: enGracia,
     graciaHasta: enGracia ? String(loan.fechaInicioIntereses) : null,
+    // Congelado (post-4.1.6): la casilla del periodo en curso son los dias hasta el congelamiento.
+    congelado: !!cong, congeladoDesde: cong ? cong.desde : null,
+    cierreDias: filaCierre ? (+cong.dias || 0) : 0, cierreFecha: filaCierre ? filaCierre.fechaPago : null,
     total: total
   };
 }
@@ -870,6 +905,8 @@ export function proximoVencimiento(loan, loanPays, hasta) {
 export function preguntaInteresMes(loan, loanPays) {
   if (!loan || esDiario(loan)) return false;
   var L = computeLiquidacion(loan, loanPays, {});
+  // Congelado (post-4.1.6): solo si queda la cuota de cierre por vencer (sus dias corridos).
+  if (L.congelado) return L.intProxMes > 0 && L.capitalPendiente > 0;
   // 3.3.0: dentro de la gracia no corre interes, asi que no hay nada que preguntar.
   return !!L.aplicaInteres && L.capitalPendiente > 0 && !L.enGracia;
 }

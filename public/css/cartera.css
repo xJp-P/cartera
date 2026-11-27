@@ -110,3 +110,6 @@
 @media (prefers-reduced-motion: reduce) {
   .v4t *, .v4t *::before, .v4t *::after { animation: none !important; transition: none !important; }
 }
+/* Congelar préstamo (post-4.1.6): el chip del préstamo congelado */
+.ctv-chip.congelado { color: var(--info-text); border-color: var(--blue-bd); }
+.ctv-chip.congelado i { background: var(--accent); }

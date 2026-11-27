@@ -204,3 +204,5 @@
 @media (prefers-reduced-motion: reduce) {
   .v4c *, .v4c *::before, .v4c *::after { animation: none !important; transition: none !important; }
 }
+/* Congelar préstamo (post-4.1.6): la marca junto a la modalidad */
+.cbv-hielo { color: var(--info-text); font-weight: 600; }

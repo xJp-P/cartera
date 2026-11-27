@@ -21,7 +21,7 @@
 
 import { DeudorPanel } from '../componentes/DeudorPanel.js';
 import { Ico } from '../componentes/iconos.js';
-import { condonadoDe, imputarCobros } from '../core/dominio.js';
+import { condonadoDe, imputarCobros, estaCongelado, cierreDeCuota } from '../core/dominio.js';
 import { copToUsd, fmt, fmtUSD } from '../core/format.js';
 import { esAbono, esCorte } from '../core/ids.js';
 import { bandejaCobro, opModalidad, opIniciales, opCorta, opRel, OP_MESES, OP_DIAS, opFecha } from '../core/operacion.js';
@@ -114,7 +114,8 @@ export function CobrosView(props){
             avatar(p.nombreCliente, tono),
             h('div', { className: 'cbv-quien-c' },
               h('div', { className: 'cbv-nombre' }, properCase(p.nombreCliente)),
-              h('div', { className: 'cbv-sub' }, opModalidad(l.modalidad, true) + (l.moneda === 'USD' ? ' · USD' : '') + ' · cuota ' + p.cuotaN + (l.modalidad === 'Intereses' ? '' : ' de ' + l.plazoMeses)))),
+              h('div', { className: 'cbv-sub' }, opModalidad(l.modalidad, true) + (l.moneda === 'USD' ? ' · USD' : '') + ' · cuota ' + p.cuotaN + (l.modalidad === 'Intereses' ? '' : ' de ' + l.plazoMeses) +
+                (cierreDeCuota(l, p.cuotaN) ? ' · de cierre' : ''), estaCongelado(l) && h('span', { className: 'cbv-hielo' }, ' · ❄ congelado')))),
       vence,
       h('div', { className: 'cbv-monto' },
         h('div', { className: 'v' + (f.tramo === 'vencido' ? ' crit' : '') }, fmt(f.pend)),
@@ -153,7 +154,8 @@ export function CobrosView(props){
             avatar(l.nombre, 'crit'),
             h('div', { className: 'cbv-quien-c' },
               h('div', { className: 'cbv-nombre' }, properCase(l.nombre)),
-              h('div', { className: 'cbv-sub' }, opModalidad(l.modalidad, true) + (l.moneda === 'USD' ? ' · USD' : '') + ' · ' + g.length + ' cuotas vencidas'))),
+              h('div', { className: 'cbv-sub' }, opModalidad(l.modalidad, true) + (l.moneda === 'USD' ? ' · USD' : '') + ' · ' + g.length + ' cuotas vencidas',
+                estaCongelado(l) && h('span', { className: 'cbv-hielo' }, ' · ❄ congelado')))),
           h('div', { className: 'cbv-vence' }, h('div', { className: 'crit' }, cbvPl(-g[0].dias, 'día') + ' de mora'), h('div', { className: 's' }, 'la más vieja')),
           h('div', { className: 'cbv-monto' }, h('div', { className: 'v crit' }, fmt(total)), cbvUsd(l, total)),
           h('div', { className: 'cbv-acc', onClick: function(e){ e.stopPropagation(); } },

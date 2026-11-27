@@ -55,6 +55,7 @@ import { PreflightMoraModal } from './modales/PreflightMoraModal.js';
 import { planCascada } from './core/cascada.js';
 import { CobroModal } from './modales/CobroModal.js';
 import { CondonarModal } from './modales/CondonarModal.js';
+import { CongelarModal, DescongelarModal } from './modales/CongelarModal.js';
 import { UnificarModal } from './modales/UnificarModal.js';
 import { ReciboGeneralModal, abrirReciboGeneral } from './modales/ReciboGeneralModal.js';
 import { generateReciboGeneral } from './pdf/recibo-general.js';
@@ -108,6 +109,9 @@ function App(){
   var sCobro=useState(null); var cobroModal=sCobro[0]; var setCobroModal=sCobro[1];
   // Condonacion de intereses. NO es un cobro: modifica la obligacion sin mover caja.
   var sCond=useState(null); var condonarModal=sCond[0]; var setCondonarModal=sCond[1];
+  // Congelar / descongelar (post-4.1.6): {loan}. Tampoco mueven caja: cambian lo que corre.
+  var sCong=useState(null); var congelarModal=sCong[0]; var setCongelarModal=sCong[1];
+  var sDescong=useState(null); var descongelarModal=sDescong[0]; var setDescongelarModal=sDescong[1];
   // Unificar (post-4.0.0): {nombre, ids} del deudor; los prestamos se leen frescos en cada render.
   var sUnif=useState(null); var unificarModal=sUnif[0]; var setUnificarModal=sUnif[1];
   // Recibo de cobro general (post-4.0.0, punto 4): {nombre, ids} del deudor, como la unificacion.
@@ -738,6 +742,30 @@ function App(){
       });
     });
   }
+  // ── CONGELAR / DESCONGELAR (post-4.1.6, Fase 1) ───────────────────────────
+  // El modal manda la decision (fecha, cobrar o perdonar los dias corridos, primer pago); el backend
+  // lo recalcula todo y deja una entrada para deshacer. Sin caja ni recibo. Mismo guard que la
+  // condonacion: los helpers de API resuelven null en vez de rechazar (Bug #33).
+  function _doCongelar(loanId,body){
+    return API.post('/api/loans/'+loanId+'/congelar',body).then(function(r){
+      if(!r){showToast('No se pudo contactar la aplicación.','error');return;}
+      if(r.error){showToast(r.error,'error');return;}
+      return reload().then(function(){
+        setCongelarModal(null);
+        showToast(r.cierre?'Préstamo congelado: la cuota de cierre queda en '+fmt(r.cierre.interes):'Préstamo congelado');
+      });
+    });
+  }
+  function _doDescongelar(loanId,body){
+    return API.post('/api/loans/'+loanId+'/descongelar',body).then(function(r){
+      if(!r){showToast('No se pudo contactar la aplicación.','error');return;}
+      if(r.error){showToast(r.error,'error');return;}
+      return reload().then(function(){
+        setDescongelarModal(null);
+        showToast(r.primera?'Préstamo descongelado: primera cuota de '+fmt(r.primera.cuota):'Préstamo descongelado');
+      });
+    });
+  }
   // ── UNIFICAR (post-4.0.0) ──────────────────────────────────────────────────
   // El modal manda las DECISIONES y lo que el usuario vio; el server lo recalcula todo, cierra los
   // viejos sin perder caja, crea el nuevo y deja UNA entrada para deshacer. La constancia se emite
@@ -932,6 +960,8 @@ function App(){
     onReestructurar:function(l){setRestructureModal({loan:l});},
     onCambiarDia:function(l){setCambioDiaModal({loan:l});},
     onCondonar:function(l){setCondonarModal({loan:l});},
+    onCongelar:function(l){setCongelarModal({loan:l});},
+    onDescongelar:function(l){setDescongelarModal({loan:l});},
     onUnificar:function(d,activos){setUnificarModal({nombre:d.nombre,ids:activos.map(function(l){return l.id;})});},
     // El recibo general es del DEUDOR: pregunta por el interes en curso (si aplica) y lo imprime.
     onReciboGeneral:function(nombre,ls){abrirReciboGeneral(ls,pays,nowStr(),cfg.datos_pago,function(){setReciboGeneralModal({nombre:nombre,ids:ls.map(function(l){return l.id;})});});},
@@ -1091,6 +1121,10 @@ function App(){
         setReciboGeneralModal(null);}}),
     condonarModal&&h(CondonarModal,{loan:condonarModal.loan||condonarModal,pays:pays,onConfirm:_doCondonar,
       onClose:function(){setCondonarModal(null);}}),
+    congelarModal&&h(CongelarModal,{loan:congelarModal.loan,pays:pays,hoy:nowStr(),onConfirm:_doCongelar,
+      onClose:function(){setCongelarModal(null);}}),
+    descongelarModal&&h(DescongelarModal,{loan:descongelarModal.loan,pays:pays,hoy:nowStr(),onConfirm:_doDescongelar,
+      onClose:function(){setDescongelarModal(null);}}),
     corteModal&&h(CorteModal,{loan:corteModal.loan||corteModal,pays:pays,onSave:registrarCorte,
       onClose:function(){setCorteModal(null);}}),
     // 3.5.0 — el modal publica el cambio el mismo (como lo hacia dentro del perfil) y muestra el

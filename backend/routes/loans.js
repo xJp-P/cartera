@@ -39,8 +39,9 @@ const express = require('express');
 
 // Predicados de clasificacion de filas de `payments` (core/ids.js): unica fuente
 // de verdad de que es un abono. Antes cada sitio repetia el literal indexOf('-ab-').
-const { esAbono } = require('../core/ids');
-const { diasEntre } = require('../core/engine');
+const { esAbono, esCuotaRegular } = require('../core/ids');
+const { diasEntre, sumarDias, interesPeriodoParcial, cargaDeCuota, congelamientosDe, congeladoAbierto,
+  primeraCongelada, textoCierre, inicioCuenta } = require('../core/engine');
 const { nfc } = require('../core/util');
 
 module.exports = function crearRutasLoans(ctx) {
@@ -278,12 +279,21 @@ module.exports = function crearRutasLoans(ctx) {
     // bloquea, y esto es la defensa del otro lado.
     loan.cargaTrasladada = prevLoan.cargaTrasladada || 0;
     loan.cargaCuotas = prevLoan.cargaCuotas || 0;
+    // Congelar (post-4.1.6): el congelamiento es una DECISION del prestamo, nunca del body; y con uno
+    // en su historia, sus cifras quedan como estan (el formulario las bloquea; esto es la defensa).
+    loan.congeladoDesde = prevLoan.congeladoDesde || null;
+    loan.congelamientos = prevLoan.congelamientos || '[]';
+    const conCongelamiento = congelamientosDe(prevLoan).length > 0;
+    if (conCongelamiento) {
+      ['moneda', 'montoOrigen', 'trmAcordada', 'montoCOP', 'tasaMensual', 'plazoMeses', 'modalidad', 'frecuencia', 'fechaInicio']
+        .forEach(k => { if (prevLoan[k] !== undefined) loan[k] = prevLoan[k]; });
+    }
     if (prevLoan.unificaDe) {
       ['moneda', 'montoOrigen', 'trmAcordada', 'montoCOP', 'tasaMensual', 'plazoMeses', 'modalidad', 'frecuencia', 'fechaInicio']
         .forEach(k => { if (prevLoan[k] !== undefined) loan[k] = prevLoan[k]; });
     }
     const conActividad = prev.some(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora') ||
-      (+prevLoan.periodoIrregularMora || 0) > 0 || !!prevLoan.unificaDe;
+      (+prevLoan.periodoIrregularMora || 0) > 0 || !!prevLoan.unificaDe || conCongelamiento;
     loan.fechaBaseCronograma = prevLoan.fechaBaseCronograma || null;
     loan.periodoIrregularN = prevLoan.periodoIrregularN || null;
     loan.periodoIrregularDesde = prevLoan.periodoIrregularDesde || null;
@@ -354,7 +364,7 @@ module.exports = function crearRutasLoans(ctx) {
         if (regularConsumedEdit === 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual });
       } else {
         const remaining = indefinidoEdit
-          ? Math.max(0, cuotasHastaHoy(loan.fechaInicio, nextRegularNEdit, 3, loan.frecuencia || 'Mensual'))
+          ? Math.max(0, cuotasHastaHoy(inicioCuenta(loan), nextRegularNEdit, 3, loan.frecuencia || 'Mensual'))
           : Math.max(0, (loan.plazoMeses || 12) - regularConsumedEdit);
         if (remaining > 0) schedule = buildSchedule({ ...loan, montoCOP: saldoActual }, nextRegularNEdit, saldoActual, remaining);
       }
@@ -523,6 +533,10 @@ module.exports = function crearRutasLoans(ctx) {
     let nuevaCuotaFija = null;      // null = no actualizar; 0 = limpiar; >0 = persistir
     let logRecalc = '';
 
+    // Congelado (post-4.1.6): un abono baja el capital, pero no hay cuotas por delante que reorganizar.
+    if (loan.congeladoDesde && !liquidar && (recalcMode === 'modificarPlazo' || recalcMode === 'fijarCuota')) {
+      throw new ClientError('Este crédito está congelado: descongélalo antes de cambiar el plazo o fijar la cuota. El abono a capital sí se puede registrar.');
+    }
     if (nuevoSaldo > 0) {
       if (esCapInt && recalcMode === 'modificarPlazo') {
         const nuevoN = parseInt(recalcValor, 10);
@@ -685,6 +699,7 @@ module.exports = function crearRutasLoans(ctx) {
     return mutacionAtomica(req, res, { accion: 'reestructuracion', endpoint: 'POST /api/loans/:id/reestructurar', scopeTipo: 'loan', scopeId: req.params.id }, () => {
     if (loan.estado !== 'Activo') throw new ClientError('Solo se pueden reestructurar préstamos activos');
     if (loan.modalidad !== 'Capital + Intereses') throw new ClientError('La reestructuración solo aplica para préstamos de Capital + Intereses');
+    if (loan.congeladoDesde) throw new ClientError('Este crédito está congelado: descongélalo antes de reestructurarlo.');
     if (recalcMode !== 'modificarPlazo' && recalcMode !== 'fijarCuota') {
       throw new ClientError('Modo de recálculo inválido. Debe ser "modificarPlazo" o "fijarCuota".');
     }
@@ -985,6 +1000,199 @@ module.exports = function crearRutasLoans(ctx) {
   // entre las elegidas; la ultima a la que llega puede quedar condonada EN PARTE y sigue En
   // Mora por lo que falta. Cada cuota guarda lo condonado en `payments.interesCondonado`. El
   // reparto tiene su espejo en `planCondonacion` (dominio.js), que es lo que el modal muestra.
+  // ══ CONGELAR / DESCONGELAR (post-4.1.6, aprobado por el PO sobre una maqueta) ══════════════
+  // El prestamo sigue Activo: lo vencido se sigue debiendo y se cobra, se condona y se liquida;
+  // desde la fecha del congelamiento no corren intereses ni nacen cuotas, hasta descongelarlo a
+  // mano. Se guarda la DECISION en `congelamientos` y el motor la aplica (engine.js, "CONGELAR
+  // PRESTAMO"), asi que todas las rutas que rehacen cuotas la respetan solas. Sin caja.
+  const CONGELABLES = ['Intereses'];
+  const ymdLocal = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const pesosC = x => '$' + Math.round(x).toLocaleString('es-CO');
+  const MESES_C = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const fechaC = iso => { const p = String(iso).split('-'); return (+p[2]) + ' de ' + MESES_C[+p[1] - 1] + ' de ' + p[0]; };
+
+  // Rehace las cuotas Pendientes de un prestamo con el motor: el mismo computo de `/recalculate`
+  // (lo pagado y lo vencido quedan; el dinero de las Pendientes se restaura), para que lo que
+  // escribe congelar o descongelar sea exactamente lo que el arranque volveria a generar.
+  function rehacerPendientes(loanN, pays) {
+    const regs = pays.filter(p => !esAbono(p));
+    const fijas = regs.filter(p => p.estadoPago === 'Pagado' || p.estadoPago === 'En Mora');
+    const pend = regs.filter(p => p.estadoPago === 'Pendiente');
+    const map = snapshotCobros(pend);
+    const consumidas = fijas.length, nextN = consumidas + 1;
+    const orig = loanN.moneda === 'USD' ? Math.round(loanN.montoOrigen * loanN.trmAcordada) : Math.round(loanN.montoOrigen);
+    const capAbonos = pays.filter(p => esAbono(p) && p.estadoPago === 'Pagado').reduce((s, p) => s + p.abonoCapital, 0);
+    const capCuotas = fijas.reduce((s, p) => s + p.abonoCapital, 0);
+    const saldo = Math.max(0, orig - capAbonos - capCuotas);
+    let schedule = [];
+    if (saldo > 0) {
+      const cuotaFija = Math.round(+loanN.cuotaFijaPactada || 0);
+      if (cuotaFija > 0 && loanN.modalidad === 'Capital + Intereses') {
+        try { schedule = buildScheduleFixedPMT(loanN, nextN, saldo, cuotaFija); }
+        catch (e) { const rem = Math.max(0, (loanN.plazoMeses || 12) - consumidas); if (rem > 0) schedule = buildSchedule(loanN, nextN, saldo, rem); }
+      } else {
+        const rem = loanN.modalidad === 'Intereses'
+          ? Math.max(0, cuotasHastaHoy(inicioCuenta(loanN), nextN, 3, loanN.frecuencia || 'Mensual'))
+          : Math.max(0, (loanN.plazoMeses || 12) - consumidas);
+        if (rem > 0) schedule = buildSchedule(loanN, nextN, saldo, rem);
+      }
+    }
+    abortarSiHuerfanos(schedule, map);   // ClientError -> 4xx, BD intacta
+    restaurarCobros(schedule, map);
+    return { schedule, borrar: pend.map(p => p.id) };
+  }
+
+  // El primer dia de pago DESPUES de `desde`: el mismo dia del mes de siempre (Mensual), o un
+  // periodo despues (Semanal y Quincenal).
+  function siguientePagoTras(loan, desde) {
+    const freq = loan.frecuencia || 'Mensual';
+    if (freq === 'Semanal') return sumarDias(desde, 7);
+    if (freq === 'Quincenal') return sumarDias(desde, 14);
+    const dia = +loan.diaPago || +String(loan.fechaInicio).slice(8, 10);
+    const d = new Date(desde + 'T12:00:00');
+    for (let k = 0; k < 2; k++) {
+      const c = new Date(d.getFullYear(), d.getMonth() + k, 1, 12);
+      c.setDate(Math.min(dia, new Date(c.getFullYear(), c.getMonth() + 1, 0).getDate()));
+      const iso = ymdLocal(c);
+      if (iso > desde) return iso;
+    }
+    return sumarDias(desde, 30);
+  }
+
+  router.post('/api/loans/:id/congelar', (req, res) => {
+    const { desde, perdonar, observaciones } = req.body || {};
+    const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
+    if (!loan) return res.status(404).json({ error: 'No encontrado' });
+    return mutacionAtomica(req, res, { accion: 'congelar', endpoint: 'POST /api/loans/:id/congelar', scopeTipo: 'loan', scopeId: req.params.id }, () => {
+      // ── FASE 1: lectura + validacion + computo, sin escribir ──
+      if (loan.estado !== 'Activo') throw new ClientError('Solo se congela un crédito activo (este está ' + loan.estado + ').');
+      if (CONGELABLES.indexOf(loan.modalidad) === -1) {
+        throw new ClientError(loan.modalidad === MODALIDAD_DIARIA || loan.modalidad === 'Capital + Intereses'
+          ? 'Los créditos de ' + (loan.modalidad === MODALIDAD_DIARIA ? 'interés diario' : 'capital + intereses') + ' todavía no se pueden congelar.'
+          : 'Un crédito ' + (loan.modalidad === 'Prestamo' ? 'sin intereses' : 'de pago único') + ' no genera intereses por período: no hay nada que congelar.');
+      }
+      if (loan.congeladoDesde) throw new ClientError('Este crédito ya está congelado desde el ' + fechaC(loan.congeladoDesde) + '.');
+      const hoy = hoyStr();
+      const F = desde ? String(desde) : hoy;
+      if (!fechaValida(F)) throw new ClientError('La fecha del congelamiento no es válida.');
+      if (F > hoy) throw new ClientError('No se puede congelar con una fecha futura: congela el día en que empieza.');
+      const pays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
+      const regs = pays.filter(esCuotaRegular).sort((a, b) => a.cuotaN - b.cuotaN);
+      // La cuota EN CURSO: la primera por vencer despues del congelamiento.
+      const curso = regs.find(p => p.estadoPago === 'Pendiente' && p.fechaPago > F);
+      if (!curso) throw new ClientError('Este crédito no tiene cuotas por vencer: no hay intereses que congelar.');
+      // Donde empezo su periodo: la transitoria (primer pago, cambio de dia, reactivacion) o la cuota anterior.
+      const prev = regs.filter(p => p.cuotaN < curso.cuotaN).pop();
+      const esTrans = +loan.periodoIrregularN === curso.cuotaN && !!loan.periodoIrregularDesde;
+      const inicio = esTrans ? loan.periodoIrregularDesde : (prev ? prev.fechaPago : (loan.fechaInicioIntereses || loan.fechaInicio));
+      if (F < inicio) {
+        throw new ClientError('Congela desde el ' + fechaC(inicio) + ' o después: ese día empezó el período de la cuota en curso' +
+          ' (lo anterior ya está facturado).');
+      }
+      if (esTrans && (+loan.periodoIrregularMora || 0) > 0) {
+        throw new ClientError('La cuota en curso trae mora consolidada de un cambio de día de pago: cóbrala o liquídala antes de congelar.');
+      }
+      // Dinero ya recibido en cuotas que el congelamiento quitaria: no se pierde en silencio.
+      const futurasConDinero = regs.filter(p => p.estadoPago === 'Pendiente' && p.cuotaN > curso.cuotaN && (+p.partialPaid || 0) > 0);
+      if (futurasConDinero.length) {
+        throw new ClientError('La cuota ' + futurasConDinero[0].cuotaN + ' ya tiene un abono de ' + pesosC(futurasConDinero[0].partialPaid) +
+          ': congelar la quitaría. Revierte ese abono antes de congelar.');
+      }
+      const freq = loan.frecuencia || 'Mensual';
+      const dias = Math.max(0, diasEntre(inicio, F));
+      const calculado = dias > 0 ? interesPeriodoParcial(curso.saldoInicial, +loan.tasaMensual || 0, freq, dias) : 0;
+      const perdona = !!perdonar || calculado <= 0;
+      const abonado = Math.round(+curso.partialPaid || 0);
+      if (perdona && abonado > 0) {
+        throw new ClientError('La cuota del ' + fechaC(curso.fechaPago) + ' ya tiene un abono de ' + pesosC(abonado) +
+          ': no se pueden perdonar sus días. Cóbralos (el abono va a esa cuota).');
+      }
+      const carga = cargaDeCuota(loan, curso.cuotaN);
+      if (!perdona && abonado > calculado + carga) {
+        throw new ClientError('La cuota del ' + fechaC(curso.fechaPago) + ' ya tiene un abono de ' + pesosC(abonado) +
+          ', más de lo que quedaría por los ' + dias + ' días corridos (' + pesosC(calculado + carga) + '). Revierte el abono antes de congelar.');
+      }
+      const registro = { desde: F, hasta: null, cuotaN: curso.cuotaN, fecha: curso.fechaPago, inicio: inicio, dias: dias,
+        interes: perdona ? 0 : calculado, perdona: perdona, cuotaAntes: Math.round(curso.cuotaTotal) };
+      const historial = congelamientosDe(loan).concat([registro]);
+      const loanN = Object.assign({}, loan, { congeladoDesde: F, congelamientos: JSON.stringify(historial) });
+      const { schedule, borrar } = rehacerPendientes(loanN, pays);
+      // La cuota de cierre lleva su propio rotulo (no el de la cuota que reemplaza).
+      schedule.forEach(p => { if (p.cuotaN === curso.cuotaN && !perdona) p.observaciones = textoCierre(registro); });
+      const quitadas = regs.filter(p => p.estadoPago === 'Pendiente' && p.cuotaN >= primeraCongelada(registro)).length;
+      const nota = String(observaciones || '').trim();
+      return {
+        descripcion: 'Congelaste el préstamo de ' + loan.nombre + ' desde el ' + fechaC(F) + ' — ' +
+          (perdona ? 'se perdonaron los ' + dias + ' días del período en curso' : 'la cuota del ' + fechaC(curso.fechaPago) + ' se cierra con ' + dias + ' días de interés (' + pesosC(calculado) + ')') +
+          (quitadas ? '; se quitan ' + quitadas + ' cuota' + (quitadas === 1 ? '' : 's') : '') + (nota ? ' (' + nota + ')' : ''),
+        afectaCaja: false,
+        payload: { ok: true, congeladoDesde: F, cierre: perdona ? null : { cuotaN: curso.cuotaN, fecha: curso.fechaPago, dias: dias, interes: calculado }, quitadas: quitadas, perdona: perdona },
+        aplicar: () => {
+          const del = db.prepare('DELETE FROM payments WHERE id = ?');
+          borrar.forEach(id => del.run(id));
+          db.prepare('UPDATE loans SET congeladoDesde = ?, congelamientos = ? WHERE id = ?').run(F, JSON.stringify(historial), req.params.id);
+          if (schedule.length) insertSchedule(schedule);
+        },
+      };
+    });
+  });
+
+  router.post('/api/loans/:id/descongelar', (req, res) => {
+    const { desde, primerPago, observaciones } = req.body || {};
+    const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
+    if (!loan) return res.status(404).json({ error: 'No encontrado' });
+    return mutacionAtomica(req, res, { accion: 'descongelar', endpoint: 'POST /api/loans/:id/descongelar', scopeTipo: 'loan', scopeId: req.params.id }, () => {
+      const abierto = congeladoAbierto(loan);
+      if (!abierto) throw new ClientError('Este crédito no está congelado.');
+      if (loan.estado !== 'Activo') throw new ClientError('Solo se descongela un crédito activo (este está ' + loan.estado + ').');
+      const hoy = hoyStr();
+      const D = desde ? String(desde) : hoy;
+      if (!fechaValida(D)) throw new ClientError('La fecha para descongelar no es válida.');
+      if (D > hoy) throw new ClientError('No se puede descongelar con una fecha futura.');
+      if (D < abierto.desde) throw new ClientError('No se puede descongelar antes del ' + fechaC(abierto.desde) + ', el día en que se congeló.');
+      const primer = primerPago ? String(primerPago) : siguientePagoTras(loan, D);
+      if (!fechaValida(primer)) throw new ClientError('La fecha del primer pago no es válida.');
+      if (primer <= D) throw new ClientError('El primer pago tiene que ser después del ' + fechaC(D) + ', el día en que se descongela.');
+      const freq = loan.frecuencia || 'Mensual';
+      const N = primeraCongelada(abierto);
+      // Las fechas siguen desde el primer pago: la cuota N cae ese dia y las siguientes, cada periodo.
+      let base, diaPago = loan.diaPago;
+      if (freq === 'Semanal' || freq === 'Quincenal') {
+        base = sumarDias(primer, -N * (freq === 'Semanal' ? 7 : 14));
+      } else {
+        const b = new Date(primer + 'T12:00:00'); b.setDate(1); b.setMonth(b.getMonth() - N);
+        base = ymdLocal(b);
+        diaPago = +primer.slice(8, 10);
+      }
+      const historial = congelamientosDe(loan).map((c, k, a) => k === a.length - 1 ? Object.assign({}, c, { hasta: D, primerPago: primer }) : c);
+      const loanN = Object.assign({}, loan, {
+        congeladoDesde: null, congelamientos: JSON.stringify(historial), diaPago: diaPago, fechaBaseCronograma: base,
+        periodoIrregularN: N, periodoIrregularDesde: D, periodoIrregularMora: 0,
+        plazoMeses: +loan.plazoMeses || 0
+      });
+      const pays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
+      const { schedule, borrar } = rehacerPendientes(loanN, pays);
+      const primera = schedule.find(p => p.cuotaN === N);
+      const nota = String(observaciones || '').trim();
+      const diasCong = diasEntre(abierto.desde, D);
+      return {
+        descripcion: 'Descongelaste el préstamo de ' + loan.nombre + ' el ' + fechaC(D) + ' (estuvo congelado ' + diasCong + ' día' + (diasCong === 1 ? '' : 's') + ')' +
+          (primera ? ' — primera cuota el ' + fechaC(primera.fechaPago) + ' por ' + pesosC(primera.cuotaTotal) : '') + (nota ? ' (' + nota + ')' : ''),
+        afectaCaja: false,
+        payload: { ok: true, desde: D, primerPago: primer, diasCongelado: diasCong, plazoMeses: loanN.plazoMeses,
+          primera: primera ? { cuotaN: primera.cuotaN, fecha: primera.fechaPago, cuota: primera.cuotaTotal, interes: primera.interesPeriodo } : null },
+        aplicar: () => {
+          const del = db.prepare('DELETE FROM payments WHERE id = ?');
+          borrar.forEach(id => del.run(id));
+          db.prepare('UPDATE loans SET congeladoDesde = NULL, congelamientos = ?, diaPago = ?, fechaBaseCronograma = ?, ' +
+            'periodoIrregularN = ?, periodoIrregularDesde = ?, periodoIrregularMora = 0, plazoMeses = ? WHERE id = ?')
+            .run(JSON.stringify(historial), diaPago, base, N, D, loanN.plazoMeses, req.params.id);
+          if (schedule.length) insertSchedule(schedule);
+        },
+      };
+    });
+  });
+
   router.post('/api/loans/:id/condonar-intereses', (req, res) => {
     const { cuotas, observaciones, monto } = req.body;
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
@@ -1189,6 +1397,7 @@ module.exports = function crearRutasLoans(ctx) {
     const nuevoDiaInt = parseInt(nuevoDia, 10);
     return mutacionAtomica(req, res, { accion: 'cambio-fecha', endpoint: 'POST /api/loans/:id/cambiar-dia-pago', scopeTipo: 'loan', scopeId: req.params.id }, () => {
     if (loan.estado !== 'Activo') throw new ClientError('Solo se puede cambiar la fecha de préstamos activos');
+    if (loan.congeladoDesde) throw new ClientError('Este crédito está congelado: descongélalo antes de cambiar el día de pago.');
     // WHITELIST, no blacklist. Antes esto rechazaba nombrando a 'Prestamo' y 'Pago Unico',
     // de modo que TODA modalidad futura entraba por defecto: el credito abierto —que no
     // tiene cuotas ni dia de pago— alcanzaba el endpoint, se le borraba la mora, se le

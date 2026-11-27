@@ -11,7 +11,7 @@ import { showError } from '../core/api.js';
 import {
   pmt, filasPreview, aplicarTransitoriaPreview, infoPrimerPeriodo, primerPagoDe, primerPagoRegular,
 } from '../core/calculo.js';
-import { MODALIDAD_DIARIA, diasEntre } from '../core/dominio.js';
+import { MODALIDAD_DIARIA, diasEntre, congelamientosDe } from '../core/dominio.js';
 import {
   copToUsd, fmt, fmtD, fmtN, fmtNumInput, fmtUSD, parseDecimalInput, parseIntInput, parseNum,
 } from '../core/format.js';
@@ -37,6 +37,9 @@ export function LoanModal(props){
     if((+loan.periodoIrregularMora||0)>0) return true;
     // Unificacion (post-4.0.0): sus cifras son las que se trasladaron de los prestamos viejos.
     if(loan.unificaDe) return true;
+    // Congelar (post-4.1.6): con un congelamiento en su historia, el calendario y la cuota de cierre
+    // son decisiones guardadas; el backend tambien bloquea esos campos.
+    if(loan.congeladoDesde||congelamientosDe(loan).length) return true;
     return allPays.some(function(p){
       if(String(p.prestamoId)!==String(loan.id)) return false;
       if(p.estadoPago==='Pagado') return true;          // cuotas pagadas o abonos a capital
@@ -382,7 +385,7 @@ export function LoanModal(props){
       h(Ico,{name:'alert',size:14,color:'var(--yellow)',sw:2.4}),
       h('div',{style:{flex:1}},
         h('div',{style:{fontSize:12,color:'var(--yellow)',fontWeight:700,marginBottom:2}},'Algunos campos están bloqueados'),
-        h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4}},'Este préstamo ya registra pagos, abonos o cuotas en mora. Para preservar la integridad del cronograma pactado, los campos que afectan a la amortización no se pueden modificar.'))),
+        h('div',{style:{fontSize:11,color:'var(--text2)',lineHeight:1.4}},(loan&&loan.congeladoDesde?'Este préstamo está congelado. ':'')+'Este préstamo ya registra pagos, abonos, cuotas en mora o un congelamiento. Para preservar la integridad del cronograma pactado, los campos que afectan a la amortización no se pueden modificar.'))),
     // QA7 — Cliente: input unico con autocompletado hibrido (reemplaza las pestañas nuevo/existente).
     // Texto libre = cliente nuevo; elegir una sugerencia prefilla nombre/cedula/telefono (existente)
     // y el backend lo consolida por nombre (saveLoan auto-vincula). Misma estetica que DebtModal.

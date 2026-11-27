@@ -15,7 +15,7 @@
 // `computeLiquidacion`, que resta el parcial APARTE; migrarlo lo restaria dos veces.
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
-import { saldoConCaja, esDiario, estadoDiario } from '../core/dominio.js';
+import { saldoConCaja, esDiario, estadoDiario, estaCongelado } from '../core/dominio.js';
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
@@ -120,7 +120,8 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     // El rotulo corto de la app (el valor interno se guarda sin tildes); el credito abierto, entero.
     var modLabel = opModalidad(l.modalidad, l.modalidad !== 'Interes Diario');
     return { l: l, esUSD: esUSD, trm: trm, money: money, saldo: saldo, moras: moras, vencido: vencido, tasaStr: tasaStr, modLabel: modLabel,
-             vencLabel: vencLabel, proxLabel: proxLabel, proxValor: proxValor, proxValorLabel: proxValorLabel, esTransitoria: esTransitoria, transValor: transValor, transFechaLabel: transFechaLabel };
+             vencLabel: vencLabel, proxLabel: proxLabel, proxValor: proxValor, proxValorLabel: proxValorLabel, esTransitoria: esTransitoria, transValor: transValor, transFechaLabel: transFechaLabel,
+             congelado: estaCongelado(l) };
   });
 
   // Orden (mapa de riesgo): En Mora primero por TOTAL VENCIDO desc; luego Al dia por SALDO desc
@@ -162,6 +163,8 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     var estadoBadge = !esMora
       ? '<span class="badge badge-pagado">Al día</span>'
       : (r.proxLabel !== '—' ? '<span class="badge badge-pend">Pendiente</span>' : '<span class="badge badge-mora">En Mora</span>');
+    // Congelar (post-4.1.6): sigue activo; desde esa fecha no corren intereses ni nacen cuotas.
+    if (r.congelado) estadoBadge += ' <span class="badge badge-hielo">Congelado</span>';
     var loanTr = '<tr class="loan-row' + (esMora ? ' mora' : '') + '">' +
       '<td>' + r.vencLabel + '</td>' +
       '<td><strong>' + l.nombre + '</strong></td>' +
@@ -227,7 +230,8 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     '.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:600;line-height:1.2;border:1px solid transparent}',
     '.badge-pagado{background:var(--r-green-bg);color:var(--r-green);border-color:var(--r-green-bd)}',
     '.badge-mora{background:var(--r-red-bg);color:var(--r-red);border-color:' + C.redBd + '}',
-    '.badge-pend{background:var(--r-soft-2);color:var(--r-text-2);border-color:var(--r-bd-2)}',
+    '.badge-pend{background:var(--r-soft-2);color:var(--r-text-2);border-color:var(--r-bd-2)}' +
+      (rows.some(function(r){ return r.congelado; }) ? '\n.badge-hielo{background:var(--r-blue-bg);color:var(--r-blue);border-color:var(--r-blue-bg)}' : ''),
     // Los glifos &#8627; y &#9632; no estan en los subconjuntos de Inter: sin una letra del
     // sistema que SI los tenga como TrueType, Chromium los saca de CambriaMath en Type3.
     '.gl{font-family:"Segoe UI Symbol","Segoe UI",Arial,sans-serif}',

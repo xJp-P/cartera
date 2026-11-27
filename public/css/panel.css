@@ -162,6 +162,26 @@
   .v4p .fcv td, .v4p .fcv th { padding-left: 10px; padding-right: 10px; }
 }
 
+/* Congelar préstamo (post-4.1.6, aprobado por el PO sobre una maqueta): el aviso, el botón
+   «Descongelar», la cuota de cierre, la primera cuota al descongelar y la franja del congelamiento. */
+.v4p .dp-hielo-aviso { display: flex; gap: 10px; align-items: flex-start; border-radius: 13px; padding: 10px 14px; margin-top: 14px; font-size: 12.5px; line-height: 1.5;
+  background: color-mix(in srgb, var(--blue) 11%, transparent); border: 1px solid color-mix(in srgb, var(--blue) 35%, transparent); color: var(--ink-2); }
+.v4p .dp-hielo-aviso svg { flex: none; margin-top: 2px; }
+.v4p .dp-hielo-aviso b { color: var(--ink); font-weight: 600; }
+.v4p .op-btn.hielo { background: color-mix(in srgb, var(--blue) 16%, transparent); color: var(--info-text); border-color: color-mix(in srgb, var(--blue) 40%, transparent); }
+.v4p .op-btn.hielo:hover { background: color-mix(in srgb, var(--blue) 24%, transparent); }
+.v4p .dp-menu-nota { font-size: 11px; line-height: 1.4; color: var(--ink-3); padding: 6px 10px 8px; max-width: 250px; }
+.v4p .dp-crono-f.cierre { background: color-mix(in srgb, var(--blue) 8%, transparent); box-shadow: inset 2px 0 0 var(--blue); }
+.v4p .dp-crono-f.reanuda { background: color-mix(in srgb, var(--green) 7%, transparent); box-shadow: inset 2px 0 0 var(--green); }
+.v4p .dp-crono-f.fantasma { opacity: .45; }
+.v4p .dp-crono-f.fantasma .mono { text-decoration: line-through; }
+.v4p .dp-sub-hielo { color: var(--info-text); }
+.v4p .dp-sub-reanuda { color: var(--good-text); }
+.v4p .dp-hielo { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--info-text);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--blue) 7%, transparent) 0 8px, transparent 8px 16px); }
+.v4p .dp-hielo svg { flex: none; }
+.v4p .dp-hielo b { font-weight: 600; }
+
 /* Las cifras en dolares, en gris como en el resto de la app (opcion A del PO, 3.7.0) */
 .v4p .dp-usd { color: var(--ink-3); }
 

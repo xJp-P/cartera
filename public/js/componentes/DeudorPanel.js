@@ -16,7 +16,9 @@ import { Ico } from './iconos.js';
 import { FlujoCajaPanel } from './FlujoCajaPanel.js';
 import { GananciaBimonetaria, notaCOPGanancia } from './GananciaBimonetaria.js';
 import { CronogramaPdfModal } from '../modales/CronogramaPdfModal.js';
-import { esCondonada, condonadoDe, preguntaInteresMes, esDiario, pendCuota, pendienteDeCuota, faltaUSD, imputarCobros, dolaresPorPago } from '../core/dominio.js';
+import { esCondonada, condonadoDe, preguntaInteresMes, esDiario, pendCuota, pendienteDeCuota, faltaUSD, imputarCobros, dolaresPorPago,
+  estaCongelado, congeladoAbierto, congelamientosDe, cierreDeCuota, diasEntre } from '../core/dominio.js';
+import { cgPuedeCongelar, cgPrimeraCongelada } from '../core/congelar.js';
 import { copToUsd, fmt, fmtN, fmtUSD } from '../core/format.js';
 import { esAbono } from '../core/ids.js';
 import { modeloDeudor, opModalidad, opIniciales, opCorta, opCortaAnio, opRel, opPlazo, opFrecuencia, opPuedeCambiarDia } from '../core/operacion.js';
@@ -137,48 +139,94 @@ function dpParcialFranja(d, x){
       h('div', { className: 'dp-parc-nota' }, nota)));
 }
 
+// ── Congelar préstamo (post-4.1.6, aprobado por el PO sobre una maqueta) ─────────────
+// La marca, el aviso y la franja del cronograma. El préstamo sigue Activo: lo vencido se sigue
+// debiendo; desde el congelamiento no corren intereses ni nacen cuotas, hasta descongelarlo.
+export function dpChipCongelado(desde){
+  return h('span', { className: 'op-chip dp-chip-hielo', style: { color: 'var(--blue)', background: 'var(--blue-bg)' } }, '❄ Congelado desde ' + opCorta(desde));
+}
+function dpAvisoCongelado(l, m){
+  var c = congeladoAbierto(l);
+  if (!c) return null;
+  var venc = m.enMora.length;
+  return h('div', { className: 'dp-hielo-aviso' },
+    h(Ico, { name: 'snow', size: 16, color: 'var(--blue)', sw: 2 }),
+    h('div', null, h('b', null, 'Congelado desde el ' + opCortaAnio(c.desde) + '.'), ' No corren intereses ni se generan cuotas. ',
+      venc ? (venc === 1 ? 'La cuota vencida se sigue debiendo. ' : 'Las ' + venc + ' cuotas vencidas se siguen debiendo. ') : '',
+      c.perdona ? 'Se perdonaron los ' + c.dias + ' días del período en curso. '
+        : 'La cuota del ' + opCortaAnio(c.fecha) + ' se cerró con ' + c.dias + ' días de interés (' + fmt(c.interes) + ' en vez de ' + fmt(c.cuotaAntes) + '). ',
+      'El capital no cambia. Puedes cobrar lo vencido, abonar a capital o liquidar.'));
+}
+function dpFranjaHielo(key, c){
+  var dias = c.hasta ? diasEntre(c.desde, c.hasta) : 0;
+  return h('div', { key: key, className: 'dp-hielo' }, h(Ico, { name: 'snow', size: 14, color: 'var(--blue)', sw: 2 }),
+    c.hasta
+      ? h('span', null, h('b', null, 'Congelado del ' + opCortaAnio(c.desde) + ' al ' + opCortaAnio(c.hasta)), ' · ' + dias + ' día' + (dias === 1 ? '' : 's') + ' sin intereses ni cuotas')
+      : h('span', null, h('b', null, 'Congelado desde el ' + opCortaAnio(c.desde)), ' · no corren intereses ni se generan cuotas'));
+}
+
 // ── Cronograma: las 7 columnas universales, abonos intercalados ────────────────────
 function DpCronograma(p){
-  var m = p.m, l = m.loan, hoy = p.hoy, foco = p.focoPay;
-  var proxId = m.prox ? m.prox.id : null;
-  if (!m.timeline.length) return h('div', { className: 'op-vacio' }, esDiario(l) ? 'Todavía no hay cortes registrados.' : 'Sin cuotas.');
+  var m = p.m, l = m.loan;
+  // Congelar (post-4.1.6): la franja de cada congelamiento ya cerrado va antes de la primera cuota que
+  // se generó al descongelar; la del abierto, al final (despues no hay nada).
+  var congs = congelamientosDe(l), abierto = congeladoAbierto(l), franjaAntes = {}, puestas = {};
+  congs.forEach(function(c){ if (c.hasta) franjaAntes[cgPrimeraCongelada(c)] = c; });
+  if (!m.timeline.length && !abierto) return h('div', { className: 'op-vacio' }, esDiario(l) ? 'Todavía no hay cortes registrados.' : 'Sin cuotas.');
   return h('div', { className: 'dp-crono' },
     h('div', { className: 'dp-crono-h' },
       h('span', null, '#'), h('span', null, 'Vence'), h('span', { className: 'r' }, 'Interés'), h('span', { className: 'r' }, 'Abono a capital'),
       h('span', { className: 'r' }, 'Valor cuota'), h('span', { className: 'r' }, 'Saldo'), h('span', { className: 'c' }, 'Estado')),
     m.timeline.map(function(x){
-      if (esAbono(x)) return h('div', { key: x.id, className: 'dp-crono-f abono' },
-        h('span', null, '—'),
-        h('span', null, opCortaAnio(x.fechaPago), x.observaciones && h('div', { className: 'dp-sub' }, x.observaciones)),
-        h('span', { className: 'r muted' }, x.interesPeriodo > 0 ? fmt(x.interesPeriodo) : '—'),
-        h('span', { className: 'r mono' }, fmt(x.abonoCapital), dpUsd(m, x.abonoCapital)),
-        h('span', { className: 'r mono' }, fmt(x.cuotaTotal), dpUsd(m, x.cuotaTotal)),
-        h('span', { className: 'r mono' }, fmt(x.saldoFinal)),
-        h('span', { className: 'c' }, h('span', { className: 'op-chip', style: { color: 'var(--blue)', background: 'var(--blue-bg)' } }, 'Abono')));
-      var est = x.estadoPago, parcial = est !== 'Pagado' && (x.partialPaid || 0) > 0;
-      var cls = 'dp-crono-f' + (est === 'En Mora' ? ' mora' : '') + (x.id === proxId ? ' prox' : '') + (x.id === foco ? ' foco' : '') + (est === 'Pagado' ? ' pagada' : '') + (esCondonada(x) ? ' condonada' : '');
-      var capRec = Math.max(0, x.cuotaTotal - x.interesPeriodo);
-      var capUSD = m.esUSD && m.trm > 0 ? Math.max(0, (Math.round(x.cuotaTotal / m.trm * 100) - Math.round(x.interesPeriodo / m.trm * 100)) / 100) : 0;
-      var chip = esCondonada(x) ? ['Condonada', 'purple'] : est === 'Pagado' ? ['Pagada', 'green'] : est === 'En Mora' ? ['Mora', 'red'] : parcial ? ['Parcial', 'blue'] : x.id === proxId ? ['Próxima', 'yellow'] : ['Pendiente', 'text3'];
-      var franja = parcial ? dpParcialFranja(dpParcial(m, x), x) : null;
-      var fila = h('div', { key: x.id, className: cls + (franja ? ' con-parc' : '') },
-        h('span', { className: 'muted' }, x.cuotaN),
-        h('span', null, opCortaAnio(x.fechaPago),
-          est === 'En Mora' && h('div', { className: 'dp-sub', style: { color: 'var(--red)' } }, 'vencida ' + opRel(hoy, x.fechaPago)),
-          x.id === proxId && h('div', { className: 'dp-sub', style: { color: 'var(--yellow)' } }, opRel(hoy, x.fechaPago)),
-          est === 'Pagado' && x.fechaRecaudo && x.fechaRecaudo !== x.fechaPago && h('div', { className: 'dp-sub' }, 'cobrada ' + opCorta(x.fechaRecaudo))),
-        h('span', { className: 'r mono' }, fmt(x.interesPeriodo), m.esUSD && x.interesPeriodo > 0 ? dpUsd(m, x.interesPeriodo) : null,
-          condonadoDe(x) > 0 && h('div', { className: 'dp-sub dp-condonado' }, x.interesPeriodo > 0
-            ? 'se condonó ' + fmt(condonadoDe(x)) + ' de ' + fmt(x.interesPeriodo + condonadoDe(x)) : 'condonado ' + fmt(condonadoDe(x)))),
-        h('span', { className: 'r mono' }, fmt(capRec), m.esUSD && capRec > 0 ? usdLinea(fmtUSD(capUSD)) : null),
-        h('span', { className: 'r mono strong' }, fmt(x.cuotaTotal), dpUsd(m, x.cuotaTotal)),
-        h('span', { className: 'r mono' }, fmt(x.saldoFinal), dpUsd(m, x.saldoFinal)),
-        h('span', { className: 'c' },
-          est !== 'Pagado' && p.onPay
-            ? h('button', { className: 'op-chip btn', title: 'Registrar el pago de esta cuota', style: { color: 'var(--' + chip[1] + ')', background: chip[1] === 'text3' ? 'var(--bg3)' : 'var(--' + chip[1] + '-bg)' }, onClick: function(){ p.onPay(x); } }, chip[0])
-            : h('span', { className: 'op-chip', style: { color: 'var(--' + chip[1] + ')', background: chip[1] === 'text3' ? 'var(--bg3)' : 'var(--' + chip[1] + '-bg)' } }, chip[0])));
-      return franja ? [fila, franja] : fila;
-    }));
+      var cf = !esAbono(x) && franjaAntes[x.cuotaN] && !puestas[x.cuotaN] ? franjaAntes[x.cuotaN] : null;
+      if (cf) puestas[x.cuotaN] = true;
+      var filaX = dpFilaCrono(p, m, x, cf);
+      return cf ? [dpFranjaHielo('hielo-' + x.cuotaN, cf)].concat(filaX) : filaX;
+    }),
+    abierto && dpFranjaHielo('hielo-abierto', abierto));
+}
+function dpFilaCrono(p, m, x, cf){
+  var l = m.loan, hoy = p.hoy, foco = p.focoPay;
+  var proxId = m.prox ? m.prox.id : null;
+  if (esAbono(x)) return h('div', { key: x.id, className: 'dp-crono-f abono' },
+    h('span', null, '—'),
+    h('span', null, opCortaAnio(x.fechaPago), x.observaciones && h('div', { className: 'dp-sub' }, x.observaciones)),
+    h('span', { className: 'r muted' }, x.interesPeriodo > 0 ? fmt(x.interesPeriodo) : '—'),
+    h('span', { className: 'r mono' }, fmt(x.abonoCapital), dpUsd(m, x.abonoCapital)),
+    h('span', { className: 'r mono' }, fmt(x.cuotaTotal), dpUsd(m, x.cuotaTotal)),
+    h('span', { className: 'r mono' }, fmt(x.saldoFinal)),
+    h('span', { className: 'c' }, h('span', { className: 'op-chip', style: { color: 'var(--blue)', background: 'var(--blue-bg)' } }, 'Abono')));
+  var est = x.estadoPago, parcial = est !== 'Pagado' && (x.partialPaid || 0) > 0;
+  // La cuota de cierre de un congelamiento (sus dias corridos, sin capital) y la primera que nacio al
+  // descongelar (los dias reales desde la reactivacion, si la transitoria sigue siendo la de ese dia).
+  var cie = cierreDeCuota(l, x.cuotaN);
+  var rea = cf && +l.periodoIrregularN === x.cuotaN && l.periodoIrregularDesde === cf.hasta && est === 'Pendiente' ? cf : null;
+  var cls = 'dp-crono-f' + (est === 'En Mora' ? ' mora' : '') + (x.id === proxId && !cie ? ' prox' : '') + (x.id === foco ? ' foco' : '') + (est === 'Pagado' ? ' pagada' : '') + (esCondonada(x) ? ' condonada' : '') +
+    (cie && est === 'Pendiente' ? ' cierre' : '') + (rea ? ' reanuda' : '');
+  var capRec = Math.max(0, x.cuotaTotal - x.interesPeriodo);
+  var capUSD = m.esUSD && m.trm > 0 ? Math.max(0, (Math.round(x.cuotaTotal / m.trm * 100) - Math.round(x.interesPeriodo / m.trm * 100)) / 100) : 0;
+  var chip = esCondonada(x) ? ['Condonada', 'purple'] : est === 'Pagado' ? ['Pagada', 'green'] : est === 'En Mora' ? ['Mora', 'red'] : parcial ? ['Parcial', 'blue'] : cie ? ['Cierre', 'blue'] : x.id === proxId ? ['Próxima', 'yellow'] : ['Pendiente', 'text3'];
+  var franja = parcial ? dpParcialFranja(dpParcial(m, x), x) : null;
+  var fila = h('div', { key: x.id, className: cls + (franja ? ' con-parc' : '') },
+    h('span', { className: 'muted' }, x.cuotaN),
+    h('span', null, opCortaAnio(x.fechaPago),
+      est === 'En Mora' && h('div', { className: 'dp-sub', style: { color: 'var(--red)' } }, 'vencida ' + opRel(hoy, x.fechaPago)),
+      x.id === proxId && h('div', { className: 'dp-sub', style: { color: 'var(--yellow)' } }, opRel(hoy, x.fechaPago)),
+      est === 'Pagado' && x.fechaRecaudo && x.fechaRecaudo !== x.fechaPago && h('div', { className: 'dp-sub' }, 'cobrada ' + opCorta(x.fechaRecaudo)),
+      cie && h('div', { className: 'dp-sub dp-sub-hielo' }, 'cierre: ' + cie.dias + ' día' + (cie.dias === 1 ? '' : 's') + ' de interés (del ' + opCorta(cie.inicio) + ' al ' + opCorta(cie.desde) + '), sin capital'),
+      rea && h('div', { className: 'dp-sub dp-sub-reanuda' }, 'primera tras descongelar: ' + diasEntre(rea.hasta, x.fechaPago) + ' días de interés desde el ' + opCorta(rea.hasta))),
+    h('span', { className: 'r mono' }, fmt(x.interesPeriodo), m.esUSD && x.interesPeriodo > 0 ? dpUsd(m, x.interesPeriodo) : null,
+      condonadoDe(x) > 0 && h('div', { className: 'dp-sub dp-condonado' }, x.interesPeriodo > 0
+        ? 'se condonó ' + fmt(condonadoDe(x)) + ' de ' + fmt(x.interesPeriodo + condonadoDe(x)) : 'condonado ' + fmt(condonadoDe(x)))),
+    h('span', { className: 'r mono' }, fmt(capRec), m.esUSD && capRec > 0 ? usdLinea(fmtUSD(capUSD)) : null),
+    h('span', { className: 'r mono strong' }, fmt(x.cuotaTotal), dpUsd(m, x.cuotaTotal),
+      cie && cie.cuotaAntes > 0 && h('div', { className: 'dp-sub' }, 'antes ' + fmt(cie.cuotaAntes))),
+    h('span', { className: 'r mono' }, fmt(x.saldoFinal), dpUsd(m, x.saldoFinal)),
+    h('span', { className: 'c' },
+      est !== 'Pagado' && p.onPay
+        ? h('button', { className: 'op-chip btn', title: 'Registrar el pago de esta cuota', style: { color: 'var(--' + chip[1] + ')', background: chip[1] === 'text3' ? 'var(--bg3)' : 'var(--' + chip[1] + '-bg)' }, onClick: function(){ p.onPay(x); } }, chip[0])
+        : h('span', { className: 'op-chip', style: { color: 'var(--' + chip[1] + ')', background: chip[1] === 'text3' ? 'var(--bg3)' : 'var(--' + chip[1] + '-bg)' } }, chip[0])));
+  return franja ? [fila, franja] : fila;
 }
 
 // ── Tarjetas laterales ────────────────────────────────────────────────────────────
@@ -211,8 +259,11 @@ function DpProyeccion(p){
   var m = p.m, l = m.loan;
   if (l.modalidad === 'Intereses' && m.activo){
     var renta = Math.round(m.saldoMotor * (+l.tasaMensual || 0) / 100);
+    var pausa = estaCongelado(l);
     return h('div', { className: 'dp-card' }, h('div', { className: 'dp-card-t' }, 'Rendimiento'),
-      dpFila('Renta mensual', '+' + fmt(renta), dpUsd(m, renta), 'var(--green)', 'saldo ' + fmt(m.saldoMotor) + ' × ' + l.tasaMensual + '%'),
+      pausa
+        ? dpFila('Renta mensual', 'En pausa', null, 'var(--blue)', 'congelado desde el ' + opCorta(l.congeladoDesde) + ': no corre interés')
+        : dpFila('Renta mensual', '+' + fmt(renta), dpUsd(m, renta), 'var(--green)', 'saldo ' + fmt(m.saldoMotor) + ' × ' + l.tasaMensual + '%'),
       dpFila('Intereses cobrados', '+' + fmt(m.recInt), null, 'var(--green)'));
   }
   if (m.gananciaEsperada == null || m.gananciaEsperada <= 0) return null;
@@ -270,7 +321,7 @@ export function DeudorPanel(props){
     var on = x.loan.id === sel;
     return h('button', { key: x.loan.id, className: 'dp-tab' + (on ? ' on' : '') + ' e-' + x.estado, onClick: function(){ setSel(x.loan.id); setMenu(false); if (props.onLoan) props.onLoan(x.loan.id); } },
       h('div', { className: 'dp-tab-1' }, h('i', { className: 'dp-dot' }), h('span', { className: 'mono' }, dpMonto(x)), x.esUSD && h('span', { className: 'dp-usdtag' }, 'USD')),
-      h('div', { className: 'dp-tab-2' }, (x.loan.unificaDe ? 'Unificación · ' : '') + opModalidad(x.loan.modalidad, true) + ' · ' + opCorta(x.loan.fechaInicio)),
+      h('div', { className: 'dp-tab-2' }, (x.loan.unificaDe ? 'Unificación · ' : '') + opModalidad(x.loan.modalidad, true) + ' · ' + opCorta(x.loan.fechaInicio) + (estaCongelado(x.loan) ? ' · ❄ congelado' : '')),
       x.activo
         ? h('div', { className: 'dp-tab-3 mono' }, 'debe ' + fmt(x.saldo))
         : h('div', { className: 'dp-tab-3' }, x.loan.unificadoEn ? 'unificado' : (x.estado === 'cancelado' ? 'cancelado ' : 'pagado ') + (x.fechaFin ? opCorta(x.fechaFin) : '')));
@@ -279,12 +330,16 @@ export function DeudorPanel(props){
   var acciones = null, figuras = null;
   if (m && m.activo){
     var esC = l.modalidad === 'Capital + Intereses';
-    var puedeFecha = opPuedeCambiarDia(l);
+    var cong = estaCongelado(l);
+    var puedeFecha = opPuedeCambiarDia(l) && !cong;
+    var puedeCongelar = !!props.onCongelar && cgPuedeCongelar(l, m.lp, hoy);
     var intMora = m.enMora.reduce(function(s, p){ return s + p.interesPeriodo; }, 0);
     var puedeCondonar = l.modalidad !== 'Prestamo' && l.modalidad !== 'Pago Unico' && (esDiario(l) ? (m.dv && m.dv.interesPendiente > 0) : intMora > 0);
     acciones = h('div', { className: 'dp-acc' },
-      h('button', { className: 'op-btn pri', onClick: function(){ accion(esDiario(l) ? props.onCorte : props.onCobro, l); } },
-        h(Ico, { name: esDiario(l) ? 'receipt' : 'dollar', size: 15, color: '#fff', sw: 2.3 }), esDiario(l) ? 'Registrar corte' : 'Registrar cobro'),
+      cong && props.onDescongelar && h('button', { className: 'op-btn hielo', onClick: function(){ accion(props.onDescongelar, l); } },
+        h(Ico, { name: 'snow', size: 15, color: 'var(--blue)', sw: 2.2 }), 'Descongelar'),
+      h('button', { className: 'op-btn' + (cong ? '' : ' pri'), onClick: function(){ accion(esDiario(l) ? props.onCorte : props.onCobro, l); } },
+        h(Ico, { name: esDiario(l) ? 'receipt' : 'dollar', size: 15, color: cong ? 'var(--text2)' : '#fff', sw: 2.3 }), esDiario(l) ? 'Registrar corte' : 'Registrar cobro'),
       h('button', { className: 'op-btn', onClick: function(){ accion(props.onLiquidar, l); } }, h(Ico, { name: 'check', size: 15, color: 'var(--green)', sw: 2.4 }), 'Liquidar'),
       h('button', { className: 'op-btn', onClick: pdf }, h(Ico, { name: 'download', size: 15, color: 'var(--text2)', sw: 2.2 }), esDiario(l) ? 'Estado de cuenta' : 'Cronograma PDF'),
       esDiario(l) && h('button', { className: 'op-btn', onClick: function(){ generateFacturaCobroDiario(l, m.lp, props.datosPago, {}); } }, h(Ico, { name: 'receipt', size: 15, color: 'var(--text2)', sw: 2.2 }), 'Cobrar interés (PDF)'),
@@ -292,8 +347,10 @@ export function DeudorPanel(props){
         h('button', { className: 'op-btn' + (menu ? ' on' : ''), onClick: function(){ setMenu(!menu); } }, 'Más', h(Ico, { name: 'chevdown', size: 14, color: 'var(--text2)', sw: 2.3 })),
         menu && h('div', { className: 'dp-menu' },
           h('div', { className: 'dp-menu-t' }, 'Ajustar el crédito'),
-          esC && h('button', { onClick: function(){ accion(props.onReestructurar, l); } }, h(Ico, { name: 'calc', size: 14, color: 'var(--text2)' }), 'Reestructurar cuotas'),
+          esC && !cong && h('button', { onClick: function(){ accion(props.onReestructurar, l); } }, h(Ico, { name: 'calc', size: 14, color: 'var(--text2)' }), 'Reestructurar cuotas'),
           puedeFecha && h('button', { onClick: function(){ accion(props.onCambiarDia, l); } }, h(Ico, { name: 'calendar', size: 14, color: 'var(--text2)' }), 'Cambiar día de pago'),
+          puedeCongelar && h('button', { onClick: function(){ accion(props.onCongelar, l); } }, h(Ico, { name: 'snow', size: 14, color: 'var(--blue)' }), 'Congelar préstamo'),
+          cong && h('div', { className: 'dp-menu-nota' }, (esC ? 'Reestructurar y cambiar el día de pago' : 'Cambiar el día de pago') + ': descongélalo primero.'),
           puedeCondonar && h('button', { onClick: function(){ accion(props.onCondonar, l); } }, h(Ico, { name: 'shield', size: 14, color: 'var(--text2)' }), 'Condonar intereses'),
           h('button', { onClick: function(){ accion(props.onEdit, l); } }, h(Ico, { name: 'edit', size: 14, color: 'var(--text2)' }), 'Editar datos'),
           h('div', { className: 'dp-menu-t' }, 'Cerrar'),
@@ -306,10 +363,12 @@ export function DeudorPanel(props){
       m.dv
         ? h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Interés devengado'), h('div', { className: 'dp-fig-v mono', style: { color: 'var(--blue)' } }, fmt(m.dv.interesPendiente)), dpUsd(m, m.dv.interesPendiente),
             h('div', { className: 'dp-fig-s' }, m.dv.diasDesdeUltimoCorte + ' días desde el último corte'))
-        : h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Próxima cuota'),
+        : h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, cong ? 'Lo que queda por vencer' : 'Próxima cuota'),
             m.prox ? [h('div', { key: 'v', className: 'dp-fig-v mono', style: { color: m.dProx === 0 ? 'var(--yellow)' : 'var(--text)' } }, fmt(pendCuota(m.prox))), h('span', { key: 'u' }, dpUsd(m, pendCuota(m.prox))),
-              h('div', { key: 's', className: 'dp-fig-s' }, 'cuota ' + m.prox.cuotaN + ' · ' + opCorta(m.prox.fechaPago) + ' · ' + opRel(hoy, m.prox.fechaPago))]
-              : h('div', { className: 'dp-fig-v', style: { color: 'var(--text3)' } }, '—')),
+              h('div', { key: 's', className: 'dp-fig-s' }, 'cuota ' + m.prox.cuotaN + ' · ' + opCorta(m.prox.fechaPago) + ' · ' + opRel(hoy, m.prox.fechaPago) +
+                (cong && cierreDeCuota(l, m.prox.cuotaN) ? ' · la de cierre; después, nada' : ''))]
+              : [h('div', { key: 'v', className: 'dp-fig-v', style: { color: 'var(--text3)' } }, '—'),
+                 cong && h('div', { key: 's', className: 'dp-fig-s' }, 'congelado: no se generan cuotas')]),
       h('div', { className: 'dp-fig' + (m.enMora.length ? ' mal' : '') }, h('div', { className: 'dp-fig-l' }, 'En mora'),
         m.enMora.length
           ? [h('div', { key: 'v', className: 'dp-fig-v mono', style: { color: 'var(--red)' } }, fmt(m.moraMonto)), h('span', { key: 'u' }, dpUsd(m, m.moraMonto)),
@@ -391,17 +450,20 @@ export function DeudorPanel(props){
     m && h('section', { className: 'dp-loan' },
       h('div', { className: 'dp-loan-h' },
         h('div', { style: { minWidth: 0 } },
-          h('div', { className: 'dp-loan-t' }, dpMonto(m), m.esUSD && h('span', { className: 'dp-loan-cop mono' }, ' · ' + fmt(m.orig)), ' ', dpChip(m.estado)),
+          h('div', { className: 'dp-loan-t' }, dpMonto(m), m.esUSD && h('span', { className: 'dp-loan-cop mono' }, ' · ' + fmt(m.orig)), ' ', dpChip(m.estado),
+            estaCongelado(l) && [' ', h('span', { key: 'cg' }, dpChipCongelado(l.congeladoDesde))]),
           h('div', { className: 'dp-loan-s' }, [opModalidad(l.modalidad), opFrecuencia(l), (+l.tasaMensual > 0 ? String(l.tasaMensual).replace('.', ',') + '% mensual' : 'sin interés'), opPlazo(l), 'desde ' + opCortaAnio(l.fechaInicio)].join(' · '),
             m.esUSD && ' · TRM ' + fmtN(m.trm))),
         m.activo && !esDiario(l) && l.modalidad !== 'Intereses' && h('div', { className: 'dp-prog', title: m.pagadas + ' de ' + m.total + ' cuotas pagadas' },
-          h('div', { className: 'dp-prog-t' }, m.pagadas + '/' + m.total + ' cuotas'),
+          h('div', { className: 'dp-prog-t' }, m.pagadas + '/' + m.total + ' cuotas' + (estaCongelado(l) ? ' · en pausa' : '')),
           h('div', { className: 'op-bar' }, h('div', { style: { width: (m.total ? m.pagadas / m.total * 100 : 0) + '%', background: m.enMora.length ? 'var(--red)' : 'var(--green)' } })))),
+      m.activo && dpAvisoCongelado(l, m),
       acciones,
       figuras,
       h('div', { className: 'dp-cuerpo' },
         h('div', { className: 'dp-cuerpo-main' },
-          h('div', { className: 'dp-sec-t' }, esDiario(l) ? 'Cortes registrados' : 'Cronograma', l.modalidad === 'Intereses' && h('span', { className: 'dp-sec-n' }, 'pagadas, vencidas y la próxima · las siguientes se generan solas')),
+          h('div', { className: 'dp-sec-t' }, esDiario(l) ? 'Cortes registrados' : 'Cronograma', l.modalidad === 'Intereses' && h('span', { className: 'dp-sec-n' },
+            estaCongelado(l) ? 'pagadas, vencidas y la de cierre · congelado: no se generan cuotas' : 'pagadas, vencidas y la próxima · las siguientes se generan solas')),
           h(DpCronograma, { m: m, hoy: hoy, focoPay: props.focoPay, onPay: m.activo ? props.onPay : null })),
         h('div', { className: 'dp-cuerpo-lado' },
           h(DpRecaudado, { m: m }), h(DpProyeccion, { m: m }), DpExtras({ m: m })),

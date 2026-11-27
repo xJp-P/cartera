@@ -271,7 +271,9 @@ export function PortfolioView(props){
       h('td', { className: 'rdv-n rdv-col-saldo' }, m.activo
         ? [fmt(m.saldo), r.esUSD && h('div', { key: 'u' }, usdLinea(copToUsd(m.saldo, m.trm)))]
         : h('span', { className: 'rdv-sub' }, '—')),
-      h('td', { className: 'rdv-c rdv-col-estado' }, h(V4Chip, { tono: est[1] }, est[0])));
+      h('td', { className: 'rdv-c rdv-col-estado' }, h(V4Chip, { tono: est[1] }, est[0]),
+        // Congelar (post-4.1.6): sigue activo, con su marca: desde esa fecha no rinde.
+        m.congelado && h('div', { className: 'rdv-hielo' }, h(V4Chip, { tono: 'info' }, '❄ Congelado'))));
   }
 
   return h('div', { className: 'v4r' + (anima ? ' anima' : '') },

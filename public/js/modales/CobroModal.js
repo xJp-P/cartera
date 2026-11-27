@@ -52,6 +52,7 @@ import { fmt, fmtD, fmtNumInput, fmtUSD, parseDecimalInput, parseIntInput, parse
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
+import { estaCongelado, cierreDeCuota } from '../core/dominio.js';
 
 export function CobroModal(props){
   var loan=props.loan, allPays=props.pays||[], onConfirm=props.onConfirm, onClose=props.onClose;
@@ -59,6 +60,9 @@ export function CobroModal(props){
   var esUSD=loan.moneda==='USD';
   var trm=+loan.trmAcordada||0;
   var esCapInt=loan.modalidad==='Capital + Intereses';
+  // Congelar (post-4.1.6): mientras esta congelado el abono baja el capital pero no nace ninguna
+  // cuota, y el backend rechaza modificar el plazo o fijar la cuota (primero se descongela).
+  var congel=estaCongelado(loan);
 
   var s1=useState(''); var montoCOP=s1[0]; var setMontoCOP=s1[1];       // credito COP: total recibido
   var s2=useState(''); var montoUSD=s2[0]; var setMontoUSD=s2[1];       // credito USD: obligacion
@@ -78,6 +82,8 @@ export function CobroModal(props){
 
   var loanPays=allPays.filter(function(p){ return String(p.prestamoId)===String(loan.id); });
   var cob=cobrableTotal(loan, allPays);
+  // La proxima cuota es la de cierre de un congelamiento: su interes es fijo (no baja con el abono).
+  var cierreProx=!!(cob.ctx&&cob.ctx.proximaCuota&&cierreDeCuota(loan, cob.ctx.proximaCuota.cuotaN));
   var ctx=cob.ctx;
 
   // ── Entrada normalizada ────────────────────────────────────────────────────
@@ -153,7 +159,7 @@ export function CobroModal(props){
     return p?Math.round(p.cuotaTotal):0;
   })();
   var hayAbono=!!(plan&&plan.ok&&plan.totales&&plan.totales.abonoCapital>0);
-  var aplicaRecalc=esCapInt&&hayAbono;
+  var aplicaRecalc=esCapInt&&hayAbono&&!congel;
   var recalcModoEfectivo=aplicaRecalc?recalcMode:'mantener';
   // En `fijarCuota` el usuario teclea en la moneda visible; el backend siempre
   // espera COP (misma conversion que hacia AbonoModal).
@@ -169,6 +175,16 @@ export function CobroModal(props){
   var cronoPreview=(function(){
     if(!plan||!plan.ok||!esCapInt) return null;
     var saldo=plan.saldoTrasCascada;
+    // Congelado: el motor regenera solo la cuota de cierre (si aun no vence), con su interes FIJO
+    // (sus dias ya corrieron con el capital de entonces). Las demas nacen al descongelar.
+    if(congel){
+      if(saldo<=0) return {filas:[],saldado:true,n:0};
+      var cierres=loanPays.filter(function(p){ return !esAbono(p)&&p.estadoPago==='Pendiente'&&cierreDeCuota(loan,p.cuotaN); })
+        .sort(function(a,b){ return (a.cuotaN||0)-(b.cuotaN||0); })
+        .map(function(p){ return {n:1,cuotaN:p.cuotaN,fecha:p.fechaPago,interes:Math.round(p.interesPeriodo),capital:0,
+          cuota:Math.round(p.cuotaTotal),saldo:saldo,antes:Math.round(p.cuotaTotal)}; });
+      return {filas:cierres,saldado:false,n:cierres.length,congelado:true};
+    }
     var nActual=Math.max(0,(+loan.plazoMeses||0)-ctx.regularConsumed);
     if(nActual<=0) return {filas:[],saldado:saldo<=0,n:0};
     if(saldo<=0) return {filas:[],saldado:true,n:0};
@@ -351,14 +367,16 @@ export function CobroModal(props){
         h('input',{type:'checkbox',checked:incMes,onChange:function(){setIncMes(!incMes);},
           style:{marginTop:2,width:15,height:15,cursor:'pointer'}}),
         h('span',null,
-          h('span',{style:{fontSize:12,fontWeight:700,color:'var(--blue)'}},'Incluir intereses del mes actual'),
+          h('span',{style:{fontSize:12,fontWeight:700,color:'var(--blue)'}},cierreProx?'Incluir el interés de la cuota de cierre':'Incluir intereses del mes actual'),
           h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:2,lineHeight:1.5}},
             // Con abono, el interes que se cobra es el de la cuota REGENERADA, no el de hoy:
             // el rotulo muestra la cifra del plan para no prometer una distinta de la del recibo.
-            'Cobra por adelantado el interés del periodo en curso (',
+            cierreProx?'Cobra por adelantado el interés de la cuota de cierre (':'Cobra por adelantado el interés del periodo en curso (',
             fmtUni(uni((plan&&plan.totales.interesMes>0)?plan.totales.interesMes:cob.interesMes)),
             ') antes de abonar a capital',
-            cob.ctx.interesRecalculable?'. Si hay abono, se liquida sobre el capital que quede.':'.'))),
+            // La cuota de cierre de un congelamiento (post-4.1.6) tiene el interes FIJO: sus dias ya corrieron.
+            cierreProx?': sus días ya corrieron, así que no cambia con el abono.'
+              :cob.ctx.interesRecalculable?'. Si hay abono, se liquida sobre el capital que quede.':'.'))),
       cob.mora>0&&h('label',{style:{display:'flex',alignItems:'flex-start',gap:9,cursor:'pointer',
         background:omitMora?'var(--yellow-bg)':'transparent',
         border:'1px solid '+(omitMora?'var(--yellow-bd)':'var(--border)'),borderRadius:10,padding:'9px 11px'}},
@@ -487,7 +505,10 @@ export function CobroModal(props){
                         'esta cuota quedaría con ',money(proxPago.abonado),' abonado → a pagar ',
                         h('b',null,money(proxPago.neto)))))];
                 })))),
-            cronoPreview.filas.length>0&&cronoPreview.filas[0].antes>0&&
+            cronoPreview.congelado
+              ? h('div',{className:'v4m-pie',style:{padding:'7px 10px',fontSize:11,color:'var(--info-text)'}},
+                  '❄ Congelado: no se generan cuotas. Al descongelarlo, las cuotas se calculan sobre el capital que quede.')
+              : cronoPreview.filas.length>0&&cronoPreview.filas[0].antes>0&&
               h('div',{className:'v4m-pie',style:{padding:'7px 10px',fontSize:11,color:'var(--text3)'}},
                 'La cuota pasa de ',h('b',{className:'mono',style:{color:'var(--text2)'}},money(cronoPreview.filas[0].antes)),
                 ' a ',h('b',{className:'mono',style:{color:'var(--green)'}},money(cronoPreview.filas[0].cuota)),

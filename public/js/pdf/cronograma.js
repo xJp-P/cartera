@@ -15,7 +15,7 @@
 // `computeLiquidacion`, que resta el parcial APARTE; migrarlo lo restaria dos veces.
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
-import { esCondonada, condonadoDe, imputarCobros, computeLiquidacion, proximoVencimiento, periodoEnCursoDe } from '../core/dominio.js';
+import { esCondonada, condonadoDe, imputarCobros, computeLiquidacion, proximoVencimiento, periodoEnCursoDe, congelamientosDe, congeladoAbierto, cierreDeCuota, diasEntre } from '../core/dominio.js';
 import { nowStr } from '../core/ui.js';
 import { esAbono } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
@@ -51,7 +51,16 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
   var cuotasAll = allCuotas.filter(function(p) { return !esAbono(p); });
   var abonos = allCuotas.filter(function(p) { return esAbono(p); });
   // Para Intereses: excluir cuotas pendientes (evitar confusión con plazo indefinido)
-  var cuotas = loan.modalidad === 'Intereses' ? cuotasAll.filter(function(p) { return p.estadoPago !== 'Pendiente'; }) : cuotasAll;
+  // Congelar (post-4.1.6): la cuota de cierre de un congelamiento SI se muestra (es deuda ya causada).
+  var cuotas = loan.modalidad === 'Intereses' ? cuotasAll.filter(function(p) { return p.estadoPago !== 'Pendiente' || cierreDeCuota(loan, p.cuotaN); }) : cuotasAll;
+  // El congelamiento abierto (si sigue activo) y los que ya se levantaron: una nota bajo la tabla.
+  var congs = congelamientosDe(loan), congAb = loan.estado === 'Activo' ? congeladoAbierto(loan) : null;
+  var notaHielo = congs.length ? '\n<div class="nota nota-hielo">' +
+    (congAb ? '<strong>Congelado desde el ' + fmtD(congAb.desde) + '.</strong> No corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo.' : '') +
+    congs.filter(function(c){ return c.hasta; }).map(function(c){
+      var d = diasEntre(c.desde, c.hasta);
+      return (congAb ? ' ' : '') + 'Estuvo congelado del ' + fmtD(c.desde) + ' al ' + fmtD(c.hasta) + ' (' + d + ' día' + (d === 1 ? '' : 's') + '): en ese tiempo no corrieron intereses.';
+    }).join(' ') + '</div>' : '';
   var totalPagar = cuotas.reduce(function(s, p) { return s + p.cuotaTotal; }, 0);
   var totalInteres = cuotas.reduce(function(s, p) { return s + p.interesPeriodo; }, 0);
   var totalAbonos = abonos.reduce(function(s, p) { return s + p.abonoCapital; }, 0);
@@ -116,7 +125,8 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     'tr.total-row td{background:var(--r-green-bg);color:var(--r-green);font-weight:600}',
     'tr.total-row.abonos td{background:var(--r-blue-bg);color:var(--r-blue)}',
     '.footer{text-align:center;margin-top:20px;padding-top:12px;border-top:1px solid var(--r-bd);font-size:10px;color:var(--r-muted)}',
-    '.nota{margin-top:12px;padding:10px 14px;background:var(--r-amber-bg);border:1px solid var(--r-amber-bd);border-radius:12px;font-size:11px;color:var(--r-amber)}',
+    '.nota{margin-top:12px;padding:10px 14px;background:var(--r-amber-bg);border:1px solid var(--r-amber-bd);border-radius:12px;font-size:11px;color:var(--r-amber)}' +
+      (congs.length ? '\n.nota-hielo{background:var(--r-blue-bg);border-color:' + C.blueBd + ';color:var(--r-blue)}' : ''),
     rbImpresionPapel(dark, '', 'font-size:11px;'),
     '</style></head><body>' + RB_MARCO_ABRE,
     '<div class="header"><div class="cr-logo">' + RB_LOGO + '</div><div>',
@@ -136,7 +146,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     '<div class="row"><span class="label">Frecuencia</span><span class="value">' + freqLabel + '</span></div>',
     tasaPdfRow,
     '<div class="row"><span class="label">Fecha inicio</span><span class="value">' + fmtD(loan.fechaInicio) + '</span></div>',
-    '<div class="row"><span class="label">Fecha de finalización</span><span class="value">' + (loan.modalidad === 'Intereses' ? 'Indefinido' : (fechaFinPrestamo ? fmtD(fechaFinPrestamo) : '—')) + '</span></div>',
+    '<div class="row"><span class="label">Fecha de finalización</span><span class="value">' + (loan.modalidad === 'Intereses' ? 'Indefinido' : congAb ? 'En pausa (congelado)' : (fechaFinPrestamo ? fmtD(fechaFinPrestamo) : '—')) + '</span></div>',
     loan.modalidad !== 'Intereses' ? '<div class="row"><span class="label">Cuotas</span><span class="value">' + cuotas.length + '</span></div>' : '',
     '</div>',
     '<div class="section">',
@@ -148,7 +158,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
       var filaEsAbono = esAbono(p);
       var isParcial = !filaEsAbono && (p.partialPaid||0) > 0 && p.estadoPago !== 'Pagado';
       var cls = filaEsAbono ? ' class="abono"' : isParcial ? ' class="mora"' : p.estadoPago === 'Pagado' ? ' class="pagado"' : p.estadoPago === 'En Mora' ? ' class="mora"' : ' class="pendiente"';
-      var badge = filaEsAbono ? '<span class="badge badge-abono">Abono</span>' : isParcial ? '<span class="badge badge-mora">'+(p.estadoPago==='En Mora'?'En Mora':'Pendiente')+'</span> <span class="badge badge-parcial">Parcial</span>' : esCondonada(p) ? '<span class="badge badge-condonada">Condonada</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
+      var badge = filaEsAbono ? '<span class="badge badge-abono">Abono</span>' : isParcial ? '<span class="badge badge-mora">'+(p.estadoPago==='En Mora'?'En Mora':'Pendiente')+'</span> <span class="badge badge-parcial">Parcial</span>' : esCondonada(p) ? '<span class="badge badge-condonada">Condonada</span>' : p.estadoPago === 'Pagado' ? '<span class="badge badge-pagado">Pagado</span>' : p.estadoPago === 'En Mora' ? '<span class="badge badge-mora">En Mora</span>' : cierreDeCuota(loan, p.cuotaN) ? '<span class="badge badge-abono">Cierre</span>' : '<span class="badge badge-pendiente">Pendiente</span>';
       if (filaEsAbono) {
         // Un abono no devenga interes: la columna INTERES va en guion (no "$0", que se
         // confundiria con un interes calculado en cero).
@@ -170,7 +180,9 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
       // con las columnas de Interes y Capital, que si suman la cuota completa.
       var cuotaCell = '<strong>' + fmtDisp(cuoD) + '</strong>' +
         (isParcial ? '<br><span style="font-size:9px;opacity:0.75">Abonado ' + fvT(p.partialPaid||0) + '</span>' : '');
-      return '<tr' + cls + '><td>' + p.cuotaN + '</td><td style="text-align:left">' + fmtD(p.fechaPago) + '</td>' +
+      var cieP = cierreDeCuota(loan, p.cuotaN);
+      return '<tr' + cls + '><td>' + p.cuotaN + '</td><td style="text-align:left">' + fmtD(p.fechaPago) +
+        (cieP ? '<br><span style="font-size:9px;opacity:0.75">cierre: ' + cieP.dias + ' días de interés</span>' : '') + '</td>' +
         '<td>' + fmtDisp(intD) + (condonadoDe(p) > 0 ? '<br><span style="font-size:9px;opacity:0.75">Condonado ' + fvT(condonadoDe(p)) + '</span>' : '') +
         '</td><td>' + fmtDisp(capD) + '</td><td>' + cuotaCell + '</td>' +
         '<td>' + fvT(p.saldoFinal) + '</td><td style="text-align:center">' + badge + '</td></tr>';
@@ -181,7 +193,7 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     loan.modalidad === 'Intereses' ? function(){var intPagados=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.interes;},0);return intPagados>0?'<tr class="total-row"><td></td><td style="text-align:left">INTERESES PAGADOS</td><td><strong>'+fvT(intPagados)+'</strong></td><td></td><td></td><td></td><td></td></tr>':'';}() : loan.modalidad === 'Capital + Intereses' ? function(){var capPagado=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.capital;},0);return capPagado>0?'<tr class="total-row"><td></td><td style="text-align:left">CAPITAL PAGADO</td><td></td><td><strong>'+fvT(capPagado)+'</strong></td><td></td><td></td><td></td></tr>':'';}() : '',
     totalAbonos > 0 ? '<tr class="total-row abonos"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fvT(totalAbonos) + '</strong></td><td></td><td></td><td></td></tr>' : '',
     '</tbody></table>',
-    loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este préstamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuarán hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '',
+    (loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este préstamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuarán hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '') + notaHielo,
     function(){
       // v1.19.0 — valor de liquidacion desde el helper centralizado (misma cifra que el modal).
       // 3.1.0 — con la opcion del interes del mes, la misma que ve `LiquidarModal`: para una

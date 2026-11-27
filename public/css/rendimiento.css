@@ -185,3 +185,5 @@
 /* "Donde esta tu capital" es la tarjeta angosta: el titulo arriba y el selector debajo, sin partir el titulo */
 .rdv-comp > .v4-card-h { flex-direction: column; align-items: flex-start; gap: 12px; }
 .rdv-comp .v4-titulo { white-space: nowrap; }
+/* Congelar préstamo (post-4.1.6): la marca bajo el estado */
+.rdv-hielo { margin-top: 4px; }

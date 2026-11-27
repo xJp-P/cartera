@@ -311,3 +311,63 @@
 .rg-acc { display: flex; gap: 10px; margin-top: 4px; }
 .rg-acc .v4m-btn { flex: 0 0 auto; }
 .rg-acc .btn-primary { flex: 1; margin: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* ── CONGELAR / DESCONGELAR PRESTAMO (post-4.1.6, prefijo cgm-) ─────────────────────
+   Aprobado por el PO sobre una maqueta. La ventana es dinamica: al cambiar la fecha o elegir
+   cobrar o perdonar los dias del periodo en curso, las cifras y la vista previa se mueven en vivo. */
+.cgm-subt { font-size: 13px; color: var(--ink-3); margin-top: -2px; }
+.cgm-aviso { border-radius: 12px; padding: 10px 13px; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+.cgm-aviso b { color: var(--ink); font-weight: 650; }
+.cgm-fecha { display: flex; align-items: center; gap: 8px; }
+.cgm-fecha .inp { flex: 1; }
+.cgm-hoy { flex: 0 0 auto; background: transparent; border: 1px solid var(--line); color: var(--ink-2); border-radius: 9px; padding: 8px 12px; font: 600 12.5px var(--font); cursor: pointer; }
+.cgm-hoy.on { color: var(--info-text); background: var(--accent-soft); border-color: var(--blue-bd); }
+.cgm-ayuda { font-size: 12px; color: var(--ink-3); line-height: 1.5; margin-top: 6px; }
+.cgm-dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cgm-error { border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: var(--crit-text); line-height: 1.5; }
+.cgm-ops { display: flex; flex-direction: column; gap: 7px; }
+.cgm-ops-t { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.cgm-op { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); transition: border-color .15s, background-color .15s; }
+.cgm-op input { width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+.cgm-op.on { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.cgm-op-t { font-size: 13px; color: var(--ink); }
+.cgm-op-t b { font-weight: 650; }
+.cgm-op-s { font-size: 12px; color: var(--ink-3); line-height: 1.45; margin-top: 1px; }
+.cgm-nota-caja { border-radius: 12px; padding: 10px 13px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.cgm-res { border-radius: 12px; padding: 10px 13px; }
+.cgm-res-t, .cgm-crono-t { font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.cgm-comp { display: grid; grid-template-columns: 1fr auto auto auto; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+.cgm-comp-l { color: var(--ink-2); }
+.cgm-comp-n { color: var(--ink-3); }
+.cgm-comp-a { color: var(--ink-3); text-decoration: line-through; }
+.cgm-flecha { color: var(--ink-3); }
+.cgm-comp-d { grid-column: 4; font-weight: 650; color: var(--ink); text-align: right; }
+.cgm-comp.fuerte .cgm-comp-l { color: var(--ink); font-weight: 650; }
+.cgm-comp.fuerte .cgm-comp-d { color: var(--info-text); }
+.cgm-comp.suave .cgm-comp-d { color: var(--ink-2); font-weight: 500; }
+.cgm-crono { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
+.cgm-crono-t { padding: 9px 12px 2px; margin: 0; }
+.cgm-f { display: grid; grid-template-columns: 30px minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)) 78px; gap: 8px; align-items: baseline; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-2); }
+.cgm-f.cab { border-top: 0; background: var(--surface-2); font-size: 11px; font-weight: 500; color: var(--ink-3); }
+.cgm-f .r { text-align: right; } .cgm-f .c { text-align: center; }
+.cgm-n { color: var(--ink-3); }
+.cgm-cuota { color: var(--ink); font-weight: 600; }
+.cgm-sub2 { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
+.cgm-f.mora { background: color-mix(in srgb, var(--crit) 6%, transparent); box-shadow: inset 2px 0 0 var(--crit); }
+.cgm-f.cierre { background: color-mix(in srgb, var(--blue) 8%, transparent); box-shadow: inset 2px 0 0 var(--blue); }
+.cgm-f.cierre .cgm-sub2 { color: var(--info-text); }
+.cgm-f.reanuda { background: color-mix(in srgb, var(--green) 7%, transparent); box-shadow: inset 2px 0 0 var(--green); }
+.cgm-f.reanuda .cgm-sub2 { color: var(--good-text); }
+.cgm-f.quita { opacity: .5; }
+.cgm-f.quita .v4m-num { text-decoration: line-through; }
+.cgm-chip { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+.cgm-chip.crit { color: var(--crit-text); background: var(--crit-soft); }
+.cgm-chip.info { color: var(--info-text); background: var(--accent-soft); }
+.cgm-chip.bien { color: var(--good-text); background: var(--good-soft); }
+.cgm-chip.suave { color: var(--ink-3); background: var(--surface-3); }
+.cgm-hielo { display: flex; align-items: center; gap: 9px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--info-text);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--blue) 7%, transparent) 0 8px, transparent 8px 16px); }
+.cgm-mas { padding: 7px 12px 9px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--ink-3); }
+.cgm-nota { font-size: 12px; color: var(--ink-3); line-height: 1.55; }
+.cgm-acc { display: flex; gap: 10px; margin-top: 6px; }
+.cgm-cancelar { flex: 1; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); border-radius: 13px; padding: 12px 8px; font: 600 13.5px var(--font); cursor: pointer; }

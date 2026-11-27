@@ -44,7 +44,8 @@ import { usdLinea } from '../componentes/CifraUSD.js';
 import { V4Dinero, v4PuedeAnimar } from './DashView.js';
 import { CbvSegbar } from './CobrosView.js';
 
-var CT_FILTROS = [['activos', 'Activos'], ['mora', 'En mora'], ['semana', 'Cobran esta semana'], ['usd', 'En dólares'], ['inactivos', 'Sin préstamos activos'], ['todos', 'Todos']];
+// «Congelados» (post-4.1.6): los que tienen un préstamo congelado (como todo filtro, sin nadie no se muestra).
+var CT_FILTROS = [['activos', 'Activos'], ['mora', 'En mora'], ['semana', 'Cobran esta semana'], ['usd', 'En dólares'], ['congelados', 'Congelados'], ['inactivos', 'Sin préstamos activos'], ['todos', 'Todos']];
 var CT_ORDEN = [['prioridad', 'Lo urgente primero'], ['saldo', 'Mayor saldo'], ['nombre', 'Nombre'], ['recientes', 'Préstamo más reciente']];
 // Los grupos de la lista en "Lo urgente primero", en el orden de `opPesoEstado`.
 var CTV_GRUPO = { mora: 'mora', hoy: 'pronto', semana: 'pronto', aldia: 'aldia', abierto: 'abierto', inactivo: 'inactivo' };
@@ -75,6 +76,7 @@ function ctPasa(hoy){
     mora: function(x){ return x.moraN > 0; },
     semana: function(x){ return x.prox && x.prox.p.fechaPago <= addDays(hoy, 7); },
     usd: function(x){ return x.activos.some(function(m){ return m.esUSD; }); },
+    congelados: function(x){ return x.activos.some(function(m){ return m.congelado; }); },
     inactivos: function(x){ return x.activos.length === 0; },
     todos: function(){ return true; }
   };
@@ -172,9 +174,10 @@ export function CarteraView(props){
         h('span', { className: 'ctv-2' }, linea, x.saldoUSD > 0 && usdLinea(fmtUSD(x.saldoUSD), null, 'span')),
         x.activos.length > 0 && h('span', { className: 'ctv-chips' },
           x.activos.map(function(m){
-            return h('span', { key: m.loan.id, className: 'ctv-chip e-' + m.estado, title: opModalidad(m.loan.modalidad) + ' · debe ' + fmt(m.saldo),
+            return h('span', { key: m.loan.id, className: 'ctv-chip e-' + m.estado + (m.congelado ? ' congelado' : ''),
+                title: opModalidad(m.loan.modalidad) + ' · debe ' + fmt(m.saldo) + (m.congelado ? ' · congelado desde el ' + opCorta(m.loan.congeladoDesde) : ''),
                 onClick: function(e){ e.stopPropagation(); abrir(x.nombre, m.loan.id); } },
-              h('i', null), (m.esUSD ? 'USD ' + fmtN(m.loan.montoOrigen) : fmt(m.loan.montoOrigen)) + ' · ' + opModalidad(m.loan.modalidad, true));
+              h('i', null), (m.esUSD ? 'USD ' + fmtN(m.loan.montoOrigen) : fmt(m.loan.montoOrigen)) + ' · ' + opModalidad(m.loan.modalidad, true) + (m.congelado ? ' · ❄ congelado' : ''));
           }),
           x.cerrados.length > 0 && h('span', { className: 'ctv-chip cerrado' }, '+' + x.cerrados.length + ' cerrado' + (x.cerrados.length > 1 ? 's' : ''))),
         x.activos.length > 0 && h('span', { className: 'ctv-meter', title: pct + '% del capital prestado ya volvió' },

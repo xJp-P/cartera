@@ -22,6 +22,9 @@ const express = require('express');
 // Predicados de clasificacion de filas de `payments` (core/ids.js): unica fuente
 // de verdad de que es un abono. Antes cada sitio repetia el literal indexOf('-ab-').
 const { esAbono } = require('../core/ids');
+// Con un congelamiento en su historia, los periodos de un credito de solo intereses se cuentan desde la base
+// del cronograma (post-4.1.6, ver `inicioCuenta` en engine.js).
+const { inicioCuenta } = require('../core/engine');
 
 module.exports = function crearRutasRecalculate(ctx) {
   const {
@@ -95,7 +98,7 @@ module.exports = function crearRutasRecalculate(ctx) {
         } else {
           // Intereses o Capital+Intereses sin cuotaFija — usar saldoReal computado
           const remaining = indefinido
-            ? Math.max(0, cuotasHastaHoy(loan.fechaInicio, nextRegularN, 3, loan.frecuencia || 'Mensual'))
+            ? Math.max(0, cuotasHastaHoy(inicioCuenta(loan), nextRegularN, 3, loan.frecuencia || 'Mensual'))
             : Math.max(0, (loan.plazoMeses || 12) - regularConsumed);
           if (remaining > 0) schedule = buildSchedule(loan, nextRegularN, saldoReal, remaining);
         }
