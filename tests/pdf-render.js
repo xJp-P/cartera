@@ -2131,13 +2131,20 @@ function loansDelCaso(caso) {
   const tE = vis(hE);
   R.check('V1 cronograma (solo intereses): la cuota de cierre aparece aunque este por vencer, con su insignia y sus dias',
     /<span class="badge badge-abono">Cierre<\/span>/.test(hE) && tE.indexOf('cierre: 13 días de interés') !== -1 && tE.indexOf(pesos(130000)) !== -1, tE.slice(0, 300));
-  R.check('V1 y la nota: «Congelado desde el …: no corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo»',
-    /<div class="nota nota-hielo"><strong>Congelado desde el [^<]+\.<\/strong> No corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo\.<\/div>/.test(hE) &&
-    hE.indexOf('.nota-hielo{') !== -1);
+  // post-4.1.6 (pruebas del PO): en solo intereses la nota de plazo indefinido y la del congelamiento
+  // son UNA; antes, «los pagos de intereses continuarán» quedaba encima de «no corren intereses».
+  R.check('V1 y UNA nota: congelado desde…, plazo indefinido, no corren intereses mientras siga congelado, y qué pasa al descongelar',
+    /<div class="nota nota-hielo"><strong>Congelado desde el [^<]+\.<\/strong> Este préstamo es de plazo indefinido y se muestran las cuotas generadas hasta la fecha\. Mientras siga congelado no corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo\. Al descongelarlo, los intereses vuelven a correr hasta que el capital sea devuelto, al final del acuerdo o mediante abonos a capital\.<\/div>/.test(hE) &&
+    hE.indexOf('.nota-hielo{') !== -1 && hE.indexOf('<strong>Nota:</strong>') === -1 && hE.indexOf('Los pagos de intereses continuarán') === -1);
+  R.check('V1 el cierre del documento (notas, valor de liquidación y pie) va junto y no se parte entre hojas',
+    /<div class="cr-final">\s*<div class="nota nota-hielo">[\s\S]*Valor de liquidación[\s\S]*<div class="footer">/.test(hE) && hE.indexOf('.cr-final{break-inside:avoid}') !== -1);
   const hC = emitir(() => S.generateCronogramaPDF(pC.loanN, paysV, false));
   R.check('V2 cronograma (capital + intereses): la fecha de finalización queda «En pausa (congelado)»', vis(hC).indexOf('Fecha de finalización En pausa (congelado)') !== -1, vis(hC).slice(0, 500));
   const hN = emitir(() => S.generateCronogramaPDF(L(ID), pays, false));
-  R.check('V2 ANTI-TRIVIAL: sin congelar, ni la nota ni su estilo', hN.indexOf('nota-hielo') === -1 && hN.indexOf('>Cierre<') === -1);
+  R.check('V2 ANTI-TRIVIAL: sin congelar, ni la nota ni su estilo (y la de plazo indefinido sigue)', hN.indexOf('nota-hielo') === -1 && hN.indexOf('>Cierre<') === -1 &&
+    hN.indexOf('<strong>Nota:</strong> Este préstamo es de plazo indefinido.') !== -1);
+  R.check('V2 en capital + intereses la nota del congelamiento sigue siendo la corta',
+    hC.indexOf('No corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo.</div>') !== -1 && hC.indexOf('plazo indefinido') === -1);
   const pD = S.cgPlanDescongelar(pE.loanN, paysV.filter(p => p.prestamoId === ID), HOYV, null, HOYV);
   const hD = emitir(() => S.generateCronogramaPDF(pD.loanN, paysV.filter(p => p.prestamoId !== ID).concat(pD.paysN), false));
   R.check('V3 descongelado: la nota dice cuanto estuvo congelado (y la cuota de cierre sigue)', pD.ok &&

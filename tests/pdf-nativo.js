@@ -42,7 +42,7 @@ function alturasPorHoja(buf) {
     let datos = Buffer.from(o.slice(i + 6, j).replace(/^\r?\n/, '').replace(/\r?\n$/, ''), 'latin1');
     try { datos = zlib.inflateSync(datos); } catch (_) {}
     const ys = [...datos.toString('latin1').matchAll(/1 0 0 -1 [-\d.]+ ([-\d.]+) Tm/g)].map(x => +x[1]);
-    return ys.length ? { min: Math.min(...ys), max: Math.max(...ys) } : null;
+    return ys.length ? { min: Math.min(...ys), max: Math.max(...ys), n: ys.length } : null;
   });
 }
 
@@ -181,6 +181,32 @@ CASOS.push({ doc: 'condonacion-una-hoja', tema: 'light', paginasMin: 1, paginasM
     { fecha: '2026-07-31', condonado: plan.condonado, observaciones: 'Acuerdo de pago', pre: { loan: L(id), pays: lp },
       cuotas: plan.filas.filter(f => f.condonar > 0).map(f => ({ id: f.p.id, cuotaN: f.p.cuotaN, condonado: f.condonar, parcial: f.parcial, quedaDebiendo: f.quedaDebiendo })) });
 } });
+// El caso de las pruebas del PO (post-4.1.6): un credito de solo intereses CONGELADO, con 12 cuotas a
+// la vista y 6 con interes condonado (dos lineas cada una), armado en memoria. Con la nota de plazo
+// indefinido y la del congelamiento en dos recuadros, el pie del cronograma pasaba SOLO a una segunda
+// hoja. Ahora las dos notas son una y el documento cabe en UNA hoja.
+function cronoCongeladoCondonado(levantado) {
+  const base = L('1773655076017'), id = 'x-congelado';
+  const iso = n => new Date(Date.UTC(2025, 11 + (n - 1), 7)).toISOString().slice(0, 10);
+  const filas = [];
+  for (let n = 1; n <= 12; n++) {
+    const cond = n >= 4 && n <= 8 ? 300000 : n === 9 ? 200000 : 0, int = 300000 - cond, f = iso(n);
+    filas.push({ id: id + '-' + n, prestamoId: id, nombreCliente: base.nombre, cuotaN: n, fechaPago: f, saldoInicial: 3000000, interesPeriodo: int,
+      abonoCapital: 0, cuotaTotal: int, saldoFinal: 3000000, estadoPago: 'Pagado', fechaRecaudo: int ? f : null, observaciones: '',
+      montoCOPRecibido: int, montoUSDRecibido: 0, partialPaid: int, paidAt: null, recibos: JSON.stringify(int ? [{ fecha: f, cop: int }] : []),
+      extraConsolidado: 0, cargaTrasladada: 0, interesCondonado: cond });
+  }
+  const cong = { desde: levantado ? '2026-11-10' : '2026-11-26', hasta: levantado ? '2026-11-20' : null, cuotaN: null, fecha: null,
+    inicio: '2026-11-07', dias: levantado ? 3 : 19, interes: 0, perdona: true, cuotaAntes: 0 };
+  const loan = Object.assign({}, base, { id: id, fechaInicio: '2025-11-07', estado: 'Activo', interesesCondonados: 1700000,
+    congeladoDesde: levantado ? null : '2026-11-26', congelamientos: JSON.stringify([cong]) });
+  return S.generateCronogramaPDF(loan, filas, true);
+}
+CASOS.push({ doc: 'cronograma-congelado-condonado', tema: 'dark', paginasMin: 1, paginasMax: 1, v4: true, gen: () => cronoCongeladoCondonado(false) });
+// El mismo credito con el congelamiento YA LEVANTADO: lleva las dos notas (plazo indefinido y "estuvo
+// congelado"), que no se contradicen, y ya no cabe en una hoja. Lo que se exige es que el cierre del
+// documento (notas, valor de liquidacion y pie) pase JUNTO a la hoja 2: el pie no queda solo.
+CASOS.push({ doc: 'cronograma-pie-acompanado', tema: 'dark', paginasMin: 2, paginasMax: 2, v4: true, gen: () => cronoCongeladoCondonado(true) });
 const LETRAS_V4 = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold'];
 const dir = path.join(WORK, `pdf-nativo-${process.pid}-${Date.now()}`);
 fs.mkdirSync(dir, { recursive: true });
@@ -221,6 +247,9 @@ for (const d of res.docs) {
   R.check(`${d.doc}: cada hoja deja al menos 1 cm arriba`, arriba.every(v => v !== null && v >= 40), arriba);
   if (d.paginas > 1) {
     R.check(`${d.doc}: cada hoja que continua deja al menos 1 cm abajo`, abajo.slice(0, -1).every(v => v !== null && v >= 40), abajo);
+    // post-4.1.6 (pruebas del PO): la ultima hoja no puede traer solo el pie del documento (dos lineas).
+    const ult = alt[alt.length - 1];
+    R.check(`${d.doc}: la última hoja trae más que el pie`, !!ult && ult.n > 4, ult && ult.n);
   }
   R.eq(`${d.doc}: no deja la ventana oculta viva`, d.ventanasVivas, 0);
   const letras = d.letras || [];

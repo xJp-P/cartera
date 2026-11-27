@@ -55,8 +55,14 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
   var cuotas = loan.modalidad === 'Intereses' ? cuotasAll.filter(function(p) { return p.estadoPago !== 'Pendiente' || cierreDeCuota(loan, p.cuotaN); }) : cuotasAll;
   // El congelamiento abierto (si sigue activo) y los que ya se levantaron: una nota bajo la tabla.
   var congs = congelamientosDe(loan), congAb = loan.estado === 'Activo' ? congeladoAbierto(loan) : null;
+  // Un credito de solo intereses CONGELADO lleva UNA nota (post-4.1.6, pruebas del PO): la de plazo
+  // indefinido decia «los pagos de intereses continuaran» justo encima de «no corren intereses», y las
+  // dos juntas empujaban el pie a una hoja propia.
+  var esIntCong = loan.modalidad === 'Intereses' && !!congAb;
   var notaHielo = congs.length ? '\n<div class="nota nota-hielo">' +
-    (congAb ? '<strong>Congelado desde el ' + fmtD(congAb.desde) + '.</strong> No corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo.' : '') +
+    (congAb ? '<strong>Congelado desde el ' + fmtD(congAb.desde) + '.</strong> ' + (esIntCong
+      ? 'Este préstamo es de plazo indefinido y se muestran las cuotas generadas hasta la fecha. Mientras siga congelado no corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo. Al descongelarlo, los intereses vuelven a correr hasta que el capital sea devuelto, al final del acuerdo o mediante abonos a capital.'
+      : 'No corren intereses ni se generan cuotas; lo vencido y el capital se siguen debiendo.') : '') +
     congs.filter(function(c){ return c.hasta; }).map(function(c){
       var d = diasEntre(c.desde, c.hasta);
       return (congAb ? ' ' : '') + 'Estuvo congelado del ' + fmtD(c.desde) + ' al ' + fmtD(c.hasta) + ' (' + d + ' día' + (d === 1 ? '' : 's') + '): en ese tiempo no corrieron intereses.';
@@ -124,7 +130,8 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     'tr.abono td{background:var(--r-blue-bg);color:var(--r-blue);font-weight:600}',
     'tr.total-row td{background:var(--r-green-bg);color:var(--r-green);font-weight:600}',
     'tr.total-row.abonos td{background:var(--r-blue-bg);color:var(--r-blue)}',
-    '.footer{text-align:center;margin-top:20px;padding-top:12px;border-top:1px solid var(--r-bd);font-size:10px;color:var(--r-muted)}',
+    '.footer{text-align:center;margin-top:20px;padding-top:12px;border-top:1px solid var(--r-bd);font-size:10px;color:var(--r-muted)}' +
+      '\n.cr-final{break-inside:avoid}',
     '.nota{margin-top:12px;padding:10px 14px;background:var(--r-amber-bg);border:1px solid var(--r-amber-bd);border-radius:12px;font-size:11px;color:var(--r-amber)}' +
       (congs.length ? '\n.nota-hielo{background:var(--r-blue-bg);border-color:' + C.blueBd + ';color:var(--r-blue)}' : ''),
     rbImpresionPapel(dark, '', 'font-size:11px;'),
@@ -192,8 +199,12 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
     // caian en la 4a celda, que en el layout viejo era la de "Cuota".
     loan.modalidad === 'Intereses' ? function(){var intPagados=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.interes;},0);return intPagados>0?'<tr class="total-row"><td></td><td style="text-align:left">INTERESES PAGADOS</td><td><strong>'+fvT(intPagados)+'</strong></td><td></td><td></td><td></td><td></td></tr>':'';}() : loan.modalidad === 'Capital + Intereses' ? function(){var capPagado=cuotas.reduce(function(s,p){return s+imputarCobros(p).totales.capital;},0);return capPagado>0?'<tr class="total-row"><td></td><td style="text-align:left">CAPITAL PAGADO</td><td></td><td><strong>'+fvT(capPagado)+'</strong></td><td></td><td></td><td></td></tr>':'';}() : '',
     totalAbonos > 0 ? '<tr class="total-row abonos"><td></td><td style="text-align:left">ABONOS</td><td></td><td><strong>' + fvT(totalAbonos) + '</strong></td><td></td><td></td><td></td></tr>' : '',
-    '</tbody></table>',
-    (loan.modalidad === 'Intereses' ? '<div class="nota"><strong>Nota:</strong> Este préstamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuarán hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '') + notaHielo,
+    '</tbody></table></div>',
+    // El cierre del documento (las notas, el valor de liquidacion y el pie) va junto y no se parte
+    // (post-4.1.6, pruebas del PO): si no cabe al final de una hoja, pasa entero a la siguiente, y el
+    // pie nunca queda solo en una hoja aparte.
+    '<div class="cr-final">' +
+    (loan.modalidad === 'Intereses' && !esIntCong ? '<div class="nota"><strong>Nota:</strong> Este préstamo es de plazo indefinido. Solo se muestran las cuotas generadas hasta la fecha. Los pagos de intereses continuarán hasta que el capital sea devuelto en su totalidad, ya sea al final del acuerdo o mediante abonos a capital.</div>' : '') + notaHielo,
     function(){
       // v1.19.0 — valor de liquidacion desde el helper centralizado (misma cifra que el modal).
       // 3.1.0 — con la opcion del interes del mes, la misma que ve `LiquidarModal`: para una
@@ -231,11 +242,11 @@ export function generateCronogramaPDF(loan, payments, darkMode, opts) {
         '<div style="font-size:10px;color:'+cl+';margin-top:2px">' + detalle + '</div>' + vig + '</div>' +
         '<div style="font-size:20px;font-weight:600;letter-spacing:-.02em;color:'+cl+';white-space:nowrap">' + fv(L.total) + '</div></div>';
     }(),
-    '</div>',
+    '',
     '<div class="footer">',
     '<p>Este cronograma es informativo y puede variar por abonos a capital</p>',
     '<p style="margin-top:4px">Cartera</p>',
-    '</div>',
+    '</div></div>',
     RB_MARCO_CIERRA + '</body></html>'
   ].join('\n');
   if (window.electronAPI && window.electronAPI.printPDF) {

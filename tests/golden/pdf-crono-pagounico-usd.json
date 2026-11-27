@@ -34,7 +34,7 @@
     ]
   },
   "valores": {
-    "bytes": 6709,
+    "bytes": 6767,
     "nFilas": 2,
     "nCeldas": 14,
     "celdasPorTr": [
@@ -47,6 +47,7 @@
     "hashTexto": "987210b030491b5395dc60a7ce5d45de5fb013aa",
     "clases": [
       "badge badge-pendiente",
+      "cr-final",
       "cr-logo",
       "footer",
       "header",
