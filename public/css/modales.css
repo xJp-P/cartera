@@ -280,6 +280,8 @@
 .cdm-ef.nada { color: var(--ink-3); font-weight: 500; }
 /* Con un monto escrito: la cuota marcada a la que el monto no llega se atenua y lo dice (post-4.1.6). */
 .cdm-cuota.fuera { opacity: .62; background: transparent; border-style: dashed; }
+/* Sin palomita y sin poder marcarse: el monto no le llega (post-4.1.6, regla del PO). */
+.cdm-cuota.fuera, .cdm-cuota.fuera input { cursor: default; }
 .cdm-ef.fuera { color: var(--ink-2); font-weight: 600; border: 1px dashed var(--line); }
 .cdm-reparto { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; margin: -2px 0 8px; }
 .cdm-reparto b { font-weight: 650; }

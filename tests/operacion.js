@@ -1557,14 +1557,18 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const efectos = conClase(mo.arbol, 'cdm-ef').map(n => textos(n).join(''));
     R.eq('Q1 cada cuota dice lo que le pasaria: 3 condonadas, la cuarta en parte y la quinta NO se perdona (el monto no le llega)',
       efectos, ['Condonada', 'Condonada', 'Condonada', 'En parte · queda ' + X.fmt(200000), 'No se perdona · no le llega el monto']);
-    // Post-4.1.6 (pedido del PO): la cuota marcada a la que el monto no llega se atenua y lo dice, y una
-    // linea cuenta el reparto. Sigue marcada: si el monto sube, el reparto la alcanza.
+    // Post-4.1.6 (regla del PO): la casilla dice el RESULTADO. La cuota a la que el monto no llega va SIN
+    // palomita, atenuada y sin poder marcarse, y lo dice; una linea cuenta el reparto. Si el monto sube, el
+    // reparto la alcanza (sigue elegible: el backend recibe la misma seleccion de siempre).
     const filasQ = conClase(mo.arbol, 'cdm-cuota');
     const clsQ = n => String(n.props.className || '');
-    R.check('Q1b solo la quinta va atenuada (clase «fuera»), sigue marcada y dice que sus intereses se siguen debiendo',
+    const casQ = n => nodos(n, x => x.tag === 'input')[0] || { props: {} };
+    R.check('Q1b solo la quinta va atenuada (clase «fuera»), SIN palomita y sin poder marcarse, y dice que sus intereses se siguen debiendo',
       filasQ.length === 5 && filasQ.filter(n => /\bfuera\b/.test(clsQ(n))).length === 1 && /\bfuera\b/.test(clsQ(filasQ[4])) &&
-      /\bon\b/.test(clsQ(filasQ[4])) && !/\btoca\b/.test(clsQ(filasQ[4])) && textos(filasQ[4]).join('').indexOf('sus intereses se siguen debiendo') !== -1,
-      filasQ.map(clsQ));
+      !/\bon\b/.test(clsQ(filasQ[4])) && !/\btoca\b/.test(clsQ(filasQ[4])) && textos(filasQ[4]).join('').indexOf('sus intereses se siguen debiendo') !== -1 &&
+      casQ(filasQ[4]).props.checked === false && casQ(filasQ[4]).props.disabled === true &&
+      filasQ.slice(0, 4).every(n => casQ(n).props.checked === true && !casQ(n).props.disabled),
+      filasQ.map(n => clsQ(n) + ' checked=' + casQ(n).props.checked + ' disabled=' + casQ(n).props.disabled));
     const rep = conClase(mo.arbol, 'cdm-reparto')[0];
     R.eq('Q1c la linea del reparto: 3 completas · 1 en parte · 1 no se perdona, y como perdonar otras',
       rep ? textos(rep).join('') : '', 'Con ' + X.fmt(1000000) + ': 3 completas · 1 en parte · 1 no se perdona — el monto no les llega. Para perdonar otras, desmarca las más viejas.');
@@ -1576,6 +1580,18 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     R.check('Q1e con el monto exacto de las 5, ninguna queda fuera y el reparto dice «5 completas»',
       conClase(justo.arbol, 'cdm-cuota').every(n => !/\bfuera\b/.test(clsQ(n))) &&
       textos(conClase(justo.arbol, 'cdm-reparto')[0] || { hijos: [] }).join('') === 'Con ' + X.fmt(1500000) + ': 5 completas');
+    // Para condonar una cuota mas nueva se desmarca una mas vieja: queda «Excluida por ti» (sin palomita,
+    // pero se puede volver a marcar) y el monto pasa a la siguiente, que se marca sola.
+    const excl = montar(X.CondonarModal, propsC, [moraA.slice(1).map(p => p.id), undefined, undefined, '1.000.000']);
+    const filasX = conClase(excl.arbol, 'cdm-cuota');
+    R.eq('Q1g desmarcando la mas vieja, el monto llega a la quinta: excluida, 3 condonadas y la quinta en parte',
+      conClase(excl.arbol, 'cdm-ef').map(n => textos(n).join('')), ['Excluida por ti', 'Condonada', 'Condonada', 'Condonada', 'En parte · queda ' + X.fmt(200000)]);
+    R.check('Q1g la excluida va sin palomita pero se puede volver a marcar; las demas, con palomita; ninguna atenuada',
+      filasX.length === 5 && casQ(filasX[0]).props.checked === false && !casQ(filasX[0]).props.disabled && typeof casQ(filasX[0]).props.onChange === 'function' &&
+      filasX.slice(1).every(n => casQ(n).props.checked === true) && filasX.every(n => !/\bfuera\b/.test(clsQ(n))),
+      filasX.map(n => clsQ(n) + ' checked=' + casQ(n).props.checked));
+    const repX = conClase(excl.arbol, 'cdm-reparto')[0];
+    R.eq('Q1g y el reparto lo cuenta', repX ? textos(repX).join('') : '', 'Con ' + X.fmt(1000000) + ' y 1 excluida por ti: 3 completas · 1 en parte');
     R.check('Q1f los estilos de la cuota que no alcanza viven en modales.css',
       ['.cdm-cuota.fuera {', '.cdm-ef.fuera {', '.cdm-reparto {'].every(x => leer('public/css/modales.css').indexOf(x) !== -1));
     const comp = conClase(mo.arbol, 'cdm-comp').map(n => textos(n).join(' '));

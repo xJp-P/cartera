@@ -76,14 +76,16 @@ export function CondonarModal(props){
     :plan.error;
   var intCondonar=error?0:(montoCOP!=null?montoCOP:totalCond);
   var porId={}; if(plan) plan.filas.forEach(function(f){ porId[f.p.id]=f; });
-  // Con un monto escrito (post-4.1.6, pedido del PO): una cuota marcada a la que el monto NO llega
-  // no se perdona. Sigue marcada (si el monto sube, el reparto la alcanza), pero se atenua y lo dice;
-  // antes solo decia «sin cambio» y se leia como si fuera a condonarse.
+  // Con un monto escrito (post-4.1.6, regla del PO): la casilla dice el RESULTADO. Con palomita solo
+  // las cuotas a las que el monto llega; las que no alcanza van SIN palomita, atenuadas y sin poder
+  // marcarse («no le llega el monto»). `sel` sigue siendo la eleccion del usuario: desmarcar una cuota
+  // la EXCLUYE («excluida por ti») y el monto pasa a la siguiente, que se marca sola. Asi, para condonar
+  // una cuota mas nueva se desmarca una mas vieja. Si el monto sube, el reparto alcanza a las de abajo.
   var conMonto=!diario&&montoCOP!=null&&!error;
   function noLlega(f){ return conMonto&&!!f&&f.max>0&&f.condonar<=0; }
   var reparto=conMonto?plan.filas.reduce(function(r,f){
     if(f.condonar>0&&!f.parcial) r.completas++; else if(f.parcial) r.parte++; else if(noLlega(f)) r.fuera++;
-    return r; },{completas:0,parte:0,fuera:0}):null;
+    return r; },{completas:0,parte:0,fuera:0,excluidas:mora.length-elegidas.length}):null;
 
   // El antes y el despues, con los helpers de siempre sobre una copia (no se escribe nada).
   var loanDesp=diario?Object.assign({}, loan, { interesesCondonados: Math.round(+loan.interesesCondonados||0)+intCondonar }):loan;
@@ -150,16 +152,17 @@ export function CondonarModal(props){
     mora.map(function(p){
       var on=sel.indexOf(p.id)!==-1, f=porId[p.id], c=f?f.condonar:0;
       var interes=Math.round(p.interesPeriodo||0), cap=Math.round(p.abonoCapital||0), ab=Math.round(p.partialPaid||0);
-      var fuera=on&&noLlega(f);
-      var efecto=!on?h('span',{className:'cdm-ef nada'},'no marcada')
+      var fuera=on&&noLlega(f), marcada=on&&!fuera;
+      var efecto=!on?h('span',{className:'cdm-ef nada'},'Excluida por ti')
         :fuera?h('span',{className:'cdm-ef fuera'},'No se perdona · no le llega el monto')
         :c<=0?h('span',{className:'cdm-ef nada'},'sin cambio')
         :f.saldada&&f.abonado<=0?h('span',{className:'cdm-ef cond'},'Condonada')
         :f.saldada?h('span',{className:'cdm-ef cond'},'Saldada')
         :f.parcial?h('span',{className:'cdm-ef parte'},'En parte · queda '+money(f.quedaDebiendo))
         :h('span',{className:'cdm-ef parte'},'Queda el capital · '+money(f.quedaDebiendo));
-      return h('label',{key:p.id,className:'cdm-cuota'+(on?' on':'')+(c>0?' toca':'')+(fuera?' fuera':'')},
-        h('input',{type:'checkbox',checked:on,onChange:function(){ toggle(p.id); }}),
+      return h('label',{key:p.id,className:'cdm-cuota'+(marcada?' on':'')+(c>0?' toca':'')+(fuera?' fuera':''),
+          title:fuera?'El monto no le llega: para condonarla, desmarca una cuota más vieja o sube el monto.':undefined},
+        h('input',{type:'checkbox',checked:marcada,disabled:fuera,onChange:function(){ toggle(p.id); }}),
         h('div',{className:'cdm-cuota-i'},
           h('div',{className:'cdm-cuota-t'},
             h('b',null,'Cuota #'+p.cuotaN),
@@ -199,7 +202,7 @@ export function CondonarModal(props){
               h('button',{type:'button',className:'cdm-todo v4m-pulsa',onClick:function(){ setSel(sel.length===mora.length?[]:mora.map(function(p){ return p.id; })); }},
                 sel.length===mora.length?'Ninguna':'Todas')),
             reparto&&h('div',{className:'cdm-reparto'},
-              'Con '+money(montoCOP)+': ',
+              'Con '+money(montoCOP)+(reparto.excluidas?' y '+reparto.excluidas+(reparto.excluidas===1?' excluida por ti':' excluidas por ti'):'')+': ',
               [reparto.completas&&h('b',{key:'c',className:'cdm-c'},reparto.completas+(reparto.completas===1?' completa':' completas')),
                reparto.parte&&h('b',{key:'p',className:'cdm-rp-parte'},reparto.parte+' en parte'),
                reparto.fuera&&h('b',{key:'f',className:'cdm-rp-fuera'},reparto.fuera+(reparto.fuera===1?' no se perdona':' no se perdonan'))]
