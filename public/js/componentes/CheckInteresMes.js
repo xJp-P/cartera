@@ -27,6 +27,7 @@ export function CheckInteresMes(props) {
   var L = props.L, checked = !!props.checked, onChange = props.onChange;
   if (!L || !L.aplicaInteres) return null;
   if (L.enGracia) return avisoGracia(L);
+  if (L.esDiario && L.congelado) return avisoCongeladoDiario(L);
   if (L.periodoIrregular) return casillaPeriodoIrregular(L, checked, onChange, props.onDias);
   var lbl = etiquetaInteresMes(L);
   var esePeriodo = L.frecuencia === 'Semanal' ? 'esa semana' : L.frecuencia === 'Quincenal' ? 'esa quincena' : 'ese mes';
@@ -57,6 +58,20 @@ function avisoGracia(L) {
       h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
         'Al crear el crédito se perdonaron los días muertos: el interés empieza a correr el '+fmtD(L.graciaHasta)+
         '. Si el deudor liquida antes, no se cobra interés por adelantado.')));
+}
+
+// ── Credito abierto congelado (post-4.1.6, Fase 2) ───────────────────────────
+// El interes diario no corre: no hay mes siguiente que cobrar por adelantado. Lo devengado hasta el
+// congelamiento ya esta en el total (la fila «Interés acumulado»).
+function avisoCongeladoDiario(L) {
+  return h('div',{style:{display:'flex',alignItems:'flex-start',gap:10,background:'var(--blue-bg)',border:'1px solid var(--blue-bd)',borderRadius:10,padding:'11px 12px',marginBottom:12}},
+    h('span',{style:{flex:1}},
+      h('span',{style:{display:'flex',justifyContent:'space-between',gap:8}},
+        h('span',{style:{fontSize:13,color:'var(--text)',fontWeight:500}},'Congelado: no corre el interés'),
+        h('span',{className:'mono',style:{fontSize:12,color:'var(--text3)',whiteSpace:'nowrap'}},fmt(0))),
+      h('span',{style:{display:'block',fontSize:11,color:'var(--text3)',marginTop:4,lineHeight:1.45}},
+        'Desde el '+fmtD(L.congeladoDesde)+' no corre el interés diario: no hay interés que cobrar por adelantado. '+
+        'Lo devengado hasta ese día ya está en el total.')));
 }
 
 // ── Periodo irregular en curso: DIAS VARIABLES (3.2.0, Fase 3, regla del PO) ──

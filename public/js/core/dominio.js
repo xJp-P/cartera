@@ -491,12 +491,31 @@ export function devengoDiario(loan, cortes, hastaISO) {
   var capitalAbonado = 0;
   var condonado = Math.max(0, Math.round(+loan.interesesCondonados || 0));
 
+  // Congelar (post-4.1.6, Fase 2): los periodos congelados no devengan (ver engine.js).
+  var congs = congelamientosDe(loan).filter(function (c) { return c && c.desde; })
+    .map(function (c) { return { a: String(c.desde), b: c.hasta ? String(c.hasta) : null }; });
   var empujar = function (desde, hasta, base) {
     var dias = diasEntre(desde, hasta);
     if (dias < 0) dias = 0;
-    var interes = interesDeTramo(base, tasaMensual, dias);
-    tramos.push({ desde: desde, hasta: hasta, dias: dias, base: base, interes: interes });
-    interesDevengado += interes;
+    if (!congs.length || dias === 0) {
+      var interes = interesDeTramo(base, tasaMensual, dias);
+      tramos.push({ desde: desde, hasta: hasta, dias: dias, base: base, interes: interes });
+      interesDevengado += interes;
+      return;
+    }
+    var puntos = [desde];
+    congs.forEach(function (c) { [c.a, c.b].forEach(function (p) { if (p && p > desde && p < hasta && puntos.indexOf(p) === -1) puntos.push(p); }); });
+    puntos.sort();
+    puntos.push(hasta);
+    for (var i = 0; i < puntos.length - 1; i++) {
+      var a = puntos[i], b = puntos[i + 1], d = Math.max(0, diasEntre(a, b));
+      var quieto = congs.some(function (c) { return a >= c.a && (c.b === null || a < c.b); });
+      var it = quieto ? 0 : interesDeTramo(base, tasaMensual, d);
+      var t = { desde: a, hasta: b, dias: d, base: base, interes: it };
+      if (quieto) t.congelado = true;
+      tramos.push(t);
+      interesDevengado += it;
+    }
   };
 
   ord.forEach(function (c) {
@@ -508,7 +527,11 @@ export function devengoDiario(loan, cortes, hastaISO) {
     cursor = c.fechaPago;
   });
 
+  var iniAbierto = tramos.length;
   empujar(cursor, hastaISO, saldo);
+  var abiertos = tramos.slice(iniAbierto);
+  var interesAbierto = abiertos.reduce(function (s, t) { return s + t.interes; }, 0);
+  var diasCongelados = abiertos.reduce(function (s, t) { return s + (t.congelado ? t.dias : 0); }, 0);
 
   var ultimo = ord.length ? ord[ord.length - 1] : null;
   return {
@@ -525,11 +548,13 @@ export function devengoDiario(loan, cortes, hastaISO) {
     interesPendiente: Math.max(0, interesDevengado - interesCobrado - condonado),
     fechaUltimoCorte: ultimo ? ultimo.fechaPago : null,
     diasDesdeUltimoCorte: diasEntre(ultimo ? ultimo.fechaPago : loan.fechaInicio, hastaISO),
+    diasActivosDesdeUltimoCorte: Math.max(0, diasEntre(ultimo ? ultimo.fechaPago : loan.fechaInicio, hastaISO)) - diasCongelados,
+    diasCongeladosDesdeUltimoCorte: diasCongelados,
     diasTotales: diasEntre(loan.fechaInicio, hastaISO),
     cache: {
       fechaUltimoCorte: ultimo ? ultimo.fechaPago : loan.fechaInicio,
       interesAcumuladoPend: Math.max(0, interesDevengado - interesCobrado - condonado
-        - tramos[tramos.length - 1].interes),
+        - interesAbierto),
     },
   };
 }
@@ -761,9 +786,13 @@ export function computeLiquidacion(loan, loanPays, opts){
   // Mientras esta congelado no corre ningun periodo: "el interes del periodo en curso" son los dias
   // hasta el congelamiento, que viven en la cuota de cierre (si no se perdonaron y aun no vencio:
   // vencida, ya esta en `intMora`). La casilla los ofrece en vez de un periodo entero.
-  var cong = (aplicaInteres && !esDiario(loan)) ? congeladoAbierto(loan) : null;
+  var cong = aplicaInteres ? congeladoAbierto(loan) : null;
   var filaCierre = null;
-  if (cong) {
+  if (cong && esDiario(loan)) {
+    // Credito abierto congelado (Fase 2): lo devengado hasta el congelamiento se debe y se cobra
+    // (va en `interesDevengado`), pero hacia adelante no corre nada: no hay interes que adelantar.
+    intProxMes = 0; incluye = false;
+  } else if (cong) {
     irregular = null; diasCobrados = 0; validoHasta = null;
     filaCierre = cong.perdona ? null : (regs.filter(function(p){ return p.cuotaN === +cong.cuotaN && p.estadoPago === 'Pendiente'; })[0] || null);
     intProxMes = filaCierre ? Math.max(0, Math.round((+filaCierre.interesPeriodo || 0) - (+filaCierre.cargaTrasladada || 0))) : 0;
@@ -797,7 +826,7 @@ export function computeLiquidacion(loan, loanPays, opts){
   // `capitalPendiente` NO necesita rama: los cortes son 'Pagado' y llevan su
   // `abonoCapital`, asi que la formula canonica ya devuelve el capital vivo exacto.
   var diario = esDiario(loan);
-  var devengo = 0, diasDevengados = 0, interesDia = 0;
+  var devengo = 0, diasDevengados = 0, interesDia = 0, diasCongeladosDiario = 0;
   if (diario) {
     // `hasta` es un PARAMETRO y no `new Date()` por dentro: el valor de liquidacion
     // depende del dia, y dejar que la funcion lo decida sola la volveria imposible
@@ -808,7 +837,9 @@ export function computeLiquidacion(loan, loanPays, opts){
     })();
     var dev = estadoDiario(loan, pays, hasta);
     devengo = dev.interesPendiente;
-    diasDevengados = dev.diasDesdeUltimoCorte;
+    // Los dias que explican el devengo son los que corrieron (sin los congelados): "N dias a $X".
+    diasDevengados = dev.diasActivosDesdeUltimoCorte;
+    diasCongeladosDiario = dev.diasCongeladosDesdeUltimoCorte;
     interesDia = interesDeTramo(dev.capitalVivo, +loan.tasaMensual || 0, 30) / 30;
   }
 
@@ -840,6 +871,7 @@ export function computeLiquidacion(loan, loanPays, opts){
     // que las superficies pueden leerlos sin ramificar.
     esDiario: diario, interesDevengado: devengo,
     diasDevengados: diasDevengados, interesDia: Math.round(interesDia),
+    diasCongeladosDiario: diasCongeladosDiario,
     // Periodo irregular en curso (3.2.0). Fuera de el valen false/0/null.
     periodoIrregular: !!irregular,
     periodoDesde: irregular ? irregular.desde : null,

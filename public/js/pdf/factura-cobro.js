@@ -16,7 +16,7 @@
 
 import { fmt, fmtUSD, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, facturaCode, fcCodigoDiario } from '../core/ui.js';
-import { saldoConCaja, pendienteDeCuota, estadoDiario, faltaUSD } from '../core/dominio.js';
+import { saldoConCaja, pendienteDeCuota, estadoDiario, faltaUSD, congeladoAbierto } from '../core/dominio.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 import { nombrePdf } from './nombres.js';
@@ -237,6 +237,8 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
   var interesDia = Math.round(dev.capitalVivo * (+loan.tasaMensual || 0) / 100 / 30);
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   var fcCode = fcCodigoDiario(loan, hasta);
+  // Congelado (post-4.1.6, Fase 2): lo devengado hasta el congelamiento se cobra; no corre mas.
+  var cgD = congeladoAbierto(loan), congD = !!(cgD && String(hasta) >= String(cgD.desde));
 
   // Rediseño v4: la paleta del papel de recibo-estilo.js, en el tema de la app (claro, u oscuro v4).
   var K = rbPaleta(dark), C = K;
@@ -290,14 +292,17 @@ export function generateFacturaCobroDiario(loan, allPays, datosPago, opts) {
     '<div class="fd-st">Cobro a</div>',
     '<div class="fd-name">' + escD(loan.nombre) + '</div>',
     (metaD ? '<div class="fd-cc">' + metaD + '</div>' : ''),
-    '<div class="fd-info">Crédito abierto: <b>no tiene fecha de vencimiento</b>. Puedes pagar los intereses generados o abonar a capital cuando quieras.</div>',
+    (congD
+      ? '<div class="fd-info">Crédito abierto <b>congelado desde el ' + fmtD(cgD.desde) + '</b>: no corre el interés. Puedes pagar lo devengado hasta ese día o abonar a capital cuando quieras.</div>'
+      : '<div class="fd-info">Crédito abierto: <b>no tiene fecha de vencimiento</b>. Puedes pagar los intereses generados o abonar a capital cuando quieras.</div>'),
     '<div class="fd-hero"><div class="l">Interés devengado al ' + fmtD(hasta) + '</div><div class="a">' + money(dev.interesPendiente) + '</div></div>',
     '<div class="fd-sec">De dónde sale</div>',
     rowD('Capital vivo', money(dev.capitalVivo)),
-    rowD('Interés por día', money(interesDia)),
+    rowD('Interés por día', congD ? 'En pausa (congelado)' : money(interesDia)),
     rowD('Días desde el último movimiento<div class="fd-sm">' +
-      (dev.fechaUltimoCorte ? ('Último corte: ' + fmtD(dev.fechaUltimoCorte)) : ('Inicio del crédito: ' + fmtD(loan.fechaInicio))) + '</div>',
-      String(dev.diasDesdeUltimoCorte)),
+      (dev.fechaUltimoCorte ? ('Último corte: ' + fmtD(dev.fechaUltimoCorte)) : ('Inicio del crédito: ' + fmtD(loan.fechaInicio))) +
+      (dev.diasCongeladosDesdeUltimoCorte > 0 ? ' · sin ' + dev.diasCongeladosDesdeUltimoCorte + ' día(s) congelados' : '') + '</div>',
+      String(dev.diasActivosDesdeUltimoCorte)),
     rowD('<b>Total a pagar</b>', '<b>' + money(dev.interesPendiente) + '</b>', K.text),
     '<div class="fd-caja"><span class="q">Si prefieres liquidar todo hoy</span><span class="v">' +
       money(dev.capitalVivo + dev.interesPendiente) + '</span></div>',

@@ -13,7 +13,7 @@
 // contradecir a la app aunque el llamador pase datos incompletos.
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
-import { estadoDiario } from '../core/dominio.js';
+import { estadoDiario, congeladoAbierto } from '../core/dominio.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, rbIniciales, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 import { nombrePdf, montoArchivo, prestamoArchivo } from './nombres.js';
 
@@ -48,6 +48,8 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
   var interesDiaAntes  = Math.round(devPre.capitalVivo  * (+loan.tasaMensual || 0) / 100 / 30);
   var interesDiaDespues= Math.round(devPost.capitalVivo * (+loan.tasaMensual || 0) / 100 / 30);
   var saldado = devPost.capitalVivo === 0 && devPost.interesPendiente === 0;
+  // Congelado al registrar el corte (post-4.1.6, Fase 2): no genera interes hasta descongelarlo.
+  var cgR = congeladoAbierto(loan), congR = !!(cgR && String(fechaCorte) >= String(cgR.desde));
 
   var fechaEmision = new Date().toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
   // Iniciales con la lista blanca comun (con dieresis): antes un apellido con "ü" perdia esa letra.
@@ -119,8 +121,9 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
 
     '<div class="rc-sec">Detalle</div>',
     (intCobrado > 0
-      ? row('Intereses<div class="rc-sm">' + devPre.diasDesdeUltimoCorte + ' día(s) x ' + money(interesDiaAntes) + '/día desde ' +
-            (devPre.fechaUltimoCorte ? fmtD(devPre.fechaUltimoCorte) : fmtD(loan.fechaInicio)) + '</div>', money(intCobrado), C.green)
+      ? row('Intereses<div class="rc-sm">' + devPre.diasActivosDesdeUltimoCorte + ' día(s) x ' + money(interesDiaAntes) + '/día desde ' +
+            (devPre.fechaUltimoCorte ? fmtD(devPre.fechaUltimoCorte) : fmtD(loan.fechaInicio)) +
+            (devPre.diasCongeladosDesdeUltimoCorte > 0 ? ', sin ' + devPre.diasCongeladosDesdeUltimoCorte + ' día(s) congelados' : '') + '</div>', money(intCobrado), C.green)
       : row('Intereses', money(0))),
     row('Abono a capital', money(abonoCap), abonoCap > 0 ? C.blue : undefined),
     (corte.observaciones ? row('Observaciones', esc(corte.observaciones)) : ''),
@@ -131,7 +134,9 @@ export function generateReciboCorte(loan, allPays, corte, opts) {
           '<div class="rc-sec">Cómo queda tu crédito</div>',
           row('Capital vivo' + (abonoCap === 0 ? '<div class="rc-sm">Sin cambio: este corte no incluyo abono</div>' : ''), money(devPost.capitalVivo)),
           row('Interés por cobrar', money(devPost.interesPendiente), devPost.interesPendiente > 0 ? C.blue : undefined),
-          row('Desde mañana genera' + (abonoCap > 0 ? '<div class="rc-sm">Antes generaba ' + money(interesDiaAntes) + '/día</div>' : ''),
+          congR
+            ? row('Congelado desde el ' + fmtD(cgR.desde) + '<div class="rc-sm">No genera interés hasta que se descongele; después, ' + money(interesDiaDespues) + '/día</div>', 'En pausa', C.blue)
+            : row('Desde mañana genera' + (abonoCap > 0 ? '<div class="rc-sm">Antes generaba ' + money(interesDiaAntes) + '/día</div>' : ''),
               money(interesDiaDespues) + ' / día'),
           '<div class="rc-caja"><span class="q">Si liquidas hoy</span><span class="v">' +
             money(devPost.capitalVivo + devPost.interesPendiente) + '</span></div>'

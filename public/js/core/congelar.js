@@ -1,4 +1,4 @@
-// public/js/core/congelar.js — CONGELAR PRESTAMO en el cliente (post-4.1.6, Fase 1).
+// public/js/core/congelar.js — CONGELAR PRESTAMO en el cliente (post-4.1.6, Fases 1 y 2).
 //
 // ESPEJO de `POST /api/loans/:id/congelar` y `/descongelar` (backend/routes/loans.js) y de las
 // cuotas que el motor rehace despues (engine.js, "CONGELAR PRESTAMO": la cuota de cierre, los
@@ -9,13 +9,14 @@
 //
 // Nombres top-level con prefijo `cg`/`CG_`: el arnes de pruebas aplana todos los modulos.
 
-import { congelamientosDe, congeladoAbierto, diasEntre, interesPeriodoParcial, tasaDelPeriodo, computeLiquidacion, pendCuota } from './dominio.js';
+import { congelamientosDe, congeladoAbierto, diasEntre, interesPeriodoParcial, tasaDelPeriodo, computeLiquidacion, pendCuota,
+  MODALIDAD_DIARIA, estadoDiario, cortesDe, interesDeTramo } from './dominio.js';
 import { esAbono, esCuotaRegular } from './ids.js';
 import { pmt, cargaDeCuotaPreview, fechaPagoFrecuencia } from './calculo.js';
 
-// Las modalidades que se congelan (las de cuotas con interes por periodo). El credito abierto es la
-// fase 2; Prestamo (0%) y Pago unico no generan interes por periodo.
-export var CG_MODALIDADES = ['Intereses', 'Capital + Intereses'];
+// Las modalidades que se congelan: las de cuotas con interes por periodo y (Fase 2) el credito
+// abierto, que deja de devengar. Prestamo (0%) y Pago unico no generan interes por periodo.
+export var CG_MODALIDADES = ['Intereses', 'Capital + Intereses', MODALIDAD_DIARIA];
 
 var CG_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 function cgFechaC(iso){ var p = String(iso).split('-'); return (+p[2]) + ' de ' + CG_MESES[+p[1] - 1] + ' de ' + p[0]; }
@@ -158,6 +159,8 @@ export function cgRehacer(loanN, pays){
 // una cuota por vencer (sin ella no hay periodo en curso que congelar).
 export function cgPuedeCongelar(l, lp, hoy){
   if (!l || l.estado !== 'Activo' || CG_MODALIDADES.indexOf(l.modalidad) === -1 || l.congeladoDesde) return false;
+  // Credito abierto: con tasa y capital vivo (sin capital no corre interes que detener).
+  if (l.modalidad === MODALIDAD_DIARIA) return (+l.tasaMensual || 0) > 0 && estadoDiario(l, lp || [], hoy || cgHoy()).capitalVivo > 0;
   return (lp || []).some(function(p){ return esCuotaRegular(p) && p.estadoPago === 'Pendiente' && (!hoy || p.fechaPago > hoy); });
 }
 
@@ -174,6 +177,7 @@ export function cgPlanCongelar(loan, pays, desde, perdonar, hoy){
   var F = desde ? String(desde) : hoy;
   if (!cgFechaValida(F)) return err('La fecha del congelamiento no es válida.');
   if (F > hoy) return err('No se puede congelar con una fecha futura: congela el día en que empieza.');
+  if (loan.modalidad === MODALIDAD_DIARIA) return cgPlanCongelarDiario(loan, lp, F, perdonar, hoy);
   var regs = lp.filter(esCuotaRegular).sort(function(a, b){ return a.cuotaN - b.cuotaN; });
   var curso = regs.filter(function(p){ return p.estadoPago === 'Pendiente' && p.fechaPago > F; })[0];
   if (!curso) return err('Este crédito no tiene cuotas por vencer: no hay intereses que congelar.');
@@ -237,6 +241,7 @@ export function cgPlanDescongelar(loan, pays, desde, primerPago, hoy){
   if (!cgFechaValida(D)) return err('La fecha para descongelar no es válida.');
   if (D > hoy) return err('No se puede descongelar con una fecha futura.');
   if (D < abierto.desde) return err('No se puede descongelar antes del ' + cgFechaC(abierto.desde) + ', el día en que se congeló.');
+  if (loan.modalidad === MODALIDAD_DIARIA) return cgPlanDescongelarDiario(loan, lp, abierto, D, hoy);
   var sugerido = cgSiguientePagoTras(loan, D);
   var primer = primerPago ? String(primerPago) : sugerido;
   var base0 = { D: D, abierto: abierto, sugerido: sugerido, primer: primer, diasCongelado: diasEntre(abierto.desde, D) };
@@ -261,4 +266,48 @@ export function cgPlanDescongelar(loan, pays, desde, primerPago, hoy){
     restantes: R.schedule.filter(function(p){ return !p.esCierre && p.cuotaN >= N; }).length,
     ultima: R.schedule.length ? R.schedule[R.schedule.length - 1].fechaPago : null,
     vencidas: vencidas, vencidoMonto: vencidas.reduce(function(s, p){ return s + pendCuota(p); }, 0), capital: computeLiquidacion(loanN, paysN, {}).capitalPendiente });
+}
+
+// ── EL CREDITO ABIERTO (Fase 2) ───────────────────────────────────────────────
+// No hay cuotas: congelar solo guarda la decision y el motor (`devengoDiario`) deja de devengar
+// desde ese dia. Lo devengado hasta el congelamiento se sigue debiendo; los dias congelados, no.
+function cgHoy(){ return cgYmd(new Date()); }
+function cgUltimoCorte(loan, lp){
+  var cortes = cortesDe(loan, lp);
+  return { cortes: cortes, fecha: cortes.length ? cortes[cortes.length - 1].fechaPago : loan.fechaInicio };
+}
+function cgPorDia(loan, capital){ return Math.round(interesDeTramo(capital, +loan.tasaMensual || 0, 30) / 30); }
+function cgPlanCongelarDiario(loan, lp, F, perdonar, hoy){
+  var err = function(t){ return { ok: false, error: t, diario: true }; };
+  if (perdonar) return err('En un crédito abierto lo devengado hasta el congelamiento se conserva y se sigue debiendo: para perdonarlo usa «Condonar intereses».');
+  var u = cgUltimoCorte(loan, lp);
+  if (F < u.fecha) return Object.assign(err('Congela desde el ' + cgFechaC(u.fecha) + ' o después: ' +
+    (u.cortes.length ? 'ese día se registró el último corte.' : 'ese día empezó el crédito.')), { inicio: u.fecha });
+  var alCongelar = estadoDiario(loan, lp, F);
+  if (alCongelar.capitalVivo <= 0) return err('Este crédito ya no tiene capital vivo: no corre interés que congelar.');
+  var registro = { desde: F, hasta: null, cuotaN: null, fecha: null, inicio: u.fecha, dias: alCongelar.diasActivosDesdeUltimoCorte,
+    interes: 0, devengado: alCongelar.interesPendiente, perdona: false, cuotaAntes: 0 };
+  var loanN = Object.assign({}, loan, { congeladoDesde: F, congelamientos: JSON.stringify(congelamientosDe(loan).concat([registro])) });
+  // Hoy, sin congelar y congelado desde F: la diferencia son los dias entre F y hoy, que no se cobran.
+  var hoySin = estadoDiario(loan, lp, hoy), hoyCon = estadoDiario(loanN, lp, hoy);
+  var Lantes = computeLiquidacion(loan, lp, { hasta: hoy }), Ldesp = computeLiquidacion(loanN, lp, { hasta: hoy });
+  return { ok: true, error: null, diario: true, F: F, inicio: u.fecha, ultimoCorte: u.cortes.length ? u.fecha : null,
+    dias: alCongelar.diasActivosDesdeUltimoCorte, devengado: alCongelar.interesPendiente,
+    interesDia: cgPorDia(loan, alCongelar.capitalVivo), capital: alCongelar.capitalVivo,
+    diasSinCobrar: Math.max(0, diasEntre(F, hoy)), noSeCobra: Math.max(0, hoySin.interesPendiente - hoyCon.interesPendiente),
+    devHoyAntes: hoySin.interesPendiente, devHoyDespues: hoyCon.interesPendiente,
+    registro: registro, loanN: loanN, paysN: lp, liqAntes: Lantes.total, liqDespues: Ldesp.total, perdona: false, cierre: null,
+    quitadas: [], vencidas: [], vencidoMonto: 0, schedule: [] };
+}
+function cgPlanDescongelarDiario(loan, lp, abierto, D, hoy){
+  var u = cgUltimoCorte(loan, lp);
+  var base0 = { D: D, abierto: abierto, diario: true, diasCongelado: diasEntre(abierto.desde, D) };
+  if (D < u.fecha) return Object.assign(base0, { ok: false, error: 'No se puede descongelar antes del ' + cgFechaC(u.fecha) + ', el día del último corte.' });
+  var historial = congelamientosDe(loan).map(function(c, k, a){ return k === a.length - 1 ? Object.assign({}, c, { hasta: D, primerPago: null }) : c; });
+  var loanN = Object.assign({}, loan, { congeladoDesde: null, congelamientos: JSON.stringify(historial) });
+  var enD = estadoDiario(loan, lp, D), hoyN = estadoDiario(loanN, lp, hoy);
+  return Object.assign(base0, { ok: true, error: null, loanN: loanN, paysN: lp, capital: enD.capitalVivo,
+    interesDia: cgPorDia(loan, enD.capitalVivo), devengado: enD.interesPendiente,
+    diasCorridos: Math.max(0, diasEntre(D, hoy)), devHoy: hoyN.interesPendiente,
+    liqDespues: computeLiquidacion(loanN, lp, { hasta: hoy }).total, schedule: [], vencidas: [], vencidoMonto: 0 });
 }

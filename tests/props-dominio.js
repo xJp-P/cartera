@@ -1214,6 +1214,24 @@ function main() {
                  front: H.devengoDiario(c[0], c[1], c[2]) };
       }), 2) : undefined);
     R.check('ANTI-VACIO: el espejo se probo sobre un espacio significativo', casosDev.length >= 100);
+    // Congelar (post-4.1.6, Fase 2): el mismo espacio con congelamientos (abierto, cerrado, dos, de 0 dias).
+    const variantesCong = [
+      [{ desde: 25, hasta: null }], [{ desde: 10, hasta: 40 }], [{ desde: 5, hasta: 30 }, { desde: 60, hasta: null }], [{ desde: 20, hasta: 20 }]];
+    const divergenCong = [];
+    let probadosCong = 0;
+    casosDev.forEach(function (c, i) {
+      if (i % 3) return;
+      variantesCong.forEach(function (v) {
+        const arr = v.map(x => ({ desde: motorBack.sumarDias(c[0].fechaInicio, x.desde), hasta: x.hasta == null ? null : motorBack.sumarDias(c[0].fechaInicio, x.hasta),
+          cuotaN: null, fecha: null, interes: 0, perdona: false }));
+        const lc = Object.assign({}, c[0], { congelamientos: JSON.stringify(arr), congeladoDesde: arr[arr.length - 1].hasta ? null : arr[arr.length - 1].desde });
+        probadosCong++;
+        if (JSON.stringify(motorBack.devengoDiario(lc, c[1], c[2])) !== JSON.stringify(H.devengoDiario(lc, c[1], c[2]))) divergenCong.push([lc, c[1], c[2]]);
+      });
+    });
+    R.check(`con congelamientos, backend y frontend calculan el MISMO devengo en los ${probadosCong} casos`,
+      divergenCong.length === 0 && probadosCong >= 200,
+      divergenCong.length ? muestra(divergenCong.slice(0, 1).map(c => ({ back: motorBack.devengoDiario(c[0], c[1], c[2]), front: H.devengoDiario(c[0], c[1], c[2]) })), 1) : probadosCong);
 
     // ── El progreso de un credito abierto NO puede darlo por saldado ─────────
     // Es el defecto medido en la app real: la barra marcaba 100% con capital vivo,

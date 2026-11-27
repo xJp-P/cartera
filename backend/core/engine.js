@@ -579,12 +579,32 @@ function devengoDiario(loan, cortes, hastaISO) {
   let capitalAbonado = 0;
   const condonado = Math.max(0, Math.round(+loan.interesesCondonados || 0));
 
+  // CONGELAR (post-4.1.6, Fase 2): los periodos congelados [desde, hasta) no devengan. El tramo
+  // se parte en las fechas del congelamiento y cada pedazo congelado lleva interes 0 y la marca
+  // `congelado`. Sin congelamientos no se parte nada: el resultado es identico al de siempre.
+  const congs = congelamientosDe(loan).filter(c => c && c.desde).map(c => ({ a: String(c.desde), b: c.hasta ? String(c.hasta) : null }));
   const empujar = (desde, hasta, base) => {
     let dias = diasEntre(desde, hasta);
     if (dias < 0) dias = 0;                    // corte anterior al cursor: tramo nulo, nunca negativo
-    const interes = interesDeTramo(base, tasaMensual, dias);
-    tramos.push({ desde: desde, hasta: hasta, dias: dias, base: base, interes: interes });
-    interesDevengado += interes;
+    if (!congs.length || dias === 0) {
+      const interes = interesDeTramo(base, tasaMensual, dias);
+      tramos.push({ desde: desde, hasta: hasta, dias: dias, base: base, interes: interes });
+      interesDevengado += interes;
+      return;
+    }
+    const puntos = [desde];
+    congs.forEach(c => [c.a, c.b].forEach(p => { if (p && p > desde && p < hasta && puntos.indexOf(p) === -1) puntos.push(p); }));
+    puntos.sort();
+    puntos.push(hasta);
+    for (let i = 0; i < puntos.length - 1; i++) {
+      const a = puntos[i], b = puntos[i + 1], d = Math.max(0, diasEntre(a, b));
+      const quieto = congs.some(c => a >= c.a && (c.b === null || a < c.b));
+      const interes = quieto ? 0 : interesDeTramo(base, tasaMensual, d);
+      const t = { desde: a, hasta: b, dias: d, base: base, interes: interes };
+      if (quieto) t.congelado = true;
+      tramos.push(t);
+      interesDevengado += interes;
+    }
   };
 
   ord.forEach((c) => {
@@ -598,8 +618,12 @@ function devengoDiario(loan, cortes, hastaISO) {
     cursor = fin;
   });
 
-  // Tramo abierto: desde el ultimo evento hasta la fecha consultada.
+  // Tramo abierto: desde el ultimo evento hasta la fecha consultada (en pedazos si se congelo).
+  const iniAbierto = tramos.length;
   empujar(cursor, hastaISO, saldo);
+  const abiertos = tramos.slice(iniAbierto);
+  const interesAbierto = abiertos.reduce((s, t) => s + t.interes, 0);
+  const diasCongelados = abiertos.reduce((s, t) => s + (t.congelado ? t.dias : 0), 0);
 
   const ultimo = ord.length ? ord[ord.length - 1] : null;
   return {
@@ -619,6 +643,10 @@ function devengoDiario(loan, cortes, hastaISO) {
     interesPendiente: Math.max(0, interesDevengado - interesCobrado - condonado),
     fechaUltimoCorte: ultimo ? ultimo.fechaPago : null,
     diasDesdeUltimoCorte: diasEntre(ultimo ? ultimo.fechaPago : loan.fechaInicio, hastaISO),
+    // Congelar (Fase 2): de esos dias, los que devengaron y los que estuvieron congelados. Lo que
+    // explica el devengo ("N dias x $X/dia") son los ACTIVOS; sin congelamientos coinciden.
+    diasActivosDesdeUltimoCorte: Math.max(0, diasEntre(ultimo ? ultimo.fechaPago : loan.fechaInicio, hastaISO)) - diasCongelados,
+    diasCongeladosDesdeUltimoCorte: diasCongelados,
     diasTotales: diasEntre(loan.fechaInicio, hastaISO),
     // Lo que se persiste en las columnas cache de `loans`. Aqui se derivan para que
     // exista UNA sola formula: la ruta que escribe (POST /corte) usa esto, no su
@@ -633,7 +661,7 @@ function devengoDiario(loan, cortes, hastaISO) {
     cache: {
       fechaUltimoCorte: ultimo ? ultimo.fechaPago : loan.fechaInicio,
       interesAcumuladoPend: Math.max(0, interesDevengado - interesCobrado - condonado
-        - tramos[tramos.length - 1].interes),
+        - interesAbierto),
     },
   };
 }

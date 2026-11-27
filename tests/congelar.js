@@ -12,6 +12,9 @@
 //      conserva su fecha y su monto (tambien tras /recalculate).
 //   4. La liquidacion ofrece los dias hasta el congelamiento, no un mes.
 //   5. Los rechazos dejan la BD intacta y deshacer devuelve todo byte a byte.
+//   6. (Fase 2) En un credito abierto el devengo se detiene en los dias congelados: lo devengado
+//      hasta el congelamiento se conserva (se cobra con un corte o se condona) y vuelve a correr
+//      al descongelar.
 //
 // El reloj se congela en la fecha de referencia del fixture (31-jul-2026), como e2e-api: la suite
 // no puede depender del dia en que se corre.
@@ -65,7 +68,7 @@ function cargarDominio() {
   sb.globalThis = sb;
   const ctx = vm.createContext(sb);
   vm.runInContext(orden.join('\n'), ctx);
-  return vm.runInContext('({computeLiquidacion,preguntaInteresMes,estaCongelado,saldoConCaja,cobrosDe,cgPlanCongelar,cgPlanDescongelar,cgPuedeCongelar,cgSiguientePagoTras,planCascada,imputarCobros})', ctx);
+  return vm.runInContext('({computeLiquidacion,preguntaInteresMes,estaCongelado,saldoConCaja,cobrosDe,cgPlanCongelar,cgPlanDescongelar,cgPuedeCongelar,cgSiguientePagoTras,planCascada,imputarCobros,estadoDiario})', ctx);
 }
 
 function pedir(method, ruta, body) {
@@ -264,7 +267,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs) {
     const h0 = huellaTodo();
     const casos = [
       ['un préstamo sin intereses o de pago único', prestamo && '/api/loans/' + prestamo.id + '/congelar', {}],
-      ['un crédito de interés diario (fase 2)', diario && '/api/loans/' + diario.id + '/congelar', {}],
+      ['perdonar los días en un crédito de interés diario (lo devengado se conserva)', diario && '/api/loans/' + diario.id + '/congelar', { perdonar: true }],
       ['una fecha futura', '/api/loans/' + ID + '/congelar', { desde: '2026-08-15' }],
       ['antes del inicio del período en curso (7-jul)', '/api/loans/' + ID + '/congelar', { desde: '2026-07-01' }],
       ['una fecha inválida', '/api/loans/' + ID + '/congelar', { desde: '2026-02-30' }],
@@ -412,9 +415,9 @@ async function ejecutarPlan(loanId, plan, fecha, obs) {
   }
   {
     const l = loanDe('1773655076017'), lp = paysDe('1773655076017');
-    R.check('F el botón «Congelar» solo se ofrece donde la ruta lo acepta',
+    R.check('F el botón «Congelar» solo se ofrece donde la ruta lo acepta (desde la Fase 2, también el crédito abierto)',
       D.cgPuedeCongelar(l, lp, HOY) && !D.cgPuedeCongelar(loanDe('1783874778375ziu4'), paysDe('1783874778375ziu4'), HOY) &&
-      !D.cgPuedeCongelar(loanDe('fixture-diario-01'), paysDe('fixture-diario-01'), HOY) &&
+      D.cgPuedeCongelar(loanDe('fixture-diario-01'), paysDe('fixture-diario-01'), HOY) &&
       !D.cgPuedeCongelar(Object.assign({}, l, { congeladoDesde: '2026-07-20' }), lp, HOY));
   }
 
@@ -449,6 +452,101 @@ async function ejecutarPlan(loanId, plan, fecha, obs) {
       loanDe(IDC).estado === 'Activo' && !!loanDe(IDC).congeladoDesde, JSON.stringify({ est: cie2.estadoPago, pend: regs2.map(p => p.cuotaN), abo: abo.map(p => p.abonoCapital) }));
     for (let k = 0; k < est.hechos.length + 1; k++) await deshacerUltimo(IDC);
     R.check('G4 deshacer el cobro y el congelamiento lo deja byte a byte como estaba', huella(IDC) === antes);
+  }
+
+  // ══ H — EL CREDITO ABIERTO (Fase 2): el devengo se detiene en los dias congelados ═══════════════
+  // Un credito de interes diario de 2.000.000 al 3% desde el 1-jun (2.000 pesos por dia), con un corte
+  // el 16-jun. Se congela el 1-jul: lo devengado (15 dias, 30.000) se conserva; del 1-jul en adelante
+  // no corre nada. Un corte durante el congelamiento cobra lo devengado; descongelar reanuda.
+  R.seccion('H — interés diario: congelado no devenga, lo devengado se conserva y se reanuda al descongelar');
+  {
+    const rN = await pedir('POST', '/api/loans', { nombre: 'ZZ Diario Congelar', cedula: '', telefono: '', moneda: 'COP',
+      montoOrigen: 2000000, trmAcordada: 0, montoCOP: 2000000, tasaMensual: 3, plazoMeses: 0, modalidad: 'Interes Diario',
+      fechaInicio: '2026-06-01', diaPago: 1, estado: 'Activo', notas: '', frecuencia: 'Mensual' });
+    const IDD = rN.json && rN.json.id;
+    const c1 = await pedir('POST', '/api/loans/' + IDD + '/corte', { fecha: '2026-06-16', interesPagado: 30000, abonoCapital: 0 });
+    R.check('H0 ANTI-VACIO: el crédito abierto nace y su primer corte cobra 15 días (30.000)', (rN.status === 200 || rN.status === 201) && !!IDD && c1.status === 200, [rN.status, c1.status, c1.json]);
+    const tras1 = huella(IDD);
+    const pD = () => paysDe(IDD);
+    // El espejo, antes: lo que mostraria el modal con esta fecha.
+    const plan = D.cgPlanCongelar(loanDe(IDD), pD(), '2026-07-01', false, HOY);
+    R.check('H1 el espejo: al congelar el 1-jul se conservan 15 días devengados (30.000); hasta hoy no se cobran 30 días (60.000)',
+      plan.ok && plan.diario && plan.devengado === 30000 && plan.dias === 15 && plan.interesDia === 2000 && plan.diasSinCobrar === 30 &&
+      plan.noSeCobra === 60000 && plan.devHoyAntes === 90000 && plan.devHoyDespues === 30000, JSON.stringify(plan && { ok: plan.ok, e: plan.error, d: plan.devengado, s: plan.noSeCobra }));
+    // Rechazos: antes del ultimo corte y perdonar. La BD intacta y el mismo texto en el espejo.
+    const h0 = huellaTodo();
+    const e1 = await pedir('POST', '/api/loans/' + IDD + '/congelar', { desde: '2026-06-10' });
+    const e2 = await pedir('POST', '/api/loans/' + IDD + '/congelar', { desde: '2026-07-01', perdonar: true });
+    const m1 = D.cgPlanCongelar(loanDe(IDD), pD(), '2026-06-10', false, HOY), m2 = D.cgPlanCongelar(loanDe(IDD), pD(), '2026-07-01', true, HOY);
+    R.check('H2 congelar antes del último corte, o perdonando: 400, BD intacta y el espejo dice lo mismo',
+      e1.status === 400 && e2.status === 400 && huellaTodo() === h0 && !m1.ok && !m2.ok && m1.error === e1.json.error && m2.error === e2.json.error &&
+      /último corte/.test(e1.json.error) && /Condonar intereses/.test(e2.json.error), [e1.json, e2.json, m1.error, m2.error]);
+    const cuotasAntes = huellaCuotas(IDD);
+    const rC = await pedir('POST', '/api/loans/' + IDD + '/congelar', { desde: '2026-07-01' });
+    const lC = loanDe(IDD);
+    const est = D.estadoDiario(lC, pD(), HOY);
+    const L = D.computeLiquidacion(lC, pD(), { hasta: HOY });
+    R.check('H3 congelar: 200, solo cambia el préstamo (ninguna fila nueva) y el devengo de hoy es 30.000, no 90.000',
+      rC.status === 200 && lC.congeladoDesde === '2026-07-01' && huellaCuotas(IDD) === cuotasAntes && rC.json.devengado === 30000 &&
+      est.interesPendiente === 30000 && D.estaCongelado(lC), JSON.stringify({ r: rC.json, pend: est.interesPendiente }));
+    const congTramo = est.tramos.filter(t => t.congelado);
+    R.check('H3 el tramo abierto se parte: 15 días con interés y 30 congelados en 0; días activos 15 y congelados 30',
+      congTramo.length === 1 && congTramo[0].desde === '2026-07-01' && congTramo[0].hasta === HOY && congTramo[0].dias === 30 && congTramo[0].interes === 0 &&
+      est.diasActivosDesdeUltimoCorte === 15 && est.diasCongeladosDesdeUltimoCorte === 30 && est.diasDesdeUltimoCorte === 45, JSON.stringify(est.tramos));
+    R.check('H4 la liquidación: capital + lo devengado hasta el congelamiento, sin interés que adelantar', L.total === 2030000 && L.interesDevengado === 30000 &&
+      L.intProxMes === 0 && L.congelado === true && L.diasDevengados === 15 && L.liqDespues === undefined && plan.liqDespues === 2030000, JSON.stringify(L));
+    // El arranque y la extension no tocan nada.
+    const tras2 = huella(IDD);
+    await pedir('POST', '/api/recalculate'); await pedir('GET', '/api/payments');
+    R.check('H5 /recalculate y el arranque no cambian nada', huella(IDD) === tras2);
+    // Condonar durante el congelamiento: baja lo devengado y se deshace.
+    const rK = await pedir('POST', '/api/loans/' + IDD + '/condonar-intereses', { monto: 10000 });
+    R.check('H6 condonar 10.000 congelado: queda 20.000 por cobrar; deshacerlo los devuelve',
+      rK.status === 200 && D.estadoDiario(loanDe(IDD), pD(), HOY).interesPendiente === 20000, rK.json);
+    await deshacerUltimo(IDD);
+    R.check('H6 y deshacer la condonación deja el préstamo como estaba', huella(IDD) === tras2);
+    // Un corte DURANTE el congelamiento cobra lo devengado; cobrar mas, no.
+    const x1 = await pedir('POST', '/api/loans/' + IDD + '/corte', { fecha: '2026-07-25', interesPagado: 30001, abonoCapital: 0 });
+    const x2 = await pedir('POST', '/api/loans/' + IDD + '/corte', { fecha: '2026-07-25', interesPagado: 10000, abonoCapital: 0 });
+    const lX = loanDe(IDD);
+    R.check('H7 un corte congelado no puede cobrar más de lo devengado (30.000); cobrar 10.000 sí, y su resumen dice 15 días',
+      x1.status === 400 && x2.status === 200 && x2.json.antes.interesPendiente === 30000 && x2.json.antes.diasDevengados === 15 &&
+      x2.json.despues.interesPendiente === 20000 && lX.fechaUltimoCorte === '2026-07-25' && Math.round(lX.interesAcumuladoPend) === 20000 &&
+      lX.estado === 'Activo' && !!lX.congeladoDesde, JSON.stringify({ x1: x1.json, x2: x2.json, cache: [lX.fechaUltimoCorte, lX.interesAcumuladoPend] }));
+    // Descongelar: no antes del ultimo corte; ese dia si. El interes vuelve a correr.
+    const h3 = huellaTodo();
+    const d1 = await pedir('POST', '/api/loans/' + IDD + '/descongelar', { desde: '2026-07-21' });
+    const md1 = D.cgPlanDescongelar(loanDe(IDD), pD(), '2026-07-21', null, HOY);
+    R.check('H8 descongelar antes del último corte: 400, BD intacta y el espejo dice lo mismo',
+      d1.status === 400 && huellaTodo() === h3 && !md1.ok && md1.error === d1.json.error && /último corte/.test(d1.json.error), [d1.json, md1.error]);
+    const pl2 = D.cgPlanDescongelar(loanDe(IDD), pD(), '2026-07-25', null, HOY);
+    const d2 = await pedir('POST', '/api/loans/' + IDD + '/descongelar', { desde: '2026-07-25' });
+    const lD = loanDe(IDD), estD = D.estadoDiario(lD, pD(), HOY);
+    R.check('H9 descongelar el 25-jul: 200, ninguna fila nueva, y hoy se deben 20.000 + 6 días (32.000), como dijo el espejo',
+      d2.status === 200 && !lD.congeladoDesde && estD.interesPendiente === 32000 && pl2.ok && pl2.devHoy === 32000 && pl2.interesDia === 2000 &&
+      pl2.diasCongelado === 24 && d2.json.diasCongelado === 24 && d2.json.interesDia === 2000 && !D.estaCongelado(lD) &&
+      JSON.parse(lD.congelamientos)[0].hasta === '2026-07-25', JSON.stringify({ r: d2.json, pend: estD.interesPendiente, plan: pl2 && pl2.devHoy }));
+    // Un segundo congelamiento, despues del corte: los dos periodos quedan fuera del devengo.
+    const r2 = await pedir('POST', '/api/loans/' + IDD + '/congelar', { desde: '2026-07-28' });
+    const est2 = D.estadoDiario(loanDe(IDD), pD(), HOY);
+    R.check('H10 congelar otra vez el 28-jul: hoy se deben 20.000 + 3 días (26.000) y el historial tiene los dos',
+      r2.status === 200 && est2.interesPendiente === 26000 && JSON.parse(loanDe(IDD).congelamientos).length === 2 &&
+      est2.diasActivosDesdeUltimoCorte === 3 && est2.diasCongeladosDesdeUltimoCorte === 3, JSON.stringify({ r: r2.json, pend: est2.interesPendiente }));
+    // Cerrar forzoso congelado: lo perdido en intereses es lo devengado (sin los dias congelados).
+    const tras3 = huella(IDD);
+    const fc = await pedir('POST', '/api/loans/' + IDD + '/force-close');
+    R.check('H11 el cierre forzoso de un congelado toma de pérdida lo devengado sin los días congelados (26.000)',
+      fc.status === 200 && Math.round(loanDe(IDD).interesesPerdidos) === 26000, JSON.stringify({ fc: fc.json, ip: loanDe(IDD).interesesPerdidos }));
+    await deshacerUltimo(IDD);
+    R.check('H11 y deshacerlo lo devuelve', huella(IDD) === tras3);
+    // Deshacer: el segundo congelamiento, el descongelar, el corte y el primer congelamiento.
+    for (let k = 0; k < 4; k++) await deshacerUltimo(IDD);
+    R.check('H12 deshacer los cuatro movimientos deja el crédito byte a byte como tras su primer corte', huella(IDD) === tras1);
+    // Lo que ofrece la interfaz.
+    R.check('H13 cgPuedeCongelar ofrece congelar el crédito abierto activo, y no uno ya congelado ni sin capital',
+      D.cgPuedeCongelar(loanDe(IDD), pD(), HOY) && !D.cgPuedeCongelar(Object.assign({}, loanDe(IDD), { congeladoDesde: '2026-07-01' }), pD(), HOY) &&
+      !D.cgPuedeCongelar(Object.assign({}, loanDe(IDD), { montoOrigen: 0 }), pD(), HOY));
+    await pedir('DELETE', '/api/loans/' + IDD);
   }
 
   srv.close();

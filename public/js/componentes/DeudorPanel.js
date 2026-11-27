@@ -148,6 +148,13 @@ export function dpChipCongelado(desde){
 function dpAvisoCongelado(l, m){
   var c = congeladoAbierto(l);
   if (!c) return null;
+  // Credito abierto (Fase 2): no hay cuotas; el interes diario deja de correr.
+  if (esDiario(l)) return h('div', { className: 'dp-hielo-aviso' },
+    h(Ico, { name: 'snow', size: 16, color: 'var(--blue)', sw: 2 }),
+    h('div', null, h('b', null, 'Congelado desde el ' + opCortaAnio(c.desde) + '.'), ' No corre el interés diario. ',
+      m.dv && m.dv.interesPendiente > 0 ? 'Lo devengado hasta ese día (' + fmt(m.dv.interesPendiente) + ' por cobrar) se sigue debiendo. '
+        : 'Lo devengado hasta ese día ya está cobrado. ',
+      'El capital no cambia. Puedes registrar un corte: cobrar lo devengado o abonar a capital.'));
   var venc = m.enMora.length;
   return h('div', { className: 'dp-hielo-aviso' },
     h(Ico, { name: 'snow', size: 16, color: 'var(--blue)', sw: 2 }),
@@ -157,12 +164,12 @@ function dpAvisoCongelado(l, m){
         : 'La cuota del ' + opCortaAnio(c.fecha) + ' se cerró con ' + c.dias + ' días de interés (' + fmt(c.interes) + ' en vez de ' + fmt(c.cuotaAntes) + '). ',
       'El capital no cambia. Puedes cobrar lo vencido, abonar a capital o liquidar.'));
 }
-function dpFranjaHielo(key, c){
+function dpFranjaHielo(key, c, diario){
   var dias = c.hasta ? diasEntre(c.desde, c.hasta) : 0;
   return h('div', { key: key, className: 'dp-hielo' }, h(Ico, { name: 'snow', size: 14, color: 'var(--blue)', sw: 2 }),
     c.hasta
-      ? h('span', null, h('b', null, 'Congelado del ' + opCortaAnio(c.desde) + ' al ' + opCortaAnio(c.hasta)), ' · ' + dias + ' día' + (dias === 1 ? '' : 's') + ' sin intereses ni cuotas')
-      : h('span', null, h('b', null, 'Congelado desde el ' + opCortaAnio(c.desde)), ' · no corren intereses ni se generan cuotas'));
+      ? h('span', null, h('b', null, 'Congelado del ' + opCortaAnio(c.desde) + ' al ' + opCortaAnio(c.hasta)), ' · ' + dias + ' día' + (dias === 1 ? '' : 's') + (diario ? ' sin interés' : ' sin intereses ni cuotas'))
+      : h('span', null, h('b', null, 'Congelado desde el ' + opCortaAnio(c.desde)), diario ? ' · no corre el interés' : ' · no corren intereses ni se generan cuotas'));
 }
 
 // ── Cronograma: las 7 columnas universales, abonos intercalados ────────────────────
@@ -171,7 +178,26 @@ function DpCronograma(p){
   // Congelar (post-4.1.6): la franja de cada congelamiento ya cerrado va antes de la primera cuota que
   // se generó al descongelar; la del abierto, al final (despues no hay nada).
   var congs = congelamientosDe(l), abierto = congeladoAbierto(l), franjaAntes = {}, puestas = {};
-  congs.forEach(function(c){ if (c.hasta) franjaAntes[cgPrimeraCongelada(c)] = c; });
+  var diario = esDiario(l), porFecha = {};
+  if (diario) {
+    // Credito abierto (Fase 2): cada congelamiento va antes del primer corte de esa fecha o posterior.
+    congs.forEach(function(c, k){
+      var x = m.timeline.filter(function(t){ return String(t.fechaPago) >= String(c.desde); })[0];
+      if (x) (porFecha[x.id] = porFecha[x.id] || []).push([k, c]);
+      else if (c.hasta) (porFecha._fin = porFecha._fin || []).push([k, c]);
+    });
+  } else congs.forEach(function(c){ if (c.hasta) franjaAntes[cgPrimeraCongelada(c)] = c; });
+  if (diario) {
+    if (!m.timeline.length && !congs.length) return h('div', { className: 'op-vacio' }, 'Todavía no hay cortes registrados.');
+    var franjas = function(arr){ return (arr || []).map(function(a){ return dpFranjaHielo('hielo-' + a[0], a[1], true); }); };
+    return h('div', { className: 'dp-crono' },
+      h('div', { className: 'dp-crono-h' },
+        h('span', null, '#'), h('span', null, 'Vence'), h('span', { className: 'r' }, 'Interés'), h('span', { className: 'r' }, 'Abono a capital'),
+        h('span', { className: 'r' }, 'Valor cuota'), h('span', { className: 'r' }, 'Saldo'), h('span', { className: 'c' }, 'Estado')),
+      m.timeline.map(function(x){ return franjas(porFecha[x.id]).concat(dpFilaCrono(p, m, x, null)); }),
+      franjas(porFecha._fin),
+      abierto && !m.timeline.some(function(t){ return String(t.fechaPago) >= String(abierto.desde); }) && dpFranjaHielo('hielo-abierto', abierto, true));
+  }
   if (!m.timeline.length && !abierto) return h('div', { className: 'op-vacio' }, esDiario(l) ? 'Todavía no hay cortes registrados.' : 'Sin cuotas.');
   return h('div', { className: 'dp-crono' },
     h('div', { className: 'dp-crono-h' },
@@ -277,7 +303,9 @@ function DpExtras(p){
   var m = p.m, l = m.loan, out = [];
   if (m.dv) out.push(h('div', { key: 'dv', className: 'dp-card' }, h('div', { className: 'dp-card-t' }, 'Interés por días'),
     dpFila('Devengado por cobrar', fmt(m.dv.interesPendiente), dpUsd(m, m.dv.interesPendiente), 'var(--blue)',
-      m.dv.diasDesdeUltimoCorte + ' día' + (m.dv.diasDesdeUltimoCorte === 1 ? '' : 's') + ' × ' + fmt(Math.round(m.dv.capitalVivo * (+l.tasaMensual || 0) / 100 / 30)) + '/día'),
+      m.dv.diasActivosDesdeUltimoCorte + ' día' + (m.dv.diasActivosDesdeUltimoCorte === 1 ? '' : 's') + ' × ' + fmt(Math.round(m.dv.capitalVivo * (+l.tasaMensual || 0) / 100 / 30)) + '/día' +
+        (m.dv.diasCongeladosDesdeUltimoCorte > 0 ? ' · ' + m.dv.diasCongeladosDesdeUltimoCorte + ' congelados sin interés' : '')),
+    estaCongelado(l) && dpFila('Ritmo', 'En pausa', null, 'var(--blue)', 'congelado desde el ' + opCorta(l.congeladoDesde) + ': no corre interés'),
     dpFila('Último corte', m.dv.fechaUltimoCorte ? opCortaAnio(m.dv.fechaUltimoCorte) : 'sin cortes aún')));
   if (m.lotes){
     var u = m.lotes.reduce(function(s, c){ return s + (+c.monto || 0); }, 0), c = m.lotes.reduce(function(s, x){ return s + (+x.monto || 0) * (+x.tasa || 0); }, 0);
@@ -362,7 +390,9 @@ export function DeudorPanel(props){
         h('div', { className: 'dp-fig-s' }, m.pct + '% del capital recuperado')),
       m.dv
         ? h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, 'Interés devengado'), h('div', { className: 'dp-fig-v mono', style: { color: 'var(--blue)' } }, fmt(m.dv.interesPendiente)), dpUsd(m, m.dv.interesPendiente),
-            h('div', { className: 'dp-fig-s' }, m.dv.diasDesdeUltimoCorte + ' días desde el último corte'))
+            h('div', { className: 'dp-fig-s' }, cong
+              ? 'congelado desde el ' + opCorta(l.congeladoDesde) + ': no corre'
+              : m.dv.diasActivosDesdeUltimoCorte + ' días desde el último corte' + (m.dv.diasCongeladosDesdeUltimoCorte > 0 ? ' (sin ' + m.dv.diasCongeladosDesdeUltimoCorte + ' congelados)' : '')))
         : h('div', { className: 'dp-fig' }, h('div', { className: 'dp-fig-l' }, cong ? 'Lo que queda por vencer' : 'Próxima cuota'),
             m.prox ? [h('div', { key: 'v', className: 'dp-fig-v mono', style: { color: m.dProx === 0 ? 'var(--yellow)' : 'var(--text)' } }, fmt(pendCuota(m.prox))), h('span', { key: 'u' }, dpUsd(m, pendCuota(m.prox))),
               h('div', { key: 's', className: 'dp-fig-s' }, 'cuota ' + m.prox.cuotaN + ' · ' + opCorta(m.prox.fechaPago) + ' · ' + opRel(hoy, m.prox.fechaPago) +

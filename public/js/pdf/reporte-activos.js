@@ -103,7 +103,7 @@ export function generateReportePrestamosPDF(loans, pays, darkMode) {
     if (esDiario(l)) {
       devD = estadoDiario(l, lp, nowStr());
       vencLabel = devD.fechaUltimoCorte ? fmtD(devD.fechaUltimoCorte) : fmtD(l.fechaInicio);
-      proxLabel = devD.diasDesdeUltimoCorte + ' días';
+      proxLabel = devD.diasActivosDesdeUltimoCorte + ' días';
       proxValor = Math.round(devD.capitalVivo * (+l.tasaMensual || 0) / 100 / 30);
       proxValorLabel = money(proxValor) + '/día';
       saldo = devD.capitalVivo + devD.interesPendiente;

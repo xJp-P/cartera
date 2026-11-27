@@ -108,7 +108,8 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   if (diario) {
     var porDia = L.interesDia;
     desglose.push(dsg('Interés acumulado',
-      L.diasDevengados + ' día(s) x ' + money(porDia) + ' por día',
+      L.diasDevengados + ' día(s) x ' + money(porDia) + ' por día' +
+        (L.diasCongeladosDiario > 0 ? ', sin ' + L.diasCongeladosDiario + ' día(s) congelados' : ''),
       money(L.interesDevengado), C.amber));
   } else if (L.moraCount > 0) {
     desglose.push(dsg('Intereses atrasados',
@@ -272,6 +273,11 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   var vigencia;
   if (L.capitalPendiente <= 0 && L.total <= 0) {
     vigencia = '<b>El capital ya fue devuelto en su totalidad.</b> Este documento deja constancia del cierre.';
+  } else if (diario && L.congelado) {
+    // Fase 2: congelado no corre el interes, asi que el valor no cambia de un dia a otro.
+    vigencia = '<b>Este valor no cambia mientras el crédito siga congelado.</b> ' +
+      'Está congelado desde el ' + fmtD(L.congeladoDesde) + ': no corre el interés diario. ' +
+      'Si se descongela, el interés vuelve a correr y el monto a pagar cambia.';
   } else if (diario) {
     vigencia = '<b>Este valor es válido únicamente para el ' + fmtD(hasta) + '.</b> ' +
       'El crédito genera intereses cada día, así que a partir del día siguiente el monto a pagar cambia. ' +

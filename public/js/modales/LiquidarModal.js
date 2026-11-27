@@ -70,7 +70,8 @@ export function LiquidarModal(props){
         L.cargaPendiente,'var(--yellow)'),
       // Credito abierto: su interes NO vive en ninguna fila (se deriva del tiempo), asi
       // que sin esta linea el TOTAL incluia un devengo que el desglose no explicaba.
-      L.esDiario&&L.interesDevengado>0&&rowLine('Interés acumulado',L.diasDevengados+' día(s) a '+fmt(L.interesDia)+'/día',L.interesDevengado,'var(--yellow)'),
+      L.esDiario&&L.interesDevengado>0&&rowLine('Interés acumulado',L.diasDevengados+' día(s) a '+fmt(L.interesDia)+'/día'+
+        (L.diasCongeladosDiario>0?' · sin '+L.diasCongeladosDiario+' día(s) congelados':''),L.interesDevengado,'var(--yellow)'),
       L.partialPend>0&&rowLine('Abonos parciales','Ya recibidos',-Math.abs(L.partialPend),'var(--blue)'),
       L.incluyeProxMes&&rowLine(lblExtra,
         L.periodoIrregular

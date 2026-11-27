@@ -1,4 +1,4 @@
-// public/js/modales/CongelarModal.js — Congelar y descongelar un préstamo (post-4.1.6, Fase 1).
+// public/js/modales/CongelarModal.js — Congelar y descongelar un préstamo (post-4.1.6, Fases 1 y 2).
 //
 // Aprobado por el PO sobre una maqueta. Un préstamo congelado sigue Activo: lo vencido se sigue
 // debiendo (se cobra, se condona y se liquida); desde la fecha del congelamiento NO corren intereses
@@ -15,12 +15,17 @@
 // cuotas que el motor rehace después. La ventana no calcula nada propio; manda el backend, y la
 // sección F de `tests/congelar.js` exige que la vista previa sea exactamente lo que queda.
 //
+// ── EL CRÉDITO ABIERTO (Fase 2) ───────────────────────────────────────────────
+// No hay cuotas ni cuota de cierre: congelado, el interés diario deja de correr. Lo devengado hasta
+// ese día se conserva (se cobra con un corte o se condona), y por eso no hay «Perdonarlos». Las dos
+// ventanas muestran lo que se deja de cobrar entre la fecha y hoy, y al descongelar, el interés por día.
+//
 // Prefijo `cgm-` (modales.css). Las dos se confirman con `_submitGuard` (los endpoints no son
 // idempotentes: un doble clic intentaria congelar dos veces).
 
 import { ABtn, Fld, Modal } from '../componentes/base.js';
 import { copToUsd, fmt } from '../core/format.js';
-import { pendCuota } from '../core/dominio.js';
+import { pendCuota, MODALIDAD_DIARIA } from '../core/dominio.js';
 import { cgPlanCongelar, cgPlanDescongelar } from '../core/congelar.js';
 import { opModalidad, opCorta, opCortaAnio } from '../core/operacion.js';
 import { h, useState } from '../core/react.js';
@@ -51,6 +56,42 @@ function cgmCab(){
 }
 function cgmHielo(texto){ return h('div', { className: 'cgm-hielo' }, h('span', null, '❄'), h('span', null, texto)); }
 
+// ── El crédito abierto: lo que cambia al congelar y al descongelar (sin cuotas) ──
+function cgmResultadoCongelarDiario(plan, money){
+  var desdeTxt = plan.ultimoCorte ? 'desde el último corte, el ' + opCorta(plan.ultimoCorte) : 'desde el inicio, el ' + opCorta(plan.inicio);
+  return [
+    h('div', { key: 'r', className: 'cgm-res v4m-grupo' },
+      h('div', { className: 'cgm-res-t' }, 'Así queda el crédito'),
+      cgmLinea('Devengado hasta el congelamiento', null, plan.devengado > 0 ? money(plan.devengado) + ' · se sigue debiendo' : 'nada por cobrar', 'fuerte',
+        ' (' + cgmPlural(plan.dias, 'día', 'días') + ' ' + desdeTxt + ')'),
+      plan.diasSinCobrar > 0 && cgmLinea('Del ' + opCorta(plan.F) + ' a hoy', money(plan.devHoyAntes), money(plan.devHoyDespues), null,
+        ' (' + cgmPlural(plan.diasSinCobrar, 'día congelado', 'días congelados') + ': ' + money(plan.noSeCobra) + ' que no se cobran)'),
+      cgmLinea('Después', null, 'no corre el interés (hoy ' + money(plan.interesDia) + ' por día)', 'suave'),
+      cgmLinea('Capital', null, money(plan.capital) + ' · sin cambios', 'suave'),
+      plan.liqAntes === plan.liqDespues
+        ? cgmLinea('Debes hoy (liquidar todo)', null, money(plan.liqDespues) + ' · sin cambios', 'suave')
+        : cgmLinea('Debes hoy (liquidar todo)', money(plan.liqAntes), money(plan.liqDespues))),
+    h('div', { key: 'p', className: 'cgm-crono' },
+      h('div', { className: 'cgm-crono-t' }, 'Vista previa del interés'),
+      cgmLinea('Del ' + opCorta(plan.inicio) + ' al ' + opCorta(plan.F), null, money(plan.devengado), null,
+        ' (' + cgmPlural(plan.dias, 'día', 'días') + ' × ' + money(plan.interesDia) + ', corre)'),
+      cgmHielo('Congelado desde el ' + opCortaAnio(plan.F) + ' · no corre el interés diario'))];
+}
+function cgmResultadoDescongelarDiario(plan, money){
+  return [
+    h('div', { key: 'r', className: 'cgm-res v4m-grupo' },
+      h('div', { className: 'cgm-res-t' }, 'Así queda el crédito'),
+      cgmLinea('Estuvo congelado', null, cgmPlural(plan.diasCongelado, 'día', 'días') + ' sin interés', 'suave'),
+      cgmLinea('Desde el ' + opCorta(plan.D), null, money(plan.interesDia) + ' por día', 'fuerte', ' (el interés vuelve a correr)'),
+      cgmLinea('Devengado por cobrar al ' + opCorta(plan.D), null, plan.devengado > 0 ? money(plan.devengado) + ' · se sigue debiendo' : 'nada por cobrar', 'suave'),
+      plan.diasCorridos > 0 && cgmLinea('Hoy', null, money(plan.devHoy), null, ' (con ' + cgmPlural(plan.diasCorridos, 'día', 'días') + ' que vuelven a correr)'),
+      cgmLinea('Capital', null, money(plan.capital) + ' · sin cambios', 'suave')),
+    h('div', { key: 'p', className: 'cgm-crono' },
+      h('div', { className: 'cgm-crono-t' }, 'Vista previa del interés'),
+      cgmHielo('Congelado del ' + opCortaAnio(plan.abierto.desde) + ' al ' + opCortaAnio(plan.D) + ' · ' + cgmPlural(plan.diasCongelado, 'día', 'días') + ' sin interés'),
+      cgmLinea('Desde el ' + opCorta(plan.D), null, money(plan.interesDia) + ' por día', null, ' (corre)'))];
+}
+
 // ══ CONGELAR ════════════════════════════════════════════════════════════════════════
 export function CongelarModal(props){
   var loan = props.loan, onClose = props.onClose, onConfirm = props.onConfirm;
@@ -71,6 +112,29 @@ export function CongelarModal(props){
     return _submitGuard(sending, setSending, function(){
       return onConfirm(loan.id, { desde: plan.F, perdonar: plan.perdona, observaciones: obs });
     });
+  }
+
+  if (loan.modalidad === MODALIDAD_DIARIA) {
+    return h(Modal, { onClose: onClose, tall: true, wide: true },
+      h('div', null,
+        h('div', { className: 'v4m-tit' }, 'Congelar préstamo'),
+        h('div', { className: 'cgm-subt' }, loan.nombre, ' · ', opModalidad(loan.modalidad), esUSD ? ' · USD' : '')),
+      h('div', { className: 'cgm-aviso v4m-caja-info' },
+        'Mientras esté congelado ', h('b', null, 'no corre el interés diario'),
+        '. Lo devengado hasta ese día se sigue debiendo: lo cobras con un corte o lo condonas. El capital no cambia y puedes abonarle con un corte. ',
+        'Queda congelado hasta que lo descongeles con el botón «Descongelar».'),
+      h(Fld, { label: 'Congelar desde' },
+        h('div', { className: 'cgm-fecha' },
+          h('input', { type: 'date', className: 'inp', value: desde, max: hoy, min: plan.inicio || undefined, onChange: function(e){ setDesde(e.target.value); } }),
+          h('button', { type: 'button', className: 'cgm-hoy v4m-pulsa' + (desde === hoy ? ' on' : ''), onClick: function(){ setDesde(hoy); } }, 'Hoy'))),
+      !ok && plan.error && h('div', { className: 'cgm-error v4m-caja-peligro' }, plan.error),
+      ok && cgmResultadoCongelarDiario(plan, money),
+      h(Fld, { label: 'Motivo (opcional)' },
+        h('input', { type: 'text', value: obs, onChange: function(e){ setObs(e.target.value); }, placeholder: 'Queda en el Historial', className: 'inp' })),
+      ok && h('div', { className: 'cgm-nota' }, 'Queda en el Historial y se puede deshacer desde ahí. Mientras esté congelado puedes registrar cortes: cobrar lo devengado o abonar a capital.'),
+      h('div', { className: 'cgm-acc' },
+        h('button', { onClick: onClose, className: 'v4m-pulsa cgm-cancelar' }, 'Cancelar'),
+        h(ABtn, { tono: 'info', icon: 'snow', label: sending ? 'Congelando…' : 'Congelar préstamo', disabled: !ok || sending, onClick: submit })));
   }
 
   // ── Los días del período en curso: cobrarlos o perdonarlos ──
@@ -162,6 +226,27 @@ export function DescongelarModal(props){
     return _submitGuard(sending, setSending, function(){
       return onConfirm(loan.id, { desde: plan.D, primerPago: plan.primer, observaciones: obs });
     });
+  }
+  if (loan.modalidad === MODALIDAD_DIARIA) {
+    return h(Modal, { onClose: onClose, tall: true, wide: true },
+      h('div', null,
+        h('div', { className: 'v4m-tit' }, 'Descongelar préstamo'),
+        h('div', { className: 'cgm-subt' }, loan.nombre, ' · ', opModalidad(loan.modalidad), esUSD ? ' · USD' : '',
+          ab ? ' · congelado desde el ' + opCortaAnio(ab.desde) + ' (' + cgmPlural(plan.diasCongelado || 0, 'día', 'días') + ')' : '')),
+      h('div', { className: 'cgm-aviso v4m-caja-bien' },
+        'El interés diario vuelve a correr desde el día en que lo descongelas, sobre el capital vivo. Lo devengado antes del congelamiento se sigue debiendo.'),
+      h(Fld, { label: 'Descongelar el' },
+        h('div', { className: 'cgm-fecha' },
+          h('input', { type: 'date', className: 'inp', value: desde, max: hoy, min: ab ? ab.desde : undefined, onChange: function(e){ setDesde(e.target.value); } }),
+          h('button', { type: 'button', className: 'cgm-hoy v4m-pulsa' + (desde === hoy ? ' on' : ''), onClick: function(){ setDesde(hoy); } }, 'Hoy'))),
+      !ok && plan.error && h('div', { className: 'cgm-error v4m-caja-peligro' }, plan.error),
+      ok && cgmResultadoDescongelarDiario(plan, money),
+      h(Fld, { label: 'Motivo (opcional)' },
+        h('input', { type: 'text', value: obs, onChange: function(e){ setObs(e.target.value); }, placeholder: 'Queda en el Historial', className: 'inp' })),
+      ok && h('div', { className: 'cgm-nota' }, 'Queda en el Historial y se puede deshacer desde ahí.'),
+      h('div', { className: 'cgm-acc' },
+        h('button', { onClick: onClose, className: 'v4m-pulsa cgm-cancelar' }, 'Cancelar'),
+        h(ABtn, { tono: 'pri', icon: 'refresh', label: sending ? 'Descongelando…' : 'Descongelar', disabled: !ok || sending, onClick: submit })));
   }
   var sugeridoTxt = freq === 'Semanal' ? 'una semana después' : freq === 'Quincenal' ? 'dos semanas después' : 'el siguiente día ' + (+loan.diaPago || '');
   var p1 = plan.primera, nrm = plan.normal;

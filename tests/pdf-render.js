@@ -2135,6 +2135,48 @@ function loansDelCaso(caso) {
     /<span class="sub">congelado<\/span>/.test(hB) && vis(hB).indexOf('no incluye tu crédito congelado') !== -1, vis(pieB));
   const hGN = emitir(() => S.generateReciboGeneral([L(IDC)], pays, '', { hasta: HOYV }));
   R.check('V5 ANTI-TRIVIAL: sin congelar, el recibo general no dice «congelado»', vis(hGN).toLowerCase().indexOf('congelad') === -1);
+
+  // ── El credito abierto (Fase 2) ──
+  // El diario del fixture sin su corte del 31-jul (1.000 por dia, ultimo corte el 16-jul), congelado el 21-jul.
+  const DIA = 'fixture-diario-01';
+  const paysDi = pays.filter(p => p.id !== DIA + '-ct-2');
+  const pDi = S.cgPlanCongelar(L(DIA), paysDi, '2026-07-21', false, HOYV);
+  const lDiC = pDi.loanN;
+  const hEC = emitir(() => S.generateEstadoCuentaDiario(lDiC, paysDi, { hasta: HOYV }));
+  const tEC = vis(hEC);
+  R.check('V7 estado de cuenta: el tramo congelado se rotula «Congelado» y va DESPUÉS del corte del 16-jul; el total cuenta 20 días con interés',
+    pDi.ok && /<tr class="cg"><td>[^<]+<\/td><td>[^<]+<\/td><td class="n">10<\/td><td class="n">[^<]+<\/td><td class="n">Congelado<\/td><\/tr>/.test(hEC) &&
+    hEC.indexOf('Corte #1') !== -1 && hEC.indexOf('Corte #1') < hEC.indexOf('class="cg"') && tEC.indexOf('20 días con interés') !== -1 &&
+    hEC.indexOf('tr.cg td{') !== -1, tEC.slice(0, 900));
+  R.check('V7 y lo dice: la fila «Congelado desde el …», los días sin los congelados y la nota de que el valor no cambia',
+    tEC.indexOf('Congelado desde el ') !== -1 && tEC.indexOf('5 día(s) x ' + pesos(1000) + '/día desde el último corte') !== -1 &&
+    tEC.indexOf('sin 10 día(s) congelados') !== -1 && tEC.indexOf('Mientras siga congelado no corre el interés') !== -1 &&
+    tEC.indexOf('Los tramos congelados no generan interés.') !== -1, tEC.slice(-900));
+  const corte25 = { id: DIA + '-ct-9', prestamoId: DIA, nombreCliente: L(DIA).nombre, cuotaN: 9, fechaPago: '2026-07-25', saldoInicial: 1000000,
+    interesPeriodo: 5000, abonoCapital: 0, cuotaTotal: 5000, saldoFinal: 1000000, estadoPago: 'Pagado', fechaRecaudo: '2026-07-25', partialPaid: 5000,
+    montoCOPRecibido: 5000, recibos: JSON.stringify([{ fecha: '2026-07-25', cop: 5000 }]), observaciones: '' };
+  const hEC2 = emitir(() => S.generateEstadoCuentaDiario(lDiC, paysDi.concat([corte25]), { hasta: HOYV }));
+  const ordEC = (hEC2.match(/Corte #\d+|class="cg"|<tr><td>/g) || []).map(x => x === 'class="cg"' ? 'cong' : x === '<tr><td>' ? 'corre' : x);
+  R.eq('V7b con un corte DURANTE el congelamiento: corre, corte #1, corre, congelado, corte #9 (tras el pedazo que termina ese día), congelado',
+    ordEC, ['corre', 'Corte #1', 'corre', 'cong', 'Corte #9', 'cong']);
+  const hECN = emitir(() => S.generateEstadoCuentaDiario(L(DIA), paysDi, { hasta: HOYV }));
+  R.check('V7 ANTI-TRIVIAL: sin congelar, ni la fila, ni el estilo, ni la nota', hECN.indexOf('class="cg"') === -1 && hECN.indexOf('tr.cg') === -1 &&
+    vis(hECN).toLowerCase().indexOf('congelad') === -1 && vis(hECN).indexOf('15 día(s) x ') !== -1);
+  const hFD = emitir(() => S.generateFacturaCobroDiario(lDiC, paysDi, config.datos_pago, { hasta: HOYV }));
+  const tFD = vis(hFD);
+  R.check('V8 la factura del crédito abierto: «congelado desde el …», el interés por día en pausa y 5 días (sin los 10 congelados)',
+    tFD.indexOf('Crédito abierto congelado desde el ') !== -1 && tFD.indexOf('Interés por día En pausa (congelado)') !== -1 &&
+    / · sin 10 día\(s\) congelados 5 /.test(tFD + ' ') && tFD.indexOf(pesos(5000)) !== -1, tFD.slice(0, 900));
+  const hRC = emitir(() => S.generateReciboCorte(lDiC, paysDi.concat([corte25]), corte25, {}));
+  const tRC = vis(hRC);
+  R.check('V9 el recibo de un corte durante el congelamiento: 5 días (sin los 4 congelados) y «Congelado … En pausa»',
+    tRC.indexOf('5 día(s) x ' + pesos(1000) + '/día desde ') !== -1 && tRC.indexOf('sin 4 día(s) congelados') !== -1 &&
+    tRC.indexOf('No genera interés hasta que se descongele') !== -1 && tRC.indexOf('En pausa') !== -1 && tRC.indexOf('Desde mañana genera') === -1, tRC.slice(0, 900));
+  const hLQ = emitir(() => S.generateEstadoLiquidacion(lDiC, paysDi, config.datos_pago, { incluyeProxMes: false, hasta: HOYV }));
+  const tLQ = vis(hLQ);
+  R.check('V10 el estado de liquidación: el valor no cambia mientras siga congelado, y el interés acumulado son 5 días (sin 10 congelados)',
+    tLQ.indexOf('Este valor no cambia mientras el crédito siga congelado.') !== -1 && tLQ.indexOf('5 día(s) x ' + pesos(1000) + ' por día, sin 10 día(s) congelados') !== -1 &&
+    tLQ.indexOf('válido únicamente para el') === -1 && tLQ.indexOf(pesos(1005000)) !== -1, tLQ.slice(0, 900));
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────

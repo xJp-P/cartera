@@ -41,7 +41,7 @@ const express = require('express');
 // de verdad de que es un abono. Antes cada sitio repetia el literal indexOf('-ab-').
 const { esAbono, esCuotaRegular } = require('../core/ids');
 const { diasEntre, sumarDias, interesPeriodoParcial, cargaDeCuota, congelamientosDe, congeladoAbierto,
-  primeraCongelada, textoCierre, inicioCuenta } = require('../core/engine');
+  primeraCongelada, textoCierre, inicioCuenta, interesDeTramo } = require('../core/engine');
 const { nfc } = require('../core/util');
 
 module.exports = function crearRutasLoans(ctx) {
@@ -895,7 +895,7 @@ module.exports = function crearRutasLoans(ctx) {
         payload: {
           ok: true,
           corte: { id: filaCorte.id, n: n, fecha: fechaCorte, interesPagado: intPagado, abonoCapital: abonoCap, total: total },
-          antes:   { capitalVivo: dev.capitalVivo,     interesPendiente: dev.interesPendiente,     diasDevengados: dev.diasDesdeUltimoCorte },
+          antes:   { capitalVivo: dev.capitalVivo,     interesPendiente: dev.interesPendiente,     diasDevengados: dev.diasActivosDesdeUltimoCorte },
           despues: { capitalVivo: devPost.capitalVivo, interesPendiente: devPost.interesPendiente },
           saldado: saldado,
         },
@@ -1005,7 +1005,9 @@ module.exports = function crearRutasLoans(ctx) {
   // desde la fecha del congelamiento no corren intereses ni nacen cuotas, hasta descongelarlo a
   // mano. Se guarda la DECISION en `congelamientos` y el motor la aplica (engine.js, "CONGELAR
   // PRESTAMO"), asi que todas las rutas que rehacen cuotas la respetan solas. Sin caja.
-  const CONGELABLES = ['Intereses', 'Capital + Intereses'];
+  // Credito abierto (Fase 2): no hay cuotas; `devengoDiario` no devenga en los dias congelados.
+  // Lo devengado hasta el congelamiento se conserva (se cobra con un corte o se condona).
+  const CONGELABLES = ['Intereses', 'Capital + Intereses', MODALIDAD_DIARIA];
   const ymdLocal = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const pesosC = x => '$' + Math.round(x).toLocaleString('es-CO');
   const MESES_C = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -1059,6 +1061,60 @@ module.exports = function crearRutasLoans(ctx) {
     return sumarDias(desde, 30);
   }
 
+  // ── El credito abierto (Fase 2) ──
+  // No hay cuota en curso ni cronograma: congelar solo guarda la decision, y el motor deja de
+  // devengar desde ese dia. El tramo abierto se parte en el congelamiento: lo corrido antes se
+  // debe (y se cobra con un corte o se condona); lo de despues no existe.
+  function ultimoCorteDe(loan) {
+    const cortes = cortesDe(loan.id);
+    return { cortes, fecha: cortes.length ? cortes[cortes.length - 1].fechaPago : loan.fechaInicio };
+  }
+  function congelarDiario(loan, F, perdonar, observaciones) {
+    if (perdonar) {
+      throw new ClientError('En un crédito abierto lo devengado hasta el congelamiento se conserva y se sigue debiendo: ' +
+        'para perdonarlo usa «Condonar intereses».');
+    }
+    const u = ultimoCorteDe(loan);
+    if (F < u.fecha) {
+      throw new ClientError('Congela desde el ' + fechaC(u.fecha) + ' o después: ' +
+        (u.cortes.length ? 'ese día se registró el último corte.' : 'ese día empezó el crédito.'));
+    }
+    const dev = devengoDiario(loan, u.cortes, F);
+    if (dev.capitalVivo <= 0) throw new ClientError('Este crédito ya no tiene capital vivo: no corre interés que congelar.');
+    // `devengado`: lo que se debia al congelar (informativo: un corte o una condonacion lo cambian).
+    const registro = { desde: F, hasta: null, cuotaN: null, fecha: null, inicio: u.fecha, dias: dev.diasActivosDesdeUltimoCorte,
+      interes: 0, devengado: dev.interesPendiente, perdona: false, cuotaAntes: 0 };
+    const historial = congelamientosDe(loan).concat([registro]);
+    const nota = String(observaciones || '').trim();
+    return {
+      descripcion: 'Congelaste el crédito abierto de ' + loan.nombre + ' desde el ' + fechaC(F) + ' — el interés deja de correr; ' +
+        'lo devengado hasta ese día (' + pesosC(dev.interesPendiente) + ') se sigue debiendo' + (nota ? ' (' + nota + ')' : ''),
+      afectaCaja: false,
+      payload: { ok: true, congeladoDesde: F, cierre: null, quitadas: 0, perdona: false, devengado: dev.interesPendiente },
+      aplicar: () => {
+        db.prepare('UPDATE loans SET congeladoDesde = ?, congelamientos = ? WHERE id = ?').run(F, JSON.stringify(historial), loan.id);
+      },
+    };
+  }
+  function descongelarDiario(loan, abierto, D, observaciones) {
+    const u = ultimoCorteDe(loan);
+    if (D < u.fecha) throw new ClientError('No se puede descongelar antes del ' + fechaC(u.fecha) + ', el día del último corte.');
+    const historial = congelamientosDe(loan).map((c, k, a) => k === a.length - 1 ? Object.assign({}, c, { hasta: D, primerPago: null }) : c);
+    const dev = devengoDiario(loan, u.cortes, D);
+    const porDia = Math.round(interesDeTramo(dev.capitalVivo, +loan.tasaMensual || 0, 30) / 30);
+    const diasCong = diasEntre(abierto.desde, D);
+    const nota = String(observaciones || '').trim();
+    return {
+      descripcion: 'Descongelaste el crédito abierto de ' + loan.nombre + ' el ' + fechaC(D) + ' (estuvo congelado ' + diasCong + ' día' + (diasCong === 1 ? '' : 's') +
+        ') — el interés vuelve a correr desde ese día (' + pesosC(porDia) + ' por día)' + (nota ? ' (' + nota + ')' : ''),
+      afectaCaja: false,
+      payload: { ok: true, desde: D, primerPago: null, diasCongelado: diasCong, interesDia: porDia, primera: null },
+      aplicar: () => {
+        db.prepare('UPDATE loans SET congeladoDesde = NULL, congelamientos = ? WHERE id = ?').run(JSON.stringify(historial), loan.id);
+      },
+    };
+  }
+
   router.post('/api/loans/:id/congelar', (req, res) => {
     const { desde, perdonar, observaciones } = req.body || {};
     const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id);
@@ -1067,15 +1123,14 @@ module.exports = function crearRutasLoans(ctx) {
       // ── FASE 1: lectura + validacion + computo, sin escribir ──
       if (loan.estado !== 'Activo') throw new ClientError('Solo se congela un crédito activo (este está ' + loan.estado + ').');
       if (CONGELABLES.indexOf(loan.modalidad) === -1) {
-        throw new ClientError(loan.modalidad === MODALIDAD_DIARIA
-          ? 'Los créditos de interés diario todavía no se pueden congelar.'
-          : 'Un crédito ' + (loan.modalidad === 'Prestamo' ? 'sin intereses' : 'de pago único') + ' no genera intereses por período: no hay nada que congelar.');
+        throw new ClientError('Un crédito ' + (loan.modalidad === 'Prestamo' ? 'sin intereses' : 'de pago único') + ' no genera intereses por período: no hay nada que congelar.');
       }
       if (loan.congeladoDesde) throw new ClientError('Este crédito ya está congelado desde el ' + fechaC(loan.congeladoDesde) + '.');
       const hoy = hoyStr();
       const F = desde ? String(desde) : hoy;
       if (!fechaValida(F)) throw new ClientError('La fecha del congelamiento no es válida.');
       if (F > hoy) throw new ClientError('No se puede congelar con una fecha futura: congela el día en que empieza.');
+      if (loan.modalidad === MODALIDAD_DIARIA) return congelarDiario(loan, F, perdonar, observaciones);
       const pays = db.prepare('SELECT * FROM payments WHERE prestamoId = ?').all(req.params.id);
       const regs = pays.filter(esCuotaRegular).sort((a, b) => a.cuotaN - b.cuotaN);
       // La cuota EN CURSO: la primera por vencer despues del congelamiento.
@@ -1150,6 +1205,7 @@ module.exports = function crearRutasLoans(ctx) {
       if (!fechaValida(D)) throw new ClientError('La fecha para descongelar no es válida.');
       if (D > hoy) throw new ClientError('No se puede descongelar con una fecha futura.');
       if (D < abierto.desde) throw new ClientError('No se puede descongelar antes del ' + fechaC(abierto.desde) + ', el día en que se congeló.');
+      if (loan.modalidad === MODALIDAD_DIARIA) return descongelarDiario(loan, abierto, D, observaciones);
       const primer = primerPago ? String(primerPago) : siguientePagoTras(loan, D);
       if (!fechaValida(primer)) throw new ClientError('La fecha del primer pago no es válida.');
       if (primer <= D) throw new ClientError('El primer pago tiene que ser después del ' + fechaC(D) + ', el día en que se descongela.');

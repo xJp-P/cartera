@@ -1709,6 +1709,58 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     // La edicion bloquea los campos financieros de un prestamo con un congelamiento en su historia.
     R.check('R13 LoanModal: un congelamiento en la historia cuenta como actividad (campos financieros bloqueados)',
       /if\(loan\.congeladoDesde\|\|congelamientosDe\(loan\)\.length\) return true;/.test(leer('public/js/modales/LoanModal.js')));
+
+    // ── El credito abierto (Fase 2) ──
+    // El diario del fixture sin su corte del 31-jul: 1.000.000 al 3% (1.000 por dia), ultimo corte el 16-jul.
+    const lDi = loans.find(l => l.id === 'fixture-diario-01');
+    const paysDi = pays.filter(p => p.id !== 'fixture-diario-01-ct-2');
+    const dpDiN = montar(X.DeudorPanel, Object.assign(propsPanel(lDi), { pays: paysDi }), [undefined, undefined, true]);
+    const opDi = nodos(conClase(dpDiN.arbol, 'dp-menu')[0], n => n.tag === 'button');
+    llamadasAcc.length = 0;
+    opDi.filter(b => textos(b).join('') === 'Congelar préstamo').forEach(b => b.props.onClick());
+    R.eq('R14 crédito abierto sin congelar: «Más» ofrece «Congelar préstamo» y abre su ventana', llamadasAcc.map(x => x.k + ':' + x.arg.id), ['onCongelar:' + lDi.id]);
+    const planDi = X.cgPlanCongelar(lDi, paysDi, '2026-07-21', false, HOY);
+    const lDiC = planDi.loanN;
+    const loansDi = loans.map(l => l.id === lDi.id ? lDiC : l);
+    const dpDi = montar(X.DeudorPanel, Object.assign(propsPanel(lDiC), { loans: loansDi, pays: paysDi }), []);
+    const tDi = dpDi.todo.replace(/\u00a0/g, ' ');
+    const avDi = conClase(dpDi.arbol, 'dp-hielo-aviso')[0];
+    const tAvDi = avDi ? textos(avDi).join('').replace(/\u00a0/g, ' ') : '';
+    R.check('R15 congelado: el aviso dice que no corre el interés diario y que lo devengado ($ 5.000) se sigue debiendo',
+      planDi.ok && /Congelado desde el 21 jul 2026\./.test(tAvDi) && /No corre el interés diario\./.test(tAvDi) &&
+      /Lo devengado hasta ese día \(\$ 5\.000 por cobrar\) se sigue debiendo\./.test(tAvDi) && /Puedes registrar un corte/.test(tAvDi), tAvDi);
+    R.check('R15 «Descongelar» y «Registrar corte» a la vista; la figura y la tarjeta del devengo dicen que está en pausa',
+      botones(dpDi.arbol, /^Descongelar$/).length === 1 && botones(dpDi.arbol, /^Registrar corte$/).length === 1 &&
+      /Interés devengado \$ 5\.000 congelado desde el 21 jul: no corre/.test(tDi) && /5 días × \$ 1\.000\/día · 10 congelados sin interés/.test(tDi) && /Ritmo congelado desde el 21 jul: no corre interés En pausa/.test(tDi), tDi.slice(0, 300));
+    const filasDi = nodos(conClase(dpDi.arbol, 'dp-crono')[0], n => /\b(dp-hielo|dp-crono-f)\b/.test(String(n.props && n.props.className || '')))
+      .map(n => /\bdp-hielo\b/.test(n.props.className) ? 'franja' : 'corte');
+    R.eq('R16 el cronograma de cortes: el corte del 16-jul y despues la franja del congelamiento (abierto, al final)', filasDi, ['corte', 'franja']);
+    R.check('R16 la franja de un crédito abierto no habla de cuotas: «no corre el interés»',
+      conClase(dpDi.arbol, 'dp-hielo').map(n => textos(n).join('')).some(t => /no corre el interés$/.test(t) && t.indexOf('cuotas') === -1));
+    // Descongelado el 25-jul con un corte el 28: la franja cerrada va entre los dos cortes, por fecha.
+    const pDes = X.cgPlanDescongelar(lDiC, paysDi, '2026-07-25', null, HOY);
+    const corte28 = { id: 'fixture-diario-01-ct-9', prestamoId: lDi.id, nombreCliente: lDi.nombre, cuotaN: 9, fechaPago: '2026-07-28', saldoInicial: 1000000,
+      interesPeriodo: 5000, abonoCapital: 0, cuotaTotal: 5000, saldoFinal: 1000000, estadoPago: 'Pagado', fechaRecaudo: '2026-07-28', partialPaid: 5000,
+      montoCOPRecibido: 5000, recibos: JSON.stringify([{ fecha: '2026-07-28', cop: 5000 }]) };
+    const dpDes = montar(X.DeudorPanel, Object.assign(propsPanel(pDes.loanN), { loans: loans.map(l => l.id === lDi.id ? pDes.loanN : l), pays: paysDi.concat([corte28]) }), []);
+    const filasDes = nodos(conClase(dpDes.arbol, 'dp-crono')[0], n => /\b(dp-hielo|dp-crono-f)\b/.test(String(n.props && n.props.className || '')))
+      .map(n => /\bdp-hielo\b/.test(n.props.className) ? textos(n).join('').replace(/\u00a0/g, ' ') : 'corte');
+    R.check('R16 descongelado: la franja cerrada «Congelado del 21 jul al 25 jul · 4 días» va entre el corte del 16-jul y el del 28-jul',
+      pDes.ok && filasDes.length === 3 && filasDes[0] === 'corte' && /Congelado del 21 jul 2026 al 25 jul 2026 · 4 días sin interés$/.test(filasDes[1]) && filasDes[2] === 'corte', filasDes);
+    // El corte de un credito congelado.
+    const cmDi = montar(X.CorteModal, { loan: lDiC, pays: paysDi, onSave: () => Promise.resolve(null), onClose: () => {} }, []);
+    const tCmDi = cmDi.todo.replace(/\u00a0/g, ' ');
+    R.check('R17 el corte congelado: lo devengado son 5 días (sin los 10 congelados) y el aviso del congelamiento',
+      /por cobrar 5 día\(s\) x \$ 1\.000\/día · 10 día\(s\) congelados sin interés/.test(tCmDi) && /❄ Congelado desde el 21 de jul de 2026\./.test(tCmDi) &&
+      /puedes cobrar lo devengado hasta ese día o abonar a capital/.test(tCmDi), tCmDi.slice(0, 400));
+    const cmDiN = montar(X.CorteModal, { loan: lDi, pays: paysDi, onSave: () => Promise.resolve(null), onClose: () => {} }, []);
+    R.check('R17 ANTI-TRIVIAL: sin congelar, 15 días y sin aviso', /por cobrar 15 día\(s\) x \$ 1\.000\/día · último corte/.test(cmDiN.todo.replace(/\u00a0/g, ' ')) && cmDiN.todo.indexOf('Congelado desde') === -1);
+    // La liquidacion del congelado: sin interes que adelantar, con el aviso en vez de la casilla.
+    const Ldi = X.computeLiquidacion(lDiC, paysDi, { hasta: HOY });
+    const chk = montar(X.CheckInteresMes, { L: Ldi, checked: false, onChange: () => {} }, []);
+    R.check('R18 Liquidar un crédito abierto congelado: total = capital + lo devengado, sin interés del próximo mes, y el aviso',
+      Ldi.total === 1005000 && Ldi.intProxMes === 0 && Ldi.diasDevengados === 5 && Ldi.diasCongeladosDiario === 10 &&
+      /Congelado: no corre el interés/.test(chk.todo) && !nodos(chk.arbol, n => n.tag === 'input').length, chk.todo);
   }
 
   process.exit(R.finalizar());

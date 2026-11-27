@@ -209,6 +209,58 @@ function main() {
     R.eq('un ano no bisiesto tiene 365 dias', E.diasEntre('2026-01-01', '2027-01-01'), 365);
   }
 
+  // ── 10 — CONGELAR (post-4.1.6, Fase 2): los dias congelados no devengan ─────
+  R.seccion('10. Congelar: los días congelados no devengan, lo anterior se conserva');
+  {
+    const cg = (arr) => ({ congeladoDesde: arr.length && !arr[arr.length - 1].hasta ? arr[arr.length - 1].desde : null,
+      congelamientos: JSON.stringify(arr.map(c => Object.assign({ cuotaN: null, fecha: null, interes: 0, perdona: false }, c))) });
+    // 1.000 por dia. Congelado del 11-jul en adelante (abierto): al 31-jul, 10 dias, no 30.
+    const abierto = E.devengoDiario(L(cg([{ desde: '2026-07-11', hasta: null }])), [], '2026-07-31');
+    R.eq('congelado (abierto) el 11-jul: al 31-jul devengó 10 días (10.000), no 30', abierto.interesPendiente, 10000);
+    R.eq('el tramo se parte en el congelamiento: 10 días con interés y 20 congelados en 0',
+      abierto.tramos.map(t => [t.desde, t.hasta, t.dias, t.interes, !!t.congelado]),
+      [['2026-07-01', '2026-07-11', 10, 10000, false], ['2026-07-11', '2026-07-31', 20, 0, true]]);
+    R.eq('días activos 10 y congelados 20, que suman los días desde el último corte', [abierto.diasActivosDesdeUltimoCorte,
+      abierto.diasCongeladosDesdeUltimoCorte, abierto.diasDesdeUltimoCorte], [10, 20, 30]);
+    const despues = E.devengoDiario(L(cg([{ desde: '2026-07-11', hasta: null }])), [], '2026-09-30');
+    R.eq('mientras siga congelado, el devengo no crece (al 30-sep sigue en 10.000)', despues.interesPendiente, 10000);
+    // Cerrado: del 11 al 21-jul. Al 31-jul: 10 + 10 dias con interes.
+    const cerrado = E.devengoDiario(L(cg([{ desde: '2026-07-11', hasta: '2026-07-21' }])), [], '2026-07-31');
+    R.eq('congelado del 11 al 21-jul y descongelado: al 31-jul devengó 20 días (20.000)', cerrado.interesPendiente, 20000);
+    R.eq('y los pedazos son tres: corre, congelado, corre', cerrado.tramos.map(t => [t.dias, t.interes, !!t.congelado]),
+      [[10, 10000, false], [10, 0, true], [10, 10000, false]]);
+    // Con cortes: un congelamiento entre dos cortes solo toca su tramo; un corte durante el congelamiento
+    // cobra lo devengado (el tramo despues del corte sigue congelado).
+    const conCortes = E.devengoDiario(L(cg([{ desde: '2026-07-11', hasta: null }])), [ct(1, '2026-07-06', 5000, 0), ct(2, '2026-07-20', 5000, 0)], '2026-07-31');
+    R.eq('con un corte antes y otro durante el congelamiento: devengó 10 días (10.000), cobró 10.000, no debe nada',
+      [conCortes.interesDevengado, conCortes.interesCobrado, conCortes.interesPendiente], [10000, 10000, 0]);
+    R.eq('el tramo abierto (tras el corte del 20-jul) es todo congelado', conCortes.tramos.slice(-1).map(t => [t.desde, t.dias, t.interes, !!t.congelado]),
+      [['2026-07-20', 11, 0, true]]);
+    R.eq('y el cache no cuenta el tramo abierto', conCortes.cache.interesAcumuladoPend, 0);
+    // Un congelamiento de 0 dias (se descongelo el mismo dia) no cambia el devengo.
+    const cero = E.devengoDiario(L(cg([{ desde: '2026-07-11', hasta: '2026-07-11' }])), [], '2026-07-31');
+    const nada = E.devengoDiario(L(), [], '2026-07-31');
+    R.eq('un congelamiento de 0 días no cambia el devengo', cero.interesPendiente, nada.interesPendiente);
+    R.check('ANTI-TRIVIAL: sin congelamientos los tramos no se parten ni llevan la marca',
+      nada.tramos.length === 1 && nada.tramos.every(t => t.congelado === undefined) && nada.diasActivosDesdeUltimoCorte === 30 && nada.diasCongeladosDesdeUltimoCorte === 0);
+    // Propiedad: con cualquier congelamiento, el devengo es la suma de los pedazos activos, nunca negativo,
+    // y nunca mayor que sin congelar.
+    let malos = 0, casos = 0;
+    ['2026-07-05', '2026-07-15', '2026-07-30'].forEach(d => [null, '2026-07-20', '2026-08-10'].forEach(hs => {
+      if (hs && hs < d) return;
+      [[], [ct(1, '2026-07-10', 3000, 100000)], [ct(1, '2026-07-10', 3000, 0), ct(2, '2026-07-25', 0, 200000)]].forEach(cs => {
+        ['2026-07-31', '2026-08-20'].forEach(ha => {
+          casos++;
+          const con = E.devengoDiario(L(cg([{ desde: d, hasta: hs }])), cs, ha), sin = E.devengoDiario(L(), cs, ha);
+          const suma = con.tramos.reduce((s, t) => s + (t.congelado ? 0 : t.interes), 0);
+          if (con.interesDevengado !== suma || con.interesPendiente < 0 || con.interesDevengado > sin.interesDevengado ||
+              con.tramos.some(t => t.congelado && t.interes !== 0) || con.capitalVivo !== sin.capitalVivo) malos++;
+        });
+      });
+    }));
+    R.check('PROPIEDAD en ' + casos + ' casos: devengo = suma de los pedazos activos, nunca negativo ni mayor que sin congelar, el capital igual', malos === 0 && casos >= 40, { malos, casos });
+  }
+
   return R.finalizar();
 }
 

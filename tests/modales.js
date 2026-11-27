@@ -611,6 +611,32 @@ const BOTON_DE_COLOR = /background: (var\(--(green2|green|yellow|blue|red|bg4)\)
       /Lo vencido\s*\$ 1\.500\.000 · se sigue debiendo/.test(res(des)) && /Cuota de cierre \(7 ago\)\s*\$ 130\.000 · se sigue debiendo/.test(res(des)), res(des));
     R.check('G10 la cuota de cierre sigue debiendose en la vista previa (con su franja del congelamiento)',
       conClase(des, 'cgm-f').some(n => clsDe(n).indexOf('cierre') !== -1) && conClase(des, 'cgm-hielo').length === 1);
+
+    // ── El credito abierto (Fase 2): sin cuotas; lo devengado se conserva y el interes deja de correr ──
+    // El diario del fixture sin su corte del 31-jul: 1.000.000 al 3% (1.000 por dia), ultimo corte el 16-jul.
+    const DIA = 'fixture-diario-01';
+    const paysD = pays.filter(p => p.id !== DIA + '-ct-2');
+    const baseD = { loan: L(DIA), pays: paysD, hoy: '2026-07-31', onConfirm: () => Promise.resolve(null), onClose: nada };
+    const cgD = montar(X.CongelarModal, baseD, ['2026-07-21']).arbol;
+    const resD = res(cgD);
+    R.check('G11 crédito abierto: «Así queda» dice lo devengado que se conserva (5 días, $ 5.000) y lo que no se cobra hasta hoy (10 días, $ 10.000)',
+      /no corre el interés diario/.test(txt(cgD)) && /Devengado hasta el congelamiento \(5 días desde el último corte, el 16 jul\)\$ 5\.000 · se sigue debiendo/.test(resD) &&
+      /Del 21 jul a hoy \(10 días congelados: \$ 10\.000 que no se cobran\)\$ 15\.000→\$ 5\.000/.test(resD), resD);
+    R.check('G11 sin cuotas: ni «Cobrarlos / Perdonarlos» ni filas de cronograma; la vista previa es la del interés, con su franja',
+      !/Perdonarlos/.test(txt(cgD)) && conClase(cgD, 'cgm-f').length === 0 && conClase(cgD, 'cgm-hielo').length === 1 &&
+      /Del 16 jul al 21 jul \(5 días × \$ 1\.000, corre\)\$ 5\.000/.test(txt(cgD)), txt(cgD).slice(-500));
+    const envD = [];
+    boton(montar(X.CongelarModal, Object.assign({}, baseD, { onConfirm: (id, body) => { envD.push([id, body]); return Promise.resolve(null); } }), ['2026-07-21']).arbol, 'Congelar préstamo').props.onClick();
+    R.eq('G12 «Congelar préstamo» envía la fecha y perdonar en false (en un crédito abierto lo devengado se conserva)', envD, [[DIA, { desde: '2026-07-21', perdonar: false, observaciones: '' }]]);
+    const malD = montar(X.CongelarModal, baseD, ['2026-07-10']).arbol;
+    R.check('G12 antes del último corte: el mismo aviso del servidor y el botón apagado',
+      /Congela desde el 16 de julio de 2026 o después: ese día se registró el último corte\./.test(txt(malD)) && boton(malD, 'Congelar préstamo').props.disabled === true);
+    const planD = X.cgPlanCongelar(L(DIA), paysD, '2026-07-21', false, '2026-07-31');
+    const desD = montar(X.DescongelarModal, { loan: planD.loanN, pays: paysD, hoy: '2026-07-31', onConfirm: prom, onClose: nada }).arbol;
+    const resDD = res(desD);
+    R.check('G13 descongelar el crédito abierto: sin «Primer pago»; estuvo 10 días congelado y desde ese día vuelve a correr $ 1.000 por día',
+      planD.ok && !/Primer pago/.test(txt(desD)) && /Estuvo congelado\s*10 días sin interés/.test(resDD) && /Desde el 31 jul \(el interés vuelve a correr\)\$ 1\.000 por día/.test(resDD) &&
+      /Devengado por cobrar al 31 jul\s*\$ 5\.000/.test(resDD) && conClase(desD, 'cgm-hielo').length === 1, resDD);
   }
 
   process.exit(R.finalizar());

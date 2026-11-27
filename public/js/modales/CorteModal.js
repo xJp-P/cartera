@@ -16,8 +16,8 @@
 
 import { Fld, Modal } from '../componentes/base.js';
 import { Ico } from '../componentes/iconos.js';
-import { estadoDiario } from '../core/dominio.js';
-import { copToUsd, fmt, fmtNumInput, parseNum } from '../core/format.js';
+import { estadoDiario, congeladoAbierto } from '../core/dominio.js';
+import { copToUsd, fmt, fmtD, fmtNumInput, parseNum } from '../core/format.js';
 import { h, useState } from '../core/react.js';
 import { _submitGuard, nowStr } from '../core/ui.js';
 import { usdLinea } from '../componentes/CifraUSD.js';
@@ -51,6 +51,10 @@ export function CorteModal(props){
   var interesDespues=Math.max(0,dev.interesPendiente-intEfectivo);
   var saldaCredito=capitalDespues===0&&interesDespues===0;
   var interesDia=Math.round(dev.capitalVivo*(+loan.tasaMensual||0)/100/30);
+  // Congelado (post-4.1.6, Fase 2): a la fecha del corte el interes no corre. Lo devengado hasta el
+  // congelamiento se cobra igual; el abono baja el capital, pero no hay devengo que bajar.
+  var cong=congeladoAbierto(loan), congAlCorte=!!(cong&&fecha>=cong.desde);
+  var diasConInteres=dev.diasActivosDesdeUltimoCorte, diasQuietos=dev.diasCongeladosDesdeUltimoCorte;
 
   // ── Validaciones, espejo exacto del backend ────────────────────────────────
   var err='';
@@ -96,7 +100,10 @@ export function CorteModal(props){
       fila('Capital vivo',dev.capitalVivo),
       h('div',{style:{borderTop:'1px solid var(--border)',margin:'4px 0'}}),
       fila('Interés devengado por cobrar',dev.interesPendiente,'var(--blue)',
-        dev.diasDesdeUltimoCorte+' día(s) x '+fmt(interesDia)+'/día · último corte '+(cortes.length?ultimaFecha:'sin cortes'))),
+        diasConInteres+' día(s) x '+fmt(interesDia)+'/día'+(diasQuietos>0?' · '+diasQuietos+' día(s) congelados sin interés':'')+
+        ' · último corte '+(cortes.length?ultimaFecha:'sin cortes'))),
+    congAlCorte&&h('div',{className:'v4m-caja-info',style:{borderRadius:10,padding:'9px 11px',marginBottom:12,fontSize:11.5,lineHeight:1.45}},
+      h('b',null,'❄ Congelado desde el '+fmtD(cong.desde)+'.'),' El interés no corre: puedes cobrar lo devengado hasta ese día o abonar a capital.'),
 
     h(Fld,{label:'Fecha del corte'},
       h('input',{type:'date',value:fecha,max:hoy,min:loan.fechaInicio,onChange:function(e){setFecha(e.target.value);},className:'inp'})),
@@ -108,7 +115,7 @@ export function CorteModal(props){
         className:'inp'}),
       h('div',{style:{fontSize:11,marginTop:4,color:'var(--text3)'}},
         intTocado&&intEfectivo<dev.interesPendiente
-          ? 'Quedarán '+fmt(dev.interesPendiente-intEfectivo)+' de interés sin cobrar (no se capitaliza: seguirá devengando sobre el capital).'
+          ? 'Quedarán '+fmt(dev.interesPendiente-intEfectivo)+' de interés sin cobrar ('+(congAlCorte?'no se capitaliza).':'no se capitaliza: seguirá devengando sobre el capital).')
           : 'Por defecto se cobra todo el interés devengado.')),
 
     h(Fld,{label:'Abono a capital'},
@@ -125,7 +132,9 @@ export function CorteModal(props){
       fila('Capital vivo',capitalDespues),
       fila('Interés por cobrar',interesDespues,interesDespues>0?'var(--yellow)':'var(--text3)'),
       abnNum>0&&capitalDespues>0&&h('div',{style:{fontSize:11,color:'var(--text3)',marginTop:6}},
-        'A partir de hoy devengará '+fmt(Math.round(capitalDespues*(+loan.tasaMensual||0)/100/30))+' por día (antes '+fmt(interesDia)+').'),
+        congAlCorte
+          ? 'Congelado: no devenga. Al descongelarlo correrá '+fmt(Math.round(capitalDespues*(+loan.tasaMensual||0)/100/30))+' por día (antes '+fmt(interesDia)+').'
+          : 'A partir de hoy devengará '+fmt(Math.round(capitalDespues*(+loan.tasaMensual||0)/100/30))+' por día (antes '+fmt(interesDia)+').'),
       saldaCredito&&h('div',{style:{fontSize:12,color:'var(--green)',fontWeight:700,marginTop:8,display:'flex',alignItems:'center',gap:6}},
         h(Ico,{name:'check',size:14,color:'var(--green)'}),'El crédito quedará SALDADO y pasará a Finalizado.')),
 

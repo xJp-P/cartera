@@ -17,7 +17,7 @@
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { nowStr } from '../core/ui.js';
-import { estadoDiario } from '../core/dominio.js';
+import { estadoDiario, congeladoAbierto } from '../core/dominio.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, rbIniciales, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 import { nombrePdf, prestamoArchivo } from './nombres.js';
 
@@ -67,16 +67,23 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
   // ── Linea de tiempo: tramos con los cortes intercalados ────────────────────
   // Los tramos de 0 dias (dos cortes el mismo dia) se omiten: no aportan interes y
   // solo anadirian una fila vacia que el deudor leeria como un error del documento.
-  var filas = [];
+  // Congelar (post-4.1.6, Fase 2): un periodo congelado parte su tramo; el pedazo congelado no
+  // devenga y se rotula. El corte va tras el pedazo que termina en su fecha (sin congelamientos, cada
+  // tramo termina en la fecha de su corte: es la misma secuencia de siempre).
+  var filas = [], ci = 0;
+  var diasCongTot = dev.tramos.reduce(function(s, t){ return s + (t.congelado ? t.dias : 0); }, 0);
+  var abiertoCong = congeladoAbierto(loan);
+  var congAlCorte = !!(abiertoCong && String(hasta) >= String(abiertoCong.desde));
   dev.tramos.forEach(function(t, i){
     if (t.dias > 0 || i === dev.tramos.length - 1) {
-      filas.push('<tr><td>' + fmtD(t.desde) + '</td><td>' + fmtD(t.hasta) + '</td>' +
+      filas.push('<tr' + (t.congelado ? ' class="cg"' : '') + '><td>' + fmtD(t.desde) + '</td><td>' + fmtD(t.hasta) + '</td>' +
         '<td class="n">' + t.dias + '</td><td class="n">' + money(t.base) + '</td>' +
-        '<td class="n">' + money(t.interes) + '</td></tr>');
+        '<td class="n">' + (t.congelado ? 'Congelado' : money(t.interes)) + '</td></tr>');
     }
     // Tras cada tramo (salvo el abierto) viene el corte que lo cerro.
-    var c = cortes[i];
-    if (c) {
+    var c = cortes[ci];
+    if (c && String(t.hasta) === String(c.fechaPago)) {
+      ci++;
       var det = [];
       if (Math.round(+c.interesPeriodo || 0) > 0) det.push('pago de intereses');
       if (Math.round(+c.abonoCapital || 0) > 0) det.push('abono a capital ' + money(Math.round(+c.abonoCapital)));
@@ -85,7 +92,8 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
         '<td class="n">&minus;' + money(Math.round(+c.interesPeriodo || 0)) + '</td></tr>');
     }
   });
-  filas.push('<tr class="tot"><td colspan="3">Total devengado</td><td class="n">' + dev.diasTotales + ' días</td>' +
+  filas.push('<tr class="tot"><td colspan="3">Total devengado</td><td class="n">' +
+             (diasCongTot > 0 ? (dev.diasTotales - diasCongTot) + ' días con interés' : dev.diasTotales + ' días') + '</td>' +
              '<td class="n">' + money(dev.interesDevengado) + '</td></tr>');
   filas.push('<tr class="tot"><td colspan="4">Total cobrado</td><td class="n">&minus;' + money(dev.interesCobrado) + '</td></tr>');
 
@@ -121,7 +129,8 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
     'td{padding:5px;border-bottom:1px solid var(--r-bd);white-space:nowrap}',
     'td.n,th.n{text-align:right}',
     'tr.ev td{background:var(--r-blue-bg);color:var(--r-blue);font-weight:600;font-size:10px}',
-    'tr.tot td{font-weight:600;border-top:1px solid var(--r-bd-2);border-bottom:none}',
+    'tr.tot td{font-weight:600;border-top:1px solid var(--r-bd-2);border-bottom:none}' +
+      (diasCongTot > 0 ? '\ntr.cg td{background:var(--r-soft);color:var(--r-blue)}' : ''),
     '.ec-caja{margin-top:11px;padding:11px 14px;border-radius:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--r-blue-bg);border:1px solid ' + C.blueBd + '}',
     '.ec-caja .q{font-size:12px;font-weight:600;color:var(--r-blue)}',
     '.ec-caja .v{font-size:22px;font-weight:600;letter-spacing:-.02em;color:var(--r-blue);white-space:nowrap}',
@@ -143,25 +152,30 @@ export function generateEstadoCuentaDiario(loan, allPays, opts) {
     '<div class="ec-sec">Condiciones</div>',
     row('Capital prestado', money(dev.origCOP)),
     row('Desde', fmtD(loan.fechaInicio)),
-    row('Tasa', (+loan.tasaMensual || 0) + '% mensual &nbsp;&middot;&nbsp; ' + tasaDia + '% diario'),
+    row('Tasa', (+loan.tasaMensual || 0) + '% mensual &nbsp;&middot;&nbsp; ' + tasaDia + '% diario') +
+      (congAlCorte ? '\n' + row('Congelado', 'desde el ' + fmtD(abiertoCong.desde), C.blue) : ''),
 
     '<div class="ec-sec">Cómo se generó el interés</div>',
     '<table><thead><tr><th>Desde</th><th>Hasta</th><th class="n">Días</th><th class="n">Capital base</th><th class="n">Interés</th></tr></thead><tbody>',
     filas.join(''),
     '</tbody></table>',
-    '<div class="ec-sm" style="margin-top:5px">Cada tramo va desde su fecha inicial inclusive hasta la siguiente sin incluir, de modo que ningún día se cobra dos veces. Un abono a capital reduce la base ese mismo día.</div>',
+    '<div class="ec-sm" style="margin-top:5px">Cada tramo va desde su fecha inicial inclusive hasta la siguiente sin incluir, de modo que ningún día se cobra dos veces. Un abono a capital reduce la base ese mismo día.' +
+      (diasCongTot > 0 ? ' Los tramos congelados no generan interés.' : '') + '</div>',
 
     '<div class="ec-sec">Situación al ' + fmtD(hasta) + '</div>',
     row('Capital prestado', money(dev.origCOP)),
     row('Capital devuelto', '&minus;' + money(dev.capitalAbonado), C.green),
     row('Capital vivo', money(dev.capitalVivo)),
-    row('Interés devengado por cobrar<div class="ec-sm">' + dev.diasDesdeUltimoCorte + ' día(s) x ' + money(interesDia) +
-        '/día desde ' + (dev.fechaUltimoCorte ? ('el último corte (' + fmtD(dev.fechaUltimoCorte) + ')') : ('el inicio (' + fmtD(loan.fechaInicio) + ')')) + '</div>',
+    row('Interés devengado por cobrar<div class="ec-sm">' + dev.diasActivosDesdeUltimoCorte + ' día(s) x ' + money(interesDia) +
+        '/día desde ' + (dev.fechaUltimoCorte ? ('el último corte (' + fmtD(dev.fechaUltimoCorte) + ')') : ('el inicio (' + fmtD(loan.fechaInicio) + ')')) +
+        (dev.diasCongeladosDesdeUltimoCorte > 0 ? ', sin ' + dev.diasCongeladosDesdeUltimoCorte + ' día(s) congelados' : '') + '</div>',
         money(dev.interesPendiente), C.blue),
 
     '<div class="ec-caja"><span class="q">Valor para liquidar al ' + fmtD(hasta) + '</span>',
     '<span class="v">' + money(dev.capitalVivo + dev.interesPendiente) + '</span></div>',
-    (dev.capitalVivo > 0
+    (congAlCorte && dev.capitalVivo > 0
+      ? '<div class="ec-nota"><b>Congelado desde el ' + fmtD(abiertoCong.desde) + '.</b> Mientras siga congelado no corre el interés: el valor no cambia de un día a otro. Lo devengado hasta ese día se sigue debiendo; cuando se descongele, el crédito volverá a generar ' + money(interesDia) + ' cada día.</div>'
+      : dev.capitalVivo > 0
       ? '<div class="ec-nota">Mientras quede capital vivo, el crédito genera <b>' + money(interesDia) + '</b> cada día. Puedes pagar solo los intereses o abonar a capital en cualquier momento: cada abono baja el interés diario desde ese mismo día.</div>'
       : '<div class="ec-nota">El capital fue devuelto en su totalidad; el crédito ya no genera interés.</div>'),
 
