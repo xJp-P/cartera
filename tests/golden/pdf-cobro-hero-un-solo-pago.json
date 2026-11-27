@@ -7,53 +7,54 @@
   "estructura": {
     "docTitle": "Recibo de pago",
     "h1": [],
-    "cabeceras": [],
+    "cabeceras": [
+      "Concepto",
+      "",
+      "Capital"
+    ],
     "etiquetas": [
       "Cómo se aplicó tu pago",
-      "Lo que sigue",
-      "Tu próxima cuota",
-      "Así va tu crédito"
+      "Así quedó tu crédito",
+      "Te falta un solo pago"
     ]
   },
   "valores": {
-    "bytes": 10144,
-    "nFilas": 0,
-    "nCeldas": 0,
-    "celdasPorTr": [],
-    "nMontos": 7,
-    "hashMontos": "b5b169c64f0ab77f6f00984b460a2be01e828cdf",
+    "bytes": 9162,
+    "nFilas": 2,
+    "nCeldas": 6,
+    "celdasPorTr": [
+      3,
+      3
+    ],
+    "nMontos": 6,
+    "hashMontos": "50c173a74b96dd2f4639e4e8578ae6487f5f0ba4",
     "hashFname": "5e92bcc09a58cefe09c2df1400af2c9991f0b730",
-    "hashTexto": "d6299f5f34cb621f7f66f967748d92da7c3f0e75",
+    "hashTexto": "d8dde9e8247fea2b67bfa15b4170a8b583fefec9",
     "clases": [
-      "abonada",
-      "pagada",
+      "muted",
+      "n",
       "r-a",
-      "r-av",
-      "r-av-ley",
       "r-cab",
-      "r-cap",
       "r-doc",
-      "r-frase",
       "r-hero",
       "r-hero-l",
       "r-logo",
       "r-marca",
       "r-monto",
       "r-obs",
-      "r-paso",
       "r-pie",
       "r-pie-d",
       "r-quien",
-      "r-saldos",
       "r-sec",
       "r-sec-t",
       "r-sello",
+      "r-t",
       "r-tar",
       "r-tar-l",
       "r-tar-s",
       "r-tar-v",
       "r-uno",
-      "viejo"
+      "rc-sub"
     ]
   }
 }

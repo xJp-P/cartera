@@ -7,31 +7,38 @@
   "estructura": {
     "docTitle": "Paz y salvo",
     "h1": [],
-    "cabeceras": [],
+    "cabeceras": [
+      "Concepto",
+      "",
+      "Capital"
+    ],
     "etiquetas": [
       "Cómo se aplicó tu pago"
     ]
   },
   "valores": {
-    "bytes": 9401,
-    "nFilas": 0,
-    "nCeldas": 0,
-    "celdasPorTr": [],
+    "bytes": 8977,
+    "nFilas": 2,
+    "nCeldas": 6,
+    "celdasPorTr": [
+      3,
+      3
+    ],
     "nMontos": 3,
     "hashMontos": "6883ec9cd307a55b53538b3d0341aa1f83e292b9",
     "hashFname": "d639340eff2cb525e35427875fac47c0b42b9b9d",
-    "hashTexto": "a9aa307169419f1f42f3111d4f1425aed5e9bcd2",
+    "hashTexto": "e75deb19102e0c291ef4818c520830b042e2b51c",
     "clases": [
+      "muted",
+      "n",
       "r-a",
       "r-cab",
       "r-doc",
-      "r-frase",
       "r-hero",
       "r-hero-l",
       "r-logo",
       "r-marca",
       "r-monto",
-      "r-paso",
       "r-paz",
       "r-paz-t",
       "r-pie",
@@ -39,7 +46,9 @@
       "r-quien",
       "r-sec",
       "r-sec-t",
-      "r-sello"
+      "r-sello",
+      "r-t",
+      "rc-sub"
     ]
   }
 }

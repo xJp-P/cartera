@@ -555,14 +555,16 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
     const heroSub = html => (/<div class="r-equiv">([\s\S]*?)<\/div>/.exec(html) || [])[1];
     const rubrosDe = (html, esUSD) => {
       const t = { 'r-i': 0, 'r-m': 0, 'r-k': 0, 'r-a': 0 }, hay = {};
-      const re = /<b class="(r-[imka])">([^<]*)<\/b>/g;
+      const re = /<(?:b|span) class="(r-[imka])">([^<]*)<\/(?:b|span)>/g;
       let m; while ((m = re.exec(html)) !== null) { t[m[1]] += numDe(m[2]); hay[m[1]] = true; }
       Object.keys(t).forEach(k => { t[k] = esUSD ? Math.round(t[k] * 100) / 100 : Math.round(t[k]); });
       t.total = esUSD ? Math.round((t['r-i'] + t['r-m'] + t['r-k'] + t['r-a']) * 100) / 100 : t['r-i'] + t['r-m'] + t['r-k'] + t['r-a'];
       t.hay = hay;
       return t;
     };
-    const saldoCapDe = html => { const m = /<b class="r-cap">([^<]*)<\/b>/.exec(html); return m ? m[1] : null; };
+    // post-4.1.6 (opcion A): el capital va en su tarjeta; si coincide con lo que falta (una sola cuota),
+    // la tarjeta que queda es «Te falta un solo pago», con la misma cifra.
+    const saldoCapDe = html => { const m = /<div class="r-tar-l">(?:Capital|Te falta un solo pago)<\/div><div class="r-tar-v">([^<]*)<\/div>/.exec(html); return m ? m[1] : null; };
 
     const inicial = cargarG();
     const conMoraG = l => inicial.pays.some(p => p.prestamoId === l.id && p.estadoPago === 'En Mora' && !esAbono(p));
@@ -708,13 +710,10 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           numDe(cSaldo.val), esUSD ? Math.round(saldoApp / trm * 100) / 100 : Math.round(saldoApp));
       }
 
-      // 5. CADA MOVIMIENTO APLICADO SE NOMBRA. Las cuotas vencidas saldadas seguidas van en UNA
-      // frase (un cobro de cinco cuotas no puede costar cinco renglones), asi que se espera una
-      // frase por GRUPO y que cada cuota aplicada aparezca por su fecha.
-      let gruposEsp = 0, previaSalda = false;
-      est.hechos.forEach(p => { const sm = p.tipo === 'partial' && p.salda && !p.esInteresMes; if (!(sm && previaSalda)) gruposEsp++; previaSalda = sm; });
-      R.eq(et + 'una frase por movimiento (las saldadas seguidas, juntas)',
-        (html.match(/<div class="r-paso">/g) || []).length, gruposEsp);
+      // 5. CADA MOVIMIENTO APLICADO SE NOMBRA. Desde post-4.1.6 (opcion A del PO) "Como se aplico tu
+      // pago" es una tabla: una fila por movimiento, y cada cuota aplicada aparece por su fecha.
+      const filasAp = ((/Cómo se aplicó tu pago[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html) || [, ''])[1].match(/<tr>/g) || []).length;
+      R.eq(et + 'una fila por movimiento aplicado', filasAp, est.hechos.length);
       const sinNombrar = est.hechos.filter(p => p.tipo === 'partial' && html.indexOf(rbMedia(p.fechaPago)) === -1);
       R.check(et + 'cada cuota a la que se aplico dinero se nombra por su fecha', sinNombrar.length === 0,
         sinNombrar.map(p => p.fechaPago).join(', '));
@@ -1232,9 +1231,9 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         { fecha: '2026-08-23', pasos: plan.pasos, pre: { saldoCaja: 0, cuota: 0 } });
       R.eq('H el recibo emitio un documento', fe.captura.pdfs.length, 1);
       if (fe.captura.pdfs.length === 1) {
-        // El recibo de 3.5.0 lo dice en frases, con cada importe marcado por su clase.
+        // Cada importe del recibo va marcado por su clase (desde post-4.1.6, en la tabla).
         const sumaR = { 'r-i': 0, 'r-k': 0, 'r-a': 0 }, hayR = {};
-        const reR = /<b class="(r-[ika])">([^<]*)<\/b>/g;
+        const reR = /<(?:b|span) class="(r-[ika])">([^<]*)<\/(?:b|span)>/g;
         let mR; while ((mR = reR.exec(fe.captura.pdfs[0].html)) !== null) { sumaR[mR[1]] += numH(mR[2]); hayR[mR[1]] = true; }
         R.check('H ANTI-VACIO: el recibo declaro intereses, capital y abono', !!(hayR['r-i'] && hayR['r-k'] && hayR['r-a']),
           JSON.stringify(sumaR));
@@ -1556,11 +1555,12 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
         // recibo lideraba con el saldo de CAPITAL y la propuesta con el TOTAL, los dos
         // documentos de la misma operacion abrian con cifras distintas y parecian
         // contradecirse aunque ambas fueran correctas.
-        // En el recibo de 3.5.0 es "Te falta por pagar" en "Asi va tu credito", con el valor
-        // de antes del pago debajo ("antes de este pago: ...").
+        // Desde post-4.1.6 (opcion A) es la tarjeta "Te falta por pagar" de "Asi quedo tu credito",
+        // con el valor de antes del pago debajo ("antes $X").
         const totalReciboCard = (() => {
-          const m = /Te falta por pagar<b class="r-(?:tot|cap)">([^<]*)<\/b><span class="viejo">(?:antes de este pago: ([^<]*))?/.exec(htmlRec);
-          return m ? { antes: m[2] ? numJ(m[2]) : null, valor: numJ(m[1]) } : null;
+          const m = /<div class="r-tar-l">Te falta (?:por pagar|un solo pago)<\/div><div class="r-tar-v">([^<]*)<\/div>(?:<div class="r-tar-s">([^<]*)<\/div>)?/.exec(htmlRec);
+          const a = m && m[2] ? /antes ([^·]*)/.exec(m[2]) : null;
+          return m ? { antes: a ? numJ(a[1]) : null, valor: numJ(m[1]) } : null;
         })();
         R.check('J ANTI-VACIO: los dos documentos declaran su total por pagar',
           !isNaN(totalPropuesta) && !isNaN(totalRecibo) && !!totalReciboCard,
@@ -1589,7 +1589,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           return m ? { antes: m[2] ? numJ(m[2]) : null, valor: numJ(m[1]) } : null;
         })();
         const capRec = (() => {
-          const m = /(?:De eso, capital|Saldo de capital)<b class="r-cap">([^<]*)<\/b>/.exec(htmlRec);
+          const m = /<div class="r-tar-l">Capital<\/div><div class="r-tar-v">([^<]*)<\/div>/.exec(htmlRec);
           return m ? numJ(m[1]) : NaN;
         })();
         R.check('J la propuesta dice el capital de antes y promete el MISMO capital que el recibo declara',
