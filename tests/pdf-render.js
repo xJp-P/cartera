@@ -2219,6 +2219,40 @@ function loansDelCaso(caso) {
   const tRN = vis(emitir(() => S.generateReciboCobro(L(ID), pays, cN.cobro)));
   R.check('V12 ANTI-TRIVIAL: sin congelar, el mismo recibo no dice «congelado» y conserva «plazo indefinido»',
     cN.ok && tRN.toLowerCase().indexOf('congelad') === -1 && tRN.indexOf('plazo indefinido') !== -1 && tRN.indexOf('Tu próxima cuota') !== -1);
+
+  // ── El estado de liquidación (post-4.1.6, pruebas del PO) ──
+  // El caso del PO: congelado perdonando los días y condonado con un monto. Las condonadas decían «Pagado»,
+  // no se decía cuánto se condonó, y la vigencia pedía un documento nuevo aunque congelado el valor no cambia.
+  const moraP = lpP.filter(p => p.estadoPago === 'En Mora').sort((a, b) => a.fechaPago.localeCompare(b.fechaPago));
+  const lpPC = S.aplicarCondonacion(lpP, S.planCondonacion(moraP, 1000000));
+  const loanPC = Object.assign({}, pP.loanN, { interesesCondonados: 1000000 });
+  const paysPC = pays.filter(p => p.prestamoId !== ID).concat(lpPC);
+  const hLC = emitir(() => S.generateEstadoLiquidacion(loanPC, paysPC, config.datos_pago, { incluyeProxMes: false, hasta: HOYV }));
+  const tLC = vis(hLC);
+  R.check('V13 estado de liquidación: las cuotas que el perdón saldó dicen «Condonada» (3), las pagadas «Pagado» (3) y las que siguen debiéndose «En mora» (2)',
+    moraP.length === 5 && (hLC.match(/<span class="bdg b-cond">Condonada<\/span>/g) || []).length === 3 && hLC.indexOf('.b-cond{') !== -1 &&
+    (hLC.match(/<span class="bdg b-ok">Pagado<\/span>/g) || []).length === 3 && (hLC.match(/<span class="bdg b-mora">En mora<\/span>/g) || []).length === 2, tLC.slice(0, 400));
+  R.check('V13 bajo el interés va lo condonado (3 completas y 1 en parte) y bajo el total, cuánto se condonó',
+    (tLC.match(new RegExp('se condonó ' + pesos(300000).replace(/[$.]/g, m => '\\' + m), 'g')) || []).length === 3 &&
+    (tLC.match(new RegExp('se condonó ' + pesos(100000).replace(/[$.]/g, m => '\\' + m), 'g')) || []).length === 1 &&
+    tLC.indexOf('Se condonaron ' + pesos(1000000) + ' de intereses por acuerdo: ya no están en este valor.') !== -1, tLC.slice(0, 1800));
+  R.check('V14 congelado (días perdonados): la vigencia dice que el valor no cambia mientras siga congelado, y las condiciones lo nombran',
+    tLC.indexOf('Este valor no cambia mientras el crédito siga congelado.') !== -1 && tLC.indexOf('Está congelado desde el 20 de jul de 2026') !== -1 &&
+    tLC.indexOf('Congelado desde el 20 de jul de 2026') !== -1 && tLC.indexOf('solicita un documento actualizado') === -1 && tLC.indexOf('vence la cuota de cierre') === -1, tLC.slice(0, 900));
+  // Con la cuota de cierre por vencer: sin incluirla, el valor vale hasta su fecha; incluida, no cambia.
+  const lpEsolo = paysV.filter(p => p.prestamoId === ID);
+  const tLE = vis(emitir(() => S.generateEstadoLiquidacion(pE.loanN, paysV, config.datos_pago, { incluyeProxMes: false, hasta: HOYV })));
+  const tLEi = vis(emitir(() => S.generateEstadoLiquidacion(pE.loanN, paysV, config.datos_pago, { incluyeProxMes: true, hasta: HOYV })));
+  R.check('V14 con la cuota de cierre por vencer: sin incluirla, «no cambia … y hasta el 07 de ago»; incluida, sin fecha límite',
+    lpEsolo.length > 0 && tLE.indexOf('Este valor no cambia mientras el crédito siga congelado y hasta el 07 de ago de 2026.') !== -1 &&
+    tLE.indexOf('Ese día vence la cuota de cierre') !== -1 && tLEi.indexOf('Este valor no cambia mientras el crédito siga congelado.') !== -1 &&
+    tLEi.indexOf('vence la cuota de cierre') === -1, [tLE.slice(0, 400), tLEi.slice(0, 400)]);
+  R.check('V15 la frase de las filas azules solo con abonos a la vista; «Cómo pagar» no se parte entre hojas',
+    tLC.indexOf('Las filas azules') === -1 && /\.lq-pagar\{[^}]*break-inside:avoid/.test(hLC) &&
+    vis(emitir(() => S.generateEstadoLiquidacion(L('1776205975507jkph'), pays, config.datos_pago, { incluyeProxMes: false, hasta: HOYV }))).indexOf('Las filas azules son abonos a capital') !== -1);
+  const tLN = vis(emitir(() => S.generateEstadoLiquidacion(L(ID), pays, config.datos_pago, { incluyeProxMes: false, hasta: HOYV })));
+  R.check('V15 ANTI-TRIVIAL: sin congelar ni condonar, ni «Condonada», ni «congelado», ni lo condonado',
+    tLN.toLowerCase().indexOf('congelad') === -1 && tLN.indexOf('Condonada') === -1 && tLN.indexOf('se condonó') === -1 && tLN.indexOf('Se condonaron') === -1);
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@
 
 import { fmt, fmtD, copToUsd } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
-import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento, periodoEnCursoDe, detalleInteresEnCurso } from '../core/dominio.js';
+import { computeLiquidacion, imputarCobros, esDiario, proximoVencimiento, periodoEnCursoDe, detalleInteresEnCurso, esCondonada, condonadoDe } from '../core/dominio.js';
 import { esAbono, esCorte } from '../core/ids.js';
 import { opModalidad } from '../core/operacion.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
@@ -74,6 +74,8 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   var pays = (allPays || []).filter(function(p){ return String(p.prestamoId) === String(loan.id); });
   var origCOP = esUSD ? Math.round(loan.montoOrigen * trm) : Math.round(loan.montoOrigen);
   var capAmortizado = Math.max(0, origCOP - L.capitalPendiente);
+  // Lo condonado (post-4.1.6): ya no esta en el total; el papel lo dice para que no parezca que falta.
+  var condonadoT = Math.max(0, Math.round(+loan.interesesCondonados || 0));
 
   var fechaEmision = new Date(hasta + 'T12:00:00')
     .toLocaleDateString('es-CO', {day:'2-digit', month:'long', year:'numeric'});
@@ -153,7 +155,7 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
   // ── RESPALDO ───────────────────────────────────────────────────────────────
   // La pregunta que evita la discusion: "¿por que debo esto?". Se responde con lo que
   // YA entro, no con lo que falta.
-  var respaldo = '', notaRespaldo = '', totalRecibido = 0;
+  var respaldo = '', notaRespaldo = '', totalRecibido = 0, hayCondonada = false, hayAbonoFila = false;
 
   if (diario) {
     var cortes = pays.filter(esCorte).sort(function(a,b){
@@ -198,6 +200,10 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
       return c !== 0 ? c : ((a.cuotaN || 0) - (b.cuotaN || 0));
     });
     var omitidas = todas.length - filas.length;
+    // Post-4.1.6 (pruebas del PO): una cuota que el perdon saldo sin dinero se rotula «Condonada»
+    // (no «Pagado»), y bajo su interes va lo que se le condono, tambien en las condonadas en parte.
+    hayCondonada = filas.some(function(p){ return condonadoDe(p) > 0; });
+    hayAbonoFila = filas.some(esAbono);
     var fr = filas.map(function(p){
       var imp = imputarCobros(p);
       var cobrado = imp.totales.cobrado;
@@ -210,6 +216,7 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
       // Capital reconciliado contra la cuota, no la columna cruda (doctrina v1.18.0).
       var capital = Math.round(+p.cuotaTotal || 0) - interes;
       var est = ab ? ['Abono','b-ok']
+              : esCondonada(p)             ? ['Condonada','b-cond']
               : p.estadoPago === 'Pagado'  ? ['Pagado','b-ok']
               : p.estadoPago === 'En Mora' ? ['En mora','b-mora']
               : cobrado > 0                ? ['Parcial','b-par']
@@ -218,7 +225,8 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
         '<td>' + (ab ? '&mdash;' : (p.cuotaN || '')) + '</td>' +
         '<td>' + fmtD(p.fechaPago) + '</td>' +
         '<td class="n">' + moneyT(Math.round(+p.cuotaTotal || 0)) + '</td>' +
-        '<td class="n">' + (ab ? '&mdash;' : moneyT(interes)) + '</td>' +
+        '<td class="n">' + (ab ? '&mdash;' : moneyT(interes)) +
+          (!ab && condonadoDe(p) > 0 ? '<span class="lq-cd">se condonó ' + moneyT(condonadoDe(p)) + '</span>' : '') + '</td>' +
         '<td class="n">' + moneyT(ab ? Math.round(+p.abonoCapital || 0) : capital) + '</td>' +
         '<td class="n">' + (cobrado > 0 ? moneyT(cobrado) : '&mdash;') + '</td>' +
         '<td>' + recaudo + '</td>' +
@@ -239,10 +247,11 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
       fr.join('') + '</tbody></table>';
     // Nunca recortar en silencio: si algo quedo fuera, el documento lo dice (doctrina
     // "no silent caps"). Sin esto la tabla parece el cronograma completo y no lo es.
-    notaRespaldo = 'Las filas azules son abonos a capital, no cuotas del cronograma.' +
-      (L.partialPend > 0 ? ' Los abonos parciales ya están descontados del total a liquidar.' : '') +
-      (omitidas > 0 ? ' No se listan ' + omitidas + ' cuota(s) de vencimiento posterior al ' +
-        fmtD(hasta) + ': quedan canceladas con esta liquidación.' : '');
+    // Post-4.1.6: la frase de las filas azules solo si hay alguna (se imprimia siempre).
+    notaRespaldo = [hayAbonoFila ? 'Las filas azules son abonos a capital, no cuotas del cronograma.' : '',
+      L.partialPend > 0 ? 'Los abonos parciales ya están descontados del total a liquidar.' : '',
+      omitidas > 0 ? 'No se listan ' + omitidas + ' cuota(s) de vencimiento posterior al ' +
+        fmtD(hasta) + ': quedan canceladas con esta liquidación.' : ''].filter(Boolean).join(' ');
   }
 
   var deudorMeta = [
@@ -278,6 +287,13 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     vigencia = '<b>Este valor no cambia mientras el crédito siga congelado.</b> ' +
       'Está congelado desde el ' + fmtD(L.congeladoDesde) + ': no corre el interés diario. ' +
       'Si se descongela, el interés vuelve a correr y el monto a pagar cambia.';
+  } else if (L.congelado && !diario) {
+    // Post-4.1.6 (pruebas del PO): congelado no corren intereses, asi que el valor no cambia de un
+    // dia a otro. Solo lo mueve la cuota de cierre, si queda por vencer y no se incluyo: ese dia vence.
+    var cierreVence = !!proxVenc && !L.incluyeProxMes;
+    vigencia = '<b>Este valor no cambia mientras el crédito siga congelado' + (cierreVence ? ' y hasta el ' + fmtD(proxVenc) : '') + '.</b> ' +
+      'Está congelado desde el ' + fmtD(L.congeladoDesde) + ': no corren intereses ni se generan cuotas.' +
+      (cierreVence ? ' Ese día vence la cuota de cierre (los días de interés antes del congelamiento) y se suma a lo vencido.' : '');
   } else if (diario) {
     vigencia = '<b>Este valor es válido únicamente para el ' + fmtD(hasta) + '.</b> ' +
       'El crédito genera intereses cada día, así que a partir del día siguiente el monto a pagar cambia. ' +
@@ -358,8 +374,10 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     '.b-ok{background:var(--r-green-bg);color:var(--r-green)}',
     '.b-mora{background:var(--r-red-bg);color:var(--r-red)}',
     '.b-par{background:var(--r-amber-bg);color:var(--r-amber)}',
-    '.b-pen{background:var(--r-soft-2);color:var(--r-text-2)}',
-    '.lq-pagar{margin-top:13px;padding:10px 13px;background:var(--r-soft);border-radius:12px}',
+    '.b-pen{background:var(--r-soft-2);color:var(--r-text-2)}' +
+      (hayCondonada ? '\n.b-cond{background:var(--r-soft-2);color:var(--r-muted)}\n.lq-cd{display:block;font-size:8px;font-weight:400;color:var(--r-muted)}' : '') +
+      (condonadoT > 0 ? '\n.lq-condt{margin-top:5px}' : ''),
+    '.lq-pagar{margin-top:13px;padding:10px 13px;background:var(--r-soft);border-radius:12px;break-inside:avoid}',
     '.lq-pagar .h{font-size:11px;font-weight:600;color:var(--r-text);margin-bottom:4px}',
     '.lq-pagar .b{font-size:10.5px;line-height:1.55}',
     '.lq-foot{margin-top:11px;padding-top:8px;border-top:1px solid var(--r-bd);text-align:center;color:var(--r-muted);font-size:9.5px;line-height:1.5}',
@@ -387,14 +405,16 @@ export function generateEstadoLiquidacion(loan, allPays, datosPago, opts) {
     row('Tasa', tasaTxt),
     row('Fecha de inicio', fmtD(loan.fechaInicio)),
     (diario ? '' : row('Plazo', (loan.modalidad === 'Intereses' ? 'Indefinido'
-              : (loan.plazoMeses || 0) + ' cuota' + ((loan.plazoMeses || 0) === 1 ? '' : 's')))),
+              : (loan.plazoMeses || 0) + ' cuota' + ((loan.plazoMeses || 0) === 1 ? '' : 's')))) +
+      (L.congelado ? '\n' + row('Congelado', 'desde el ' + fmtD(L.congeladoDesde), C.blue) : ''),
 
     '<div class="lq-sec">Desglose de la liquidación</div>',
     '<div class="lq-desg">' + desglose.join('') + '</div>',
 
     '<div class="lq-total"><div><div class="q">Total a liquidar hoy</div>',
     '<div class="qs">Con este pago el crédito queda cancelado en su totalidad</div></div>',
-    '<div class="v">' + money(L.total) + '</div></div>',
+    '<div class="v">' + money(L.total) + '</div></div>' +
+      (condonadoT > 0 ? '\n<div class="lq-sm lq-condt">Se condonaron ' + money(condonadoT) + ' de intereses por acuerdo: ya no están en este valor.</div>' : ''),
 
     '<div class="lq-sec">Respaldo &middot; historial del crédito al ' + fmtD(hasta) + '</div>',
     respaldo,
