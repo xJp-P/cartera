@@ -617,16 +617,19 @@ const CASOS = [
   // Lo que este caso fija: que el documento NO se presente como comprobante. Un papel con
   // el membrete de la app y cifras exactas que dijera "recibido" seria un registro falso
   // de dinero que nunca entro.
-  { nombre: 'propuesta-usd-oscuro', gen: 'generatePropuestaAbono', tema: 'dark', celdas: 6,
+  { nombre: 'propuesta-usd-oscuro', gen: 'generatePropuestaAbono', tema: 'dark', celdas: [4, 6],
     entrada: () => ({ loanId: '1782151590658w66y', propuesta: true, tema: 'dark', dark: true }),
     ejecutar: () => S.generatePropuestaAbono(L('1782151590658w66y'), pays,
       propuestaDe(L('1782151590658w66y'), pays)),
-    contiene: ['Propuesta de Abono', 'Si abonas', 'Así se aplicaría tu pago',
-               'Así quedaría tu crédito', 'Total por pagar', 'Cronograma que quedaría',
-               'no un comprobante', 'PA-', '--r-bg:#000000'],
-    noContiene: ['TOTAL RECIBIDO', 'Total recibido', 'certifica el dinero', 'Recibido el'] },
+    // post-4.1.6 (opcion A del PO): el monto va UNA vez (el titular) y el capital de antes se dice
+    // en letra pequena, nunca tachado; sin el panel de rubros ni su total.
+    contiene: ['Propuesta de abono', 'Si abonas', 'Cómo se aplicaría',
+               'Así quedaría tu crédito', 'Te faltaría por pagar', 'Tu próxima cuota', 'Así quedarían tus cuotas',
+               'no un comprobante', 'PA-', '--r-bg:#000000', 'r-tar'],
+    noContiene: ['TOTAL RECIBIDO', 'Total recibido', 'certifica', 'Recibido el', 'line-through',
+                 'Total que se aplicaría', 'Abono extraordinario'] },
 
-  { nombre: 'propuesta-cop-claro', gen: 'generatePropuestaAbono', tema: 'light', celdas: 6,
+  { nombre: 'propuesta-cop-claro', gen: 'generatePropuestaAbono', tema: 'light', celdas: [4, 6],
     entrada: () => ({ loanId: '1773655076017', propuesta: true, tema: 'light', dark: false }),
     ejecutar: () => S.generatePropuestaAbono(L('1773655076017'), pays,
       propuestaDe(L('1773655076017'), pays)),
@@ -635,21 +638,23 @@ const CASOS = [
     // pago de 2.310.000" sobre un capital de 3.000.000, el mismo defecto que el recibo
     // cierra con su gate. Es inalcanzable desde la UI (el preview solo existe en C+I) pero
     // este arnes SI lo alcanza, asi que el gate vive en el generador y se fija aqui.
-    contiene: ['Propuesta de Abono', 'Si abonas', 'A pagar el', 'no un comprobante'],
-    noContiene: ['TOTAL RECIBIDO', 'certifica el dinero', 'Total por pagar',
-                 'Quedaria un solo pago'] },
+    // post-4.1.6: en `Intereses` lo que cambia es el interes de cada mes (y no hay cronograma: el
+    // preview solo existe en C+I, asi que unas filas amortizadas describirian un credito que no existe).
+    contiene: ['Propuesta de abono', 'Si abonas', 'Interés de cada mes', 'no un comprobante'],
+    noContiene: ['TOTAL RECIBIDO', 'certifica', 'Te faltaría por pagar', 'Quedaría un solo pago',
+                 'Así quedarían tus cuotas', 'line-through'] },
 
   // La fila que YA TRAE DINERO ADENTRO lo dice en una sub-linea. Sin ella, el encabezado
   // anunciaba "a pagar 144.59" y la primera fila mostraba "500.00" para la MISMA fecha, sin
   // nada que las uniera: el lector concluia que el papel se contradice. `VALOR CUOTA` sigue
   // siendo la cuota entera porque es lo que sostiene la identidad con INTERES y ABONO A
   // CAPITAL; el neto va aparte. Y el titular ya no repite la resta: la explica la tabla.
-  { nombre: 'propuesta-con-interes-adelantado', gen: 'generatePropuestaAbono', tema: 'light', celdas: 6,
+  { nombre: 'propuesta-con-interes-adelantado', gen: 'generatePropuestaAbono', tema: 'light', celdas: [4, 6],
     entrada: () => ({ loanId: '1782151590658w66y', propuesta: true, interesMes: true, tema: 'light', dark: false }),
     ejecutar: () => S.generatePropuestaAbono(L('1782151590658w66y'), pays,
       propuestaConInteresMes(L('1782151590658w66y'), pays)),
-    contiene: ['pa-ab', 'esta cuota quedaría con', 'a pagar', 'Cronograma que quedaría',
-               'POR ADELANTADO', 'no un comprobante'],
+    contiene: ['pa-ab', 'esta cuota quedaría con', 'a pagar', 'Así quedarían tus cuotas',
+               'por adelantado', 'no un comprobante'],
     // El titular no vuelve a explicar la resta que la sub-linea ya explico.
     // 'ya abonado' es la frase exacta que llevaba el titular; 'menos' a secas seria un
     // aserto fragil, esa palabra puede aparecer en cualquier copy futuro sin ser el defecto.
@@ -658,13 +663,13 @@ const CASOS = [
   // El HERO de la Propuesta: con UNA sola cuota proyectada el total y el proximo pago son
   // el mismo numero y las tarjetas colapsan en una. Su titular NO repite la resta —la
   // explica la sub-linea de la fila, que aqui tambien esta— y solo lleva la fecha.
-  { nombre: 'propuesta-hero-un-solo-pago', gen: 'generatePropuestaAbono', tema: 'light', celdas: 6,
+  { nombre: 'propuesta-hero-un-solo-pago', gen: 'generatePropuestaAbono', tema: 'light', celdas: [4, 6],
     entrada: () => ({ loanId: '1782151590658w66y', propuesta: true, hero: true, tema: 'light', dark: false }),
     ejecutar: () => S.generatePropuestaAbono(L('1782151590658w66y'), pays,
       propuestaConInteresMes(L('1782151590658w66y'), pays, 'modificarPlazo', 1)),
-    contiene: ['pa-hero', 'Quedaría un solo pago', 'esta cuota quedaría con', 'a pagar'],
-    // Lo que el titular dejo de decir, porque la tabla ya lo dice.
-    noContiene: ['ya abonado', 'Total por pagar', 'Cuotas restantes'] },
+    contiene: ['Quedaría un solo pago', 'esta cuota quedaría con', 'a pagar'],
+    // Lo que el titular dejo de decir, porque la tabla ya lo dice; y ninguna tarjeta repite su cifra.
+    noContiene: ['ya abonado', 'Te faltaría por pagar', 'Tu próxima cuota'] },
 
   // El override `incluirInteresMes`: el paso se dice en otro tiempo verbal ("Adelantamos el
   // interes de tu cuota del..., que aun no vence") y su importe lleva su propia clase. Una
@@ -1908,13 +1913,36 @@ function loansDelCaso(caso) {
 }
 
 {
+  // post-4.1.6 (opcion A del PO): el monto del abono va UNA vez, arriba ("Si abonas"), y la tabla
+  // "Como se aplicaria" no lleva fila de total: sus filas (intereses + capital) suman EXACTAMENTE esa
+  // cifra en la moneda visible. En dolares cada fila son los dolares del paso (los que el cliente entrega).
+  R.seccion('propuesta · las filas de «Cómo se aplicaría» suman la cifra del titular (post-4.1.6)');
+  const aUnidades = t => /USD/.test(t) ? Math.round(+t.replace(/[^\d.]/g, '') * 100) : +t.replace(/[^\d]/g, '');
+  let nPA = 0, nPAusd = 0; const malasPA = [];
+  for (const caso of CASOS.filter(c => c.gen === 'generatePropuestaAbono')) {
+    const html = sinMarco(generar(caso).html);
+    const hero = (/<div class="r-monto">([^<]+)<\/div>/.exec(html) || [, ''])[1];
+    const tabla = (/Cómo se aplicaría[^<]*<\/div><table class="r-t">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html) || [, ''])[1];
+    if (!hero || !tabla) continue;
+    nPA++; if (/USD/.test(hero)) nPAusd++;
+    const celdas = tabla.match(/<td class="n">([^<]*)<\/td>/g) || [];
+    const suma = celdas.reduce((t, c) => { const v = c.replace(/<[^>]+>/g, ''); return t + (/\d/.test(v) ? aUnidades(v) : 0); }, 0);
+    if (suma !== aUnidades(hero)) malasPA.push(caso.nombre + ': titular ' + hero + ', las filas suman ' + suma);
+    const veces = html.split(hero).length - 1;
+    if (veces !== 1) malasPA.push(caso.nombre + ': el monto ' + hero + ' aparece ' + veces + ' veces');
+  }
+  R.check('PA1 ANTI-VACIO: propuestas con tabla, en pesos y en dolares', nPA >= 3 && nPAusd >= 2 && nPA > nPAusd, { nPA, nPAusd });
+  R.check('PA2 las filas suman la cifra del titular, que aparece una sola vez en el documento', malasPA.length === 0, malasPA.join('\n      '));
+}
+
+{
   // 4.1.4 (bloque 4): en dolares, el TOTAL POR PAGAR del recibo de pago y de la propuesta es la suma de
   // sus filas ya convertidas. Hasta 4.1.3 se convertia la suma en pesos y el pie decia USD 1,600.01
   // bajo cuatro cuotas de USD 400.00. Se lee el papel tal como se imprime.
   R.seccion('dolares · el total por pagar es la suma de las filas impresas (4.1.4)');
   const centavos = t => Math.round(+String(t).replace(/[^\d.]/g, '') * 100);
   const montosB = h => (h.match(/<b>USD \$[\d,]+\.\d\d<\/b>/g) || []).map(x => centavos(x.replace(/<[^>]+>|USD \$|,/g, '')));
-  let nRec = 0, nProp = 0, descuadreViejo = 0; const malasQ = [];
+  let nRec = 0, nProp = 0, nPropTot = 0, descuadreViejo = 0; const malasQ = [];
   for (const caso of CASOS.filter(c => (c.gen === 'generateReciboCobro' || c.gen === 'generatePropuestaAbono') &&
                                        loansDelCaso(c).every(l => l.moneda === 'USD') && loansDelCaso(c).length)) {
     const html = sinMarco(generar(caso).html);
@@ -1943,18 +1971,19 @@ function loansDelCaso(caso) {
       }
     } else {
       nProp++;
-      const tot = (/Total por pagar[\s\S]*?pa-new[^>]*>USD \$([\d,.]+)/.exec(html) || [, ''])[1];
-      const filas = (/<table class="pa-tb">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || [];
+      const tot = (/Te faltaría por pagar<\/div><div class="r-tar-v">USD \$([\d,.]+)/.exec(html) || [, ''])[1];
+      const filas = (/Así quedarían tus cuotas<\/div><table class="r-t">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html) || [, ''])[1].match(/<tr>[\s\S]*?<\/tr>/g) || [];
       const sub = /a pagar <b>USD \$([\d,.]+)<\/b>/.exec(html);
       if (!tot || !filas.length) continue;
       const valor = f => montosB(f)[0];
       const suma = filas.reduce((s, f, i) => s + (i === 0 && sub ? centavos(sub[1].replace(/,/g, '')) : valor(f)), 0);
-      if (centavos(tot.replace(/,/g, '')) !== suma) malasQ.push(caso.nombre + ': "Total por pagar" ' + tot + ' no es la suma de lo que falta de cada cuota ' + suma / 100);
+      if (centavos(tot.replace(/,/g, '')) !== suma) malasQ.push(caso.nombre + ': "Te faltaría por pagar" ' + tot + ' no es la suma de lo que falta de cada cuota ' + suma / 100);
+      nPropTot++;
     }
   }
   R.check('Q1 ANTI-VACIO: recibos y propuestas en dolares, y al menos uno donde convertir la suma en pesos daba otra cifra',
-          nRec >= 2 && nProp >= 2 && descuadreViejo >= 1, { recibos: nRec, propuestas: nProp, descuadreViejo: descuadreViejo });
-  R.check('Q2 el pie = la suma de sus filas, "Te falta por pagar" = la suma de lo que queda de cada cuota, y el "Total por pagar" de la propuesta = la suma de sus filas', malasQ.length === 0, malasQ.join('\n      '));
+          nRec >= 2 && nProp >= 2 && nPropTot >= 2 && descuadreViejo >= 1, { recibos: nRec, propuestas: nProp, propuestasConTotal: nPropTot, descuadreViejo: descuadreViejo });
+  R.check('Q2 el pie = la suma de sus filas, "Te falta por pagar" = la suma de lo que queda de cada cuota, y el "Te faltaría por pagar" de la propuesta = la suma de sus filas', malasQ.length === 0, malasQ.join('\n      '));
   // El recibo del boton Pago, en el SEGUNDO pago de una cuota en dolares: si los dolares cubren lo que
   // falta, la cuota se salda (misma regla del backend, `cierraEnDolares`) y el papel lo dice. Antes solo
   // miraba si ESE pago cubria la cuota entera y lo titulaba "Recibo de Abono Parcial". Se arma en memoria
@@ -2265,11 +2294,61 @@ function loansDelCaso(caso) {
     proyeccion: { filas: [], n: 0, saldado: false, totalAntes: proyPA.totalAntes, totalDespues: proyPA.totalDespues,
       pendAntes: proyPA.pendAntes, pendDespues: proyPA.pendDespues, abonadoProxima: proyPA.abonadoProxima,
       capitalAntes: proyPA.capitalAntes, capitalDespues: proyPA.capitalDespues, cuotaAntes: 0 } })));
-  R.check('V16 propuesta congelada: «Así quedaría tu crédito» ya no sale vacío: Saldo de capital $ 3.000.000 → $ 2.000.000',
+  R.check('V16 propuesta congelada: «Así quedaría tu crédito» ya no sale vacío: Capital $ 2.000.000, antes $ 3.000.000',
     planPA.ok && planPA.pasos.some(p => p.tipo === 'abono') && proyPA.capitalAntes === 3000000 && proyPA.capitalDespues === 2000000 &&
-    /Así quedaría tu crédito\s*Saldo de capital\s*\$\s3\.000\.000\s*\$\s2\.000\.000/.test(tPA), tPA.slice(0, 900));
+    /Así quedaría tu crédito\s*Capital\s*\$\s2\.000\.000\s*antes \$\s3\.000\.000/.test(tPA), tPA.slice(0, 900));
   R.check('V16 y el aviso no promete que una cuota vaya a vencer (no queda ninguna)',
-    tPA.indexOf('Los valores corresponden al 31 de jul de 2026.') !== -1 && tPA.indexOf('si vence una cuota') === -1, tPA.slice(-500));
+    tPA.indexOf('Los valores corresponden al 31 de julio de 2026.') !== -1 && tPA.indexOf('si vence una cuota') === -1, tPA.slice(-500));
+  // Opcion A del PO (post-4.1.6): el monto del abono sale UNA vez (antes, cuatro); lo vencido va en una
+  // tabla corta sin total y, si todo va a capital, una frase sin cifras; el capital y el interes de cada
+  // mes dicen el de antes en letra pequena (nada tachado); el congelamiento se dice.
+  const vecesPA = (tPA.match(/\$\s2\.500\.000/g) || []).length;
+  R.check('V17 propuesta con lo vencido: el monto del abono aparece UNA sola vez y lo vencido va en la tabla, sin fila de total',
+    vecesPA === 1 && /Concepto\s*Intereses\s*Capital\s*Cuota \d+ · se salda/.test(tPA) && tPA.indexOf('Abono a capital') !== -1 &&
+    !/Total/.test(tPA.split('Cómo se aplicaría')[1].split('Así quedaría')[0]), [vecesPA, tPA.slice(0, 900)]);
+  const lpPpag = lpP.map(p => p.estadoPago === 'En Mora' ? Object.assign({}, p, { estadoPago: 'Pagado', partialPaid: p.cuotaTotal, montoCOPRecibido: p.cuotaTotal,
+    fechaRecaudo: HOYV, recibos: JSON.stringify([{ fecha: HOYV, cop: p.cuotaTotal }]) }) : p);
+  const paysPB = pays.filter(p => p.prestamoId !== ID).concat(lpPpag);
+  const planPB = S.planCascada(pP.loanN, lpPpag, { obligacionCOP: 1000000, cajaCOP: 1000000, obligacionUSD: 0 });
+  const proyPB = S.proyeccionCobro(pP.loanN, paysPB, planPB, null, []);
+  const hPB = emitir(() => S.generatePropuestaAbono(pP.loanN, paysPB, { fecha: HOYV, plan: planPB, cajaCOP: 1000000,
+    proyeccion: { filas: [], n: 0, saldado: false, totalAntes: proyPB.totalAntes, totalDespues: proyPB.totalDespues, pendAntes: proyPB.pendAntes,
+      pendDespues: proyPB.pendDespues, abonadoProxima: proyPB.abonadoProxima, moraTras: proyPB.moraTras,
+      capitalAntes: proyPB.capitalAntes, capitalDespues: proyPB.capitalDespues, cuotaAntes: 0 } }));
+  const tPB = vis(hPB);
+  R.check('V17 el caso de las pruebas del PO (todo a capital): una frase sin cifras, sin tabla, el monto UNA vez y nada tachado',
+    planPB.ok && planPB.pasos.length === 1 && /Cómo se aplicaría\s*Todo iría a\s*abono de capital\s*: no tienes cuotas vencidas\./.test(tPB) &&
+    tPB.indexOf('Concepto') === -1 && (tPB.match(/\$\s1\.000\.000/g) || []).length === 1 && hPB.indexOf('line-through') === -1, tPB.slice(0, 700));
+  R.check('V17 Capital $ 2.000.000 (antes $ 3.000.000), el interés de cada mes cuando se descongele y el congelamiento',
+    /Capital\s*\$\s2\.000\.000\s*antes \$\s3\.000\.000/.test(tPB) &&
+    /Interés de cada mes\s*\$\s200\.000\s*cuando se descongele · antes \$\s300\.000/.test(tPB) &&
+    /Tu crédito está\s*congelado\s*desde el 20 de julio de 2026: mientras siga así no corren intereses\./.test(tPB), tPB.slice(0, 900));
+  // Todo a capital PASANDO POR ALTO lo vencido (`omitirMora`, el acuerdo del art. 1653): la frase no puede
+  // decir «no tienes cuotas vencidas», y la nota dice cuanto seguiria vencido.
+  const planPC = S.planCascada(pP.loanN, lpP, { obligacionCOP: 1000000, cajaCOP: 1000000, obligacionUSD: 0 }, { omitirMora: true });
+  const proyPC = S.proyeccionCobro(pP.loanN, pays.filter(p => p.prestamoId !== ID).concat(lpP), planPC, null, []);
+  const tPC = vis(emitir(() => S.generatePropuestaAbono(pP.loanN, pays.filter(p => p.prestamoId !== ID).concat(lpP), { fecha: HOYV, plan: planPC, cajaCOP: 1000000,
+    proyeccion: { filas: [], n: 0, saldado: false, totalAntes: proyPC.totalAntes, totalDespues: proyPC.totalDespues, pendAntes: proyPC.pendAntes,
+      pendDespues: proyPC.pendDespues, abonadoProxima: proyPC.abonadoProxima, moraTras: proyPC.moraTras,
+      capitalAntes: proyPC.capitalAntes, capitalDespues: proyPC.capitalDespues, cuotaAntes: 0 } })));
+  R.check('V17 todo a capital dejando lo vencido: no dice «no tienes cuotas vencidas» y dice cuánto seguiría vencido',
+    planPC.ok && planPC.pasos.length === 1 && proyPC.moraTras > 0 && tPC.indexOf('no tienes cuotas vencidas') === -1 &&
+    /Todo iría a\s*abono de capital\s*\. Tus cuotas vencidas no se tocarían: se siguen debiendo\./.test(tPC) &&
+    /Seguirían vencidos\s*\$\s1\.500\.000\s*: se siguen debiendo\./.test(tPC), tPC.slice(0, 900));
+  // El preview marca `saldado` cuando no queda capital por amortizar en cuotas FUTURAS, aunque una cuota
+  // vencida quede a medias (todo el capital estaba en cuotas vencidas). La propuesta decia «quedaria
+  // totalmente pagado» con USD 100 por deber (hallado en la app real). Solo lo dice con capital 0 y nada vencido.
+  const GQ = L('1782151590658w66y'), lpG = pays.filter(p => p.prestamoId === GQ.id);
+  const moraG = lpG.filter(p => p.estadoPago === 'En Mora').reduce((t, p) => t + Math.max(0, Math.round(p.cuotaTotal) - Math.round(p.partialPaid || 0)), 0);
+  const planGQ = S.planCascada(GQ, lpG, { obligacionUSD: Math.round(moraG / GQ.trmAcordada / 2 * 100) / 100, cajaCOP: Math.round(moraG / 2), obligacionCOP: 0 });
+  const proyGQ = S.proyeccionCobro(GQ, pays, planGQ, null, []);
+  const propGQ = (cap, mora) => vis(emitir(() => S.generatePropuestaAbono(GQ, pays, { fecha: HOYV, plan: planGQ, cajaCOP: Math.round(moraG / 2),
+    proyeccion: { filas: [], n: 0, saldado: true, totalAntes: proyGQ.totalAntes, totalDespues: null, pendAntes: proyGQ.pendAntes, pendDespues: null,
+      abonadoProxima: 0, moraTras: mora, capitalAntes: proyGQ.capitalAntes, capitalDespues: cap, cuotaAntes: 0 } })));
+  const tGQ = propGQ(proyGQ.capitalDespues, proyGQ.moraTras), tGQ0 = propGQ(0, 0);
+  R.check('V18 con una cuota vencida a medias la propuesta no dice que el crédito quede pagado (aunque el preview marque «saldado»)',
+    planGQ.ok && proyGQ.moraTras > 0 && proyGQ.capitalDespues > 0 && tGQ.indexOf('totalmente pagado') === -1 && tGQ.indexOf('Seguirían vencidos') !== -1, tGQ.slice(0, 700));
+  R.check('V18 ANTI-TRIVIAL: con capital 0 y nada vencido, sí lo dice', /Con este abono tu crédito quedaría\s*totalmente pagado\s*\./.test(tGQ0), tGQ0.slice(0, 700));
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────

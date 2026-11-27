@@ -1166,13 +1166,13 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
             const htmlP = fe.captura.pdfs[0].html;
             // Lo que el defecto borraba en silencio.
             R.check('H (4c) la propuesta declara cuanto quedaria por pagar',
-              htmlP.indexOf('Total por pagar') !== -1,
+              htmlP.indexOf('Te faltaría por pagar') !== -1,
               'la tarjeta no aparece: `proyeccionCobro` no recibio las filas del preview');
             R.check('H (4c) y trae el cronograma que quedaria',
-              htmlP.indexOf('Cronograma que quedaría') !== -1);
+              htmlP.indexOf('Así quedarían tus cuotas') !== -1);
             // P.D. 4 del PO (post-4.1.6): el modal le pasa el capital antes y despues a la propuesta.
-            R.check('H (4c) y el saldo de capital, con el de antes tachado',
-              /<div class="pa-cl">Saldo de capital<\/div><div class="pa-old">[^<]+<\/div><div class="pa-new">[^<]+<\/div>/.test(htmlP),
+            R.check('H (4c) y el saldo de capital, con el de antes',
+              /<div class="r-tar-l">Capital<\/div><div class="r-tar-v">[^<]+<\/div><div class="r-tar-s">antes [^<]+<\/div>/.test(htmlP),
               'la tarjeta no aparece: el modal no le paso capitalAntes / capitalDespues a la propuesta');
             // Y NUNCA puede presentarse como comprobante de dinero recibido.
             R.check('H (4c) la propuesta no se presenta como comprobante',
@@ -1180,6 +1180,47 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
               htmlP.indexOf('certifica el dinero') === -1 && htmlP.indexOf('Si abonas') !== -1);
           }
         }
+      }
+
+      // (4d) post-4.1.6: un cobro que deja una cuota vencida A MEDIAS. El modal tiene que pasarle a la
+      // propuesta lo que sigue vencido (`moraTras`): sin eso decia «no tienes cuotas vencidas» o
+      // «quedaria totalmente pagado» (lo destapo la prueba en la app real).
+      {
+        const poco = r2H(cobH.mora / trmH / 2).toFixed(2);
+        const vista = correr(poco, Math.round(+poco * trmH));
+        const boton = nodos(vista.arbol, 'button').filter(b => /Enviar propuesta al cliente/.test(textos(b).join('')))[0];
+        R.check('H (4d) el modal ofrece la propuesta con un cobro que no salda lo vencido', !!boton);
+        if (boton) {
+          fe.captura.pdfs.length = 0;
+          boton.props.onClick();
+          const htmlD = fe.captura.pdfs.length ? fe.captura.pdfs[0].html : '';
+          R.check('H (4d) la propuesta dice cuanto seguiria vencido, y no que el credito quede pagado',
+            /Seguirían vencidos <b>[^<]+<\/b>/.test(htmlD) && htmlD.indexOf('totalmente pagado') === -1 &&
+            htmlD.indexOf('no tienes cuotas vencidas') === -1, htmlD.replace(/<style[\s\S]*?<\/style>/, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 600));
+        }
+      }
+
+      // (4e) post-4.1.6: TODO el capital esta en cuotas vencidas (armado en memoria: las por vencer pasan a
+      // En Mora) y el cobro deja una a medias. El preview marca «saldado» (no queda capital por amortizar en
+      // cuotas futuras) y el modal decia «El credito queda SALDADO» con dinero por deber.
+      {
+        const paysM = paysH.map(p => (p.prestamoId === loanH.id && !esAbono(p) && p.estadoPago === 'Pendiente') ? Object.assign({}, p, { estadoPago: 'En Mora' }) : p);
+        const cobM = cobrableTotal(loanH, paysM);
+        const correrM = (usd) => {
+          sembrar(['', parseDecimalH(usd), String(Math.round(+usd * trmH)), '2026-08-23', '', false, true, null, true]);
+          return textos(pintar(CobroModalReal({ loan: loanH, pays: paysM, onConfirm: () => Promise.resolve({ ok: true }), onClose: () => {} }))).join(' ');
+        };
+        const tParte = correrM(r2H(cobM.mora / trmH - 50).toFixed(2));
+        // Lo vencido en dolares, cuota por cuota (como lo planea la cascada): la suma convertida de una vez
+        // podria pasarse un centavo y dejar un sobrante.
+        const moraU = paysM.filter(p => p.prestamoId === loanH.id && !esAbono(p) && p.estadoPago === 'En Mora')
+          .reduce((t, p) => t + r2H(Math.max(0, Math.round(p.cuotaTotal) - Math.round(p.partialPaid || 0)) / trmH), 0);
+        const tTodo = correrM(r2H(moraU).toFixed(2));
+        R.check('H (4e) con lo vencido a medias el modal no dice SALDADO: dice cuanto seguiria vencido',
+          Math.round(cobM.abonable || 0) === 0 && tParte.indexOf('SALDADO') === -1 && /No quedan cuotas por vencer, pero seguirían vencidos\s+USD\s\$(49\.99|50\.00|50\.01)/.test(tParte),
+          tParte.slice(tParte.indexOf('CRONOGRAMA'), tParte.indexOf('CRONOGRAMA') + 200));
+        R.check('H (4e) ANTI-TRIVIAL: saldando todo lo vencido, si queda SALDADO',
+          tTodo.indexOf('El crédito queda SALDADO') !== -1 && tTodo.indexOf('seguirían vencidos') === -1, tTodo.slice(tTodo.indexOf('CRONOGRAMA'), tTodo.indexOf('CRONOGRAMA') + 200));
       }
 
       // ── 5. El modal y el recibo imprimen los mismos numeros ─────────────────
@@ -1494,15 +1535,13 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           if (!m) return NaN;
           return m[1] ? parseFloat(m[2].replace(/,/g, '')) : parseInt(m[2].replace(/[^0-9]/g, ''), 10);
         };
-        // La propuesta lo declara en su tarjeta "Total por pagar"; el recibo, en "Te falta por pagar".
+        // La propuesta lo declara en su tarjeta "Te faltaría por pagar"; el recibo, en "Te falta por pagar".
         // Es la MISMA cifra vista antes y despues. Desde post-4.1.6 la tabla del recibo es solo lo
         // vencido, asi que la cifra de referencia sale de las filas PERSISTIDAS: lo que queda de cada
         // cuota viva, ya convertida a la moneda visible (la regla de 4.1.4).
         const totalPropuesta = (() => {
-          const m = /<div class="pa-cl">Total por pagar<\/div>([\s\S]*?)<\/div>\s*<\/div>/.exec(htmlProp);
-          if (!m) return NaN;
-          const vals = m[1].match(/(?:USD\s*)?\$\s*[\d.,]+/g) || [];
-          return numJ(vals[vals.length - 1] || '');
+          const m = /<div class="r-tar-l">Te faltaría por pagar<\/div><div class="r-tar-v">([^<]*)<\/div>/.exec(htmlProp);
+          return m ? numJ(m[1]) : NaN;
         })();
         const totalRecibo = (() => {
           const quedan = post.pays.filter(p => p.prestamoId === loanQ.id && !esAbono(p) && p.estadoPago !== 'Pagado')
@@ -1546,16 +1585,14 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           proyJ.capitalAntes - plan2.pasos.reduce((t, x) => t + Math.round(x.capital || 0), 0) !== proyJ.capitalDespues,
           JSON.stringify({ antes: proyJ.capitalAntes, despues: proyJ.capitalDespues, resta: plan2.pasos.reduce((t, x) => t + Math.round(x.capital || 0), 0) }));
         const capProp = (() => {
-          const m = /<div class="pa-cl">Saldo de capital<\/div>([\s\S]*?)<\/div>\s*<\/div>/.exec(htmlProp);
-          if (!m) return null;
-          const vals = m[1].match(/(?:USD\s*)?\$\s*[\d.,]+/g) || [];
-          return { antes: vals.length > 1 ? numJ(vals[0]) : null, valor: numJ(vals[vals.length - 1] || '') };
+          const m = /<div class="r-tar-l">Capital<\/div><div class="r-tar-v">([^<]*)<\/div>(?:<div class="r-tar-s">antes ([^<]*)<\/div>)?/.exec(htmlProp);
+          return m ? { antes: m[2] ? numJ(m[2]) : null, valor: numJ(m[1]) } : null;
         })();
         const capRec = (() => {
           const m = /(?:De eso, capital|Saldo de capital)<b class="r-cap">([^<]*)<\/b>/.exec(htmlRec);
           return m ? numJ(m[1]) : NaN;
         })();
-        R.check('J la propuesta tacha el capital de antes y promete el MISMO capital que el recibo declara',
+        R.check('J la propuesta dice el capital de antes y promete el MISMO capital que el recibo declara',
           !!capProp && capProp.antes !== null && capProp.antes > capProp.valor && capProp.valor === capRec,
           JSON.stringify({ capProp, capRec }));
         // El antes/despues de la tarjeta. El escenario acorta el plazo, asi que el total

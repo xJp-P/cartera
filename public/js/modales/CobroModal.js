@@ -473,7 +473,12 @@ export function CobroModal(props){
         h(Ico,{name:verCron?'chevdown':'chevright',size:13,color:'var(--text2)',sw:2.5}),
         h('span',{style:{fontSize:11,fontWeight:800,color:'var(--text2)',letterSpacing:.5}},
           'CRONOGRAMA DESPUÉS DEL COBRO')),
-      verCron&&(cronoPreview.saldado
+      // `saldado` dice que no queda capital por amortizar en cuotas futuras; si una cuota vencida
+      // queda a medias, el credito NO queda saldado: se sigue debiendo lo que falta de ella (post-4.1.6).
+      verCron&&(cronoPreview.saldado&&proy&&Math.round(proy.moraTras||0)>0
+        ? h('div',{style:{background:'var(--yellow-bg)',border:'1px solid var(--yellow-bd)',borderRadius:10,padding:'11px 13px',fontSize:12,color:'var(--yellow)',fontWeight:700}},
+            'No quedan cuotas por vencer, pero seguirían vencidos ',money(proy.moraTras),'.')
+        : cronoPreview.saldado
         ? h('div',{style:{background:'var(--green-bg)',border:'1px solid var(--green-bd)',borderRadius:10,padding:'11px 13px',fontSize:12,color:'var(--green)',fontWeight:700}},
             'El crédito queda SALDADO: no quedan cuotas por cobrar.')
         : h('div',{style:{border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}},
@@ -556,6 +561,9 @@ export function CobroModal(props){
               pendAntes:proy.pendAntes,
               pendDespues:proy.pendDespues,
               abonadoProxima:proy.abonadoProxima,
+              // Lo vencido que el cobro no salda (post-4.1.6): sin esto la propuesta diria «no tienes
+              // cuotas vencidas» o «quedaria pagado» con una cuota vencida a medias.
+              moraTras:proy.moraTras,
               capitalAntes:proy.capitalAntes,
               capitalDespues:proy.capitalDespues,
               cuotaAntes:cuotaActual,
