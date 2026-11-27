@@ -409,6 +409,11 @@ export function CobroModal(props){
         vis.abonoU>0&&linea('Abono extraordinario a capital', fmtUni(vis.abonoU),'var(--green)'),
         h('div',{style:{height:1,background:'var(--border)',margin:'5px 0'}}),
         linea('Total aplicado', fmtUni(vis.aplicadoU),'var(--text)',true),
+        // Post-4.1.6 (P.D. 4 del PO): cuanto baja el capital, con la cifra que imprimira el recibo.
+        proy.capitalAntes!=null&&linea('Capital',
+          proy.capitalDespues<proy.capitalAntes ? fmtUni(uni(proy.capitalAntes))+' → '+fmtUni(uni(proy.capitalDespues))
+            : fmtUni(uni(proy.capitalAntes))+' · sin cambios',
+          proy.capitalDespues<proy.capitalAntes?'var(--green)':'var(--text3)'),
         esUSD&&linea('Caja registrada', fmt(T.caja),'var(--text3)'))),
 
     // Aviso de sobrante
@@ -551,6 +556,8 @@ export function CobroModal(props){
               pendAntes:proy.pendAntes,
               pendDespues:proy.pendDespues,
               abonadoProxima:proy.abonadoProxima,
+              capitalAntes:proy.capitalAntes,
+              capitalDespues:proy.capitalDespues,
               cuotaAntes:cuotaActual,
             },
           });

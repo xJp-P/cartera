@@ -18,17 +18,17 @@
     "etiquetas": []
   },
   "valores": {
-    "bytes": 10508,
+    "bytes": 10650,
     "nFilas": 2,
     "nCeldas": 12,
     "celdasPorTr": [
       6,
       6
     ],
-    "nMontos": 22,
-    "hashMontos": "ee5e10a88c11ac995a5ee7248c43a745337a8a4b",
+    "nMontos": 24,
+    "hashMontos": "e96e255808fe32aeef04e3d44499a6f6843deddd",
     "hashFname": "eb60ead8927ad21c3d772e0ea29f6bbc831cb618",
-    "hashTexto": "46bd6ce72b456a8f3fb5c2891132578778e57782",
+    "hashTexto": "3c11d69a61f6124a316583dc3d9b970ec8c7b65d",
     "clases": [
       "l",
       "pa-aviso",

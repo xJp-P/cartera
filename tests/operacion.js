@@ -1719,6 +1719,15 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
       planJ.ok && tCm.indexOf('QUÉ HACER CON EL CRONOGRAMA') === -1 && /❄ Congelado: no se generan cuotas/.test(tCm), tCm.slice(0, 200));
     const cmN = montar(X.CobroModal, { loan: lJ, pays, onConfirm: () => Promise.resolve(null), onClose: () => {}, onRequestLiquidar: () => {} }, ['1000000']);
     R.check('R11 ANTI-TRIVIAL: sin congelar, el mismo cobro SI ofrece las opciones de recalculo', cmN.todo.indexOf('QUÉ HACER CON EL CRONOGRAMA') !== -1);
+    // P.D. 4 del PO (post-4.1.6): la ventana dice cuánto baja el capital, con la cifra que imprimirá el recibo.
+    const capTxt = t => { const m = /Capital\s*\$\s?([\d.]+)\s*→\s*\$\s?([\d.]+)/.exec(t.replace(/\u00a0/g, ' ')); return m ? [+m[1].replace(/\./g, ''), +m[2].replace(/\./g, '')] : null; };
+    const pJ = X.planCascada(planJ.loanN, paysJ, { obligacionCOP: 1000000, cajaCOP: 1000000, obligacionUSD: 0 });
+    const prJ = X.proyeccionCobro(planJ.loanN, paysJ, pJ, null, []);
+    R.check('R19 la ventana de cobro muestra el capital antes → después (congelado, con abono), la misma cifra que la proyección',
+      !!capTxt(tCm) && capTxt(tCm)[0] === prJ.capitalAntes && capTxt(tCm)[1] === prJ.capitalDespues && prJ.capitalDespues < prJ.capitalAntes, [capTxt(tCm), prJ.capitalAntes, prJ.capitalDespues]);
+    const lI = loans.find(l => l.id === '1773655076017');
+    const cmI = montar(X.CobroModal, { loan: lI, pays, onConfirm: () => Promise.resolve(null), onClose: () => {}, onRequestLiquidar: () => {} }, ['300000']);
+    R.check('R19 un cobro que solo cubre intereses: «Capital … · sin cambios»', /Capital\s*\$\s?3\.000\.000 · sin cambios/.test(cmI.todo.replace(/\u00a0/g, ' ')), cmI.todo.slice(0, 300));
     R.check('R11 la casilla del interés nombra la cuota de cierre y dice que no cambia con el abono (sin congelar, la de siempre)',
       /Incluir el interés de la cuota de cierre/.test(tCm) && /sus días ya corrieron, así que no cambia con el abono/.test(tCm) &&
       /Incluir intereses del mes actual/.test(cmN.todo) && /se liquida sobre el capital que quede/.test(cmN.todo));

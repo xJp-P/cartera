@@ -1170,6 +1170,10 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
               'la tarjeta no aparece: `proyeccionCobro` no recibio las filas del preview');
             R.check('H (4c) y trae el cronograma que quedaria',
               htmlP.indexOf('Cronograma que quedaría') !== -1);
+            // P.D. 4 del PO (post-4.1.6): el modal le pasa el capital antes y despues a la propuesta.
+            R.check('H (4c) y el saldo de capital, con el de antes tachado',
+              /<div class="pa-cl">Saldo de capital<\/div><div class="pa-old">[^<]+<\/div><div class="pa-new">[^<]+<\/div>/.test(htmlP),
+              'la tarjeta no aparece: el modal no le paso capitalAntes / capitalDespues a la propuesta');
             // Y NUNCA puede presentarse como comprobante de dinero recibido.
             R.check('H (4c) la propuesta no se presenta como comprobante',
               htmlP.indexOf('TOTAL RECIBIDO') === -1 && htmlP.indexOf('Total recibido') === -1 &&
@@ -1446,6 +1450,7 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
                         totalAntes: proyJ.totalAntes, totalDespues: proyJ.totalDespues,
                         pendAntes: proyJ.pendAntes, pendDespues: proyJ.pendDespues,
                         abonadoProxima: proyJ.abonadoProxima,
+                        capitalAntes: proyJ.capitalAntes, capitalDespues: proyJ.capitalDespues,
                         cuotaAntes: pendP.length ? Math.round(pendP[0].cuotaTotal) : 0 },
         });
         R.eq('J la propuesta emitio un documento', pdfsCascada.length, 1);
@@ -1528,6 +1533,31 @@ async function ejecutarPlan(loanId, plan, fecha, obs, port) {
           totalReciboCard && totalReciboCard.valor, totalRecibo);
         R.eq('J los dos papeles LIDERAN con la misma cifra',
           totalReciboCard && totalReciboCard.valor, totalPropuesta);
+        // ── El capital (post-4.1.6, P.D. 4 del PO) ──
+        // La propuesta dice cuanto quedaria de capital; tiene que ser EXACTAMENTE el capital que el
+        // recibo declara despues («De eso, capital»), en pesos (saldoConCaja sobre lo persistido) y en
+        // el papel. Este escenario trae un parcial que sobrevive al recalculo, el borde donde una resta
+        // a mano divergiria (la imputacion de ese parcial cambia con la cuota nueva).
+        const capPersistido = saldoConCaja(loanQ, post.pays.filter(p => p.prestamoId === loanQ.id));
+        R.eq('J el capital que proyecta la propuesta es el que queda en la base tras el cobro (pesos)',
+          proyJ.capitalDespues, capPersistido);
+        R.check('J ANTI-TRIVIAL: el capital baja, y el parcial en vuelo hace que no sea la resta simple',
+          proyJ.capitalDespues < proyJ.capitalAntes &&
+          proyJ.capitalAntes - plan2.pasos.reduce((t, x) => t + Math.round(x.capital || 0), 0) !== proyJ.capitalDespues,
+          JSON.stringify({ antes: proyJ.capitalAntes, despues: proyJ.capitalDespues, resta: plan2.pasos.reduce((t, x) => t + Math.round(x.capital || 0), 0) }));
+        const capProp = (() => {
+          const m = /<div class="pa-cl">Saldo de capital<\/div>([\s\S]*?)<\/div>\s*<\/div>/.exec(htmlProp);
+          if (!m) return null;
+          const vals = m[1].match(/(?:USD\s*)?\$\s*[\d.,]+/g) || [];
+          return { antes: vals.length > 1 ? numJ(vals[0]) : null, valor: numJ(vals[vals.length - 1] || '') };
+        })();
+        const capRec = (() => {
+          const m = /(?:De eso, capital|Saldo de capital)<b class="r-cap">([^<]*)<\/b>/.exec(htmlRec);
+          return m ? numJ(m[1]) : NaN;
+        })();
+        R.check('J la propuesta tacha el capital de antes y promete el MISMO capital que el recibo declara',
+          !!capProp && capProp.antes !== null && capProp.antes > capProp.valor && capProp.valor === capRec,
+          JSON.stringify({ capProp, capRec }));
         // El antes/despues de la tarjeta. El escenario acorta el plazo, asi que el total
         // por pagar TIENE que bajar: si el tachado no aparece es que `pre.totalPorPagar`
         // dejo de enhebrarse desde `_snapshotAbono` — el extractor lo trata como grupo

@@ -36,7 +36,7 @@
 
 import { esAbono } from './ids.js';
 import { _tasaPeriodo } from './calculo.js';
-import { esTransitoria, interesTransitoria, cierreDeCuota } from './dominio.js';
+import { esTransitoria, interesTransitoria, cierreDeCuota, saldoConCaja } from './dominio.js';
 
 // Suma con redondeo a peso entero (doctrina de enteros de v2.2.0, Bug #43).
 function r0(n){ return Math.round(n||0); }
@@ -431,6 +431,48 @@ export function cobrableTotal(loan, allPays){
 //   `filas`     — las del preview (`filasPreview`), ya con su `cuota`.
 //   `pendOrden` — las cuotas Pendientes de HOY, en el mismo orden que `filas`: son las
 //                 que arrastran su abono a la fila proyectada correspondiente.
+// ── EL CAPITAL ANTES Y DESPUES DEL COBRO (post-4.1.6, P.D. 4 de las pruebas del PO) ──
+// La propuesta y la ventana de cobro no decian cuanto bajaba el capital, y en un credito congelado
+// «Asi quedaria tu credito» salia vacio. La cifra tiene que ser EXACTAMENTE la que despues imprime el
+// recibo («Saldo de capital» / «De eso, capital» = `saldoConCaja`), asi que no se resta a mano: se
+// arman las filas como quedarian tras el cobro (lo que hacen /partial y /abono, y el cronograma que
+// el preview ya promete) y se les aplica la MISMA formula. La seccion J de `cascada-cobro` exige que
+// coincida con el recibo emitido tras ejecutar el cobro contra el servidor real.
+export function capitalTrasCobro(loan, allPays, plan, filas){
+  var lp=(allPays||[]).filter(function(p){ return String(p.prestamoId)===String(loan.id); });
+  var pasos=(plan&&plan.pasos)||[];
+  var esUSD=loan.moneda==='USD';
+  var porPay={}; pasos.forEach(function(x){ if(x.payId) porPay[x.payId]=x; });
+  var abono=pasos.filter(function(x){ return x.tipo==='abono'; }).reduce(function(s,x){ return s+r0(x.obligacionCOP); },0);
+  // Con abono, el motor regenera las cuotas Pendientes (las del preview, por su numero).
+  var porN={}; (abono>0&&filas?filas:[]).forEach(function(f){ if(f&&f.cuotaN!=null) porN[f.cuotaN]=f; });
+  var filasDesp=lp.map(function(p){
+    var q=Object.assign({},p), paso=porPay[p.id];
+    if(paso){
+      // Lo que escribe /partial: la deuda extinguida en partialPaid y el evento de caja en el registro.
+      var ya=r0(p.partialPaid||0), obl=r0(paso.obligacionCOP);
+      var rec; try{ rec=JSON.parse(p.recibos||'[]'); }catch(_){ rec=[]; }
+      if(!Array.isArray(rec)) rec=[];
+      var ev={fecha:p.fechaPago, cop:r0(paso.cajaCOP)};
+      if(esUSD&&(+paso.obligacionUSD||0)>0){ ev.usd=+paso.obligacionUSD; ev.obl=paso.salda?Math.max(0,r0(p.cuotaTotal)-ya):obl; }
+      rec.push(ev);
+      q.recibos=JSON.stringify(rec);
+      q.partialPaid=paso.salda?r0(p.cuotaTotal):ya+obl;
+      q.montoCOPRecibido=r0(p.montoCOPRecibido||0)+r0(paso.cajaCOP);
+      if(paso.salda){ q.estadoPago='Pagado'; q.fechaRecaudo=p.fechaPago; }
+    }
+    var f=porN[p.cuotaN];
+    if(f&&!esAbono(p)&&q.estadoPago==='Pendiente'){
+      q.interesPeriodo=r0(f.interes); q.cuotaTotal=r0(f.cuota); q.abonoCapital=Math.max(0,r0(f.cuota)-r0(f.interes));
+    }
+    return q;
+  });
+  // Lo que escribe /abono: una fila de capital.
+  if(abono>0) filasDesp.push({ id:loan.id+'-ab-proyeccion', prestamoId:loan.id, cuotaN:0, fechaPago:null, estadoPago:'Pagado',
+    interesPeriodo:0, abonoCapital:abono, cuotaTotal:abono, partialPaid:0, montoCOPRecibido:abono, fechaRecaudo:'1970-01-01', recibos:'[]' });
+  return { antes:saldoConCaja(loan, lp), despues:saldoConCaja(loan, filasDesp) };
+}
+
 export function proyeccionCobro(loan, allPays, plan, filas, pendOrden){
   var lp=(allPays||[]).filter(function(p){ return String(p.prestamoId)===String(loan.id); });
   var reg=lp.filter(function(p){ return !esAbono(p)&&
@@ -467,9 +509,12 @@ export function proyeccionCobro(loan, allPays, plan, filas, pendOrden){
     }
     totalDespues=pendDespues.reduce(function(s,x){ return s+x; },0);
   }
+  var cap=capitalTrasCobro(loan, allPays, plan, filas);
   return {
     totalAntes:totalAntes, totalDespues:totalDespues,
     pendAntes:pendAntes, pendDespues:pendDespues,
+    // El capital antes y despues (post-4.1.6): la misma cifra que imprimira el recibo.
+    capitalAntes:cap.antes, capitalDespues:cap.despues,
     abonadoProxima:pend.length?partialProy(pend[0]):0,
     // La mora que el cobro NO salda. Se expone porque los documentos la necesitan para
     // ROTULAR bien la tarjeta de la cuota: con plata vencida encima, llamar "tu proximo

@@ -301,6 +301,7 @@ function propuestaDe(loan, arrPays) {
                   totalAntes: proy.totalAntes, totalDespues: proy.totalDespues,
                   pendAntes: proy.pendAntes, pendDespues: proy.pendDespues,
                   abonadoProxima: proy.abonadoProxima,
+                  capitalAntes: proy.capitalAntes, capitalDespues: proy.capitalDespues,
                   cuotaAntes: pend.length ? Math.round(pend[0].cuotaTotal) : 0 },
   };
 }
@@ -347,6 +348,7 @@ function propuestaConInteresMes(loan, arrPays, modo, valor) {
                   totalAntes: proy.totalAntes, totalDespues: proy.totalDespues,
                   pendAntes: proy.pendAntes, pendDespues: proy.pendDespues,
                   abonadoProxima: proy.abonadoProxima, moraTras: proy.moraTras,
+                  capitalAntes: proy.capitalAntes, capitalDespues: proy.capitalDespues,
                   cuotaAntes: pend.length ? Math.round(pend[0].cuotaTotal) : 0 },
   };
 }
@@ -2253,6 +2255,21 @@ function loansDelCaso(caso) {
   const tLN = vis(emitir(() => S.generateEstadoLiquidacion(L(ID), pays, config.datos_pago, { incluyeProxMes: false, hasta: HOYV })));
   R.check('V15 ANTI-TRIVIAL: sin congelar ni condonar, ni «Condonada», ni «congelado», ni lo condonado',
     tLN.toLowerCase().indexOf('congelad') === -1 && tLN.indexOf('Condonada') === -1 && tLN.indexOf('se condonó') === -1 && tLN.indexOf('Se condonaron') === -1);
+  // ── La propuesta de abono de un crédito congelado (P.D. 4 del PO) ──
+  // Congelado y sin cuotas, «Así quedaría tu crédito» salía VACÍO. Ahora lleva el saldo de capital
+  // (antes → después) y el aviso no habla de cuotas que vencen cuando no queda ninguna.
+  const planPA = S.planCascada(pP.loanN, lpP, { obligacionCOP: 2500000, cajaCOP: 2500000, obligacionUSD: 0 });
+  const proyPA = S.proyeccionCobro(pP.loanN, pays.filter(p => p.prestamoId !== ID).concat(lpP), planPA, null, []);
+  const tPA = vis(emitir(() => S.generatePropuestaAbono(pP.loanN, pays.filter(p => p.prestamoId !== ID).concat(lpP), {
+    fecha: HOYV, plan: planPA, cajaCOP: 2500000,
+    proyeccion: { filas: [], n: 0, saldado: false, totalAntes: proyPA.totalAntes, totalDespues: proyPA.totalDespues,
+      pendAntes: proyPA.pendAntes, pendDespues: proyPA.pendDespues, abonadoProxima: proyPA.abonadoProxima,
+      capitalAntes: proyPA.capitalAntes, capitalDespues: proyPA.capitalDespues, cuotaAntes: 0 } })));
+  R.check('V16 propuesta congelada: «Así quedaría tu crédito» ya no sale vacío: Saldo de capital $ 3.000.000 → $ 2.000.000',
+    planPA.ok && planPA.pasos.some(p => p.tipo === 'abono') && proyPA.capitalAntes === 3000000 && proyPA.capitalDespues === 2000000 &&
+    /Así quedaría tu crédito\s*Saldo de capital\s*\$\s3\.000\.000\s*\$\s2\.000\.000/.test(tPA), tPA.slice(0, 900));
+  R.check('V16 y el aviso no promete que una cuota vaya a vencer (no queda ninguna)',
+    tPA.indexOf('Los valores corresponden al 31 de jul de 2026.') !== -1 && tPA.indexOf('si vence una cuota') === -1, tPA.slice(-500));
 }
 
 // ── Guardas anti "verde en vacio" ────────────────────────────────────────────────────────

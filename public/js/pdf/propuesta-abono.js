@@ -23,6 +23,7 @@
 import { fmt, fmtUSD, fmtD } from '../core/format.js';
 import { nowStr, properCase } from '../core/ui.js';
 import { esDiario } from '../core/dominio.js';
+import { esAbono } from '../core/ids.js';
 import { rbPaleta, rbTokens, rbImpresionPapel, RB_LETRA, RB_LOGO, RB_MARCO_ABRE, RB_MARCO_CIERRA } from './recibo-estilo.js';
 import { nombrePdf, montoArchivo } from './nombres.js';
 
@@ -52,6 +53,11 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
   if (!plan || !plan.pasos || !plan.pasos.length) return;
 
   var proy  = (propuesta && propuesta.proyeccion) || {};
+  // ¿Queda alguna cuota por vencer? En un credito congelado sin cuotas, «si vence una cuota antes de
+  // que abones» seria falso (post-4.1.6). Sin `allPays`, como antes.
+  var quedanPorVencer = !allPays || (allPays || []).some(function(p){
+    return String(p.prestamoId) === String(loan.id) && !esAbono(p) && p.estadoPago === 'Pendiente';
+  });
   var pasos = plan.pasos;
   var esUSD = loan.moneda === 'USD';
   var trm   = +loan.trmAcordada || 1;
@@ -227,6 +233,17 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     if (filas.length) cards += card('Cuotas restantes', '', String(filas.length));
   }
 
+  // ── El saldo de capital, antes y despues (post-4.1.6, P.D. 4 del PO) ──
+  // Va siempre (un credito congelado no tiene otra tarjeta: la seccion salia vacia), salvo que su
+  // cifra ya este en otra tarjeta (en un Prestamo al 0% lo que falta ES el capital).
+  if (proy.capitalAntes != null && proy.capitalDespues != null) {
+    var capA = Math.max(0, Math.round(proy.capitalAntes)), capD = Math.max(0, Math.round(proy.capitalDespues));
+    var capTxt = money(capD);
+    if (cards.indexOf('>' + capTxt + '<') === -1) {
+      cards = card('Saldo de capital', capD < capA ? money(capA) : '', capTxt, capD < capA ? '' : 'sin cambios') + cards;
+    }
+  }
+
   var saldadoHTML = (proy.saldado || totalDespues === 0)
     ? '<div class="pa-saldado">Con ese abono el crédito quedaría <b>totalmente cancelado</b>.</div>' : '';
 
@@ -355,7 +372,7 @@ export function generatePropuestaAbono(loan, allPays, propuesta, opts) {
     // la app y cifras exactas se puede leer como comprobante de algo ya pagado.
     '<div class="pa-aviso"><b>Esto es una proyección, no un comprobante.</b> No se ha registrado ningún pago ' +
       'y el crédito sigue como estaba. Los valores corresponden al ' + fmtD(fechaProp) +
-      '; si vence una cuota antes de que abones, el reparto cambia.</div>',
+      (quedanPorVencer ? '; si vence una cuota antes de que abones, el reparto cambia.' : '.') + '</div>',
     '<div class="pa-foot">Documento informativo preparado a solicitud del cliente.' +
       '<br>Generado por <b>Cartera</b> &nbsp;&middot;&nbsp; ' + paCode + ' &nbsp;&middot;&nbsp; ' + fechaEmision + '</div>',
     RB_MARCO_CIERRA + '</body></html>',
