@@ -76,6 +76,14 @@ export function CondonarModal(props){
     :plan.error;
   var intCondonar=error?0:(montoCOP!=null?montoCOP:totalCond);
   var porId={}; if(plan) plan.filas.forEach(function(f){ porId[f.p.id]=f; });
+  // Con un monto escrito (post-4.1.6, pedido del PO): una cuota marcada a la que el monto NO llega
+  // no se perdona. Sigue marcada (si el monto sube, el reparto la alcanza), pero se atenua y lo dice;
+  // antes solo decia «sin cambio» y se leia como si fuera a condonarse.
+  var conMonto=!diario&&montoCOP!=null&&!error;
+  function noLlega(f){ return conMonto&&!!f&&f.max>0&&f.condonar<=0; }
+  var reparto=conMonto?plan.filas.reduce(function(r,f){
+    if(f.condonar>0&&!f.parcial) r.completas++; else if(f.parcial) r.parte++; else if(noLlega(f)) r.fuera++;
+    return r; },{completas:0,parte:0,fuera:0}):null;
 
   // El antes y el despues, con los helpers de siempre sobre una copia (no se escribe nada).
   var loanDesp=diario?Object.assign({}, loan, { interesesCondonados: Math.round(+loan.interesesCondonados||0)+intCondonar }):loan;
@@ -142,13 +150,15 @@ export function CondonarModal(props){
     mora.map(function(p){
       var on=sel.indexOf(p.id)!==-1, f=porId[p.id], c=f?f.condonar:0;
       var interes=Math.round(p.interesPeriodo||0), cap=Math.round(p.abonoCapital||0), ab=Math.round(p.partialPaid||0);
+      var fuera=on&&noLlega(f);
       var efecto=!on?h('span',{className:'cdm-ef nada'},'no marcada')
+        :fuera?h('span',{className:'cdm-ef fuera'},'No se perdona · no le llega el monto')
         :c<=0?h('span',{className:'cdm-ef nada'},'sin cambio')
         :f.saldada&&f.abonado<=0?h('span',{className:'cdm-ef cond'},'Condonada')
         :f.saldada?h('span',{className:'cdm-ef cond'},'Saldada')
         :f.parcial?h('span',{className:'cdm-ef parte'},'En parte · queda '+money(f.quedaDebiendo))
         :h('span',{className:'cdm-ef parte'},'Queda el capital · '+money(f.quedaDebiendo));
-      return h('label',{key:p.id,className:'cdm-cuota'+(on?' on':'')+(c>0?' toca':'')},
+      return h('label',{key:p.id,className:'cdm-cuota'+(on?' on':'')+(c>0?' toca':'')+(fuera?' fuera':'')},
         h('input',{type:'checkbox',checked:on,onChange:function(){ toggle(p.id); }}),
         h('div',{className:'cdm-cuota-i'},
           h('div',{className:'cdm-cuota-t'},
@@ -158,6 +168,7 @@ export function CondonarModal(props){
             h('span',{className:'cdm-int v4m-num'},money(interes))),
           h('div',{className:'cdm-cuota-s'},
             c>0?h('span',null,'se condonan ',h('b',{className:'cdm-c'},money(c)),c<interes?' de '+money(interes):'')
+               :fuera?h('span',{className:'cdm-muted'},'sus intereses se siguen debiendo')
                :h('span',{className:'cdm-muted'},'intereses de la cuota'),
             cap>0&&h('span',{className:'cdm-muted'},' · capital '+money(cap)+' (sigue debiéndose)'),
             ab>0&&h('span',{className:'cdm-muted'},' · ya abonó '+money(ab)),
@@ -187,6 +198,13 @@ export function CondonarModal(props){
             !diario&&h('div',{className:'cdm-cab'},'CUOTAS VENCIDAS',h('span',{className:'cdm-esp'}),
               h('button',{type:'button',className:'cdm-todo v4m-pulsa',onClick:function(){ setSel(sel.length===mora.length?[]:mora.map(function(p){ return p.id; })); }},
                 sel.length===mora.length?'Ninguna':'Todas')),
+            reparto&&h('div',{className:'cdm-reparto'},
+              'Con '+money(montoCOP)+': ',
+              [reparto.completas&&h('b',{key:'c',className:'cdm-c'},reparto.completas+(reparto.completas===1?' completa':' completas')),
+               reparto.parte&&h('b',{key:'p',className:'cdm-rp-parte'},reparto.parte+' en parte'),
+               reparto.fuera&&h('b',{key:'f',className:'cdm-rp-fuera'},reparto.fuera+(reparto.fuera===1?' no se perdona':' no se perdonan'))]
+                .filter(Boolean).reduce(function(a,x,i){ return i?a.concat([' · ',x]):[x]; },[]),
+              reparto.fuera>0&&h('span',{className:'cdm-muted'},' — el monto no les llega. Para perdonar otras, desmarca las más viejas.')),
             listaUI),
 
     h(Fld,{label:'Motivo del acuerdo'},

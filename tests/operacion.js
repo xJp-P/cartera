@@ -1555,8 +1555,29 @@ const suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
     const propsC = { loan: lA, pays, onConfirm: function(){ enviados.push([].slice.call(arguments)); return Promise.resolve(); }, onClose: () => {} };
     const mo = montar(X.CondonarModal, propsC, [undefined, undefined, undefined, '1.000.000']);
     const efectos = conClase(mo.arbol, 'cdm-ef').map(n => textos(n).join(''));
-    R.eq('Q1 cada cuota dice lo que le pasaria: 3 condonadas, la cuarta en parte y la quinta sin cambio',
-      efectos, ['Condonada', 'Condonada', 'Condonada', 'En parte · queda ' + X.fmt(200000), 'sin cambio']);
+    R.eq('Q1 cada cuota dice lo que le pasaria: 3 condonadas, la cuarta en parte y la quinta NO se perdona (el monto no le llega)',
+      efectos, ['Condonada', 'Condonada', 'Condonada', 'En parte · queda ' + X.fmt(200000), 'No se perdona · no le llega el monto']);
+    // Post-4.1.6 (pedido del PO): la cuota marcada a la que el monto no llega se atenua y lo dice, y una
+    // linea cuenta el reparto. Sigue marcada: si el monto sube, el reparto la alcanza.
+    const filasQ = conClase(mo.arbol, 'cdm-cuota');
+    const clsQ = n => String(n.props.className || '');
+    R.check('Q1b solo la quinta va atenuada (clase «fuera»), sigue marcada y dice que sus intereses se siguen debiendo',
+      filasQ.length === 5 && filasQ.filter(n => /\bfuera\b/.test(clsQ(n))).length === 1 && /\bfuera\b/.test(clsQ(filasQ[4])) &&
+      /\bon\b/.test(clsQ(filasQ[4])) && !/\btoca\b/.test(clsQ(filasQ[4])) && textos(filasQ[4]).join('').indexOf('sus intereses se siguen debiendo') !== -1,
+      filasQ.map(clsQ));
+    const rep = conClase(mo.arbol, 'cdm-reparto')[0];
+    R.eq('Q1c la linea del reparto: 3 completas · 1 en parte · 1 no se perdona, y como perdonar otras',
+      rep ? textos(rep).join('') : '', 'Con ' + X.fmt(1000000) + ': 3 completas · 1 en parte · 1 no se perdona — el monto no les llega. Para perdonar otras, desmarca las más viejas.');
+    const todo = montar(X.CondonarModal, propsC, [undefined, undefined, undefined, '']);
+    R.check('Q1d ANTI-TRIVIAL: sin monto (todo lo condonable) ninguna se atenua y no hay linea de reparto',
+      conClase(todo.arbol, 'cdm-cuota').every(n => !/\bfuera\b/.test(clsQ(n))) && conClase(todo.arbol, 'cdm-reparto').length === 0 &&
+      conClase(todo.arbol, 'cdm-ef').every(n => textos(n).join('') === 'Condonada'));
+    const justo = montar(X.CondonarModal, propsC, [undefined, undefined, undefined, '1.500.000']);
+    R.check('Q1e con el monto exacto de las 5, ninguna queda fuera y el reparto dice «5 completas»',
+      conClase(justo.arbol, 'cdm-cuota').every(n => !/\bfuera\b/.test(clsQ(n))) &&
+      textos(conClase(justo.arbol, 'cdm-reparto')[0] || { hijos: [] }).join('') === 'Con ' + X.fmt(1500000) + ': 5 completas');
+    R.check('Q1f los estilos de la cuota que no alcanza viven en modales.css',
+      ['.cdm-cuota.fuera {', '.cdm-ef.fuera {', '.cdm-reparto {'].every(x => leer('public/css/modales.css').indexOf(x) !== -1));
     const comp = conClase(mo.arbol, 'cdm-comp').map(n => textos(n).join(' '));
     const linea = r => comp.find(t => t.indexOf(r) === 0) || '';
     R.check('Q2 el antes y el despues: lo vencido de $1.500.000 a $500.000 y "Debes hoy" baja $1.000.000',
